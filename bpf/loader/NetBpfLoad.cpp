@@ -1464,6 +1464,13 @@ static int doLoad(char** argv, char * const envp[]) {
         ALOGW("Android V requires kernel 4.19.");
     }
 
+    // W bumps the kernel requirement up to 5.4
+    // see also: //system/netd/tests/kernel_test.cpp TestKernel54
+    if (isAtLeastW && !isAtLeastKernelVersion(5, 4, 0)) {
+        ALOGE("Android W requires kernel 5.4.");
+        return 1;
+    }
+
     // Technically already required by U, but only enforce on V+
     // see also: //system/netd/tests/kernel_test.cpp TestKernel64Bit
     if (isAtLeastV && isKernel32Bit() && isAtLeastKernelVersion(5, 16, 0)) {
@@ -1487,13 +1494,13 @@ static int doLoad(char** argv, char * const envp[]) {
         bool bad = false;
 
         if (!isLtsKernel()) {
-            ALOGW("Android V only supports LTS kernels.");
+            ALOGW("Android V+ only supports LTS kernels.");
             bad = true;
         }
 
 #define REQUIRE(maj, min, sub) \
         if (isKernelVersion(maj, min) && !isAtLeastKernelVersion(maj, min, sub)) { \
-            ALOGW("Android V requires %d.%d kernel to be %d.%d.%d+.", maj, min, maj, min, sub); \
+            ALOGW("Android V+ requires %d.%d kernel to be %d.%d.%d+.", maj, min, maj, min, sub); \
             bad = true; \
         }
 
