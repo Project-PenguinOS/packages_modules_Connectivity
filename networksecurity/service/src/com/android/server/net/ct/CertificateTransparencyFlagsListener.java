@@ -15,19 +15,18 @@
  */
 package com.android.server.net.ct;
 
-import static android.provider.DeviceConfig.NAMESPACE_TETHERING;
-
+import android.annotation.RequiresApi;
 import android.content.Context;
+import android.os.Build;
 import android.provider.DeviceConfig;
 import android.provider.DeviceConfig.Properties;
 import android.text.TextUtils;
 import android.util.Log;
 
-import com.android.modules.utils.build.SdkLevel;
-
 import java.util.concurrent.Executors;
 
 /** Listener class for the Certificate Transparency Phenotype flags. */
+@RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 class CertificateTransparencyFlagsListener implements DeviceConfig.OnPropertiesChangedListener {
 
     private static final String TAG = "CertificateTransparencyFlagsListener";
@@ -45,7 +44,7 @@ class CertificateTransparencyFlagsListener implements DeviceConfig.OnPropertiesC
         mDataStore.load();
         mCertificateTransparencyDownloader.registerReceiver();
         DeviceConfig.addOnPropertiesChangedListener(
-                NAMESPACE_TETHERING, Executors.newSingleThreadExecutor(), this);
+                Config.NAMESPACE_NETWORK_SECURITY, Executors.newSingleThreadExecutor(), this);
         if (Config.DEBUG) {
             Log.d(TAG, "CertificateTransparencyFlagsListener initialized successfully");
         }
@@ -54,14 +53,18 @@ class CertificateTransparencyFlagsListener implements DeviceConfig.OnPropertiesC
 
     @Override
     public void onPropertiesChanged(Properties properties) {
-        if (!SdkLevel.isAtLeastV() || !NAMESPACE_TETHERING.equals(properties.getNamespace())) {
+        if (!Config.NAMESPACE_NETWORK_SECURITY.equals(properties.getNamespace())) {
             return;
         }
 
-        String newVersion = DeviceConfig.getString(NAMESPACE_TETHERING, Config.VERSION, "");
-        String newContentUrl = DeviceConfig.getString(NAMESPACE_TETHERING, Config.CONTENT_URL, "");
+        String newVersion =
+                DeviceConfig.getString(Config.NAMESPACE_NETWORK_SECURITY, Config.FLAG_VERSION, "");
+        String newContentUrl =
+                DeviceConfig.getString(
+                        Config.NAMESPACE_NETWORK_SECURITY, Config.FLAG_CONTENT_URL, "");
         String newMetadataUrl =
-                DeviceConfig.getString(NAMESPACE_TETHERING, Config.METADATA_URL, "");
+                DeviceConfig.getString(
+                        Config.NAMESPACE_NETWORK_SECURITY, Config.FLAG_METADATA_URL, "");
         if (TextUtils.isEmpty(newVersion)
                 || TextUtils.isEmpty(newContentUrl)
                 || TextUtils.isEmpty(newMetadataUrl)) {
@@ -84,6 +87,8 @@ class CertificateTransparencyFlagsListener implements DeviceConfig.OnPropertiesC
             Log.i(TAG, "No flag changed, ignoring update");
             return;
         }
+
+        // TODO: handle the case where there is already a pending download.
 
         mDataStore.setProperty(Config.VERSION_PENDING, newVersion);
         mDataStore.setProperty(Config.CONTENT_URL_PENDING, newContentUrl);
