@@ -15,6 +15,7 @@
 package com.android.server.thread;
 
 import static android.Manifest.permission.NETWORK_SETTINGS;
+import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.net.MulticastRoutingConfig.CONFIG_FORWARD_NONE;
 import static android.net.MulticastRoutingConfig.FORWARD_SELECTED;
 import static android.net.MulticastRoutingConfig.FORWARD_WITH_MIN_SCOPE;
@@ -26,6 +27,7 @@ import static android.net.thread.ActiveOperationalDataset.LENGTH_PSKC;
 import static android.net.thread.ActiveOperationalDataset.MESH_LOCAL_PREFIX_FIRST_BYTE;
 import static android.net.thread.ActiveOperationalDataset.SecurityPolicy.DEFAULT_ROTATION_TIME_HOURS;
 import static android.net.thread.ThreadNetworkController.DEVICE_ROLE_DETACHED;
+import static android.net.thread.ThreadNetworkController.EPHEMERAL_KEY_DISABLED;
 import static android.net.thread.ThreadNetworkController.STATE_DISABLED;
 import static android.net.thread.ThreadNetworkController.STATE_DISABLING;
 import static android.net.thread.ThreadNetworkController.STATE_ENABLED;
@@ -43,6 +45,7 @@ import static android.net.thread.ThreadNetworkException.ERROR_UNSUPPORTED_CHANNE
 import static android.net.thread.ThreadNetworkException.ERROR_UNSUPPORTED_FEATURE;
 import static android.net.thread.ThreadNetworkManager.DISALLOW_THREAD_NETWORK;
 import static android.net.thread.ThreadNetworkManager.PERMISSION_THREAD_NETWORK_PRIVILEGED;
+import static android.net.thread.ThreadNetworkManager.PERMISSION_THREAD_NETWORK_TESTING;
 
 import static com.android.server.thread.openthread.IOtDaemon.ErrorCode.OT_ERROR_ABORT;
 import static com.android.server.thread.openthread.IOtDaemon.ErrorCode.OT_ERROR_BUSY;
@@ -94,6 +97,7 @@ import android.net.thread.IActiveOperationalDatasetReceiver;
 import android.net.thread.IConfigurationReceiver;
 import android.net.thread.IOperationReceiver;
 import android.net.thread.IOperationalDatasetCallback;
+import android.net.thread.IOutputReceiver;
 import android.net.thread.IStateCallback;
 import android.net.thread.IThreadNetworkController;
 import android.net.thread.OperationalDatasetTimestamp;
@@ -124,6 +128,7 @@ import com.android.server.thread.openthread.DnsTxtAttribute;
 import com.android.server.thread.openthread.IChannelMasksReceiver;
 import com.android.server.thread.openthread.IOtDaemon;
 import com.android.server.thread.openthread.IOtDaemonCallback;
+import com.android.server.thread.openthread.IOtOutputReceiver;
 import com.android.server.thread.openthread.IOtStatusReceiver;
 import com.android.server.thread.openthread.InfraLinkState;
 import com.android.server.thread.openthread.Ipv6AddressInfo;
@@ -209,7 +214,7 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
     private NetworkRequest mUpstreamNetworkRequest;
     private UpstreamNetworkCallback mUpstreamNetworkCallback;
     private TestNetworkSpecifier mUpstreamTestNetworkSpecifier;
-    private final HashMap<Network, String> mNetworkToInterface;
+    private final Map<Network, LinkProperties> mNetworkToLinkProperties;
     private final ThreadPersistentSettings mPersistentSettings;
     private final UserManager mUserManager;
     private boolean mUserRestricted;
@@ -231,7 +236,8 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
             NsdPublisher nsdPublisher,
             UserManager userManager,
             ConnectivityResources resources,
-            Supplier<String> countryCodeSupplier) {
+            Supplier<String> countryCodeSupplier,
+            Map<Network, LinkProperties> networkToLinkProperties) {
         mContext = context;
         mHandler = handler;
         mNetworkProvider = networkProvider;
@@ -240,7 +246,9 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         mTunIfController = tunIfController;
         mInfraIfController = infraIfController;
         mUpstreamNetworkRequest = newUpstreamNetworkRequest();
-        mNetworkToInterface = new HashMap<Network, String>();
+        // TODO: networkToLinkProperties should be shared with NsdPublisher, add a test/assert to
+        // verify they are the same.
+        mNetworkToLinkProperties = networkToLinkProperties;
         mOtDaemonConfig = new OtDaemonConfiguration.Builder().build();
         mInfraLinkState = new InfraLinkState.Builder().build();
         mPersistentSettings = persistentSettings;
@@ -259,6 +267,7 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         Handler handler = new Handler(handlerThread.getLooper());
         NetworkProvider networkProvider =
                 new NetworkProvider(context, handlerThread.getLooper(), "ThreadNetworkProvider");
+        Map<Network, LinkProperties> networkToLinkProperties = new HashMap<>();
 
         return new ThreadNetworkControllerService(
                 context,
@@ -269,10 +278,11 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
                 new TunInterfaceController(TUN_IF_NAME),
                 new InfraInterfaceController(),
                 persistentSettings,
-                NsdPublisher.newInstance(context, handler),
+                NsdPublisher.newInstance(context, handler, networkToLinkProperties),
                 context.getSystemService(UserManager.class),
                 new ConnectivityResources(context),
-                countryCodeSupplier);
+                countryCodeSupplier,
+                networkToLinkProperties);
     }
 
     private NetworkRequest newUpstreamNetworkRequest() {
@@ -426,6 +436,7 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         LOG.w("OT daemon is dead, clean up...");
 
         OperationReceiverWrapper.onOtDaemonDied();
+        OutputReceiverWrapper.onOtDaemonDied();
         mOtDaemonCallbackProxy.onOtDaemonDied();
         mTunIfController.onOtDaemonDied();
         mNsdPublisher.onOtDaemonDied();
@@ -690,7 +701,7 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         if (mUpstreamNetworkCallback == null) {
             throw new AssertionError("The upstream network request null.");
         }
-        mNetworkToInterface.clear();
+        mNetworkToLinkProperties.clear();
         mConnectivityManager.unregisterNetworkCallback(mUpstreamNetworkCallback);
         mUpstreamNetworkCallback = null;
     }
@@ -712,20 +723,19 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
 
         @Override
         public void onLinkPropertiesChanged(
-                @NonNull Network network, @NonNull LinkProperties linkProperties) {
+                @NonNull Network network, @NonNull LinkProperties newLinkProperties) {
             checkOnHandlerThread();
 
-            String existingIfName = mNetworkToInterface.get(network);
-            String newIfName = linkProperties.getInterfaceName();
-            if (Objects.equals(existingIfName, newIfName)) {
+            LinkProperties oldLinkProperties = mNetworkToLinkProperties.get(network);
+            if (Objects.equals(oldLinkProperties, newLinkProperties)) {
                 return;
             }
-            LOG.i("Upstream network changed: " + existingIfName + " -> " + newIfName);
-            mNetworkToInterface.put(network, newIfName);
+            LOG.i("Upstream network changed: " + oldLinkProperties + " -> " + newLinkProperties);
+            mNetworkToLinkProperties.put(network, newLinkProperties);
 
             // TODO: disable border routing if netIfName is null
             if (network.equals(mUpstreamNetwork)) {
-                enableBorderRouting(mNetworkToInterface.get(mUpstreamNetwork));
+                setInfraLinkState(newInfraLinkStateBuilder(newLinkProperties).build());
             }
         }
     }
@@ -741,7 +751,7 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         public void onLost(@NonNull Network network) {
             checkOnHandlerThread();
             LOG.i("Thread network is lost: " + network);
-            disableBorderRouting();
+            setInfraLinkState(newInfraLinkStateBuilder().build());
         }
 
         @Override
@@ -755,13 +765,15 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
                             + localNetworkInfo
                             + "}");
             if (localNetworkInfo.getUpstreamNetwork() == null) {
-                disableBorderRouting();
+                setInfraLinkState(newInfraLinkStateBuilder().build());
                 return;
             }
             if (!localNetworkInfo.getUpstreamNetwork().equals(mUpstreamNetwork)) {
                 mUpstreamNetwork = localNetworkInfo.getUpstreamNetwork();
-                if (mNetworkToInterface.containsKey(mUpstreamNetwork)) {
-                    enableBorderRouting(mNetworkToInterface.get(mUpstreamNetwork));
+                if (mNetworkToLinkProperties.containsKey(mUpstreamNetwork)) {
+                    setInfraLinkState(
+                            newInfraLinkStateBuilder(mNetworkToLinkProperties.get(mUpstreamNetwork))
+                                    .build());
                 }
                 mNsdPublisher.setNetworkForHostResolution(mUpstreamNetwork);
             }
@@ -842,6 +854,47 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
     @Override
     public int getThreadVersion() {
         return THREAD_VERSION_1_3;
+    }
+
+    @Override
+    public void activateEphemeralKeyMode(long lifetimeMillis, IOperationReceiver receiver) {
+        enforceAllPermissionsGranted(PERMISSION_THREAD_NETWORK_PRIVILEGED);
+
+        mHandler.post(
+                () ->
+                        activateEphemeralKeyModeInternal(
+                                lifetimeMillis, new OperationReceiverWrapper(receiver)));
+    }
+
+    private void activateEphemeralKeyModeInternal(
+            long lifetimeMillis, OperationReceiverWrapper receiver) {
+        checkOnHandlerThread();
+
+        try {
+            getOtDaemon().activateEphemeralKeyMode(lifetimeMillis, newOtStatusReceiver(receiver));
+        } catch (RemoteException | ThreadNetworkException e) {
+            LOG.e("otDaemon.activateEphemeralKeyMode failed", e);
+            receiver.onError(e);
+        }
+    }
+
+    @Override
+    public void deactivateEphemeralKeyMode(IOperationReceiver receiver) {
+        enforceAllPermissionsGranted(PERMISSION_THREAD_NETWORK_PRIVILEGED);
+
+        mHandler.post(
+                () -> deactivateEphemeralKeyModeInternal(new OperationReceiverWrapper(receiver)));
+    }
+
+    private void deactivateEphemeralKeyModeInternal(OperationReceiverWrapper receiver) {
+        checkOnHandlerThread();
+
+        try {
+            getOtDaemon().deactivateEphemeralKeyMode(newOtStatusReceiver(receiver));
+        } catch (RemoteException | ThreadNetworkException e) {
+            LOG.e("otDaemon.deactivateEphemeralKeyMode failed", e);
+            receiver.onError(e);
+        }
     }
 
     @Override
@@ -993,7 +1046,14 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
     @Override
     public void registerStateCallback(IStateCallback stateCallback) throws RemoteException {
         enforceAllPermissionsGranted(permission.ACCESS_NETWORK_STATE);
-        mHandler.post(() -> mOtDaemonCallbackProxy.registerStateCallback(stateCallback));
+        boolean hasThreadPrivilegedPermission =
+                (mContext.checkCallingOrSelfPermission(PERMISSION_THREAD_NETWORK_PRIVILEGED)
+                        == PERMISSION_GRANTED);
+
+        mHandler.post(
+                () ->
+                        mOtDaemonCallbackProxy.registerStateCallback(
+                                stateCallback, hasThreadPrivilegedPermission));
     }
 
     @Override
@@ -1033,6 +1093,25 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
             @Override
             public void onSuccess() {
                 receiver.onSuccess();
+            }
+
+            @Override
+            public void onError(int otError, String message) {
+                receiver.onError(otErrorToAndroidError(otError), message);
+            }
+        };
+    }
+
+    private IOtOutputReceiver newOtOutputReceiver(OutputReceiverWrapper receiver) {
+        return new IOtOutputReceiver.Stub() {
+            @Override
+            public void onOutput(String output) {
+                receiver.onOutput(output);
+            }
+
+            @Override
+            public void onComplete() {
+                receiver.onComplete();
             }
 
             @Override
@@ -1228,45 +1307,51 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         }
     }
 
-    private void setInfraLinkState(InfraLinkState infraLinkState) {
-        if (mInfraLinkState.equals(infraLinkState)) {
+    private void setInfraLinkState(InfraLinkState newInfraLinkState) {
+        if (mInfraLinkState.equals(newInfraLinkState)) {
             return;
         }
-        LOG.i("Infra link state changed: " + mInfraLinkState + " -> " + infraLinkState);
-        mInfraLinkState = infraLinkState;
+        LOG.i("Infra link state changed: " + mInfraLinkState + " -> " + newInfraLinkState);
+
+        setInfraLinkInterfaceName(newInfraLinkState.interfaceName);
+        setInfraLinkNat64Prefix(newInfraLinkState.nat64Prefix);
+        mInfraLinkState = newInfraLinkState;
+    }
+
+    private void setInfraLinkInterfaceName(String newInfraLinkInterfaceName) {
+        if (Objects.equals(mInfraLinkState.interfaceName, newInfraLinkInterfaceName)) {
+            return;
+        }
         ParcelFileDescriptor infraIcmp6Socket = null;
-        if (mInfraLinkState.interfaceName != null) {
+        if (newInfraLinkInterfaceName != null) {
             try {
-                infraIcmp6Socket =
-                        mInfraIfController.createIcmp6Socket(mInfraLinkState.interfaceName);
+                infraIcmp6Socket = mInfraIfController.createIcmp6Socket(newInfraLinkInterfaceName);
             } catch (IOException e) {
                 LOG.e("Failed to create ICMPv6 socket on infra network interface", e);
             }
         }
         try {
             getOtDaemon()
-                    .setInfraLinkState(
-                            mInfraLinkState,
+                    .setInfraLinkInterfaceName(
+                            newInfraLinkInterfaceName,
                             infraIcmp6Socket,
-                            new LoggingOtStatusReceiver("setInfraLinkState"));
+                            new LoggingOtStatusReceiver("setInfraLinkInterfaceName"));
         } catch (RemoteException | ThreadNetworkException e) {
-            LOG.e("Failed to configure border router " + mOtDaemonConfig, e);
+            LOG.e("Failed to set infra link interface name " + newInfraLinkInterfaceName, e);
         }
     }
 
-    private void enableBorderRouting(String infraIfName) {
-        InfraLinkState infraLinkState =
-                newInfraLinkStateBuilder(mInfraLinkState).setInterfaceName(infraIfName).build();
-        LOG.i("Enable border routing on AIL: " + infraIfName);
-        setInfraLinkState(infraLinkState);
-    }
-
-    private void disableBorderRouting() {
-        mUpstreamNetwork = null;
-        InfraLinkState infraLinkState =
-                newInfraLinkStateBuilder(mInfraLinkState).setInterfaceName(null).build();
-        LOG.i("Disabling border routing");
-        setInfraLinkState(infraLinkState);
+    private void setInfraLinkNat64Prefix(@Nullable String newNat64Prefix) {
+        if (Objects.equals(mInfraLinkState.nat64Prefix, newNat64Prefix)) {
+            return;
+        }
+        try {
+            getOtDaemon()
+                    .setInfraLinkNat64Prefix(
+                            newNat64Prefix, new LoggingOtStatusReceiver("setInfraLinkNat64Prefix"));
+        } catch (RemoteException | ThreadNetworkException e) {
+            LOG.e("Failed to set infra link NAT64 prefix " + newNat64Prefix, e);
+        }
     }
 
     private void handleThreadInterfaceStateChanged(boolean isUp) {
@@ -1315,6 +1400,31 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         // registered
         if (mNetworkAgent != null) {
             mNetworkAgent.sendLinkProperties(mTunIfController.getLinkProperties());
+        }
+    }
+
+    @RequiresPermission(
+            allOf = {PERMISSION_THREAD_NETWORK_PRIVILEGED, PERMISSION_THREAD_NETWORK_TESTING})
+    public void runOtCtlCommand(
+            @NonNull String command, boolean isInteractive, @NonNull IOutputReceiver receiver) {
+        enforceAllPermissionsGranted(
+                PERMISSION_THREAD_NETWORK_PRIVILEGED, PERMISSION_THREAD_NETWORK_TESTING);
+
+        mHandler.post(
+                () ->
+                        runOtCtlCommandInternal(
+                                command, isInteractive, new OutputReceiverWrapper(receiver)));
+    }
+
+    private void runOtCtlCommandInternal(
+            String command, boolean isInteractive, @NonNull OutputReceiverWrapper receiver) {
+        checkOnHandlerThread();
+
+        try {
+            getOtDaemon().runOtCtlCommand(command, isInteractive, newOtOutputReceiver(receiver));
+        } catch (RemoteException | ThreadNetworkException e) {
+            LOG.e("otDaemon.runOtCtlCommand failed", e);
+            receiver.onError(ERROR_INTERNAL_ERROR, "Thread stack error");
         }
     }
 
@@ -1372,8 +1482,22 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         return new OtDaemonConfiguration.Builder();
     }
 
-    private static InfraLinkState.Builder newInfraLinkStateBuilder(InfraLinkState infraLinkState) {
-        return new InfraLinkState.Builder().setInterfaceName(infraLinkState.interfaceName);
+    private static InfraLinkState.Builder newInfraLinkStateBuilder() {
+        return new InfraLinkState.Builder().setInterfaceName("");
+    }
+
+    private static InfraLinkState.Builder newInfraLinkStateBuilder(
+            @Nullable LinkProperties linkProperties) {
+        if (linkProperties == null) {
+            return newInfraLinkStateBuilder();
+        }
+        String nat64Prefix = null;
+        if (linkProperties.getNat64Prefix() != null) {
+            nat64Prefix = linkProperties.getNat64Prefix().toString();
+        }
+        return new InfraLinkState.Builder()
+                .setInterfaceName(linkProperties.getInterfaceName())
+                .setNat64Prefix(nat64Prefix);
     }
 
     private static final class CallbackMetadata {
@@ -1384,9 +1508,13 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
 
         final IBinder.DeathRecipient deathRecipient;
 
-        CallbackMetadata(IBinder.DeathRecipient deathRecipient) {
+        final boolean hasThreadPrivilegedPermission;
+
+        CallbackMetadata(
+                IBinder.DeathRecipient deathRecipient, boolean hasThreadPrivilegedPermission) {
             this.id = allocId();
             this.deathRecipient = deathRecipient;
+            this.hasThreadPrivilegedPermission = hasThreadPrivilegedPermission;
         }
 
         private static long allocId() {
@@ -1428,7 +1556,8 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         private ActiveOperationalDataset mActiveDataset;
         private PendingOperationalDataset mPendingDataset;
 
-        public void registerStateCallback(IStateCallback callback) {
+        public void registerStateCallback(
+                IStateCallback callback, boolean hasThreadPrivilegedPermission) {
             checkOnHandlerThread();
             if (mStateCallbacks.containsKey(callback)) {
                 throw new IllegalStateException("Registering the same IStateCallback twice");
@@ -1436,7 +1565,8 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
 
             IBinder.DeathRecipient deathRecipient =
                     () -> mHandler.post(() -> unregisterStateCallback(callback));
-            CallbackMetadata callbackMetadata = new CallbackMetadata(deathRecipient);
+            CallbackMetadata callbackMetadata =
+                    new CallbackMetadata(deathRecipient, hasThreadPrivilegedPermission);
             mStateCallbacks.put(callback, callbackMetadata);
             try {
                 callback.asBinder().linkToDeath(deathRecipient, 0);
@@ -1469,7 +1599,8 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
 
             IBinder.DeathRecipient deathRecipient =
                     () -> mHandler.post(() -> unregisterDatasetCallback(callback));
-            CallbackMetadata callbackMetadata = new CallbackMetadata(deathRecipient);
+            CallbackMetadata callbackMetadata =
+                    new CallbackMetadata(deathRecipient, true /* hasThreadPrivilegedPermission */);
             mOpDatasetCallbacks.put(callback, callbackMetadata);
             try {
                 callback.asBinder().linkToDeath(deathRecipient, 0);
@@ -1548,16 +1679,18 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
         }
 
         @Override
-        public void onStateChanged(OtDaemonState newState, long listenerId) {
+        public void onStateChanged(@NonNull OtDaemonState newState, long listenerId) {
             mHandler.post(() -> onStateChangedInternal(newState, listenerId));
         }
 
         private void onStateChangedInternal(OtDaemonState newState, long listenerId) {
             checkOnHandlerThread();
+
             onInterfaceStateChanged(newState.isInterfaceUp);
             onDeviceRoleChanged(newState.deviceRole, listenerId);
             onPartitionIdChanged(newState.partitionId, listenerId);
             onThreadEnabledChanged(newState.threadEnabled, listenerId);
+            onEphemeralKeyStateChanged(newState, listenerId);
             mState = newState;
 
             ActiveOperationalDataset newActiveDataset;
@@ -1631,6 +1764,43 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
                     // do nothing if the client is dead
                 }
             }
+        }
+
+        private void onEphemeralKeyStateChanged(OtDaemonState newState, long listenerId) {
+            checkOnHandlerThread();
+            boolean hasChange = isEphemeralKeyStateChanged(mState, newState);
+
+            for (var callbackEntry : mStateCallbacks.entrySet()) {
+                if (!hasChange && callbackEntry.getValue().id != listenerId) {
+                    continue;
+                }
+                String passcode =
+                        callbackEntry.getValue().hasThreadPrivilegedPermission
+                                ? newState.ephemeralKeyPasscode
+                                : null;
+                if (newState.ephemeralKeyState == EPHEMERAL_KEY_DISABLED) {
+                    passcode = null;
+                }
+                try {
+                    callbackEntry
+                            .getKey()
+                            .onEphemeralKeyStateChanged(
+                                    newState.ephemeralKeyState,
+                                    passcode,
+                                    newState.ephemeralKeyExpiryMillis);
+                } catch (RemoteException ignored) {
+                    // do nothing if the client is dead
+                }
+            }
+        }
+
+        private static boolean isEphemeralKeyStateChanged(
+                OtDaemonState oldState, @NonNull OtDaemonState newState) {
+            if (oldState == null) return true;
+            if (oldState.ephemeralKeyState != newState.ephemeralKeyState) return true;
+            if (oldState.ephemeralKeyState == EPHEMERAL_KEY_DISABLED) return false;
+            return (!Objects.equals(oldState.ephemeralKeyPasscode, newState.ephemeralKeyPasscode)
+                    || oldState.ephemeralKeyExpiryMillis != newState.ephemeralKeyExpiryMillis);
         }
 
         private void onActiveOperationalDatasetChanged(

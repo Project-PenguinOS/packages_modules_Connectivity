@@ -16,13 +16,9 @@
 
 package android.net.thread;
 
-/**
- * @hide
- */
-oneway interface IStateCallback {
-    void onDeviceRoleChanged(int deviceRole);
-    void onPartitionIdChanged(long partitionId);
-    void onThreadEnableStateChanged(int enabledState);
-    void onEphemeralKeyStateChanged(
-            int ephemeralKeyState, @nullable String ephemeralKey, long expiryMillis);
+/** Receives the output of a Thread network operation. @hide */
+oneway interface IOutputReceiver {
+    void onOutput(in String output);
+    void onComplete();
+    void onError(int errorCode, String errorMessage);
 }
