@@ -33,6 +33,23 @@
       "message": "pending AOSP opinion I guess",
       "revId": "16c0a402ce837dc7de184fe7cfe6c2a3876bef11",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "3ed5b0fe_a5c99f47",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 4550
+      },
+      "writtenOn": "2024-10-29T22:18:29Z",
+      "side": 1,
+      "message": "Wait for AOSP and pick AOSP commit instead if that\u0027s merged",
+      "revId": "16c0a402ce837dc7de184fe7cfe6c2a3876bef11",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
