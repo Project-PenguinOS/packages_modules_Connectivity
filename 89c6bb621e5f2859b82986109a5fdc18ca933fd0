@@ -33,6 +33,24 @@
       "message": "This also needs to wait for AOSP commit",
       "revId": "89c6bb621e5f2859b82986109a5fdc18ca933fd0",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "656e2724_f8c5b01c",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 2
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 14048
+      },
+      "writtenOn": "2024-10-30T21:16:57Z",
+      "side": 1,
+      "message": "Does it? Doesn\u0027t V require 4.19 for aosp? Meaning this is squarely in \u0027not supported by aosp\u0027 territory.",
+      "parentUuid": "04afe324_00c1d320",
+      "revId": "89c6bb621e5f2859b82986109a5fdc18ca933fd0",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
