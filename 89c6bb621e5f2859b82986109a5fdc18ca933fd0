@@ -51,6 +51,24 @@
       "parentUuid": "04afe324_00c1d320",
       "revId": "89c6bb621e5f2859b82986109a5fdc18ca933fd0",
       "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "2eb70b57_f00e2c17",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 2
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 29742
+      },
+      "writtenOn": "2024-10-31T05:45:16Z",
+      "side": 1,
+      "message": "I believe AOSP has stopped support for \u003c4.19 considering they often make changes to cgroups hooks and bpf. And maybe they have prepared a new patch to stop old kernels in AOSP internal environment for the upcoming Android 16 release. Also without this patch 4.14 requires bpf patch in kernel source to boot successfully. And with this patch 4.14 and 4.9 can boot without any patch in kernel source. But who know in the futures.",
+      "parentUuid": "656e2724_f8c5b01c",
+      "revId": "89c6bb621e5f2859b82986109a5fdc18ca933fd0",
+      "serverId": "1ec6b3db-b2c1-4fa4-84a2-4c7efe89ba71"
     }
   ]
 }
