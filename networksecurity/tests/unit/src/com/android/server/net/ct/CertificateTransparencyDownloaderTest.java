@@ -16,9 +16,9 @@
 
 package com.android.server.net.ct;
 
-import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_NOT_FOUND;
-import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_VERIFICATION;
-import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_VERSION_ALREADY_EXISTS;
+import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_NOT_FOUND;
+import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_VERIFICATION;
+import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_VERSION_ALREADY_EXISTS;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -235,8 +235,8 @@ public class CertificateTransparencyDownloaderTest {
                                 Config.LOG_LIST_UPDATE_FAILURE_COUNT, /* defaultValue= */ 0))
                 .isEqualTo(1);
         verify(mLogger, never()).logCTLogListUpdateFailedEvent(anyInt(), anyInt());
-        verify(mLogger, never()).logCTLogListUpdateFailedEventWithDownloadStatus(
-                anyInt(), anyInt());
+        verify(mLogger, never())
+                .logCTLogListUpdateFailedEventWithDownloadStatus(anyInt(), anyInt());
     }
 
     @Test
@@ -309,8 +309,8 @@ public class CertificateTransparencyDownloaderTest {
                                 Config.LOG_LIST_UPDATE_FAILURE_COUNT, /* defaultValue= */ 0))
                 .isEqualTo(1);
         verify(mLogger, never()).logCTLogListUpdateFailedEvent(anyInt(), anyInt());
-        verify(mLogger, never()).logCTLogListUpdateFailedEventWithDownloadStatus(
-                anyInt(), anyInt());
+        verify(mLogger, never())
+                .logCTLogListUpdateFailedEventWithDownloadStatus(anyInt(), anyInt());
     }
 
     @Test
@@ -387,8 +387,8 @@ public class CertificateTransparencyDownloaderTest {
                                 Config.LOG_LIST_UPDATE_FAILURE_COUNT, /* defaultValue= */ 0))
                 .isEqualTo(1);
         verify(mLogger, never()).logCTLogListUpdateFailedEvent(anyInt(), anyInt());
-        verify(mLogger, never()).logCTLogListUpdateFailedEventWithDownloadStatus(
-                anyInt(), anyInt());
+        verify(mLogger, never())
+                .logCTLogListUpdateFailedEventWithDownloadStatus(anyInt(), anyInt());
     }
 
     @Test
@@ -434,12 +434,12 @@ public class CertificateTransparencyDownloaderTest {
                 .isEqualTo(Config.DEFAULT_LOG_LIST_UPDATE_FAILURE_THRESHOLD);
         verify(mLogger, times(1))
                 .logCTLogListUpdateFailedEvent(
-                        CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_NOT_FOUND,
+                        CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_NOT_FOUND,
                         Config.DEFAULT_LOG_LIST_UPDATE_FAILURE_THRESHOLD);
         verify(mLogger, never())
                 .logCTLogListUpdateFailedEvent(
                         eq(
-                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_VERIFICATION),
+                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_VERIFICATION),
                         anyInt());
     }
 
@@ -475,11 +475,11 @@ public class CertificateTransparencyDownloaderTest {
         verify(mLogger, never())
                 .logCTLogListUpdateFailedEvent(
                         eq(
-                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_NOT_FOUND),
+                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_NOT_FOUND),
                         anyInt());
         verify(mLogger, times(1))
                 .logCTLogListUpdateFailedEvent(
-                        CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_VERIFICATION,
+                        CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_VERIFICATION,
                         Config.DEFAULT_LOG_LIST_UPDATE_FAILURE_THRESHOLD);
     }
 
@@ -515,11 +515,11 @@ public class CertificateTransparencyDownloaderTest {
         verify(mLogger, never())
                 .logCTLogListUpdateFailedEvent(
                         eq(
-                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_NOT_FOUND),
+                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_NOT_FOUND),
                         anyInt());
         verify(mLogger, times(1))
                 .logCTLogListUpdateFailedEvent(
-                        CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_VERIFICATION,
+                        CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_VERIFICATION,
                         Config.DEFAULT_LOG_LIST_UPDATE_FAILURE_THRESHOLD);
     }
 
@@ -548,12 +548,12 @@ public class CertificateTransparencyDownloaderTest {
         verify(mLogger, never())
                 .logCTLogListUpdateFailedEvent(
                         eq(
-                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_NOT_FOUND),
+                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_NOT_FOUND),
                         anyInt());
         verify(mLogger, never())
                 .logCTLogListUpdateFailedEvent(
                         eq(
-                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_SIGNATURE_VERIFICATION),
+                                CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_VERIFICATION),
                         anyInt());
     }
 
@@ -581,7 +581,7 @@ public class CertificateTransparencyDownloaderTest {
                 .isEqualTo(Config.DEFAULT_LOG_LIST_UPDATE_FAILURE_THRESHOLD);
         verify(mLogger, times(1))
                 .logCTLogListUpdateFailedEvent(
-                        CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_FAILED__FAILURE_REASON__FAILURE_VERSION_ALREADY_EXISTS,
+                        CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_VERSION_ALREADY_EXISTS,
                         Config.DEFAULT_LOG_LIST_UPDATE_FAILURE_THRESHOLD);
     }
 
@@ -606,8 +606,8 @@ public class CertificateTransparencyDownloaderTest {
                                 Config.LOG_LIST_UPDATE_FAILURE_COUNT, /* defaultValue= */ 0))
                 .isEqualTo(1);
         verify(mLogger, never()).logCTLogListUpdateFailedEvent(anyInt(), anyInt());
-        verify(mLogger, never()).logCTLogListUpdateFailedEventWithDownloadStatus(
-                anyInt(), anyInt());
+        verify(mLogger, never())
+                .logCTLogListUpdateFailedEventWithDownloadStatus(anyInt(), anyInt());
     }
 
     @Test
@@ -793,7 +793,7 @@ public class CertificateTransparencyDownloaderTest {
         try (InputStream fileStream = new FileInputStream(file);
                 OutputStream outputStream = new FileOutputStream(signatureFile)) {
             signer.update(fileStream.readAllBytes());
-            outputStream.write(signer.sign());
+            outputStream.write(Base64.getEncoder().encode(signer.sign()));
         }
 
         return signatureFile;
