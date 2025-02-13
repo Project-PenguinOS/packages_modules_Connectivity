@@ -101,7 +101,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -458,14 +457,26 @@ public class TetheringManagerTest {
 
     @Test
     public void testStopTetheringRequest() throws Exception {
-        TetheringRequest request = new TetheringRequest.Builder(TETHERING_WIFI).build();
-        Executor executor = Runnable::run;
-        TetheringManager.StopTetheringCallback callback =
-                new TetheringManager.StopTetheringCallback() {};
+        assumeTrue(isTetheringWithSoftApConfigEnabled());
+        final TestTetheringEventCallback tetherEventCallback =
+                mCtsTetheringUtils.registerTetheringEventCallback();
         try {
-            mTM.stopTethering(request, executor, callback);
-            fail("stopTethering should throw UnsupportedOperationException");
-        } catch (UnsupportedOperationException expect) { }
+            tetherEventCallback.assumeWifiTetheringSupported(mContext);
+
+            // stopTethering without any tethering active should fail.
+            TetheringRequest request = new TetheringRequest.Builder(TETHERING_WIFI).build();
+            mCtsTetheringUtils.stopTethering(request, false /* expectSuccess */);
+
+            // Start wifi tethering
+            mCtsTetheringUtils.startWifiTethering(tetherEventCallback);
+
+            // stopTethering should succeed now that there's a request.
+            mCtsTetheringUtils.stopTethering(request, true /* expectSuccess */);
+            tetherEventCallback.expectNoTetheringActive();
+        } finally {
+            mCtsTetheringUtils.stopAllTethering();
+            mCtsTetheringUtils.unregisterTetheringEventCallback(tetherEventCallback);
+        }
     }
 
     private boolean isTetheringWithSoftApConfigEnabled() {
