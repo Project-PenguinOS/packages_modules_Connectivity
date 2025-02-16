@@ -20,30 +20,27 @@ package com.android.server.net.ct;
 public interface CertificateTransparencyLogger {
 
     /**
-     * Logs a CTLogListUpdateStateChanged event to statsd, when failure is from DownloadManager.
+     * Logs a CTLogListUpdateStateChanged event to statsd.
      *
-     * @param downloadStatus DownloadManager failure status why the log list wasn't updated
-     * @param failureCount number of consecutive log list update failures
+     * @param updateStatus status object containing details from this update event (e.g. log list
+     * signature, log list timestamp, failure reason if applicable)
      */
-    void logCTLogListUpdateStateChangedEventWithDownloadStatus(
-            int downloadStatus, int failureCount);
+    void logCTLogListUpdateStateChangedEvent(LogListUpdateStatus updateStatus);
 
     /**
-     * Logs a CTLogListUpdateStateChanged event to statsd without a HTTP error status code.
+     * Intermediate enum for use with CertificateTransparencyStatsLog.
      *
-     * @param failureReason reason why the log list wasn't updated
-     * @param failureCount number of consecutive log list update failures
+     * This enum primarily exists to avoid 100+ char line alert fatigue.
      */
-    void logCTLogListUpdateStateChangedEvent(int failureReason, int failureCount);
-
-    /**
-     * Logs a CTLogListUpdateStateChanged event to statsd with an HTTP error status code.
-     *
-     * @param failureReason reason why the log list wasn't updated (e.g. DownloadManager failures)
-     * @param failureCount number of consecutive log list update failures
-     * @param httpErrorStatusCode if relevant, the HTTP error status code from DownloadManager
-     */
-    void logCTLogListUpdateStateChangedEvent(
-            int failureReason, int failureCount, int httpErrorStatusCode);
-
+    enum CTLogListUpdateState {
+        UNKNOWN_STATE,
+        HTTP_ERROR,
+        LOG_LIST_INVALID,
+        PUBLIC_KEY_NOT_FOUND,
+        SIGNATURE_INVALID,
+        SIGNATURE_NOT_FOUND,
+        SIGNATURE_VERIFICATION_FAILED,
+        SUCCESS,
+        VERSION_ALREADY_EXISTS
+    }
 }

@@ -16,31 +16,26 @@
 
 package com.android.server.net.ct;
 
-import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_HTTP_ERROR;
-import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_PUBLIC_KEY_NOT_FOUND;
-import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_VERIFICATION;
-import static com.android.server.net.ct.CertificateTransparencyStatsLog.CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_VERSION_ALREADY_EXISTS;
-
 import android.annotation.RequiresApi;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.VisibleForTesting;
 
+import com.android.server.net.ct.CertificateTransparencyLogger.CTLogListUpdateState;
 import com.android.server.net.ct.DownloadHelper.DownloadStatus;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.GeneralSecurityException;
-import java.security.InvalidKeyException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /** Helper class to download certificate transparency log files. */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
@@ -55,8 +50,6 @@ class CertificateTransparencyDownloader extends BroadcastReceiver {
     private final CertificateTransparencyLogger mLogger;
 
     private final List<CompatibilityVersion> mCompatVersions = new ArrayList<>();
-
-    private boolean started = false;
 
     CertificateTransparencyDownloader(
             Context context,
@@ -75,33 +68,8 @@ class CertificateTransparencyDownloader extends BroadcastReceiver {
         mCompatVersions.add(compatVersion);
     }
 
-    void start() {
-        if (started) {
-            return;
-        }
-        mContext.registerReceiver(
-                this,
-                new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-                Context.RECEIVER_EXPORTED);
-        mDataStore.load();
-        started = true;
-
-        if (Config.DEBUG) {
-            Log.d(TAG, "CertificateTransparencyDownloader started.");
-        }
-    }
-
-    void stop() {
-        if (!started) {
-            return;
-        }
-        mContext.unregisterReceiver(this);
-        mDataStore.delete();
-        started = false;
-
-        if (Config.DEBUG) {
-            Log.d(TAG, "CertificateTransparencyDownloader stopped.");
-        }
+    void clearCompatibilityVersions() {
+        mCompatVersions.clear();
     }
 
     long startPublicKeyDownload() {
@@ -230,95 +198,40 @@ class CertificateTransparencyDownloader extends BroadcastReceiver {
             return;
         }
 
-        boolean success = false;
-        int failureReason = -1;
+        LogListUpdateStatus updateStatus = mSignatureVerifier.verify(contentUri, metadataUri);
 
-        try {
-            success = mSignatureVerifier.verify(contentUri, metadataUri);
-        } catch (MissingPublicKeyException e) {
-            updateFailureCount();
-            failureReason =
-                    CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_PUBLIC_KEY_NOT_FOUND;
-            Log.e(TAG, "No public key found for log list verification", e);
-        } catch (InvalidKeyException e) {
-            updateFailureCount();
-            failureReason =
-                    CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_VERIFICATION;
-            Log.e(TAG, "Signature invalid for log list verification", e);
-        } catch (IOException | GeneralSecurityException e) {
-            Log.e(TAG, "Could not verify new log list", e);
-        }
-
-        if (!success) {
+        if (!updateStatus.isSignatureVerified()) {
             Log.w(TAG, "Log list did not pass verification");
 
-            // Avoid logging failure twice
-            if (failureReason == -1) {
-                updateFailureCount();
-                failureReason =
-                        CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_SIGNATURE_VERIFICATION;
-            }
+            mLogger.logCTLogListUpdateStateChangedEvent(updateStatus);
 
-            if (failureReason != -1) {
-                mLogger.logCTLogListUpdateStateChangedEvent(
-                        failureReason,
-                        mDataStore.getPropertyInt(
-                                Config.LOG_LIST_UPDATE_FAILURE_COUNT, /* defaultValue= */ 0));
-            }
             return;
         }
 
         try (InputStream inputStream = mContext.getContentResolver().openInputStream(contentUri)) {
-            success = compatVersion.install(inputStream);
+            updateStatus = compatVersion.install(inputStream, updateStatus.toBuilder());
         } catch (IOException e) {
             Log.e(TAG, "Could not install new content", e);
             return;
         }
 
-        if (success) {
-            // Reset the number of consecutive log list failure updates back to zero.
-            mDataStore.setPropertyInt(Config.LOG_LIST_UPDATE_FAILURE_COUNT, /* value= */ 0);
-            mDataStore.store();
-        } else {
-            updateFailureCount();
-            mLogger.logCTLogListUpdateStateChangedEvent(
-                    CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_VERSION_ALREADY_EXISTS,
-                    mDataStore.getPropertyInt(
-                            Config.LOG_LIST_UPDATE_FAILURE_COUNT, /* defaultValue= */ 0));
-            }
-        }
+        mLogger.logCTLogListUpdateStateChangedEvent(updateStatus);
+    }
 
     private void handleDownloadFailed(DownloadStatus status) {
         Log.e(TAG, "Download failed with " + status);
 
-        updateFailureCount();
-        int failureCount =
-                mDataStore.getPropertyInt(
-                        Config.LOG_LIST_UPDATE_FAILURE_COUNT, /* defaultValue= */ 0);
-
+        LogListUpdateStatus.Builder updateStatusBuilder = LogListUpdateStatus.builder();
         if (status.isHttpError()) {
-            mLogger.logCTLogListUpdateStateChangedEvent(
-                    CERTIFICATE_TRANSPARENCY_LOG_LIST_UPDATE_STATE_CHANGED__UPDATE_STATUS__FAILURE_HTTP_ERROR,
-                    failureCount,
-                    status.reason());
+            updateStatusBuilder
+                    .setState(CTLogListUpdateState.HTTP_ERROR)
+                    .setHttpErrorStatusCode(status.reason());
         } else {
             // TODO(b/384935059): handle blocked domain logging
-            mLogger.logCTLogListUpdateStateChangedEventWithDownloadStatus(
-                    status.reason(), failureCount);
+            updateStatusBuilder.setDownloadStatus(Optional.of(status.reason()));
         }
-    }
 
-    /**
-     * Updates the data store with the current number of consecutive log list update failures.
-     */
-    private void updateFailureCount() {
-        int failure_count =
-                mDataStore.getPropertyInt(
-                        Config.LOG_LIST_UPDATE_FAILURE_COUNT, /* defaultValue= */ 0);
-        int new_failure_count = failure_count + 1;
-
-        mDataStore.setPropertyInt(Config.LOG_LIST_UPDATE_FAILURE_COUNT, new_failure_count);
-        mDataStore.store();
+        mLogger.logCTLogListUpdateStateChangedEvent(updateStatusBuilder.build());
     }
 
     private long download(String url) {
