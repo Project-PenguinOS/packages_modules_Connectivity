@@ -34,6 +34,15 @@ static inline unsigned uncachedKernelVersion() {
     unsigned kver_minor = 0;
     unsigned kver_sub = 0;
     (void)sscanf(buf.release, "%u.%u.%u", &kver_major, &kver_minor, &kver_sub);
+
+    /* If we are trying to run Android W on a 4.14/4.19 device, we will
+     * force them to use the newer bpf implementation present in 5.4 */
+    const bool isAtLeastW = (android_get_device_api_level() >= 36);
+    if (kver_major == 4 && kver_minor == 19 && isAtLeastW)
+        return KVER(5, 4, 0);
+    else if (kver_major == 4 && kver_minor == 14 && isAtLeastW)
+        return KVER(5, 4, 0);
+
     return KVER(kver_major, kver_minor, kver_sub);
 }
 
