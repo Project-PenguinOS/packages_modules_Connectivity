@@ -1467,7 +1467,8 @@ static int doLoad(char** argv, char * const envp[]) {
     // W bumps the kernel requirement up to 5.4
     // see also: //system/netd/tests/kernel_test.cpp TestKernel54
     if (isAtLeastW && !isAtLeastKernelVersion(5, 4, 0)) {
-        ALOGW("Android W requires kernel 5.4.");
+        ALOGW("Android W requires bpf patches for kernels older than 5.4.");
+        ALOGI("Using 5.4 bpf implementation.");
     }
 
     // Technically already required by U, but only enforce on V+
