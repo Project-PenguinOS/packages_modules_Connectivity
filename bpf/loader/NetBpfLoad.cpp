@@ -1467,8 +1467,7 @@ static int doLoad(char** argv, char * const envp[]) {
     // W bumps the kernel requirement up to 5.4
     // see also: //system/netd/tests/kernel_test.cpp TestKernel54
     if (isAtLeastW && !isAtLeastKernelVersion(5, 4, 0)) {
-        ALOGE("Android W requires kernel 5.4.");
-        return 1;
+        ALOGW("Android W requires kernel 5.4.");
     }
 
     // Technically already required by U, but only enforce on V+
