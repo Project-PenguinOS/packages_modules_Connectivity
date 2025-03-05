@@ -42,10 +42,8 @@ public class L2capNetwork {
     private static final NetworkScore NETWORK_SCORE = new NetworkScore.Builder().build();
     private final String mLogTag;
     private final Handler mHandler;
-    private final String mIfname;
     private final L2capPacketForwarder mForwarder;
     private final NetworkCapabilities mNetworkCapabilities;
-    private final L2capIpClient mIpClient;
     private final NetworkAgent mNetworkAgent;
 
     /** IpClient wrapper to handle IPv6 link-local provisioning for L2CAP tun.
@@ -59,7 +57,7 @@ public class L2capNetwork {
         @Nullable
         private IpClientManager mIpClient;
         @Nullable
-        private LinkProperties mLinkProperties;
+        private volatile LinkProperties mLinkProperties;
 
         L2capIpClient(String logTag, Context context, String ifname) {
             mLogTag = logTag;
@@ -74,11 +72,24 @@ public class L2capNetwork {
 
         @Override
         public void onProvisioningSuccess(LinkProperties lp) {
-            Log.d(mLogTag, "Successfully provisionined l2cap tun: " + lp);
+            Log.d(mLogTag, "Successfully provisioned l2cap tun: " + lp);
             mLinkProperties = lp;
             mOnProvisioningSuccessCv.open();
         }
 
+        @Override
+        public void onProvisioningFailure(LinkProperties lp) {
+            Log.i(mLogTag, "Failed to provision l2cap tun: " + lp);
+            mLinkProperties = null;
+            mOnProvisioningSuccessCv.open();
+        }
+
+        /**
+         * Starts IPv6 link-local provisioning.
+         *
+         * @return LinkProperties on success, null on failure.
+         */
+        @Nullable
         public LinkProperties start() {
             mOnIpClientCreatedCv.block();
             // mIpClient guaranteed non-null.
@@ -102,38 +113,51 @@ public class L2capNetwork {
         void onNetworkUnwanted(L2capNetwork network);
     }
 
-    public L2capNetwork(Handler handler, Context context, NetworkProvider provider, String ifname,
-            BluetoothSocket socket, ParcelFileDescriptor tunFd,
-            NetworkCapabilities networkCapabilities, ICallback cb) {
-        // TODO: add a check that this constructor is invoked on the handler thread.
-        mLogTag = String.format("L2capNetwork[%s]", ifname);
+    public L2capNetwork(String logTag, Handler handler, Context context, NetworkProvider provider,
+            BluetoothSocket socket, ParcelFileDescriptor tunFd, NetworkCapabilities nc,
+            LinkProperties lp, ICallback cb) {
+        mLogTag = logTag;
         mHandler = handler;
-        mIfname = ifname;
+        mNetworkCapabilities = nc;
 
-        // Guaranteed non-null.
-        final L2capNetworkSpecifier spec =
-                (L2capNetworkSpecifier) networkCapabilities.getNetworkSpecifier();
+        final L2capNetworkSpecifier spec = (L2capNetworkSpecifier) nc.getNetworkSpecifier();
         final boolean compressHeaders = spec.getHeaderCompression() == HEADER_COMPRESSION_6LOWPAN;
+
         mForwarder = new L2capPacketForwarder(handler, tunFd, socket, compressHeaders, () -> {
             // TODO: add a check that this callback is invoked on the handler thread.
             cb.onError(L2capNetwork.this);
         });
-        mNetworkCapabilities = networkCapabilities;
-        mIpClient = new L2capIpClient(mLogTag, context, ifname);
-        final LinkProperties linkProperties = mIpClient.start();
 
         final NetworkAgentConfig config = new NetworkAgentConfig.Builder().build();
         mNetworkAgent = new NetworkAgent(context, mHandler.getLooper(), mLogTag,
-                networkCapabilities, linkProperties, NETWORK_SCORE, config, provider) {
+                nc, lp, NETWORK_SCORE, config, provider) {
             @Override
             public void onNetworkUnwanted() {
-                Log.i(mLogTag, mIfname + ": Network is unwanted");
+                Log.i(mLogTag, "Network is unwanted");
                 // TODO: add a check that this callback is invoked on the handler thread.
                 cb.onNetworkUnwanted(L2capNetwork.this);
             }
         };
         mNetworkAgent.register();
         mNetworkAgent.markConnected();
+    }
+
+    /** Create an L2capNetwork or return null on failure. */
+    @Nullable
+    public static L2capNetwork create(Handler handler, Context context, NetworkProvider provider,
+            String ifname, BluetoothSocket socket, ParcelFileDescriptor tunFd,
+            NetworkCapabilities nc, ICallback cb) {
+        // TODO: add a check that this function is invoked on the handler thread.
+        final String logTag = String.format("L2capNetwork[%s]", ifname);
+
+        // L2capIpClient#start() blocks until provisioning either succeeds (and returns
+        // LinkProperties) or fails (and returns null).
+        // Note that since L2capNetwork is using IPv6 link-local provisioning the most likely
+        // (only?) failure mode is due to the interface disappearing.
+        final LinkProperties lp = new L2capIpClient(logTag, context, ifname).start();
+        if (lp == null) return null;
+
+        return new L2capNetwork(logTag, handler, context, provider, socket, tunFd, nc, lp, cb);
     }
 
     /** Get the NetworkCapabilities used for this Network */
