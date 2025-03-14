@@ -38,6 +38,8 @@ import android.os.Handler;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
+import com.android.server.L2capNetworkProvider;
+
 public class L2capNetwork {
     private static final NetworkScore NETWORK_SCORE = new NetworkScore.Builder().build();
     private final String mLogTag;
@@ -50,7 +52,7 @@ public class L2capNetwork {
      *
      * Note that the IpClient does not need to be stopped.
      */
-    private static class L2capIpClient extends IpClientCallbacks {
+    public static class L2capIpClient extends IpClientCallbacks {
         private final String mLogTag;
         private final ConditionVariable mOnIpClientCreatedCv = new ConditionVariable(false);
         private final ConditionVariable mOnProvisioningSuccessCv = new ConditionVariable(false);
@@ -59,7 +61,7 @@ public class L2capNetwork {
         @Nullable
         private volatile LinkProperties mLinkProperties;
 
-        L2capIpClient(String logTag, Context context, String ifname) {
+        public L2capIpClient(String logTag, Context context, String ifname) {
             mLogTag = logTag;
             IpClientUtil.makeIpClient(context, ifname, this);
         }
@@ -115,7 +117,7 @@ public class L2capNetwork {
 
     public L2capNetwork(String logTag, Handler handler, Context context, NetworkProvider provider,
             BluetoothSocket socket, ParcelFileDescriptor tunFd, NetworkCapabilities nc,
-            LinkProperties lp, ICallback cb) {
+            LinkProperties lp, L2capNetworkProvider.Dependencies deps, ICallback cb) {
         mLogTag = logTag;
         mHandler = handler;
         mNetworkCapabilities = nc;
@@ -123,7 +125,8 @@ public class L2capNetwork {
         final L2capNetworkSpecifier spec = (L2capNetworkSpecifier) nc.getNetworkSpecifier();
         final boolean compressHeaders = spec.getHeaderCompression() == HEADER_COMPRESSION_6LOWPAN;
 
-        mForwarder = new L2capPacketForwarder(handler, tunFd, socket, compressHeaders, () -> {
+        mForwarder = deps.createL2capPacketForwarder(handler, tunFd, socket, compressHeaders,
+                () -> {
             // TODO: add a check that this callback is invoked on the handler thread.
             cb.onError(L2capNetwork.this);
         });
@@ -146,7 +149,7 @@ public class L2capNetwork {
     @Nullable
     public static L2capNetwork create(Handler handler, Context context, NetworkProvider provider,
             String ifname, BluetoothSocket socket, ParcelFileDescriptor tunFd,
-            NetworkCapabilities nc, ICallback cb) {
+            NetworkCapabilities nc, L2capNetworkProvider.Dependencies deps, ICallback cb) {
         // TODO: add a check that this function is invoked on the handler thread.
         final String logTag = String.format("L2capNetwork[%s]", ifname);
 
@@ -154,10 +157,11 @@ public class L2capNetwork {
         // LinkProperties) or fails (and returns null).
         // Note that since L2capNetwork is using IPv6 link-local provisioning the most likely
         // (only?) failure mode is due to the interface disappearing.
-        final LinkProperties lp = new L2capIpClient(logTag, context, ifname).start();
+        final LinkProperties lp = deps.createL2capIpClient(logTag, context, ifname).start();
         if (lp == null) return null;
 
-        return new L2capNetwork(logTag, handler, context, provider, socket, tunFd, nc, lp, cb);
+        return new L2capNetwork(
+                logTag, handler, context, provider, socket, tunFd, nc, lp, deps, cb);
     }
 
     /** Get the NetworkCapabilities used for this Network */
