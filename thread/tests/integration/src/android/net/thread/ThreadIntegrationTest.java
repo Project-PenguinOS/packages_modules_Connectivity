@@ -40,6 +40,8 @@ import static com.google.common.io.BaseEncoding.base16;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 
+import static org.junit.Assume.assumeTrue;
+
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 import android.content.Context;
@@ -132,10 +134,6 @@ public class ThreadIntegrationTest {
         mOtCtl = new OtDaemonController();
         mController.setEnabledAndWait(true);
         mController.leaveAndWait();
-
-        // TODO: b/323301831 - This is a workaround to avoid unnecessary delay to re-form a network
-        mOtCtl.factoryReset();
-
         mFtd = new FullThreadDevice(10 /* nodeId */);
     }
 
@@ -217,6 +215,8 @@ public class ThreadIntegrationTest {
 
     @Test
     public void otDaemonRestart_latestCountryCodeIsSetToOtDaemon() throws Exception {
+        assumeTrue(mOtCtl.isCountryCodeSupported());
+
         runThreadCommand("force-country-code enabled CN");
 
         runShellCommand("stop ot-daemon");
@@ -352,7 +352,6 @@ public class ThreadIntegrationTest {
         mOtCtl.executeCommand("netdata register");
 
         mController.leaveAndWait();
-        mOtCtl.factoryReset();
         mController.joinAndWait(DEFAULT_DATASET);
 
         LinkProperties lp = cm.getLinkProperties(getThreadNetwork(CALLBACK_TIMEOUT));

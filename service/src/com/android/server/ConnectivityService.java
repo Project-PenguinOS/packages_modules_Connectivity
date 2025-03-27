@@ -5405,12 +5405,12 @@ public class ConnectivityService extends IConnectivityManager.Stub {
     }
 
     @VisibleForTesting
-    protected static boolean shouldCreateNetworksImmediately() {
+    protected static boolean shouldCreateNetworksImmediately(@NonNull NetworkCapabilities caps) {
         // The feature of creating the networks immediately was slated for U, but race conditions
         // detected late required this was flagged off.
         // TODO : enable this in a Mainline update or in V, and re-enable the test for this
         // in NetworkAgentTest.
-        return false;
+        return caps.hasCapability(NET_CAPABILITY_LOCAL_NETWORK);
     }
 
     private static boolean shouldCreateNativeNetwork(@NonNull NetworkAgentInfo nai,
@@ -5419,12 +5419,12 @@ public class ConnectivityService extends IConnectivityManager.Stub {
         if (state == NetworkInfo.State.CONNECTED) return true;
         if (state != NetworkInfo.State.CONNECTING) {
             // TODO: throw if no WTFs are observed in the field.
-            if (shouldCreateNetworksImmediately()) {
+            if (shouldCreateNetworksImmediately(nai.getCapsNoCopy())) {
                 Log.wtf(TAG, "Uncreated network in invalid state: " + state);
             }
             return false;
         }
-        return nai.isVPN() || shouldCreateNetworksImmediately();
+        return nai.isVPN() || shouldCreateNetworksImmediately(nai.getCapsNoCopy());
     }
 
     private static boolean shouldDestroyNativeNetwork(@NonNull NetworkAgentInfo nai) {
@@ -5823,7 +5823,7 @@ public class ConnectivityService extends IConnectivityManager.Stub {
             }
 
             if (shouldTrackUidsForBlockedStatusCallbacks()
-                    && isAppRequest(nri)
+                    && nri.mMessenger != null
                     && !nri.mUidTrackedForBlockedStatus) {
                 Log.wtf(TAG, "Registered nri is not tracked for sending blocked status: " + nri);
             }
@@ -9810,8 +9810,8 @@ public class ConnectivityService extends IConnectivityManager.Stub {
         }
 
         // The both list contain current link properties + stacked links for new and old LP.
-        List<LinkProperties> newLinkProperties = new ArrayList<>();
-        List<LinkProperties> oldLinkProperties = new ArrayList<>();
+        final List<LinkProperties> newLinkProperties = new ArrayList<>();
+        final List<LinkProperties> oldLinkProperties = new ArrayList<>();
 
         if (newLp != null) {
             newLinkProperties.add(newLp);
@@ -9824,13 +9824,13 @@ public class ConnectivityService extends IConnectivityManager.Stub {
 
         // map contains interface name to list of local network prefixes added because of change
         // in link properties
-        Map<String, List<IpPrefix>> prefixesAddedForInterface = new ArrayMap<>();
+        final Map<String, List<IpPrefix>> prefixesAddedForInterface = new ArrayMap<>();
 
         final CompareResult<LinkProperties> linkPropertiesDiff = new CompareResult<>(
                 oldLinkProperties, newLinkProperties);
 
         for (LinkProperties linkProperty : linkPropertiesDiff.added) {
-            List<IpPrefix> unicastLocalPrefixesToBeAdded = new ArrayList<>();
+            final List<IpPrefix> unicastLocalPrefixesToBeAdded = new ArrayList<>();
             for (LinkAddress linkAddress : linkProperty.getLinkAddresses()) {
                 unicastLocalPrefixesToBeAdded.addAll(
                         getLocalNetworkPrefixesForAddress(linkAddress));
@@ -9838,7 +9838,7 @@ public class ConnectivityService extends IConnectivityManager.Stub {
             addLocalAddressesToBpfMap(linkProperty.getInterfaceName(),
                     unicastLocalPrefixesToBeAdded, linkProperty);
 
-            // adding iterface name -> ip prefixes that we added to map
+            // populating interface name -> ip prefixes which were added to local_net_access map.
             if (!prefixesAddedForInterface.containsKey(linkProperty.getInterfaceName())) {
                 prefixesAddedForInterface.put(linkProperty.getInterfaceName(), new ArrayList<>());
             }
@@ -9847,9 +9847,9 @@ public class ConnectivityService extends IConnectivityManager.Stub {
         }
 
         for (LinkProperties linkProperty : linkPropertiesDiff.removed) {
-            List<IpPrefix> unicastLocalPrefixesToBeRemoved = new ArrayList<>();
-            List<IpPrefix> unicastLocalPrefixesAdded = prefixesAddedForInterface.getOrDefault(
-                    linkProperty.getInterfaceName(), new ArrayList<>());
+            final List<IpPrefix> unicastLocalPrefixesToBeRemoved = new ArrayList<>();
+            final List<IpPrefix> unicastLocalPrefixesAdded = prefixesAddedForInterface.getOrDefault(
+                    linkProperty.getInterfaceName(), Collections.emptyList());
 
             for (LinkAddress linkAddress : linkProperty.getLinkAddresses()) {
                 unicastLocalPrefixesToBeRemoved.addAll(
@@ -9857,8 +9857,8 @@ public class ConnectivityService extends IConnectivityManager.Stub {
             }
 
             // This is to ensure if 10.0.10.0/24 was added and 10.0.11.0/24 was removed both will
-            // still populate the same prefix of 10.0.0.0/8, which mean we should not remove the
-            // prefix because of removal of 10.0.11.0/24
+            // still populate the same prefix of 10.0.0.0/8, which mean 10.0.0.0/8 should not be
+            // removed due to removal of 10.0.11.0/24
             unicastLocalPrefixesToBeRemoved.removeAll(unicastLocalPrefixesAdded);
 
             removeLocalAddressesFromBpfMap(linkProperty.getInterfaceName(),
@@ -12048,7 +12048,7 @@ public class ConnectivityService extends IConnectivityManager.Stub {
             // interfaces and routing rules have been added, DNS servers programmed, etc.
             // For VPNs, this must be done before the capabilities are updated, because as soon as
             // that happens, UIDs are routed to the network.
-            if (shouldCreateNetworksImmediately()) {
+            if (shouldCreateNetworksImmediately(networkAgent.getCapsNoCopy())) {
                 applyInitialLinkProperties(networkAgent);
             }
 
@@ -12073,7 +12073,7 @@ public class ConnectivityService extends IConnectivityManager.Stub {
             networkAgent.getAndSetNetworkCapabilities(networkAgent.networkCapabilities);
 
             handlePerNetworkPrivateDnsConfig(networkAgent, mDnsManager.getPrivateDnsConfig());
-            if (!shouldCreateNetworksImmediately()) {
+            if (!shouldCreateNetworksImmediately(networkAgent.getCapsNoCopy())) {
                 applyInitialLinkProperties(networkAgent);
             } else {
                 // The network was created when the agent registered, and the LinkProperties are

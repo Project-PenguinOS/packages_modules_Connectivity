@@ -37,7 +37,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
@@ -157,6 +157,11 @@ public class TetheringConfigurationTest {
         @Override
         boolean isFeatureEnabled(@NonNull Context context, @NonNull String name) {
             return isMockFlagEnabled(name, false /* defaultEnabled */);
+        }
+
+        @Override
+        boolean isFeatureNotChickenedOut(@NonNull Context context, @NonNull String name) {
+            return isMockFlagEnabled(name, true /* defaultEnabled */);
         }
 
         @Override
@@ -767,9 +772,9 @@ public class TetheringConfigurationTest {
 
     @Test
     public void testEnableSyncSMFlag() throws Exception {
-        // Test default disabled
+        // Test default enabled
         setTetherEnableSyncSMFlagEnabled(null);
-        assertEnableSyncSM(false);
+        assertEnableSyncSM(true);
 
         setTetherEnableSyncSMFlagEnabled(true);
         assertEnableSyncSM(true);
