@@ -1200,11 +1200,14 @@ public class ConnectivityManager {
 
     /** @hide */
     public static final long FEATURE_USE_DECLARED_METHODS_FOR_CALLBACKS = 1L;
+    /** @hide */
+    public static final long FEATURE_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER = 1L << 1;
 
     /** @hide */
     @Retention(RetentionPolicy.SOURCE)
     @LongDef(flag = true, prefix = "FEATURE_", value = {
-            FEATURE_USE_DECLARED_METHODS_FOR_CALLBACKS
+            FEATURE_USE_DECLARED_METHODS_FOR_CALLBACKS,
+            FEATURE_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER
     })
     public @interface ConnectivityManagerFeature {}
 
@@ -1241,6 +1244,26 @@ public class ConnectivityManager {
     @GuardedBy("sEnabledConnectivityManagerFeaturesLock")
     @ConnectivityManagerFeature
     private Long mEnabledConnectivityManagerFeatures = null;
+
+    /**
+     * A class to help with mocking ConnectivityManager.
+     * @hide
+     */
+    public static class MockHelpers {
+        /**
+         * Produce an instance of the class returned by
+         * {@link ConnectivityManager#registerNetworkAgent}
+         * @hide
+         */
+        public static NetworkAndAgentRegistryParcelable registerNetworkAgentResult(
+                @Nullable final Network network, @Nullable final INetworkAgentRegistry registry) {
+            final NetworkAndAgentRegistryParcelable result =
+                    new NetworkAndAgentRegistryParcelable();
+            result.network = network;
+            result.registry = registry;
+            return result;
+        }
+    }
 
     private TetheringManager getTetheringManager() {
         synchronized (mTetheringEventCallbacks) {
@@ -3952,7 +3975,8 @@ public class ConnectivityManager {
     @RequiresPermission(anyOf = {
             NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK,
             android.Manifest.permission.NETWORK_FACTORY})
-    public Network registerNetworkAgent(@NonNull INetworkAgent na, @NonNull NetworkInfo ni,
+    public NetworkAndAgentRegistryParcelable registerNetworkAgent(
+            @NonNull INetworkAgent na, @NonNull NetworkInfo ni,
             @NonNull LinkProperties lp, @NonNull NetworkCapabilities nc,
             @NonNull NetworkScore score, @NonNull NetworkAgentConfig config, int providerId) {
         return registerNetworkAgent(na, ni, lp, nc, null /* localNetworkConfig */, score, config,
@@ -3967,7 +3991,8 @@ public class ConnectivityManager {
     @RequiresPermission(anyOf = {
             NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK,
             android.Manifest.permission.NETWORK_FACTORY})
-    public Network registerNetworkAgent(@NonNull INetworkAgent na, @NonNull NetworkInfo ni,
+    public NetworkAndAgentRegistryParcelable registerNetworkAgent(
+            @NonNull INetworkAgent na, @NonNull NetworkInfo ni,
             @NonNull LinkProperties lp, @NonNull NetworkCapabilities nc,
             @Nullable LocalNetworkConfig localNetworkConfig, @NonNull NetworkScore score,
             @NonNull NetworkAgentConfig config, int providerId) {
@@ -4859,7 +4884,8 @@ public class ConnectivityManager {
         return 0;
     }
 
-    private boolean isFeatureEnabled(@ConnectivityManagerFeature long connectivityManagerFeature) {
+    /** @hide */
+    public boolean isFeatureEnabled(@ConnectivityManagerFeature long connectivityManagerFeature) {
         synchronized (mEnabledConnectivityManagerFeaturesLock) {
             if (mEnabledConnectivityManagerFeatures == null) {
                 try {
