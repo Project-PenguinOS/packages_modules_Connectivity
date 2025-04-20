@@ -21,24 +21,87 @@ package com.android.testutils
 
 import android.net.IpPrefix
 import android.net.MacAddress
+import com.android.net.module.util.IpUtils
 import java.io.ByteArrayOutputStream
+import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.util.EnumSet
 
+class PacketBuilder(outerPacket: Packet, innerPacket: Packet) {
+    private data class PacketHolder(
+            /** Points to the last encapsulating packet that includes a pseudo header (IPv4 or IPv6)
+             * for the purpose of checksum calculation. May be null if no such packet exists. */
+            val pseudoHeaderPacket: PseudoHeaderPacket?,
+            val packet: Packet,
+    )
+    private var lastPseudoHeaderPacket: PseudoHeaderPacket? = null
+    /** Collects packets in order, where the outermost packet is at index 0. */
+    private val packetCollector = ArrayList<PacketHolder>()
+
+    private fun addPacket(p: Packet) {
+        if (p is PseudoHeaderPacket) {
+            lastPseudoHeaderPacket = p
+        }
+        packetCollector.add(PacketHolder(lastPseudoHeaderPacket, p))
+    }
+
+    init {
+        addPacket(outerPacket)
+        addPacket(innerPacket)
+    }
+
+    operator fun div(p: Packet): PacketBuilder {
+        addPacket(p)
+        return this
+    }
+
+    fun build(): ByteArray {
+        var payload: FinalizedPacket? = null
+        for (holder in packetCollector.reversed()) {
+            payload = holder.packet.build(payload, holder.pseudoHeaderPacket)
+        }
+
+        // payload is guaranteed non-null as PacketBuilder is created with at least two packets.
+        return payload!!.bytes
+    }
+
+    // For ByteArray.toHexString
+    @kotlin.ExperimentalStdlibApi
+    override fun toString(): String {
+        return build().toHexString()
+    }
+}
+
+/** Interface to support PacketBuilder syntax, i.e. {@code val p = ether / ipv6 / icmpv6} */
 interface Packet {
-    fun toByteArray(): ByteArray
+    operator fun div(p: Packet): PacketBuilder {
+        return PacketBuilder(this, p)
+    }
+    fun build(payload: FinalizedPacket?, pseudo: PseudoHeaderPacket?): FinalizedPacket
 }
 
-interface L3Packet : Packet {
-    val etherType: Short
+interface PseudoHeaderPacket : Packet {
+    /**
+     * Calculates the partial checksum (i.e. pseudo header checksum) to be used as a seed value for
+     * the higher layer checksum calculation.
+     */
+    fun calculatePseudoHeaderCsum(proto: Byte, length: Int): Int
 }
 
-interface L4Packet : Packet {
-    val proto: Byte
-    val size: Short
+/**
+ * Represents a packet that has been built. Depending on the type of packet, it includes additional
+ * information on top of the ByteArray.
+ */
+interface FinalizedPacket {
+    val bytes: ByteArray
 }
+
+data class L2Packet(override val bytes: ByteArray) : FinalizedPacket
+// Some L3 packets can be carried by an L3 packet (e.g. 6in4), so consider adding proto to L3Packet.
+data class L3Packet(override val bytes: ByteArray, val etherType: Short) : FinalizedPacket
+data class L4Packet(override val bytes: ByteArray, val proto: Byte) : FinalizedPacket
 
 private interface Flags {
     val value: Int
@@ -58,6 +121,15 @@ private inline fun <reified E> enumSetOfFlags(str: String): EnumSet<E>
     return result
 }
 
+private fun calculatePacketCsum(
+        packetBuffer: ByteBuffer,
+        pseudo: PseudoHeaderPacket,
+        proto: Byte,
+): Short {
+    val csum = pseudo.calculatePseudoHeaderCsum(proto, packetBuffer.limit())
+    return IpUtils.checksum(packetBuffer, csum, 0 /*start*/, packetBuffer.limit()).toShort()
+}
+
 /**
  * Class that facilitates the creation of NA packets.
  *
@@ -67,7 +139,7 @@ private inline fun <reified E> enumSetOfFlags(str: String): EnumSet<E>
 class NaPkt(
     target: Inet6Address,
     flags: EnumSet<NaFlags>,
-) : L4Packet {
+) : Packet {
     /**
      * Convenience constructor accepting parameters as Strings.
      *
@@ -86,11 +158,7 @@ class NaPkt(
         O(0x20),
     }
 
-    override val proto: Byte = 58
-    override val size: Short
-      get() = outputStream.size().toShort()
-    private val outputStream = ByteArrayOutputStream()
-
+    val outputStream = ByteArrayOutputStream()
     init {
         val naHeader = ByteBuffer.allocate(24)
         naHeader.put(136.toByte()) // Type = 136 (Neighbor Advertisement)
@@ -124,7 +192,18 @@ class NaPkt(
         return addTllaOption(MacAddress.fromString(lla))
     }
 
-    override fun toByteArray() = outputStream.toByteArray()
+    override fun build(payload: FinalizedPacket?, pseudo: PseudoHeaderPacket?): FinalizedPacket {
+        require(payload == null)
+        require(pseudo != null)
+
+        val packetBytes = outputStream.toByteArray()
+        val packetBuffer = ByteBuffer.wrap(packetBytes)
+        val proto: Byte = 58
+        val csum = calculatePacketCsum(packetBuffer, pseudo, proto)
+        packetBuffer.position(2)
+        packetBuffer.putShort(csum)
+        return L4Packet(proto = proto, bytes = packetBytes)
+    }
 }
 
 /**
@@ -142,7 +221,7 @@ class RaPkt(
     private val reachableTime: Int,
     private val retransTimer: Int,
     private val flags: EnumSet<RaFlags>,
-) : L4Packet {
+) : Packet {
     /**
      * Convenience constructor accepting flags parameter as String
      *
@@ -165,16 +244,12 @@ class RaPkt(
         O(0x40),
     }
 
-    override val proto: Byte = 58
-    override val size: Short
-      get() = outputStream.size().toShort()
-    private val outputStream = ByteArrayOutputStream()
-
+    val outputStream = ByteArrayOutputStream()
     init {
         val raHeader = ByteBuffer.allocate(16)
         raHeader.put(134.toByte()) // Type = 134 (Router Advertisement)
         raHeader.put(0) // Code = 0
-        raHeader.putShort(0) // Checksum = 0 (ignored)
+        raHeader.putShort(0) // Checksum = 0 (filled in later)
         raHeader.put(255.toByte()) // Cur Hop Limit
         raHeader.put(flags.toByte())
         raHeader.putShort(routerLft)
@@ -339,34 +414,100 @@ class RaPkt(
         return addPref64Option(IpPrefix(prefix), lft)
     }
 
-    override fun toByteArray() = outputStream.toByteArray()
+    override fun build(payload: FinalizedPacket?, pseudo: PseudoHeaderPacket?): FinalizedPacket {
+        require(payload == null)
+        require(pseudo != null)
+
+        val packetBytes = outputStream.toByteArray()
+        val packetBuffer = ByteBuffer.wrap(packetBytes)
+        val proto: Byte = 58
+        val csum = calculatePacketCsum(packetBuffer, pseudo, proto)
+        packetBuffer.position(2)
+        packetBuffer.putShort(csum)
+        return L4Packet(proto = proto, bytes = packetBytes)
+    }
+}
+
+/** Class that facilitates the creation of generic L5 data packets. */
+class DataPkt(data: ByteArray) : Packet {
+    constructor(data: String) : this(data.toByteArray())
+
+    val outputStream = ByteArrayOutputStream()
+    init {
+        outputStream.write(data)
+    }
+
+    override fun build(payload: FinalizedPacket?, pseudo: PseudoHeaderPacket?): FinalizedPacket {
+        if (payload != null) {
+            outputStream.write(payload.bytes)
+        }
+        return object : FinalizedPacket { override val bytes = outputStream.toByteArray() }
+    }
+}
+
+/**
+ * Class that facilitates the creation of UDP packets.
+ *
+ * Use the {@link DataPkt} for carrying a payload.
+ */
+class UdpPkt(
+        private val srcPort: Short,
+        private val dstPort: Short,
+) : Packet {
+    constructor(srcPort: Int, dstPort: Int) : this(srcPort.toShort(), dstPort.toShort())
+
+    override fun build(payload: FinalizedPacket?, pseudo: PseudoHeaderPacket?): FinalizedPacket {
+        require(pseudo != null)
+
+        val udpHeader = ByteBuffer.allocate(8)
+            .putShort(srcPort)
+            .putShort(dstPort)
+            .putShort(0) // length; to be filled in later.
+            .putShort(0) // checksum; to be filled in later.
+        udpHeader.flip()
+        val outputStream = ByteArrayOutputStream()
+        outputStream.write(udpHeader.array())
+        if (payload != null) {
+            outputStream.write(payload.bytes)
+        }
+        val packetBytes = outputStream.toByteArray()
+        val packetBuffer = ByteBuffer.wrap(packetBytes)
+
+        // Insert length into UDP header
+        packetBuffer.position(4)
+        packetBuffer.putShort(packetBytes.size.toShort())
+
+        // Insert checksum into UDP header
+        val proto: Byte = 17
+        val csum = calculatePacketCsum(packetBuffer, pseudo, proto)
+        packetBuffer.position(6)
+        packetBuffer.putShort(csum)
+        return L4Packet(proto = proto, bytes = packetBytes)
+    }
 }
 
 /** Class that facilitates the creation of IPv6 packets. */
 class Ip6Pkt(
         private val src: Inet6Address,
         private val dst: Inet6Address,
-        private val data: L4Packet,
-) : L3Packet {
-    constructor(src: String, dst: String, data: L4Packet) : this(
+) : PseudoHeaderPacket {
+    constructor(src: String, dst: String) : this(
             InetAddress.getByName(src) as Inet6Address,
             InetAddress.getByName(dst) as Inet6Address,
-            data,
     )
-
-    override val etherType = 0x86dd.toShort()
 
     private val tc = 0
     private val flowlabel = 0
     private val hlim = 255.toByte()
 
-    private val bytes: ByteArray
+    override fun build(payload: FinalizedPacket?, pseudo: PseudoHeaderPacket?): FinalizedPacket {
+        require(payload != null)
+        require(payload is L4Packet)
 
-    init {
         val ipv6Header = ByteBuffer.allocate(40)
         ipv6Header.putInt((6 shl 28) or (tc shl 20) or flowlabel)
-        ipv6Header.putShort(data.size)
-        ipv6Header.put(data.proto)
+        ipv6Header.putShort(payload.bytes.size.toShort())
+        ipv6Header.put(payload.proto)
         ipv6Header.put(hlim)
         ipv6Header.put(src.address)
         ipv6Header.put(dst.address)
@@ -374,11 +515,98 @@ class Ip6Pkt(
 
         val outputStream = ByteArrayOutputStream()
         outputStream.write(ipv6Header.array())
-        outputStream.write(data.toByteArray())
-        bytes = outputStream.toByteArray()
+        outputStream.write(payload.bytes)
+        return L3Packet(etherType = 0x86dd.toShort(), bytes = outputStream.toByteArray())
     }
 
-    override fun toByteArray() = bytes
+    override fun calculatePseudoHeaderCsum(proto: Byte, length: Int): Int {
+        // Calculates the checksum over the src and dst IPv6 addresses.
+        // TODO: assemble IPv6 header in constructor and let build() update payload length and
+        // proto instead.
+        val buffer = ByteBuffer.allocate((2 * 16) + 4 + 2)
+        buffer.put(src.address)
+        buffer.put(dst.address)
+        buffer.putInt(length)
+        buffer.putShort(proto.toShort())
+        buffer.flip()
+        // Note that IpUtils.checksum() flips the result, so it is flipped back here.
+        return IpUtils.checksum(buffer, 0 /*seed*/, 0 /*start*/, buffer.limit()) xor 0xffff
+    }
+}
+
+/**
+ * Class that facilitates the creation of IPv4 packets.
+ *
+ * Options are not currently supported.
+ */
+class Ip4Pkt(
+        private val src: Inet4Address,
+        private val dst: Inet4Address,
+) : PseudoHeaderPacket {
+    constructor(src: String, dst: String) : this(
+            InetAddress.getByName(src) as Inet4Address,
+            InetAddress.getByName(dst) as Inet4Address,
+    )
+
+    private val tos: Byte = 0
+    private val identification: Short = 0
+    private val flags = 0
+    private val fragoff = 0
+    private val ttl = 255.toByte()
+
+    override fun build(payload: FinalizedPacket?, pseudo: PseudoHeaderPacket?): FinalizedPacket {
+        require(payload != null)
+        require(payload is L4Packet)
+
+        //  0                   1                   2                   3
+        //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |Version|  IHL  |Type of Service|          Total Length         |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |         Identification        |Flags|      Fragment Offset    |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |  Time to Live |    Protocol   |         Header Checksum       |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |                       Source Address                          |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |                    Destination Address                        |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        // |                    Options                    |    Padding    |
+        // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+        val ipv4Header = ByteBuffer.allocate(20)
+                .put(((4 /*version*/ shl 4) or 5 /*IHL*/).toByte())
+                .put(tos)
+                .putShort((20 + payload.bytes.size).toShort())
+                .putShort(identification)
+                .putShort(((flags shl 13) or fragoff).toShort())
+                .put(ttl)
+                .put(payload.proto)
+                .putShort(0 /*csum; to be filled in later*/)
+                .put(src.address)
+                .put(dst.address)
+        ipv4Header.flip()
+
+        val csum = IpUtils.checksum(ipv4Header, 0 /*seed*/, 0 /*start*/, ipv4Header.limit())
+        ipv4Header.position(10)
+        ipv4Header.putShort(csum.toShort())
+
+        val outputStream = ByteArrayOutputStream()
+        outputStream.write(ipv4Header.array())
+        outputStream.write(payload.bytes)
+        return L3Packet(etherType = 0x0800.toShort(), bytes = outputStream.toByteArray())
+    }
+
+    override fun calculatePseudoHeaderCsum(proto: Byte, length: Int): Int {
+        val buffer = ByteBuffer.allocate(12)
+                .put(src.address)
+                .put(dst.address)
+                .put(0)
+                .put(proto)
+                .putShort(length.toShort())
+        buffer.flip()
+        // Note that IpUtils.checksum() flips the result, so it is flipped back here.
+        return IpUtils.checksum(buffer, 0 /*seed*/, 0 /*start*/, buffer.limit()) xor 0xffff
+    }
 }
 
 /**
@@ -388,35 +616,35 @@ class Ip6Pkt(
  *
  * <pre>
  * {@code
+ * val ether = EtherPkt(src = "1:2:3:4:5:6", dst = "1:1:1:1:1:1")
+ * val ipv6 = Ip6Pkt(src = "fe80::1", dst = "fe80::2")
  * val ra = RaPkt(routerLft = 50, reachableTime = 100, flags = "O")
- * ra.addPioOption(prefix = "2001:db8::1/64", flags = "LA")
- * val ipv6 = Ip6Pkt(src = "fe80::1", dst = "fe80::2", data = ra)
- * val ether = EtherPkt(src = "1:2:3:4:5:6", dst = "1:1:1:1:1:1", data = ipv6)
+ *         .addPioOption(prefix = "2001:db8::1/64", flags = "LA")
+ * val p = ether / ipv6 / ra
+ * val bytes = p.bytes
  * }
  * </pre>
  **/
 class EtherPkt(
-        dst: MacAddress,
-        src: MacAddress,
-        data: L3Packet,
+        private val dst: MacAddress,
+        private val src: MacAddress,
     ) : Packet {
-    constructor(dst: String, src: String, data: L3Packet) :
-        this(MacAddress.fromString(dst), MacAddress.fromString(src), data)
+    constructor(dst: String, src: String) :
+        this(MacAddress.fromString(dst), MacAddress.fromString(src))
 
-    val bytes: ByteArray
+    override fun build(payload: FinalizedPacket?, pseudo: PseudoHeaderPacket?): FinalizedPacket {
+        require(payload != null)
+        require(payload is L3Packet)
 
-    init {
         val ethernetHeader = ByteBuffer.allocate(14)
         ethernetHeader.put(dst.toByteArray())
         ethernetHeader.put(src.toByteArray())
-        ethernetHeader.putShort(data.etherType)
+        ethernetHeader.putShort(payload.etherType)
         ethernetHeader.flip()
 
         val outputStream = ByteArrayOutputStream()
         outputStream.write(ethernetHeader.array())
-        outputStream.write(data.toByteArray())
-        bytes = outputStream.toByteArray()
+        outputStream.write(payload.bytes)
+        return L2Packet(bytes = outputStream.toByteArray())
     }
-
-    override fun toByteArray() = bytes
 }
