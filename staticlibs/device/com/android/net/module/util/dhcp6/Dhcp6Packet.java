@@ -20,6 +20,7 @@ import android.net.MacAddress;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.net.module.util.HexDump;
@@ -65,6 +66,8 @@ public class Dhcp6Packet {
     public static final byte DHCP6_MESSAGE_TYPE_INFORMATION_REQUEST = 11;
     public static final byte DHCP6_MESSAGE_TYPE_RELAY_FORW = 12;
     public static final byte DHCP6_MESSAGE_TYPE_RELAY_REPL = 13;
+    public static final byte DHCP6_MESSAGE_TYPE_ADDR_REG_INFORM = 36;
+    public static final byte DHCP6_MESSAGE_TYPE_ADDR_REG_REPLY = 37;
 
     /**
      * DHCPv6 Optional Type: Client Identifier.
@@ -78,7 +81,15 @@ public class Dhcp6Packet {
      * DHCPv6 Optional Type: Server Identifier.
      */
     public static final byte DHCP6_SERVER_IDENTIFIER = 2;
+    @Nullable
     protected final byte[] mServerDuid;
+
+    /**
+     * DHCPv6 Optional Type: IA Address option.
+     */
+    public static final byte DHCP6_IA_ADDR = 5;
+    @Nullable
+    protected byte[] mIaAddress;
 
     /**
      * DHCPv6 Optional Type: Option Request Option.
@@ -196,8 +207,17 @@ public class Dhcp6Packet {
     /**
      * Returns the server's DUID.
      */
+    @Nullable
     public byte[] getServerDuid() {
         return mServerDuid;
+    }
+
+    /**
+     * Returns the IA Address option.
+     */
+    @Nullable
+    public byte[] getIaAddress() {
+        return mIaAddress;
     }
 
     /**
