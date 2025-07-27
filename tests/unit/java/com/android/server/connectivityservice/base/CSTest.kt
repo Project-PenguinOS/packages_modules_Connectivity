@@ -231,6 +231,11 @@ open class CSTest {
     val appOpsManager = mock<AppOpsManager>()
     val telephonyManager = mock<TelephonyManager>().also {
         doReturn(true).`when`(it).isDataCapable()
+        // This will return the same object for all subscription IDs. This is
+        // fine for all tests at the time of this writing, but if the difference
+        // becomes important for all tests, then it may be necessary to create a
+        // new one per subId. See [createContextAsUser] above for a model.
+        doReturn(it).`when`(it).createForSubscriptionId(any())
     }
     val subscriptionManager = mock<SubscriptionManager>()
     val bluetoothManager = mock<BluetoothManager>()
@@ -418,6 +423,16 @@ open class CSTest {
             return defaultWifiDataInactivityTimeoutForTest
         }
 
+        var networkSuspendedTimeoutForTestMs: Int = 10
+        override fun getNetworkSuspendedTimeoutMs(): Int {
+            return networkSuspendedTimeoutForTestMs
+        }
+
+        // Enable the feature for testing.
+        override fun isShortNetworkSuspensionEnforced(context: Context?): Boolean {
+            return true
+        }
+
         override fun isChangeEnabled(changeId: Long, pkg: String, user: UserHandle) =
                 changeId in enabledChangeIds
         override fun isChangeEnabled(changeId: Long, uid: Int) =
@@ -523,6 +538,8 @@ open class CSTest {
             netlinkMessageUpdate = consumer
             return ConnectivityService.AddressUpdateMonitor(h, log, tag, consumer)
         }
+
+        override fun shouldBluetoothTetheringUseRandomAddress() = false
     }
 
     inner class PermDeps : PermissionMonitor.Dependencies() {
