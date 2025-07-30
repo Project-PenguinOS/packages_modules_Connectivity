@@ -148,7 +148,9 @@ class ApfTestBase(multi_devices_test_base.MultiDevicesTestBase):
           lambda: apf_utils.get_matched_packet_counts(
               self.serverDevice, self.server_iface_name, receive_packet
           )
-          == 1
+          == 1,
+          # ensure the server device capturing the offload packet on the handler thread
+          retry_interval_sec=3,
       )
 
       # TODO: re-enable once the test passes reliably.
