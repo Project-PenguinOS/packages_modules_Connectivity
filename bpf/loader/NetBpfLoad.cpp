@@ -68,6 +68,7 @@
 #define BPFLOADER_MAINLINE_S_VERSION 42u
 #define BPFLOADER_MAINLINE_25Q2_VERSION 47u
 
+using android::base::borrowed_fd;
 using android::base::EndsWith;
 using android::base::GetIntProperty;
 using android::base::GetProperty;
@@ -86,43 +87,6 @@ using std::vector;
 
 namespace android {
 namespace bpf {
-
-// Bpf programs may specify per-program & per-map selinux_context and pin_subdir.
-//
-// The BpfLoader needs to convert these bpf.o specified strings into an enum
-// for internal use (to check that valid values were specified for the specific
-// location of the bpf.o file).
-//
-// It also needs to map selinux_context's into pin_subdir's.
-// This is because of how selinux_context is actually implemented via pin+rename.
-//
-// Thus 'domain' enumerates all selinux_context's/pin_subdir's that the BpfLoader
-// is aware of.  Thus there currently needs to be a 1:1 mapping between the two.
-//
-enum class domain : int {
-    unspecified = 0,    // means just use the default for that specific pin location
-    tethering,          // (S+) fs_bpf_tethering     /sys/fs/bpf/tethering
-    net_private,        // (T+) fs_bpf_net_private   /sys/fs/bpf/net_private
-    net_shared,         // (T+) fs_bpf_net_shared    /sys/fs/bpf/net_shared
-    netd_readonly,      // (T+) fs_bpf_netd_readonly /sys/fs/bpf/netd_readonly
-    netd_shared,        // (T+) fs_bpf_netd_shared   /sys/fs/bpf/netd_shared
-    loader,             // (U+) fs_bpf_loader        /sys/fs/bpf/loader
-                        // on T due to lack of sepolicy/genfscon rules it behaves simply as 'fs_bpf'
-};
-
-static constexpr domain AllDomains[] = {
-    domain::unspecified,
-    domain::tethering,
-    domain::net_private,
-    domain::net_shared,
-    domain::netd_readonly,
-    domain::netd_shared,
-    domain::loader,
-};
-
-static constexpr bool specified(domain d) {
-    return d != domain::unspecified;
-}
 
 // Returns the build type string (from ro.build.type).
 const std::string& getBuildType() {
@@ -147,47 +111,14 @@ inline bool isUserdebug() {
 
 static unsigned int page_size = static_cast<unsigned int>(getpagesize());
 
-constexpr const char* lookupSelinuxContext(const domain d) {
-    switch (d) {
-        case domain::unspecified:   return "";
-        case domain::tethering:     return "fs_bpf_tethering";
-        case domain::net_private:   return "fs_bpf_net_private";
-        case domain::net_shared:    return "fs_bpf_net_shared";
-        case domain::netd_readonly: return "fs_bpf_netd_readonly";
-        case domain::netd_shared:   return "fs_bpf_netd_shared";
-        case domain::loader:        return "fs_bpf_loader";
-    }
-}
-
-domain getDomainFromSelinuxContext(const char s[BPF_SELINUX_CONTEXT_CHAR_ARRAY_SIZE]) {
-    for (domain d : AllDomains) {
-        // Not sure how to enforce this at compile time, so abort() bpfloader at boot instead
-        if (strlen(lookupSelinuxContext(d)) >= BPF_SELINUX_CONTEXT_CHAR_ARRAY_SIZE) abort();
-        if (!strncmp(s, lookupSelinuxContext(d), BPF_SELINUX_CONTEXT_CHAR_ARRAY_SIZE)) return d;
-    }
-    ALOGE("unrecognized selinux_context '%-32s'", s);
-    // Note: we *can* just abort() here as we only load bpf .o files shipped
-    // in the same mainline module / apex as NetBpfLoad itself.
-    abort();
-}
-
-constexpr const char* lookupPinSubdir(const domain d, const char* const unspecified = "") {
-    switch (d) {
-        case domain::unspecified:   return unspecified;
-        case domain::tethering:     return "tethering/";
-        case domain::net_private:   return "net_private/";
-        case domain::net_shared:    return "net_shared/";
-        case domain::netd_readonly: return "netd_readonly/";
-        case domain::netd_shared:   return "netd_shared/";
-        case domain::loader:        return "loader/";
-    }
-};
-
-domain getDomainFromPinSubdir(const char s[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE]) {
-    for (domain d : AllDomains) {
-        // Not sure how to enforce this at compile time, so abort() bpfloader at boot instead
-        if (strlen(lookupPinSubdir(d)) >= BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE) abort();
-        if (!strncmp(s, lookupPinSubdir(d), BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return d;
+void validatePinDir(const char s[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE]) {
+    if (!strncmp(s, "tethering/",     BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
+    if (isAtLeastT) {
+        if (!strncmp(s, "net_private/",   BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
+        if (!strncmp(s, "net_shared/",    BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
+        if (!strncmp(s, "netd_readonly/", BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
+        if (!strncmp(s, "netd_shared/",   BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
+        if (!strncmp(s, "loader/",        BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
     }
     ALOGE("unrecognized pin_subdir '%-32s'", s);
     // Note: we *can* just abort() here as we only load bpf .o files shipped
@@ -870,16 +801,12 @@ static bool isBtfSupported(enum bpf_map_type type) {
     return type != BPF_MAP_TYPE_DEVMAP_HASH && type != BPF_MAP_TYPE_RINGBUF;
 }
 
-static int pinMap(const unique_fd& fd, const string& mapName, const struct bpf_map_def& mapDef,
+static int pinMap(const borrowed_fd& fd, const string& mapName, const struct bpf_map_def& mapDef,
                   const string& objName, const string& mapPinLoc) {
         int ret;
-        domain selinux_context = getDomainFromSelinuxContext(mapDef.selinux_context);
-        if (specified(selinux_context)) {
-            ALOGV("map %s selinux_context [%-32s] -> %d -> '%s' (%s)", mapName.c_str(),
-                  mapDef.selinux_context, static_cast<int>(selinux_context),
-                  lookupSelinuxContext(selinux_context), lookupPinSubdir(selinux_context));
-
-            string createLoc = string(BPF_FS_PATH) + lookupPinSubdir(selinux_context) +
+        if (mapDef.selinux_context[0]) {
+            validatePinDir(mapDef.selinux_context);
+            string createLoc = string(BPF_FS_PATH) + mapDef.selinux_context +
                                "tmp_map_" + objName + "_" + mapName;
             ret = bpfFdPin(fd, createLoc.c_str());
             if (ret) {
@@ -979,18 +906,16 @@ static enum bpf_map_type sanitizeMapType(enum bpf_map_type type) {
     return type;
 }
 
-static string buildMapPinLoc(const domain pin_subdir, const char* prefix,
-                             const struct bpf_map_def& mapDef, const string& objName,
-                             const string& mapName) {
-    // Format of pin location is /sys/fs/bpf/<pin_subdir|prefix>map_<objName>_<mapName>
-    // except that maps shared across .o's have empty <objName>
+static string buildMapPinLoc(const char pin_subdir[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE],
+                             const string& objName, const string& mapName) {
+    validatePinDir(pin_subdir);
+    // Format of pin location is /sys/fs/bpf/<pin_subdir>map_<objName>_<mapName>
     // Note: <objName> refers to the extension-less basename of the .o file (without @ suffix).
-    return string(BPF_FS_PATH) + lookupPinSubdir(pin_subdir, prefix) + "map_" +
-                       (mapDef.shared ? "" : objName) + "_" + mapName;
+    return string(BPF_FS_PATH) + pin_subdir + "map_" + objName + "_" + mapName;
 }
 
 static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>& mapFds,
-                      const char* prefix, const unsigned int bpfloader_ver) {
+                      const unsigned int bpfloader_ver) {
     int ret;
     vector<char> btfData;
     vector<struct bpf_map_def> md;
@@ -1069,14 +994,7 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
             if (max_entries < page_size) max_entries = page_size;
         }
 
-        domain pin_subdir = getDomainFromPinSubdir(md[i].pin_subdir);
-        if (specified(pin_subdir)) {
-            ALOGV("map %s pin_subdir [%-32s] -> %d -> '%s'", mapNames[i].c_str(), md[i].pin_subdir,
-                  static_cast<int>(pin_subdir), lookupPinSubdir(pin_subdir));
-            abort();
-        }
-
-        string mapPinLoc = buildMapPinLoc(pin_subdir, prefix, md[i], objName, mapNames[i]);
+        string mapPinLoc = buildMapPinLoc(md[i].pin_subdir, objName, mapNames[i]);
         unique_fd fd;
         int saved_errno;
 
@@ -1187,15 +1105,12 @@ static void applyMapRelo(ifstream& elfFile, vector<unique_fd> &mapFds, vector<co
     }
 }
 
-static int pinProg(const unique_fd& fd, string& name, struct bpf_prog_def& progDef,
+static int pinProg(const borrowed_fd& fd, string& name, const struct bpf_prog_def& progDef,
                    const string& objName, string& progPinLoc) {
     int ret;
-    domain selinux_context = getDomainFromSelinuxContext(progDef.selinux_context);
-    if (specified(selinux_context)) {
-        ALOGV("prog %s selinux_context [%-32s] -> %d -> '%s' (%s)", name.c_str(),
-              progDef.selinux_context, static_cast<int>(selinux_context),
-              lookupSelinuxContext(selinux_context), lookupPinSubdir(selinux_context));
-        string createLoc = string(BPF_FS_PATH) + lookupPinSubdir(selinux_context) +
+    if (progDef.selinux_context[0]) {
+        validatePinDir(progDef.selinux_context);
+        string createLoc = string(BPF_FS_PATH) + progDef.selinux_context +
                            "tmp_prog_" + objName + '_' + string(name);
         ret = bpfFdPin(fd, createLoc.c_str());
         if (ret) {
@@ -1234,7 +1149,8 @@ static int pinProg(const unique_fd& fd, string& name, struct bpf_prog_def& progD
     return 0;
 }
 
-static int validateProg(unique_fd& fd, string& progPinLoc, const unsigned int bpfloader_ver) {
+static int validateProg(const borrowed_fd& fd, string& progPinLoc,
+                        const unsigned int bpfloader_ver) {
     if (!isAtLeastKernelVersion(4, 14, 0)) {
         return 0;
     }
@@ -1267,16 +1183,15 @@ static int validateProg(unique_fd& fd, string& progPinLoc, const unsigned int bp
     return 0;
 }
 
-static string buildProgPinLoc(const domain pin_subdir, const char* prefix,
+static string buildProgPinLoc(const char pin_subdir[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE],
                               const string& objName, const string& name) {
-    // Format of pin location is
-    // /sys/fs/bpf/<prefix>prog_<objName>_<progName>
-    return string(BPF_FS_PATH) + lookupPinSubdir(pin_subdir, prefix) + "prog_" +
-                        objName + '_' + string(name);
+    validatePinDir(pin_subdir);
+    // Format of pin location is /sys/fs/bpf/<prefix>prog_<objName>_<progName>
+    return string(BPF_FS_PATH) + pin_subdir + "prog_" + objName + '_' + string(name);
 }
 
 static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const string& license,
-                            const char* prefix, const unsigned int bpfloader_ver) {
+                            const unsigned int bpfloader_ver) {
     unsigned kvers = kernelVersion();
 
     if (!kvers) {
@@ -1305,19 +1220,11 @@ static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const 
 
         unsigned bpfMinVer = cs[i].prog_def->bpfloader_min_ver;
         unsigned bpfMaxVer = cs[i].prog_def->bpfloader_max_ver;
-        domain pin_subdir = getDomainFromPinSubdir(cs[i].prog_def->pin_subdir);
 
         ALOGD("cs[%d].name:%s requires bpfloader version [0x%05x,0x%05x)", i, name.c_str(),
               bpfMinVer, bpfMaxVer);
         if (bpfloader_ver < bpfMinVer) continue;
         if (bpfloader_ver >= bpfMaxVer) continue;
-
-        if (specified(pin_subdir)) {
-            ALOGV("prog %s pin_subdir [%-32s] -> %d -> '%s'", name.c_str(),
-                  cs[i].prog_def->pin_subdir, static_cast<int>(pin_subdir),
-                  lookupPinSubdir(pin_subdir));
-            abort();
-        }
 
         // strip any potential $foo suffix
         // this can be used to provide duplicate programs
@@ -1325,7 +1232,7 @@ static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const 
         name = name.substr(0, name.find_last_of('$'));
 
         bool reuse = false;
-        string progPinLoc = buildProgPinLoc(pin_subdir, prefix, objName, name);
+        string progPinLoc = buildProgPinLoc(cs[i].prog_def->pin_subdir, objName, name);
         if (access(progPinLoc.c_str(), F_OK) == 0) {
             fd.reset(retrieveProgram(progPinLoc.c_str()));
             ALOGD("New bpf prog load reusing prog %s, ret: %d (%s)", progPinLoc.c_str(), fd.get(),
@@ -1393,10 +1300,8 @@ static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const 
     return 0;
 }
 
-__unused static int prepareLoadMaps(const struct bpf_object* obj,
-                                    const vector<struct bpf_map_def>& md,
-                                    const vector<string>& mapNames,
-                                    const unsigned int bpfloader_ver) {
+static int prepareLoadMaps(const struct bpf_object* obj, const vector<struct bpf_map_def>& md,
+                           const vector<string>& mapNames, const unsigned int bpfloader_ver) {
     unsigned kvers = kernelVersion();
 
     for (int i = 0; i < (int)mapNames.size(); i++) {
@@ -1433,8 +1338,8 @@ __unused static int prepareLoadMaps(const struct bpf_object* obj,
     return 0;
 }
 
-__unused static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSection>& cs,
-                                     const unsigned int bpfloader_ver) {
+static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSection>& cs,
+                            const unsigned int bpfloader_ver) {
     unsigned kvers = kernelVersion();
 
     for (int i = 0; i < (int)cs.size(); i++) {
@@ -1480,8 +1385,109 @@ __unused static int prepareLoadProgs(const struct bpf_object* obj, const vector<
     return 0;
 }
 
-int loadProg(const char* const elfPath, const unsigned int bpfloader_ver,
-             const char* const prefix) {
+static int pinMaps(const char* const elfPath, const struct bpf_object* obj,
+                   const vector<struct bpf_map_def>& md, const vector<string>& mapNames) {
+    int ret;
+    string objName = pathToObjName(string(elfPath));
+
+    for (int i = 0; i < (int)mapNames.size(); i++) {
+        struct bpf_map* m = bpf_object__find_map_by_name(obj, mapNames[i].c_str());
+        if (!m) {
+            ALOGE("bpf_object does not contain map: %s", mapNames[i].c_str());
+            return -1;
+        }
+        // This map was skipped
+        if (!bpf_map__autocreate(m)) continue;
+
+        string mapPinLoc = buildMapPinLoc(md[i].pin_subdir, objName, mapNames[i]);
+        if (access(mapPinLoc.c_str(), F_OK) == 0) {
+            ALOGE("Reusing map is not supported: %s", mapNames[i].c_str());
+            return -1;
+        }
+
+        ret = pinMap(bpf_map__fd(m), mapNames[i], md[i], objName, mapPinLoc);
+        if (ret) return ret;
+    }
+    return 0;
+}
+
+static int pinProgs(const char* const elfPath, const struct bpf_object * obj,
+                    const vector<codeSection>& cs, const unsigned int bpfloader_ver) {
+    int ret;
+    string objName = pathToObjName(string(elfPath));
+
+    for (int i = 0; i < (int)cs.size(); i++) {
+        string program_name = cs[i].program_name;
+        struct bpf_program* prog = bpf_object__find_program_by_name(obj, program_name.c_str());
+        if (!prog) {
+            ALOGE("bpf_object does not contain program: %s", program_name.c_str());
+            return -1;
+        }
+        // This program was skipped
+        if (!bpf_program__autoload(prog)) continue;
+
+        string name = cs[i].name;
+        name = name.substr(0, name.find_last_of('$'));
+        string progPinLoc = buildProgPinLoc(cs[i].prog_def->pin_subdir, objName, name);
+        if (access(progPinLoc.c_str(), F_OK) == 0) {
+            // TODO: Skip loading lower priority program
+            ALOGI("Higher priority program is already pinned, skip pinning %s", cs[i].name.c_str());
+            continue;
+        }
+
+        int fd = bpf_program__fd(prog);
+        ret = pinProg(fd, name, cs[i].prog_def.value(), objName, progPinLoc);
+        if (ret) return ret;
+        ret = validateProg(fd, progPinLoc, bpfloader_ver);
+        if (ret) return ret;
+    }
+    return 0;
+}
+
+static int loadProgByLibbpf(const char* const elfPath, const unsigned int bpfloader_ver) {
+    int ret;
+    vector<string> mapNames;
+    vector<struct bpf_map_def> md;
+    vector<codeSection> cs;
+
+    ifstream elfFile(elfPath, ios::in | ios::binary);
+    if (!elfFile.is_open()) return -1;
+
+    LIBBPF_OPTS(bpf_object_open_opts, opts,
+        .bpf_token_path = "",
+    );
+    struct bpf_object* obj = bpf_object__open_file(elfPath, &opts);
+    if (!obj) return -1;
+    auto objGuard = base::make_scope_guard([&obj] { bpf_object__close(obj); });
+
+    ret = readSectionByName(".android_maps", elfFile, md);
+    if (ret) return ret;
+
+    ret = readMapNames(elfFile, mapNames);
+    if (ret) return ret;
+
+    ret = prepareLoadMaps(obj, md, mapNames, bpfloader_ver);
+    if (ret) return ret;
+
+    ret = readCodeSections(elfFile, cs);
+    if (ret && ret != -ENOENT) return ret;
+
+    ret = prepareLoadProgs(obj, cs, bpfloader_ver);
+    if (ret) return ret;
+
+    ret = bpf_object__load(obj);
+    if (ret) return ret;
+
+    ret = pinMaps(elfPath, obj, md, mapNames);
+    if (ret) return ret;
+
+    ret = pinProgs(elfPath, obj, cs, bpfloader_ver);
+    if (ret) return ret;
+
+    return 0;
+}
+
+int loadProg(const char* const elfPath, const unsigned int bpfloader_ver) {
     vector<char> license;
     vector<codeSection> cs;
     vector<unique_fd> mapFds;
@@ -1501,7 +1507,7 @@ int loadProg(const char* const elfPath, const unsigned int bpfloader_ver,
 
     ALOGD("BpfLoader ver 0x%05x processing ELF object %s", bpfloader_ver, elfPath);
 
-    ret = createMaps(elfPath, elfFile, mapFds, prefix, bpfloader_ver);
+    ret = createMaps(elfPath, elfFile, mapFds, bpfloader_ver);
     if (ret) {
         ALOGE("Failed to create maps: (ret=%d) in %s", ret, elfPath);
         return ret;
@@ -1519,7 +1525,7 @@ int loadProg(const char* const elfPath, const unsigned int bpfloader_ver,
 
     applyMapRelo(elfFile, mapFds, cs);
 
-    ret = loadCodeSections(elfPath, cs, string(license.data()), prefix, bpfloader_ver);
+    ret = loadCodeSections(elfPath, cs, string(license.data()), bpfloader_ver);
     if (ret) ALOGE("Failed to load programs, loadCodeSections ret=%d", ret);
 
     return ret;
@@ -1536,35 +1542,37 @@ static bool exists(const char* const path) {
 #define APEXROOT "/apex/com.android.tethering"
 #define BPFROOT APEXROOT "/etc/bpf/mainline/"
 
-static int loadObject(const unsigned int bpfloader_ver, const char* const prefix,
-                      const char* const fname) {
+static int loadObject(const unsigned int bpfloader_ver,
+                      const char* const fname, const bool useLibbpf = false) {
     string progPath = string(BPFROOT) + fname;
-    int ret = loadProg(progPath.c_str(), bpfloader_ver, prefix);
+    int ret = useLibbpf ? loadProgByLibbpf(progPath.c_str(), bpfloader_ver) :
+                          loadProg(progPath.c_str(), bpfloader_ver);
     if (ret) {
-        ALOGE("Failed to load object: %s, ret: %s", progPath.c_str(), std::strerror(-ret));
+        ALOGE("Failed to load object: %s, ret: %s, libbpf: %d",
+              progPath.c_str(), std::strerror(-ret), useLibbpf);
         return 1;
     }
-    ALOGD("Loaded object: %s", progPath.c_str());
+    ALOGD("Loaded object: %s, libbpf: %d", progPath.c_str(), useLibbpf);
     return 0;
 }
 
 static int loadAllObjects(const unsigned int bpfloader_ver) {
     // S+ Tethering mainline module (network_stack): tether offload
     // loads under /sys/fs/bpf/tethering:
-    if (loadObject(bpfloader_ver, "tethering/", "offload.o")) return 1;
-    if (loadObject(bpfloader_ver, "tethering/", "test.o")) return 1;
+    if (loadObject(bpfloader_ver, "offload.o")) return 1;
+    if (loadObject(bpfloader_ver, "test.o", isAtLeast25Q3)) return 1;
     if (isAtLeastT) {
         // T+ Tethering mainline module loads under:
         // /sys/fs/bpf/net_shared: shared with netd & system server
-        if (loadObject(bpfloader_ver, "net_shared/", "clatd.o")) return 1;
-        if (loadObject(bpfloader_ver, "net_shared/", "dscpPolicy.o")) return 1;
+        if (loadObject(bpfloader_ver, "clatd.o", isAtLeast25Q3)) return 1;
+        if (loadObject(bpfloader_ver, "dscpPolicy.o", isAtLeast25Q3)) return 1;
 
         // /sys/fs/bpf/netd_shared: shared with netd & system server
         // - netutils_wrapper (for iptables xt_bpf) has access to programs
 
         // WARNING: Android T+ non-updatable netd depends on both of the
         // 'netd_shared' & 'netd' strings for xt_bpf programs it loads
-        if (loadObject(bpfloader_ver, "netd_shared/", "netd.o")) return 1;
+        if (loadObject(bpfloader_ver, "netd.o", isAtLeast25Q3)) return 1;
 
         // /sys/fs/bpf/netd_readonly: shared with netd & system server
         // - netutils_wrapper has no access, netd has read only access
@@ -1713,6 +1721,9 @@ static bool isWear() {
 
 static int libbpfPrint(enum libbpf_print_level lvl, const char *const formatStr,
                        va_list argList) {
+#ifndef NETBPFLOAD_VERBOSE_LOG
+    if (lvl != LIBBPF_WARN) return 0;
+#endif
     int32_t prio;
     switch (lvl) {
       case LIBBPF_WARN:
@@ -1725,11 +1736,23 @@ static int libbpfPrint(enum libbpf_print_level lvl, const char *const formatStr,
         prio = ANDROID_LOG_DEBUG;
         break;
     }
-    char *s = strdup(formatStr ?: "(no format string)");
+    if (!formatStr) {
+        LOG_PRI(prio, LOG_TAG, "libbpf (null format string)");
+        return 0;
+    }
+
+    // Print each line to avoid being truncated.
+    char *s = NULL;
+    int ret = vasprintf(&s, formatStr, argList);
+    if (ret == -1) {
+        LOG_PRI(prio, LOG_TAG, "libbpf (format failure)");
+        return 0;
+    }
     int len = strlen(s);
     if (len && s[len - 1] == '\n')
         s[len - 1] = 0;
-    LOG_PRI_VA(prio, LOG_TAG, s, argList);
+    vector<string> lines = Split(s, "\n");
+    for (const auto& line : lines) LOG_PRI(prio, LOG_TAG, "%s", line.c_str());
     free(s);
     return 0;
 }
