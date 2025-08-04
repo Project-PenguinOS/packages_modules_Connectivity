@@ -111,29 +111,11 @@ inline bool isUserdebug() {
 
 static unsigned int page_size = static_cast<unsigned int>(getpagesize());
 
-void validatePinDir(const char s[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE]) {
-    if (!strncmp(s, "tethering/",     BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
-    if (isAtLeastT) {
-        if (!strncmp(s, "net_private/",   BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
-        if (!strncmp(s, "net_shared/",    BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
-        if (!strncmp(s, "netd_readonly/", BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
-        if (!strncmp(s, "netd_shared/",   BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
-        if (!strncmp(s, "loader/",        BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE)) return;
-    }
-    ALOGE("unrecognized pin_subdir '%-32s'", s);
-    // Note: we *can* just abort() here as we only load bpf .o files shipped
-    // in the same mainline module / apex as NetBpfLoad itself.
-    abort();
-}
-
 static string pathToObjName(const string& path) {
-    // extract everything after the final slash, ie. this is the filename 'foo@1.o' or 'bar.o'
+    // extract everything after the final slash, ie. this is the filename 'foo.o'
     string filename = Split(path, "/").back();
-    // strip off everything from the final period onwards (strip '.o' suffix), ie. 'foo@1' or 'bar'
-    string name = filename.substr(0, filename.find_last_of('.'));
-    // strip any potential @1 suffix, this will leave us with just 'foo' or 'bar'
-    // this can be used to provide duplicate programs (mux based on the bpfloader version)
-    return name.substr(0, name.find_last_of('@'));
+    // strip off everything from the final period onwards (strip '.o' suffix), ie. 'foo'
+    return filename.substr(0, filename.find_last_of('.'));
 }
 
 typedef struct {
@@ -367,10 +349,6 @@ static enum bpf_prog_type getSectionType(string& name) {
     return BPF_PROG_TYPE_UNSPEC;
 }
 
-static int readProgDefs(ifstream& elfFile, vector<struct bpf_prog_def>& pd) {
-    return readSectionByName("progs", elfFile, pd);
-}
-
 static int getSectionSymNames(ifstream& elfFile, const string& sectionName, vector<string>& names,
                               optional<unsigned> symbolType = std::nullopt) {
     int ret;
@@ -426,7 +404,7 @@ static int readCodeSections(ifstream& elfFile, vector<codeSection>& cs) {
     entries = shTable.size();
 
     vector<struct bpf_prog_def> pd;
-    ret = readProgDefs(elfFile, pd);
+    ret = readSectionByName("progs", elfFile, pd);
     if (ret) return ret;
     vector<string> progDefNames;
     ret = getSectionSymNames(elfFile, "progs", progDefNames);
@@ -801,24 +779,20 @@ static bool isBtfSupported(enum bpf_map_type type) {
     return type != BPF_MAP_TYPE_DEVMAP_HASH && type != BPF_MAP_TYPE_RINGBUF;
 }
 
-static int pinMap(const borrowed_fd& fd, const string& mapName, const struct bpf_map_def& mapDef,
-                  const string& objName, const string& mapPinLoc) {
+static int pinMap(const borrowed_fd& fd, const struct bpf_map_def& mapDef, const string& mapPinLoc) {
         int ret;
-        if (mapDef.selinux_context[0]) {
-            validatePinDir(mapDef.selinux_context);
-            string createLoc = string(BPF_FS_PATH) + mapDef.selinux_context +
-                               "tmp_map_" + objName + "_" + mapName;
-            ret = bpfFdPin(fd, createLoc.c_str());
+        if (mapDef.create_location[0]) {
+            ret = bpfFdPin(fd, mapDef.create_location);
             if (ret) {
                 const int err = errno;
-                ALOGE("create %s -> %d [%d:%s]", createLoc.c_str(), ret, err, strerror(err));
+                ALOGE("create %s -> %d [%d:%s]", mapDef.create_location, ret, err, strerror(err));
                 return -err;
             }
-            ret = renameat2(AT_FDCWD, createLoc.c_str(),
+            ret = renameat2(AT_FDCWD, mapDef.create_location,
                             AT_FDCWD, mapPinLoc.c_str(), RENAME_NOREPLACE);
             if (ret) {
                 const int err = errno;
-                ALOGE("rename %s %s -> %d [%d:%s]", createLoc.c_str(), mapPinLoc.c_str(), ret,
+                ALOGE("rename %s %s -> %d [%d:%s]", mapDef.create_location, mapPinLoc.c_str(), ret,
                       err, strerror(err));
                 return -err;
             }
@@ -908,7 +882,6 @@ static enum bpf_map_type sanitizeMapType(enum bpf_map_type type) {
 
 static string buildMapPinLoc(const char pin_subdir[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE],
                              const string& objName, const string& mapName) {
-    validatePinDir(pin_subdir);
     // Format of pin location is /sys/fs/bpf/<pin_subdir>map_<objName>_<mapName>
     // Note: <objName> refers to the extension-less basename of the .o file (without @ suffix).
     return string(BPF_FS_PATH) + pin_subdir + "map_" + objName + "_" + mapName;
@@ -1043,7 +1016,7 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
         // We assume failure is due to pinned map mismatch, hence the 'NOT UNIQUE' return code.
         if (!mapMatchesExpectations(fd, mapNames[i], md[i], type)) return -ENOTUNIQ;
 
-        ret = pinMap(fd, mapNames[i], md[i], objName, mapPinLoc);
+        ret = pinMap(fd, md[i], mapPinLoc);
         if (ret) return ret;
 
         mapFds.push_back(std::move(fd));
@@ -1105,24 +1078,21 @@ static void applyMapRelo(ifstream& elfFile, vector<unique_fd> &mapFds, vector<co
     }
 }
 
-static int pinProg(const borrowed_fd& fd, string& name, const struct bpf_prog_def& progDef,
-                   const string& objName, string& progPinLoc) {
+static int pinProg(const borrowed_fd& fd, const struct bpf_prog_def& progDef,
+                   const string& progPinLoc) {
     int ret;
-    if (progDef.selinux_context[0]) {
-        validatePinDir(progDef.selinux_context);
-        string createLoc = string(BPF_FS_PATH) + progDef.selinux_context +
-                           "tmp_prog_" + objName + '_' + string(name);
-        ret = bpfFdPin(fd, createLoc.c_str());
+    if (progDef.create_location[0]) {
+        ret = bpfFdPin(fd, progDef.create_location);
         if (ret) {
             const int err = errno;
-            ALOGE("create %s -> %d [%d:%s]", createLoc.c_str(), ret, err, strerror(err));
+            ALOGE("create %s -> %d [%d:%s]", progDef.create_location, ret, err, strerror(err));
             return -err;
         }
-        ret = renameat2(AT_FDCWD, createLoc.c_str(),
+        ret = renameat2(AT_FDCWD, progDef.create_location,
                         AT_FDCWD, progPinLoc.c_str(), RENAME_NOREPLACE);
         if (ret) {
             const int err = errno;
-            ALOGE("rename %s %s -> %d [%d:%s]", createLoc.c_str(), progPinLoc.c_str(), ret,
+            ALOGE("rename %s %s -> %d [%d:%s]", progDef.create_location, progPinLoc.c_str(), ret,
                   err, strerror(err));
             return -err;
         }
@@ -1185,7 +1155,6 @@ static int validateProg(const borrowed_fd& fd, string& progPinLoc,
 
 static string buildProgPinLoc(const char pin_subdir[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE],
                               const string& objName, const string& name) {
-    validatePinDir(pin_subdir);
     // Format of pin location is /sys/fs/bpf/<prefix>prog_<objName>_<progName>
     return string(BPF_FS_PATH) + pin_subdir + "prog_" + objName + '_' + string(name);
 }
@@ -1290,7 +1259,7 @@ static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const 
         if (!fd.ok()) return fd.get();
 
         if (!reuse) {
-            ret = pinProg(fd, name, cs[i].prog_def.value(), objName, progPinLoc);
+            ret = pinProg(fd, cs[i].prog_def.value(), progPinLoc);
             if (ret) return ret;
         }
         ret = validateProg(fd, progPinLoc, bpfloader_ver);
@@ -1405,7 +1374,7 @@ static int pinMaps(const char* const elfPath, const struct bpf_object* obj,
             return -1;
         }
 
-        ret = pinMap(bpf_map__fd(m), mapNames[i], md[i], objName, mapPinLoc);
+        ret = pinMap(bpf_map__fd(m), md[i], mapPinLoc);
         if (ret) return ret;
     }
     return 0;
@@ -1436,7 +1405,7 @@ static int pinProgs(const char* const elfPath, const struct bpf_object * obj,
         }
 
         int fd = bpf_program__fd(prog);
-        ret = pinProg(fd, name, cs[i].prog_def.value(), objName, progPinLoc);
+        ret = pinProg(fd, cs[i].prog_def.value(), progPinLoc);
         if (ret) return ret;
         ret = validateProg(fd, progPinLoc, bpfloader_ver);
         if (ret) return ret;
@@ -2053,7 +2022,7 @@ static int doLoad(char** argv, char * const envp[]) {
     }
 
     // Create all the pin subdirectories
-    // (this must be done first to allow selinux_context and pin_subdir functionality,
+    // (this must be done first to allow create_location and pin_subdir functionality,
     //  which could otherwise fail with ENOENT during object pinning or renaming,
     //  due to ordering issues)
     if (createDir("/sys/fs/bpf/tethering")) return 1;
