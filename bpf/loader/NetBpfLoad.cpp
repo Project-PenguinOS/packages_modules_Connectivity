@@ -107,67 +107,9 @@ inline bool isUserdebug() {
     return getBuildType() == "userdebug";
 }
 
-#define BPF_FS_PATH "/sys/fs/bpf/"
-
 static unsigned int page_size = static_cast<unsigned int>(getpagesize());
 
-static string pathToObjName(const string& path) {
-    // extract everything after the final slash, ie. this is the filename 'foo.o'
-    string filename = Split(path, "/").back();
-    // strip off everything from the final period onwards (strip '.o' suffix), ie. 'foo'
-    return filename.substr(0, filename.find_last_of('.'));
-}
-
 typedef struct {
-    const char* name;
-    enum bpf_prog_type type;
-    enum bpf_attach_type attach_type;
-} sectionType;
-
-/*
- * Map section name prefixes to program types, the section name will be:
- *   SECTION(<prefix>/<name-of-program>)
- * For example:
- *   SECTION("tracepoint/sched_switch_func") where sched_switch_funcs
- * is the name of the program, and tracepoint is the type.
- *
- * However, be aware that you should not be directly using the SECTION() macro.
- * Instead use the DEFINE_(BPF|XDP)_(PROG|MAP)... & LICENSE macros.
- *
- * Programs shipped inside the tethering apex should be limited to networking stuff,
- * as KPROBE, PERF_EVENT, TRACEPOINT are dangerous to use from mainline updatable code,
- * since they are less stable abi/api and may conflict with platform uses of bpf.
- */
-sectionType sectionNameTypes[] = {
-        {"bind4/",             BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_INET4_BIND},
-        {"bind6/",             BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_INET6_BIND},
-        {"cgroupskb/",         BPF_PROG_TYPE_CGROUP_SKB},
-        {"cgroupsock/",        BPF_PROG_TYPE_CGROUP_SOCK},
-        {"cgroupsockcreate/",  BPF_PROG_TYPE_CGROUP_SOCK,      BPF_CGROUP_INET_SOCK_CREATE},
-        {"cgroupsockrelease/", BPF_PROG_TYPE_CGROUP_SOCK,      BPF_CGROUP_INET_SOCK_RELEASE},
-        {"connect4/",          BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_INET4_CONNECT},
-        {"connect6/",          BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_INET6_CONNECT},
-        {"egress/",            BPF_PROG_TYPE_CGROUP_SKB,       BPF_CGROUP_INET_EGRESS},
-        {"getsockopt/",        BPF_PROG_TYPE_CGROUP_SOCKOPT,   BPF_CGROUP_GETSOCKOPT},
-        {"ingress/",           BPF_PROG_TYPE_CGROUP_SKB,       BPF_CGROUP_INET_INGRESS},
-        {"postbind4/",         BPF_PROG_TYPE_CGROUP_SOCK,      BPF_CGROUP_INET4_POST_BIND},
-        {"postbind6/",         BPF_PROG_TYPE_CGROUP_SOCK,      BPF_CGROUP_INET6_POST_BIND},
-        {"recvmsg4/",          BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_UDP4_RECVMSG},
-        {"recvmsg6/",          BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_UDP6_RECVMSG},
-        {"schedact/",          BPF_PROG_TYPE_SCHED_ACT},
-        {"schedcls/",          BPF_PROG_TYPE_SCHED_CLS},
-        {"sendmsg4/",          BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_UDP4_SENDMSG},
-        {"sendmsg6/",          BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_UDP6_SENDMSG},
-        {"setsockopt/",        BPF_PROG_TYPE_CGROUP_SOCKOPT,   BPF_CGROUP_SETSOCKOPT},
-        {"skfilter/",          BPF_PROG_TYPE_SOCKET_FILTER},
-        {"sockops/",           BPF_PROG_TYPE_SOCK_OPS,         BPF_CGROUP_SOCK_OPS},
-        {"sysctl",             BPF_PROG_TYPE_CGROUP_SYSCTL,    BPF_CGROUP_SYSCTL},
-        {"xdp/",               BPF_PROG_TYPE_XDP},
-};
-
-typedef struct {
-    enum bpf_prog_type type;
-    enum bpf_attach_type attach_type;
     string name; // The canonicalized section name.
     string program_name;
     vector<char> data;
@@ -177,269 +119,278 @@ typedef struct {
     unique_fd prog_fd; // fd after loading
 } codeSection;
 
-static int readElfHeader(ifstream& elfFile, Elf64_Ehdr* eh) {
-    elfFile.seekg(0);
-    if (elfFile.fail()) return -1;
+struct ElfObject {
+    const char * path;
+    ifstream file;
 
-    if (!elfFile.read((char*)eh, sizeof(*eh))) return -1;
-
-    return 0;
-}
-
-// Reads all section header tables into an Shdr array
-static int readSectionHeadersAll(ifstream& elfFile, vector<Elf64_Shdr>& shTable) {
-    Elf64_Ehdr eh;
-    int ret = 0;
-
-    ret = readElfHeader(elfFile, &eh);
-    if (ret) return ret;
-
-    elfFile.seekg(eh.e_shoff);
-    if (elfFile.fail()) return -1;
-
-    // Read shdr table entries
-    shTable.resize(eh.e_shnum);
-
-    if (!elfFile.read((char*)shTable.data(), (eh.e_shnum * eh.e_shentsize))) return -ENOMEM;
-
-    return 0;
-}
-
-// Read a section by its index - for ex to get sec hdr strtab blob
-static int readSectionByIdx(ifstream& elfFile, int id, vector<char>& sec) {
-    vector<Elf64_Shdr> shTable;
-    int ret = readSectionHeadersAll(elfFile, shTable);
-    if (ret) return ret;
-
-    elfFile.seekg(shTable[id].sh_offset);
-    if (elfFile.fail()) return -1;
-
-    sec.resize(shTable[id].sh_size);
-    if (!elfFile.read(sec.data(), shTable[id].sh_size)) return -1;
-
-    return 0;
-}
-
-// Read whole section header string table
-static int readSectionHeaderStrtab(ifstream& elfFile, vector<char>& strtab) {
-    Elf64_Ehdr eh;
-    int ret = readElfHeader(elfFile, &eh);
-    if (ret) return ret;
-
-    ret = readSectionByIdx(elfFile, eh.e_shstrndx, strtab);
-    if (ret) return ret;
-
-    return 0;
-}
-
-// Get name from offset in strtab
-static int getSymName(ifstream& elfFile, int nameOff, string& name) {
-    int ret;
-    vector<char> secStrTab;
-
-    ret = readSectionHeaderStrtab(elfFile, secStrTab);
-    if (ret) return ret;
-
-    if (nameOff >= (int)secStrTab.size()) return -1;
-
-    name = string((char*)secStrTab.data() + nameOff);
-    return 0;
-}
-
-// Reads a full section by name - example to get the GPL license
-template <typename T>
-static int readSectionByName(const char* name, ifstream& elfFile, vector<T>& data) {
-    vector<char> secStrTab;
-    vector<Elf64_Shdr> shTable;
-    int ret;
-
-    ret = readSectionHeadersAll(elfFile, shTable);
-    if (ret) return ret;
-
-    ret = readSectionHeaderStrtab(elfFile, secStrTab);
-    if (ret) return ret;
-
-    for (int i = 0; i < (int)shTable.size(); i++) {
-        char* secname = secStrTab.data() + shTable[i].sh_name;
-        if (!secname) continue;
-
-        if (!strcmp(secname, name)) {
-            elfFile.seekg(shTable[i].sh_offset);
-            if (elfFile.fail()) return -1;
-
-            if (shTable[i].sh_size % sizeof(T)) return -1;
-            data.resize(shTable[i].sh_size / sizeof(T));
-            if (!elfFile.read(reinterpret_cast<char*>(data.data()), shTable[i].sh_size))
-                return -1;
-
-            return 0;
-        }
+    ElfObject(const char* elfPath) : path(elfPath), file(path, ios::in | ios::binary) {
+        if (!file.is_open()) abort();
     }
-    return -2;
-}
 
-unsigned int readSectionUint(const char* name, ifstream& elfFile) {
-    vector<char> theBytes;
-    int ret = readSectionByName(name, elfFile, theBytes);
-    if (ret) {
-        ALOGE("Couldn't find section %s.", name);
-        abort();
-    } else if (theBytes.size() < sizeof(unsigned int)) {
-        ALOGE("Section %s is too short.", name);
-        abort();
-    } else {
-        // decode first 4 bytes as LE32 uint, there will likely be more bytes due to alignment.
-        unsigned int value = static_cast<unsigned char>(theBytes[3]);
-        value <<= 8;
-        value += static_cast<unsigned char>(theBytes[2]);
-        value <<= 8;
-        value += static_cast<unsigned char>(theBytes[1]);
-        value <<= 8;
-        value += static_cast<unsigned char>(theBytes[0]);
-        ALOGD("Section %s value is %u [0x%x]", name, value, value);
-        return value;
-    }
-}
+    int readElfHeader(Elf64_Ehdr* eh) {
+        file.seekg(0);
+        if (file.fail()) return -1;
 
-static int readSectionByType(ifstream& elfFile, int type, vector<char>& data) {
-    int ret;
-    vector<Elf64_Shdr> shTable;
-
-    ret = readSectionHeadersAll(elfFile, shTable);
-    if (ret) return ret;
-
-    for (int i = 0; i < (int)shTable.size(); i++) {
-        if ((int)shTable[i].sh_type != type) continue;
-
-        elfFile.seekg(shTable[i].sh_offset);
-        if (elfFile.fail()) return -1;
-
-        data.resize(shTable[i].sh_size);
-        if (!elfFile.read(data.data(), shTable[i].sh_size)) return -1;
+        if (!file.read((char*)eh, sizeof(*eh))) return -1;
 
         return 0;
     }
-    return -2;
-}
 
-static bool symCompare(Elf64_Sym a, Elf64_Sym b) {
-    return (a.st_value < b.st_value);
-}
+    // Reads all section header tables into an Shdr array
+    int readSectionHeadersAll(vector<Elf64_Shdr>& shTable) {
+        Elf64_Ehdr eh;
+        int ret = 0;
 
-static int readSymTab(ifstream& elfFile, int sort, vector<Elf64_Sym>& data) {
-    int ret, numElems;
-    Elf64_Sym* buf;
-    vector<char> secData;
-
-    ret = readSectionByType(elfFile, SHT_SYMTAB, secData);
-    if (ret) return ret;
-
-    buf = (Elf64_Sym*)secData.data();
-    numElems = (secData.size() / sizeof(Elf64_Sym));
-    data.assign(buf, buf + numElems);
-
-    if (sort) std::sort(data.begin(), data.end(), symCompare);
-    return 0;
-}
-
-static enum bpf_prog_type getSectionType(string& name) {
-    for (auto& snt : sectionNameTypes)
-        if (StartsWith(name, snt.name)) return snt.type;
-
-    return BPF_PROG_TYPE_UNSPEC;
-}
-
-static int getSectionSymNames(ifstream& elfFile, const string& sectionName, vector<string>& names,
-                              optional<unsigned> symbolType = std::nullopt) {
-    int ret;
-    string name;
-    vector<Elf64_Sym> symtab;
-    vector<Elf64_Shdr> shTable;
-
-    ret = readSymTab(elfFile, 1 /* sort */, symtab);
-    if (ret) return ret;
-
-    // Get index of section
-    ret = readSectionHeadersAll(elfFile, shTable);
-    if (ret) return ret;
-
-    int sec_idx = -1;
-    for (int i = 0; i < (int)shTable.size(); i++) {
-        ret = getSymName(elfFile, shTable[i].sh_name, name);
+        ret = readElfHeader(&eh);
         if (ret) return ret;
 
-        if (!name.compare(sectionName)) {
-            sec_idx = i;
-            break;
-        }
+        file.seekg(eh.e_shoff);
+        if (file.fail()) return -1;
+
+        // Read shdr table entries
+        shTable.resize(eh.e_shnum);
+
+        if (!file.read((char*)shTable.data(), (eh.e_shnum * eh.e_shentsize))) return -ENOMEM;
+
+        return 0;
     }
 
-    // No section found with matching name
-    if (sec_idx == -1) {
-        ALOGW("No %s section could be found in elf object", sectionName.c_str());
+    // Read a section by its index - for ex to get sec hdr strtab blob
+    int readSectionByIdx(int id, vector<char>& sec) {
+        vector<Elf64_Shdr> shTable;
+        int ret = readSectionHeadersAll(shTable);
+        if (ret) return ret;
+
+        file.seekg(shTable[id].sh_offset);
+        if (file.fail()) return -1;
+
+        sec.resize(shTable[id].sh_size);
+        if (!file.read(sec.data(), shTable[id].sh_size)) return -1;
+
+        return 0;
+    }
+
+    // Read whole section header string table
+    int readSectionHeaderStrtab(vector<char>& strtab) {
+        Elf64_Ehdr eh;
+        int ret = readElfHeader(&eh);
+        if (ret) return ret;
+
+        ret = readSectionByIdx(eh.e_shstrndx, strtab);
+        if (ret) return ret;
+
+        return 0;
+    }
+
+    // Get name from offset in strtab
+    int getSymName(int nameOff, string& name) {
+        int ret;
+        vector<char> secStrTab;
+
+        ret = readSectionHeaderStrtab(secStrTab);
+        if (ret) return ret;
+
+        if (nameOff >= (int)secStrTab.size()) return -1;
+
+        name = string((char*)secStrTab.data() + nameOff);
+        return 0;
+    }
+
+    // Reads a full section by name - example to get the GPL license
+    template <typename T>
+    int readSectionByName(const char* name, vector<T>& data) {
+        vector<char> secStrTab;
+        vector<Elf64_Shdr> shTable;
+        int ret;
+
+        ret = readSectionHeadersAll(shTable);
+        if (ret) return ret;
+
+        ret = readSectionHeaderStrtab(secStrTab);
+        if (ret) return ret;
+
+        for (int i = 0; i < (int)shTable.size(); i++) {
+            char* secname = secStrTab.data() + shTable[i].sh_name;
+            if (!secname) continue;
+
+            if (!strcmp(secname, name)) {
+                file.seekg(shTable[i].sh_offset);
+                if (file.fail()) return -1;
+
+                if (shTable[i].sh_size % sizeof(T)) return -1;
+                data.resize(shTable[i].sh_size / sizeof(T));
+                if (!file.read(reinterpret_cast<char*>(data.data()), shTable[i].sh_size))
+                    return -1;
+
+                return 0;
+            }
+        }
+        return -2;
+    }
+
+    int readSectionByType(int type, vector<char>& data) {
+        int ret;
+        vector<Elf64_Shdr> shTable;
+
+        ret = readSectionHeadersAll(shTable);
+        if (ret) return ret;
+
+        for (int i = 0; i < (int)shTable.size(); i++) {
+            if ((int)shTable[i].sh_type != type) continue;
+
+            file.seekg(shTable[i].sh_offset);
+            if (file.fail()) return -1;
+
+            data.resize(shTable[i].sh_size);
+            if (!file.read(data.data(), shTable[i].sh_size)) return -1;
+
+            return 0;
+        }
+        return -2;
+    }
+
+    static bool symCompare(Elf64_Sym a, Elf64_Sym b) {
+        return (a.st_value < b.st_value);
+    }
+
+    int readSymTab(int sort, vector<Elf64_Sym>& data) {
+        int ret, numElems;
+        Elf64_Sym* buf;
+        vector<char> secData;
+
+        ret = readSectionByType(SHT_SYMTAB, secData);
+        if (ret) return ret;
+
+        buf = (Elf64_Sym*)secData.data();
+        numElems = (secData.size() / sizeof(Elf64_Sym));
+        data.assign(buf, buf + numElems);
+
+        if (sort) std::sort(data.begin(), data.end(), symCompare);
+        return 0;
+    }
+
+    int getSectionSymNames(const string& sectionName, vector<string>& names,
+                           optional<unsigned> symbolType = std::nullopt) {
+        int ret;
+        string name;
+        vector<Elf64_Sym> symtab;
+        vector<Elf64_Shdr> shTable;
+
+        ret = readSymTab(1 /* sort */, symtab);
+        if (ret) return ret;
+
+        // Get index of section
+        ret = readSectionHeadersAll(shTable);
+        if (ret) return ret;
+
+        int sec_idx = -1;
+        for (int i = 0; i < (int)shTable.size(); i++) {
+            ret = getSymName(shTable[i].sh_name, name);
+            if (ret) return ret;
+
+            if (!name.compare(sectionName)) {
+                sec_idx = i;
+                break;
+            }
+        }
+
+        // No section found with matching name
+        if (sec_idx == -1) {
+            ALOGW("No %s section could be found in elf object", sectionName.c_str());
+            return -1;
+        }
+
+        for (int i = 0; i < (int)symtab.size(); i++) {
+            if (symbolType.has_value() && ELF_ST_TYPE(symtab[i].st_info) != symbolType) continue;
+
+            if (symtab[i].st_shndx == sec_idx) {
+                string s;
+                ret = getSymName(symtab[i].st_name, s);
+                if (ret) return ret;
+                names.push_back(s);
+            }
+        }
+
+        return 0;
+    }
+
+    int getSymNameByIdx(int index, string& name) {
+        vector<Elf64_Sym> symtab;
+        int ret = 0;
+
+        ret = readSymTab(0 /* !sort */, symtab);
+        if (ret) return ret;
+
+        if (index >= (int)symtab.size()) return -1;
+
+        return getSymName(symtab[index].st_name, name);
+    }
+
+    int getSymOffsetByName(const char *name, int *off) {
+        vector<Elf64_Sym> symtab;
+        int ret = readSymTab(1 /* sort */, symtab);
+        if (ret) return ret;
+        for (int i = 0; i < (int)symtab.size(); i++) {
+            string s;
+            ret = getSymName(symtab[i].st_name, s);
+            if (ret) continue;
+            if (!strcmp(s.c_str(), name)) {
+                *off = symtab[i].st_value;
+                return 0;
+            }
+        }
         return -1;
     }
-
-    for (int i = 0; i < (int)symtab.size(); i++) {
-        if (symbolType.has_value() && ELF_ST_TYPE(symtab[i].st_info) != symbolType) continue;
-
-        if (symtab[i].st_shndx == sec_idx) {
-            string s;
-            ret = getSymName(elfFile, symtab[i].st_name, s);
-            if (ret) return ret;
-            names.push_back(s);
-        }
-    }
-
-    return 0;
-}
+};
 
 // Read a section by its index - for ex to get sec hdr strtab blob
-static int readCodeSections(ifstream& elfFile, vector<codeSection>& cs) {
+int readCodeSections(ElfObject& elfObj, vector<codeSection>& cs) {
     vector<Elf64_Shdr> shTable;
     int entries, ret = 0;
 
-    ret = readSectionHeadersAll(elfFile, shTable);
+    ret = elfObj.readSectionHeadersAll(shTable);
     if (ret) return ret;
     entries = shTable.size();
 
     vector<struct bpf_prog_def> pd;
-    ret = readSectionByName("progs", elfFile, pd);
+    ret = elfObj.readSectionByName(".android_progs", pd);
     if (ret) return ret;
     vector<string> progDefNames;
-    ret = getSectionSymNames(elfFile, "progs", progDefNames);
+    ret = elfObj.getSectionSymNames(".android_progs", progDefNames);
     if (!pd.empty() && ret) return ret;
 
     for (int i = 0; i < entries; i++) {
         string name;
         codeSection cs_temp;
-        cs_temp.type = BPF_PROG_TYPE_UNSPEC;
 
-        ret = getSymName(elfFile, shTable[i].sh_name, name);
+        ret = elfObj.getSymName(shTable[i].sh_name, name);
         if (ret) return ret;
 
-        enum bpf_prog_type ptype = getSectionType(name);
+        // all we want to process is sections FOO/BAR, but:
+        // - section 0 has an empty name (experimentally observed)
+        // - .relFOO/BAR would break us later (relocations)
+        // - 'license' is special, but doesn't have a /
+        if (name[0] == '.') continue;
 
-        if (ptype == BPF_PROG_TYPE_UNSPEC) continue;
+        // Find the first slash
+        size_t first_slash_pos = name.find('/');
 
-        // This must be done before '/' is replaced with '_'.
-        for (auto& snt : sectionNameTypes)
-            if (StartsWith(name, snt.name)) cs_temp.attach_type = snt.attach_type;
+        // Ignore sections without a /  (basically 'license' section)
+        if (first_slash_pos == std::string::npos) continue;
 
         string oldName = name;
+        name[first_slash_pos] = '_';
 
-        // convert all slashes to underscores
-        std::replace(name.begin(), name.end(), '/', '_');
+        if (name.find('/') != std::string::npos) abort(); // There should only be one!
 
-        cs_temp.type = ptype;
         cs_temp.name = name;
 
-        ret = readSectionByIdx(elfFile, i, cs_temp.data);
+        ret = elfObj.readSectionByIdx(i, cs_temp.data);
         if (ret) return ret;
         ALOGV("Loaded code section %d (%s)", i, name.c_str());
 
         vector<string> csSymNames;
-        ret = getSectionSymNames(elfFile, oldName, csSymNames, STT_FUNC);
+        ret = elfObj.getSectionSymNames(oldName, csSymNames, STT_FUNC);
         if (ret || !csSymNames.size()) return ret;
         cs_temp.program_name = csSymNames[0];
         for (size_t j = 0; j < progDefNames.size(); ++j) {
@@ -449,13 +400,15 @@ static int readCodeSections(ifstream& elfFile, vector<codeSection>& cs) {
             }
         }
 
+        if (!cs_temp.prog_def) abort();
+
         // Check for rel section
         if (cs_temp.data.size() > 0 && i < entries) {
-            ret = getSymName(elfFile, shTable[i + 1].sh_name, name);
+            ret = elfObj.getSymName(shTable[i + 1].sh_name, name);
             if (ret) return ret;
 
             if (name == (".rel" + oldName)) {
-                ret = readSectionByIdx(elfFile, i + 1, cs_temp.rel_data);
+                ret = elfObj.readSectionByIdx(i + 1, cs_temp.rel_data);
                 if (ret) return ret;
                 ALOGV("Loaded relo section %d (%s)", i, name.c_str());
             }
@@ -469,19 +422,7 @@ static int readCodeSections(ifstream& elfFile, vector<codeSection>& cs) {
     return 0;
 }
 
-static int getSymNameByIdx(ifstream& elfFile, int index, string& name) {
-    vector<Elf64_Sym> symtab;
-    int ret = 0;
-
-    ret = readSymTab(elfFile, 0 /* !sort */, symtab);
-    if (ret) return ret;
-
-    if (index >= (int)symtab.size()) return -1;
-
-    return getSymName(elfFile, symtab[index].st_name, name);
-}
-
-static bool mapMatchesExpectations(const unique_fd& fd, const string& mapName,
+static bool mapMatchesExpectations(const unique_fd& fd,
                                    const struct bpf_map_def& mapDef, const enum bpf_map_type type) {
     // bpfGetFd... family of functions require at minimum a 4.14 kernel,
     // so on 4.9-T kernels just pretend the map matches our expectations.
@@ -532,13 +473,13 @@ static bool mapMatchesExpectations(const unique_fd& fd, const string& mapName,
 
     ALOGE("bpf map name %s mismatch: desired/found (errno: %d): "
           "type:%d/%d key:%u/%d value:%u/%d entries:%u/%d flags:%u/%d",
-          mapName.c_str(), errno, type, fd_type, mapDef.key_size, fd_key_size,
+          mapDef.name(), errno, type, fd_type, mapDef.key_size, fd_key_size,
           mapDef.value_size, fd_value_size, mapDef.max_entries, fd_max_entries,
           desired_map_flags, fd_map_flags);
     return false;
 }
 
-static int setBtfDatasecSize(ifstream &elfFile, struct btf *btf,
+static int setBtfDatasecSize(ElfObject &elfObj, struct btf *btf,
                              struct btf_type *bt) {
     const char *name = btf__name_by_offset(btf, bt->name_off);
     if (!name) {
@@ -547,7 +488,7 @@ static int setBtfDatasecSize(ifstream &elfFile, struct btf *btf,
     }
 
     vector<char> data;
-    int ret = readSectionByName(name, elfFile, data);
+    int ret = elfObj.readSectionByName(name, data);
     if (ret) {
         ALOGE("Couldn't read section %s, ret: %d", name, ret);
         return ret;
@@ -556,23 +497,7 @@ static int setBtfDatasecSize(ifstream &elfFile, struct btf *btf,
     return 0;
 }
 
-static int getSymOffsetByName(ifstream &elfFile, const char *name, int *off) {
-    vector<Elf64_Sym> symtab;
-    int ret = readSymTab(elfFile, 1 /* sort */, symtab);
-    if (ret) return ret;
-    for (int i = 0; i < (int)symtab.size(); i++) {
-        string s;
-        ret = getSymName(elfFile, symtab[i].st_name, s);
-        if (ret) continue;
-        if (!strcmp(s.c_str(), name)) {
-            *off = symtab[i].st_value;
-            return 0;
-        }
-    }
-    return -1;
-}
-
-static int setBtfVarOffset(ifstream &elfFile, struct btf *btf,
+static int setBtfVarOffset(ElfObject &elfObj, struct btf *btf,
                            struct btf_type *datasecBt) {
     int i, vars = btf_vlen(datasecBt);
     struct btf_var_secinfo *vsi;
@@ -600,7 +525,7 @@ static int setBtfVarOffset(ifstream &elfFile, struct btf *btf,
         }
 
         int off;
-        int ret = getSymOffsetByName(elfFile, varName, &off);
+        int ret = elfObj.getSymOffsetByName(varName, &off);
         if (ret) {
             ALOGE("No offset found in symbol table, section: %s, var: %s, ret: %d",
                   datasecName, varName, ret);
@@ -672,14 +597,14 @@ static int sanitizeBtf(struct btf *btf) {
     return 0;
 }
 
-static int loadBtf(ifstream &elfFile, struct btf *btf) {
+static int loadBtf(ElfObject &elfObj, struct btf *btf) {
     int ret;
     for (unsigned int i = 1; i < btf__type_cnt(btf); ++i) {
         struct btf_type *bt = (struct btf_type *)btf__type_by_id(btf, i);
         if (!btf_is_datasec(bt)) continue;
-        ret = setBtfDatasecSize(elfFile, btf, bt);
+        ret = setBtfDatasecSize(elfObj, btf, bt);
         if (ret) return ret;
-        ret = setBtfVarOffset(elfFile, btf, bt);
+        ret = setBtfVarOffset(elfObj, btf, bt);
         if (ret) return ret;
     }
 
@@ -779,7 +704,7 @@ static bool isBtfSupported(enum bpf_map_type type) {
     return type != BPF_MAP_TYPE_DEVMAP_HASH && type != BPF_MAP_TYPE_RINGBUF;
 }
 
-static int pinMap(const borrowed_fd& fd, const struct bpf_map_def& mapDef, const string& mapPinLoc) {
+static int pinMap(const borrowed_fd& fd, const struct bpf_map_def& mapDef) {
         int ret;
         if (mapDef.create_location[0]) {
             ret = bpfFdPin(fd, mapDef.create_location);
@@ -789,32 +714,32 @@ static int pinMap(const borrowed_fd& fd, const struct bpf_map_def& mapDef, const
                 return -err;
             }
             ret = renameat2(AT_FDCWD, mapDef.create_location,
-                            AT_FDCWD, mapPinLoc.c_str(), RENAME_NOREPLACE);
+                            AT_FDCWD, mapDef.pin_location, RENAME_NOREPLACE);
             if (ret) {
                 const int err = errno;
-                ALOGE("rename %s %s -> %d [%d:%s]", mapDef.create_location, mapPinLoc.c_str(), ret,
+                ALOGE("rename %s %s -> %d [%d:%s]", mapDef.create_location, mapDef.pin_location, ret,
                       err, strerror(err));
                 return -err;
             }
         } else {
-            ret = bpfFdPin(fd, mapPinLoc.c_str());
+            ret = bpfFdPin(fd, mapDef.pin_location);
             if (ret) {
                 const int err = errno;
-                ALOGE("pin %s -> %d [%d:%s]", mapPinLoc.c_str(), ret, err, strerror(err));
+                ALOGE("pin %s -> %d [%d:%s]", mapDef.pin_location, ret, err, strerror(err));
                 return -err;
             }
         }
-        ret = chmod(mapPinLoc.c_str(), mapDef.mode);
+        ret = chmod(mapDef.pin_location, mapDef.mode);
         if (ret) {
             const int err = errno;
-            ALOGE("chmod(%s, 0%o) = %d [%d:%s]", mapPinLoc.c_str(), mapDef.mode, ret, err,
+            ALOGE("chmod(%s, 0%o) = %d [%d:%s]", mapDef.pin_location, mapDef.mode, ret, err,
                   strerror(err));
             return -err;
         }
-        ret = chown(mapPinLoc.c_str(), (uid_t)mapDef.uid, (gid_t)mapDef.gid);
+        ret = chown(mapDef.pin_location, (uid_t)mapDef.uid, (gid_t)mapDef.gid);
         if (ret) {
             const int err = errno;
-            ALOGE("chown(%s, %u, %u) = %d [%d:%s]", mapPinLoc.c_str(), mapDef.uid, mapDef.gid,
+            ALOGE("chown(%s, %u, %u) = %d [%d:%s]", mapDef.pin_location, mapDef.uid, mapDef.gid,
                   ret, err, strerror(err));
             return -err;
         }
@@ -826,25 +751,9 @@ static int pinMap(const borrowed_fd& fd, const struct bpf_map_def& mapDef, const
                 ALOGE("bpfGetFdMapId failed, errno: %d", err);
                 return -err;
             }
-            ALOGI("map %s id %d", mapPinLoc.c_str(), mapId);
+            ALOGI("map %s id %d", mapDef.pin_location, mapId);
         }
         return 0;
-}
-
-static int readMapNames(ifstream& elfFile, vector<string>& mapNames) {
-    int ret = getSectionSymNames(elfFile, ".android_maps", mapNames);
-    if (ret) return ret;
-
-    const string suffix = "_def";
-    for (string& name : mapNames) {
-        if (EndsWith(name, suffix)) {
-            name.erase(name.length() - suffix.length());
-        } else {
-           ALOGE("Failed to get map names, invalid symbol in .android_maps: %s", name.c_str());
-           return 1;
-        }
-    }
-    return 0;
 }
 
 static bool isMapTypeSupported(enum bpf_map_type type) {
@@ -880,33 +789,15 @@ static enum bpf_map_type sanitizeMapType(enum bpf_map_type type) {
     return type;
 }
 
-static string buildMapPinLoc(const char pin_subdir[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE],
-                             const string& objName, const string& mapName) {
-    // Format of pin location is /sys/fs/bpf/<pin_subdir>map_<objName>_<mapName>
-    // Note: <objName> refers to the extension-less basename of the .o file (without @ suffix).
-    return string(BPF_FS_PATH) + pin_subdir + "map_" + objName + "_" + mapName;
-}
-
-static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>& mapFds,
+static int createMaps(ElfObject& elfObj, vector<struct bpf_map_def>& md, vector<unique_fd>& mapFds,
                       const unsigned int bpfloader_ver) {
-    int ret;
+    int ret = 0;
     vector<char> btfData;
-    vector<struct bpf_map_def> md;
-    vector<string> mapNames;
-    string objName = pathToObjName(string(elfPath));
-
-    ret = readSectionByName(".android_maps", elfFile, md);
-    if (ret == -2) return 0;  // no maps to read
-    if (ret) return ret;
-
-    ret = readMapNames(elfFile, mapNames);
-    if (ret) return ret;
-
     struct btf *btf = NULL;
     auto btfGuard = base::make_scope_guard([&btf] { if (btf) btf__free(btf); });
     if (isAtLeastKernelVersion(4, 19, 0)) {
         // On Linux Kernels older than 4.18 BPF_BTF_LOAD command doesn't exist.
-        ret = readSectionByName(".BTF", elfFile, btfData);
+        ret = elfObj.readSectionByName(".BTF", btfData);
         if (ret) {
             ALOGE("Failed to read .BTF section, ret:%d", ret);
             return ret;
@@ -917,22 +808,22 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
             return -errno;
         }
 
-        ret = loadBtf(elfFile, btf);
+        ret = loadBtf(elfObj, btf);
         if (ret) return ret;
     }
 
     unsigned kvers = kernelVersion();
 
-    for (int i = 0; i < (int)mapNames.size(); i++) {
+    for (unsigned i = 0; i < md.size(); i++) {
         if (bpfloader_ver < md[i].bpfloader_min_ver) {
-            ALOGD("skipping map %s which requires bpfloader min ver 0x%05x", mapNames[i].c_str(),
+            ALOGD("skipping map %s which requires bpfloader min ver 0x%05x", md[i].name(),
                   md[i].bpfloader_min_ver);
             mapFds.push_back(unique_fd());
             continue;
         }
 
         if (bpfloader_ver >= md[i].bpfloader_max_ver) {
-            ALOGD("skipping map %s which requires bpfloader max ver 0x%05x", mapNames[i].c_str(),
+            ALOGD("skipping map %s which requires bpfloader max ver 0x%05x", md[i].name(),
                   md[i].bpfloader_max_ver);
             mapFds.push_back(unique_fd());
             continue;
@@ -940,20 +831,20 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
 
         if (kvers < md[i].min_kver) {
             ALOGD("skipping map %s which requires kernel version 0x%x >= 0x%x",
-                  mapNames[i].c_str(), kvers, md[i].min_kver);
+                  md[i].name(), kvers, md[i].min_kver);
             mapFds.push_back(unique_fd());
             continue;
         }
 
         if (kvers >= md[i].max_kver) {
             ALOGD("skipping map %s which requires kernel version 0x%x < 0x%x",
-                  mapNames[i].c_str(), kvers, md[i].max_kver);
+                  md[i].name(), kvers, md[i].max_kver);
             mapFds.push_back(unique_fd());
             continue;
         }
 
         if (!isMapTypeSupported(md[i].type)) {
-            ALOGD("skipping unsupported map type(%d): %s", md[i].type, mapNames[i].c_str());
+            ALOGD("skipping unsupported map type(%d): %s", md[i].type, md[i].name());
             mapFds.push_back(unique_fd());
             continue;
         }
@@ -967,14 +858,13 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
             if (max_entries < page_size) max_entries = page_size;
         }
 
-        string mapPinLoc = buildMapPinLoc(md[i].pin_subdir, objName, mapNames[i]);
         unique_fd fd;
         int saved_errno;
 
-        if (access(mapPinLoc.c_str(), F_OK) == 0) {
-            fd.reset(mapRetrieveRO(mapPinLoc.c_str()));
+        if (access(md[i].pin_location, F_OK) == 0) {
+            fd.reset(mapRetrieveRO(md[i].pin_location));
             saved_errno = errno;
-            ALOGD("bpf_create_map reusing map %s, ret: %d", mapNames[i].c_str(), fd.get());
+            ALOGD("bpf_create_map reusing map %s, ret: %d", md[i].name(), fd.get());
             abort();
         } else {
             union bpf_attr req = {
@@ -985,12 +875,12 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
               .map_flags = md[i].map_flags,
             };
             if (isAtLeastKernelVersion(4, 15, 0))
-                strlcpy(req.map_name, mapNames[i].c_str(), sizeof(req.map_name));
+                strlcpy(req.map_name, md[i].name(), sizeof(req.map_name));
 
             bool haveBtf = btf && isBtfSupported(type);
             if (haveBtf) {
                 uint32_t kTid, vTid;
-                ret = getKeyValueTids(btf, mapNames[i].c_str(), md[i].key_size,
+                ret = getKeyValueTids(btf, md[i].name(), md[i].key_size,
                                       md[i].value_size, &kTid, &vTid);
                 if (ret) return ret;
                 req.btf_fd = btf__fd(btf);
@@ -1002,10 +892,10 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
             saved_errno = errno;
             if (fd.ok()) {
                 ALOGD("bpf_create_map[%s] btf:%d -> %d",
-                      mapNames[i].c_str(), haveBtf, fd.get());
+                      md[i].name(), haveBtf, fd.get());
             } else {
                 ALOGE("bpf_create_map[%s] btf:%d -> %d errno:%d",
-                      mapNames[i].c_str(), haveBtf, fd.get(), saved_errno);
+                      md[i].name(), haveBtf, fd.get(), saved_errno);
             }
         }
 
@@ -1014,9 +904,9 @@ static int createMaps(const char* elfPath, ifstream& elfFile, vector<unique_fd>&
         // When reusing a pinned map, we need to check the map type/sizes/etc match, but for
         // safety (since reuse code path is rare) run these checks even if we just created it.
         // We assume failure is due to pinned map mismatch, hence the 'NOT UNIQUE' return code.
-        if (!mapMatchesExpectations(fd, mapNames[i], md[i], type)) return -ENOTUNIQ;
+        if (!mapMatchesExpectations(fd, md[i], type)) return -ENOTUNIQ;
 
-        ret = pinMap(fd, md[i], mapPinLoc);
+        ret = pinMap(fd, md[i]);
         if (ret) return ret;
 
         mapFds.push_back(std::move(fd));
@@ -1050,13 +940,9 @@ static void applyRelo(void* insnsPtr, Elf64_Addr offset, int fd) {
     insn->src_reg = BPF_PSEUDO_MAP_FD;
 }
 
-static void applyMapRelo(ifstream& elfFile, vector<unique_fd> &mapFds, vector<codeSection>& cs) {
-    vector<string> mapNames;
-
-    int ret = readMapNames(elfFile, mapNames);
-    if (ret) return;
-
-    for (int k = 0; k != (int)cs.size(); k++) {
+static void applyMapRelo(ElfObject& elfObj, const vector<struct bpf_map_def>& md,
+                         vector<unique_fd> &mapFds, vector<codeSection>& cs) {
+    for (unsigned k = 0; k < cs.size(); k++) {
         Elf64_Rel* rel = (Elf64_Rel*)(cs[k].rel_data.data());
         int n_rel = cs[k].rel_data.size() / sizeof(*rel);
 
@@ -1064,12 +950,12 @@ static void applyMapRelo(ifstream& elfFile, vector<unique_fd> &mapFds, vector<co
             int symIndex = ELF64_R_SYM(rel[i].r_info);
             string symName;
 
-            ret = getSymNameByIdx(elfFile, symIndex, symName);
+            int ret = elfObj.getSymNameByIdx(symIndex, symName);
             if (ret) return;
 
             // Find the map fd and apply relo
-            for (int j = 0; j < (int)mapNames.size(); j++) {
-                if (!mapNames[j].compare(symName)) {
+            for (unsigned j = 0; j < md.size(); j++) {
+                if (!symName.compare(md[j].name())) {
                     applyRelo(cs[k].data.data(), rel[i].r_offset, mapFds[j]);
                     break;
                 }
@@ -1078,8 +964,7 @@ static void applyMapRelo(ifstream& elfFile, vector<unique_fd> &mapFds, vector<co
     }
 }
 
-static int pinProg(const borrowed_fd& fd, const struct bpf_prog_def& progDef,
-                   const string& progPinLoc) {
+static int pinProg(const borrowed_fd& fd, const struct bpf_prog_def& progDef) {
     int ret;
     if (progDef.create_location[0]) {
         ret = bpfFdPin(fd, progDef.create_location);
@@ -1089,37 +974,37 @@ static int pinProg(const borrowed_fd& fd, const struct bpf_prog_def& progDef,
             return -err;
         }
         ret = renameat2(AT_FDCWD, progDef.create_location,
-                        AT_FDCWD, progPinLoc.c_str(), RENAME_NOREPLACE);
+                        AT_FDCWD, progDef.pin_location, RENAME_NOREPLACE);
         if (ret) {
             const int err = errno;
-            ALOGE("rename %s %s -> %d [%d:%s]", progDef.create_location, progPinLoc.c_str(), ret,
+            ALOGE("rename %s %s -> %d [%d:%s]", progDef.create_location, progDef.pin_location, ret,
                   err, strerror(err));
             return -err;
         }
     } else {
-        ret = bpfFdPin(fd, progPinLoc.c_str());
+        ret = bpfFdPin(fd, progDef.pin_location);
         if (ret) {
             const int err = errno;
-            ALOGE("create %s -> %d [%d:%s]", progPinLoc.c_str(), ret, err, strerror(err));
+            ALOGE("create %s -> %d [%d:%s]", progDef.pin_location, ret, err, strerror(err));
             return -err;
         }
     }
-    if (chmod(progPinLoc.c_str(), 0440)) {
+    if (chmod(progDef.pin_location, 0440)) {
         const int err = errno;
-        ALOGE("chmod %s 0440 -> [%d:%s]", progPinLoc.c_str(), err, strerror(err));
+        ALOGE("chmod %s 0440 -> [%d:%s]", progDef.pin_location, err, strerror(err));
         return -err;
     }
-    if (chown(progPinLoc.c_str(), (uid_t)progDef.uid,
+    if (chown(progDef.pin_location, (uid_t)progDef.uid,
               (gid_t)progDef.gid)) {
         const int err = errno;
-        ALOGE("chown %s %d %d -> [%d:%s]", progPinLoc.c_str(), progDef.uid,
+        ALOGE("chown %s %d %d -> [%d:%s]", progDef.pin_location, progDef.uid,
               progDef.gid, err, strerror(err));
         return -err;
     }
     return 0;
 }
 
-static int validateProg(const borrowed_fd& fd, string& progPinLoc,
+static int validateProg(const borrowed_fd& fd, const char* const progPinLoc,
                         const unsigned int bpfloader_ver) {
     if (!isAtLeastKernelVersion(4, 14, 0)) {
         return 0;
@@ -1144,22 +1029,16 @@ static int validateProg(const borrowed_fd& fd, string& progPinLoc,
         ALOGE("bpfGetFdXlatProgLen failed, ret: %d", err);
         return -err;
     }
-    ALOGI("prog %s id %d len jit:%d xlat:%d", progPinLoc.c_str(), progId, jitLen, xlatLen);
+    ALOGI("prog %s id %d len jit:%d xlat:%d", progPinLoc, progId, jitLen, xlatLen);
 
     if (!jitLen && bpfloader_ver >= BPFLOADER_MAINLINE_25Q2_VERSION) {
-        ALOGE("Kernel eBPF JIT failure for %s", progPinLoc.c_str());
+        ALOGE("Kernel eBPF JIT failure for %s", progPinLoc);
         return -ENOTSUP;
     }
     return 0;
 }
 
-static string buildProgPinLoc(const char pin_subdir[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE],
-                              const string& objName, const string& name) {
-    // Format of pin location is /sys/fs/bpf/<prefix>prog_<objName>_<progName>
-    return string(BPF_FS_PATH) + pin_subdir + "prog_" + objName + '_' + string(name);
-}
-
-static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const string& license,
+static int loadCodeSections(ElfObject& elfObj, vector<codeSection>& cs, const string& license,
                             const unsigned int bpfloader_ver) {
     unsigned kvers = kernelVersion();
 
@@ -1167,8 +1046,6 @@ static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const 
         ALOGE("unable to get kernel version");
         return -EINVAL;
     }
-
-    string objName = pathToObjName(string(elfPath));
 
     for (int i = 0; i < (int)cs.size(); i++) {
         unique_fd& fd = cs[i].prog_fd;
@@ -1201,24 +1078,23 @@ static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const 
         name = name.substr(0, name.find_last_of('$'));
 
         bool reuse = false;
-        string progPinLoc = buildProgPinLoc(cs[i].prog_def->pin_subdir, objName, name);
-        if (access(progPinLoc.c_str(), F_OK) == 0) {
-            fd.reset(retrieveProgram(progPinLoc.c_str()));
-            ALOGD("New bpf prog load reusing prog %s, ret: %d (%s)", progPinLoc.c_str(), fd.get(),
+        if (access(cs[i].prog_def->pin_location, F_OK) == 0) {
+            fd.reset(retrieveProgram(cs[i].prog_def->pin_location));
+            ALOGD("New bpf prog load reusing prog %s, ret: %d (%s)", cs[i].prog_def->pin_location, fd.get(),
                   !fd.ok() ? std::strerror(errno) : "ok");
             reuse = true;
         } else {
             static char log_buf[1 << 20];  // 1 MiB logging buffer
 
             union bpf_attr req = {
-              .prog_type = cs[i].type,
+              .prog_type = cs[i].prog_def->type,
               .insn_cnt = static_cast<__u32>(cs[i].data.size() / sizeof(struct bpf_insn)),
               .insns = ptr_to_u64(cs[i].data.data()),
               .license = ptr_to_u64(license.c_str()),
               .log_level = 1,
               .log_size = sizeof(log_buf),
               .log_buf = ptr_to_u64(log_buf),
-              .expected_attach_type = cs[i].attach_type,
+              .expected_attach_type = cs[i].prog_def->attach_type,
             };
             if (isAtLeastKernelVersion(4, 15, 0))
                 strlcpy(req.prog_name, cs[i].name.c_str(), sizeof(req.prog_name));
@@ -1233,7 +1109,7 @@ static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const 
 
             bool log_oneline = !strchr(log_buf, '\n');
 
-            ALOGD("BPF_PROG_LOAD call for %s (%s) returned '%s' fd: %d (%s)", elfPath,
+            ALOGD("BPF_PROG_LOAD call for %s (%s) returned '%s' fd: %d (%s)", elfObj.path,
                   cs[i].name.c_str(), log_oneline ? log_buf : "{multiline}",
                   fd.get(), !fd.ok() ? std::strerror(errno) : "ok");
 
@@ -1259,10 +1135,10 @@ static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const 
         if (!fd.ok()) return fd.get();
 
         if (!reuse) {
-            ret = pinProg(fd, cs[i].prog_def.value(), progPinLoc);
+            ret = pinProg(fd, cs[i].prog_def.value());
             if (ret) return ret;
         }
-        ret = validateProg(fd, progPinLoc, bpfloader_ver);
+        ret = validateProg(fd, cs[i].prog_def->pin_location, bpfloader_ver);
         if (ret) return ret;
     }
 
@@ -1270,19 +1146,19 @@ static int loadCodeSections(const char* elfPath, vector<codeSection>& cs, const 
 }
 
 static int prepareLoadMaps(const struct bpf_object* obj, const vector<struct bpf_map_def>& md,
-                           const vector<string>& mapNames, const unsigned int bpfloader_ver) {
+                           const unsigned int bpfloader_ver) {
     unsigned kvers = kernelVersion();
 
-    for (int i = 0; i < (int)mapNames.size(); i++) {
-        struct bpf_map* m = bpf_object__find_map_by_name(obj, mapNames[i].c_str());
+    for (unsigned i = 0; i < md.size(); i++) {
+        struct bpf_map* m = bpf_object__find_map_by_name(obj, md[i].name());
         if (!m) {
-            ALOGE("bpf_object does not contain map: %s", mapNames[i].c_str());
+            ALOGE("bpf_object does not contain map: %s", md[i].name());
             return -1;
         }
 
         if (bpfloader_ver < md[i].bpfloader_min_ver || bpfloader_ver >= md[i].bpfloader_max_ver) {
             ALOGD("skipping map %s: bpfloader 0x%05x is outside required range [0x%05x, 0x%05x)",
-                  mapNames[i].c_str(), bpfloader_ver,
+                  md[i].name(), bpfloader_ver,
                   md[i].bpfloader_min_ver, md[i].bpfloader_max_ver);
             bpf_map__set_autocreate(m, false);
             continue;
@@ -1290,13 +1166,13 @@ static int prepareLoadMaps(const struct bpf_object* obj, const vector<struct bpf
 
         if (kvers < md[i].min_kver || kvers >= md[i].max_kver) {
             ALOGD("skipping map %s: kernel version 0x%x is outside required range [0x%x, 0x%x)",
-                  mapNames[i].c_str(), kvers, md[i].min_kver, md[i].max_kver);
+                  md[i].name(), kvers, md[i].min_kver, md[i].max_kver);
             bpf_map__set_autocreate(m, false);
             continue;
         }
 
         if (!isMapTypeSupported(md[i].type)) {
-            ALOGD("skipping unsupported map type(%d): %s", md[i].type, mapNames[i].c_str());
+            ALOGD("skipping unsupported map type(%d): %s", md[i].type, md[i].name());
             bpf_map__set_autocreate(m, false);
             continue;
         }
@@ -1348,42 +1224,36 @@ static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSecti
             return -1;
         }
 
-        bpf_program__set_type(prog, cs[i].type);
-        bpf_program__set_expected_attach_type(prog, cs[i].attach_type);
+        bpf_program__set_type(prog, cs[i].prog_def->type);
+        bpf_program__set_expected_attach_type(prog, cs[i].prog_def->attach_type);
     }
     return 0;
 }
 
-static int pinMaps(const char* const elfPath, const struct bpf_object* obj,
-                   const vector<struct bpf_map_def>& md, const vector<string>& mapNames) {
-    int ret;
-    string objName = pathToObjName(string(elfPath));
-
-    for (int i = 0; i < (int)mapNames.size(); i++) {
-        struct bpf_map* m = bpf_object__find_map_by_name(obj, mapNames[i].c_str());
+static int pinMaps(const struct bpf_object* obj, const vector<struct bpf_map_def>& md) {
+    for (unsigned i = 0; i < md.size(); i++) {
+        struct bpf_map* m = bpf_object__find_map_by_name(obj, md[i].name());
         if (!m) {
-            ALOGE("bpf_object does not contain map: %s", mapNames[i].c_str());
+            ALOGE("bpf_object does not contain map: %s", md[i].name());
             return -1;
         }
         // This map was skipped
         if (!bpf_map__autocreate(m)) continue;
 
-        string mapPinLoc = buildMapPinLoc(md[i].pin_subdir, objName, mapNames[i]);
-        if (access(mapPinLoc.c_str(), F_OK) == 0) {
-            ALOGE("Reusing map is not supported: %s", mapNames[i].c_str());
+        if (access(md[i].pin_location, F_OK) == 0) {
+            ALOGE("Reusing map is not supported: %s", md[i].name());
             return -1;
         }
 
-        ret = pinMap(bpf_map__fd(m), md[i], mapPinLoc);
+        int ret = pinMap(bpf_map__fd(m), md[i]);
         if (ret) return ret;
     }
     return 0;
 }
 
-static int pinProgs(const char* const elfPath, const struct bpf_object * obj,
+static int pinProgs(const struct bpf_object * obj,
                     const vector<codeSection>& cs, const unsigned int bpfloader_ver) {
     int ret;
-    string objName = pathToObjName(string(elfPath));
 
     for (int i = 0; i < (int)cs.size(); i++) {
         string program_name = cs[i].program_name;
@@ -1397,30 +1267,26 @@ static int pinProgs(const char* const elfPath, const struct bpf_object * obj,
 
         string name = cs[i].name;
         name = name.substr(0, name.find_last_of('$'));
-        string progPinLoc = buildProgPinLoc(cs[i].prog_def->pin_subdir, objName, name);
-        if (access(progPinLoc.c_str(), F_OK) == 0) {
+        if (access(cs[i].prog_def->pin_location, F_OK) == 0) {
             // TODO: Skip loading lower priority program
             ALOGI("Higher priority program is already pinned, skip pinning %s", cs[i].name.c_str());
             continue;
         }
 
         int fd = bpf_program__fd(prog);
-        ret = pinProg(fd, cs[i].prog_def.value(), progPinLoc);
+        ret = pinProg(fd, cs[i].prog_def.value());
         if (ret) return ret;
-        ret = validateProg(fd, progPinLoc, bpfloader_ver);
+        ret = validateProg(fd, cs[i].prog_def->pin_location, bpfloader_ver);
         if (ret) return ret;
     }
     return 0;
 }
 
 static int loadProgByLibbpf(const char* const elfPath, const unsigned int bpfloader_ver) {
-    int ret;
-    vector<string> mapNames;
+    ElfObject elfObj(elfPath);
     vector<struct bpf_map_def> md;
     vector<codeSection> cs;
-
-    ifstream elfFile(elfPath, ios::in | ios::binary);
-    if (!elfFile.is_open()) return -1;
+    int ret;
 
     LIBBPF_OPTS(bpf_object_open_opts, opts,
         .bpf_token_path = "",
@@ -1429,16 +1295,13 @@ static int loadProgByLibbpf(const char* const elfPath, const unsigned int bpfloa
     if (!obj) return -1;
     auto objGuard = base::make_scope_guard([&obj] { bpf_object__close(obj); });
 
-    ret = readSectionByName(".android_maps", elfFile, md);
+    ret = elfObj.readSectionByName(".android_maps", md);
     if (ret) return ret;
 
-    ret = readMapNames(elfFile, mapNames);
+    ret = prepareLoadMaps(obj, md, bpfloader_ver);
     if (ret) return ret;
 
-    ret = prepareLoadMaps(obj, md, mapNames, bpfloader_ver);
-    if (ret) return ret;
-
-    ret = readCodeSections(elfFile, cs);
+    ret = readCodeSections(elfObj, cs);
     if (ret && ret != -ENOENT) return ret;
 
     ret = prepareLoadProgs(obj, cs, bpfloader_ver);
@@ -1447,25 +1310,24 @@ static int loadProgByLibbpf(const char* const elfPath, const unsigned int bpfloa
     ret = bpf_object__load(obj);
     if (ret) return ret;
 
-    ret = pinMaps(elfPath, obj, md, mapNames);
+    ret = pinMaps(obj, md);
     if (ret) return ret;
 
-    ret = pinProgs(elfPath, obj, cs, bpfloader_ver);
+    ret = pinProgs(obj, cs, bpfloader_ver);
     if (ret) return ret;
 
     return 0;
 }
 
 int loadProg(const char* const elfPath, const unsigned int bpfloader_ver) {
+    ElfObject elfObj(elfPath);
     vector<char> license;
     vector<codeSection> cs;
+    vector<struct bpf_map_def> md;
     vector<unique_fd> mapFds;
     int ret;
 
-    ifstream elfFile(elfPath, ios::in | ios::binary);
-    if (!elfFile.is_open()) return -1;
-
-    ret = readSectionByName("license", elfFile, license);
+    ret = elfObj.readSectionByName("license", license);
     if (ret) {
         ALOGE("Couldn't find license in %s", elfPath);
         return ret;
@@ -1476,25 +1338,29 @@ int loadProg(const char* const elfPath, const unsigned int bpfloader_ver) {
 
     ALOGD("BpfLoader ver 0x%05x processing ELF object %s", bpfloader_ver, elfPath);
 
-    ret = createMaps(elfPath, elfFile, mapFds, bpfloader_ver);
+    ret = elfObj.readSectionByName(".android_maps", md);
+    if (ret == -2) ret = 0; // -2 means there were no maps to read
+    if (ret) return ret;
+
+    ret = createMaps(elfObj, md, mapFds, bpfloader_ver);
     if (ret) {
         ALOGE("Failed to create maps: (ret=%d) in %s", ret, elfPath);
         return ret;
     }
 
-    for (int i = 0; i < (int)mapFds.size(); i++)
+    for (unsigned i = 0; i < mapFds.size(); i++)
         ALOGV("map_fd found at %d is %d in %s", i, mapFds[i].get(), elfPath);
 
-    ret = readCodeSections(elfFile, cs);
+    ret = readCodeSections(elfObj, cs);
     if (ret == -ENOENT) return 0;
     if (ret) {
         ALOGE("Couldn't read all code sections in %s", elfPath);
         return ret;
     }
 
-    applyMapRelo(elfFile, mapFds, cs);
+    applyMapRelo(elfObj, md, mapFds, cs);
 
-    ret = loadCodeSections(elfPath, cs, string(license.data()), bpfloader_ver);
+    ret = loadCodeSections(elfObj, cs, string(license.data()), bpfloader_ver);
     if (ret) ALOGE("Failed to load programs, loadCodeSections ret=%d", ret);
 
     return ret;
@@ -1508,87 +1374,65 @@ static bool exists(const char* const path) {
     abort();  // can only hit this if permissions (likely selinux) are screwed up
 }
 
+static bool loadObject(const unsigned int bpfloader_ver,
+                      const char* const progPath, const bool useLibbpf = false) {
+    if (useLibbpf ? loadProgByLibbpf(progPath, bpfloader_ver) :
+                          loadProg(progPath, bpfloader_ver)) {
+        ALOGE("Failed to load object: %s, libbpf: %d", progPath, useLibbpf);
+        return false;
+    }
+    ALOGD("Loaded object: %s, libbpf: %d", progPath, useLibbpf);
+    return true;
+}
+
 #define APEXROOT "/apex/com.android.tethering"
 #define BPFROOT APEXROOT "/etc/bpf/mainline/"
 
-static int loadObject(const unsigned int bpfloader_ver,
-                      const char* const fname, const bool useLibbpf = false) {
-    string progPath = string(BPFROOT) + fname;
-    int ret = useLibbpf ? loadProgByLibbpf(progPath.c_str(), bpfloader_ver) :
-                          loadProg(progPath.c_str(), bpfloader_ver);
-    if (ret) {
-        ALOGE("Failed to load object: %s, ret: %s, libbpf: %d",
-              progPath.c_str(), std::strerror(-ret), useLibbpf);
-        return 1;
-    }
-    ALOGD("Loaded object: %s, libbpf: %d", progPath.c_str(), useLibbpf);
-    return 0;
-}
-
-static int loadAllObjects(const unsigned int bpfloader_ver) {
-    // S+ Tethering mainline module (network_stack): tether offload
-    // loads under /sys/fs/bpf/tethering:
-    if (loadObject(bpfloader_ver, "offload.o")) return 1;
-    if (loadObject(bpfloader_ver, "test.o", isAtLeast25Q3)) return 1;
+static bool loadAllObjects(const unsigned int bpfloader_ver) {
+    bool libbpf = isAtLeast25Q3;
+    if (!loadObject(bpfloader_ver, BPFROOT "offload.o")) return false;
+    if (!loadObject(bpfloader_ver, BPFROOT "test.o", libbpf)) return false;
     if (isAtLeastT) {
-        // T+ Tethering mainline module loads under:
-        // /sys/fs/bpf/net_shared: shared with netd & system server
-        if (loadObject(bpfloader_ver, "clatd.o", isAtLeast25Q3)) return 1;
-        if (loadObject(bpfloader_ver, "dscpPolicy.o", isAtLeast25Q3)) return 1;
-
-        // /sys/fs/bpf/netd_shared: shared with netd & system server
-        // - netutils_wrapper (for iptables xt_bpf) has access to programs
-
-        // WARNING: Android T+ non-updatable netd depends on both of the
-        // 'netd_shared' & 'netd' strings for xt_bpf programs it loads
-        if (loadObject(bpfloader_ver, "netd.o", isAtLeast25Q3)) return 1;
-
-        // /sys/fs/bpf/netd_readonly: shared with netd & system server
-        // - netutils_wrapper has no access, netd has read only access
-
-        // /sys/fs/bpf/net_private: not shared, just network_stack
+        if (!loadObject(bpfloader_ver, BPFROOT "clatd.o", libbpf)) return false;
+        if (!loadObject(bpfloader_ver, BPFROOT "dscpPolicy.o", libbpf)) return false;
+        if (!loadObject(bpfloader_ver, BPFROOT "netd.o", libbpf)) return false;
     }
-    return 0;
+    return true;
 }
 
-static int createDir(const char* const dir) {
+static bool createDir(const char* const dir) {
     mode_t prevUmask = umask(0);
 
-    errno = 0;
-    int ret = mkdir(dir, S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO);
-    if (ret && errno != EEXIST) {
-        const int err = errno;
-        umask(prevUmask);
-        ALOGE("Failed to create directory: %s, ret: %s", dir, std::strerror(err));
-        return -err;
+    if (mkdir(dir, S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST) {
+        umask(prevUmask); // cannot fail
+        ALOGE("Failed to create directory: %s, ret: %s", dir, std::strerror(errno));
+        return false;
     }
 
     umask(prevUmask);
-    return 0;
+    return true;
 }
 
 // Technically 'value' doesn't need to be newline terminated, but it's best
 // to include a newline to match 'echo "value" > /proc/sys/...foo' behaviour,
 // which is usually how kernel devs test the actual sysctl interfaces.
-static int writeFile(const char *filename, const char *value) {
+static bool writeFile(const char *filename, const char *value) {
     unique_fd fd(open(filename, O_WRONLY | O_CLOEXEC));
     if (fd < 0) {
-        const int err = errno;
-        ALOGE("open('%s', O_WRONLY | O_CLOEXEC) -> %s", filename, strerror(err));
-        return -err;
+        ALOGE("open('%s', O_WRONLY | O_CLOEXEC) -> %s", filename, strerror(errno));
+        return false;
     }
     int len = strlen(value);
     int v = write(fd, value, len);
     if (v < 0) {
-        const int err = errno;
-        ALOGE("write('%s', '%s', %d) -> %s", filename, value, len, strerror(err));
-        return -err;
+        ALOGE("write('%s', '%s', %d) -> %s", filename, value, len, strerror(errno));
+        return false;
     }
     if (v != len) {
         ALOGE("write('%s', '%s', %d) -> short write [%d]", filename, value, len, v);
-        return -EINVAL;
+        return false;
     }
-    return 0;
+    return true;
 }
 
 #define APEX_MOUNT_POINT "/apex/com.android.tethering"
@@ -1770,7 +1614,7 @@ static int doLoad(char** argv, char * const envp[]) {
 
     if (has_platform_bpfloader_rc && has_platform_netbpfload_rc) {
         ALOGE("Platform has *both* bpfloader & netbpfload init scripts.");
-        return 1;
+        return 2;
     }
 
     logTetheringApexVersion();
@@ -1778,58 +1622,58 @@ static int doLoad(char** argv, char * const envp[]) {
     // both S and T require kernel 4.9 (and eBpf support)
     if (!isAtLeastKernelVersion(4, 9, 0)) {
         ALOGE("Android S & T require kernel 4.9.");
-        return 1;
+        return 3;
     }
 
     // U bumps the kernel requirement up to 4.14
     if (isAtLeastU && !isAtLeastKernelVersion(4, 14, 0)) {
         ALOGE("Android U requires kernel 4.14.");
-        return 1;
+        return 4;
     }
 
     // V bumps the kernel requirement up to 4.19
     // see also: //system/netd/tests/kernel_test.cpp TestKernel419
     if (isAtLeastV && !isAtLeastKernelVersion(4, 19, 0)) {
         ALOGE("Android V requires kernel 4.19.");
-        return 1;
+        return 5;
     }
 
     // 25Q2 bumps the kernel requirement up to 5.4
     // see also: //system/netd/tests/kernel_test.cpp TestKernel54
     if (isAtLeast25Q2 && !isAtLeastKernelVersion(5, 4, 0)) {
         ALOGE("Android 25Q2 requires kernel 5.4.");
-        return 1;
+        return 6;
     }
 
     // 25Q4 bumps the kernel requirement up to 5.10
     // see also: //system/netd/tests/kernel_test.cpp TestKernel510
     if (isAtLeast25Q4 && !isAtLeastKernelVersion(5, 10, 0)) {
         ALOGE("Android 25Q4 requires kernel 5.10.");
-        return 1;
+        return 7;
     }
 
     // Technically already required by U, but only enforce on V+
     // see also: //system/netd/tests/kernel_test.cpp TestKernel64Bit
     if (isAtLeastV && isKernel32Bit() && isAtLeastKernelVersion(5, 16, 0)) {
         ALOGE("Android V+ platform with 32 bit kernel version >= 5.16.0 is unsupported");
-        if (!isTV()) return 1;
+        if (!isTV()) return 8;
     }
 
     if (isKernel32Bit() && isAtLeast25Q2) {
         ALOGE("Android 25Q2 requires 64 bit kernel.");
-        return 1;
+        return 9;
     }
 
     // 6.6 is highest version supported by Android V, so this is effectively W+ (sdk=36+)
     if (isKernel32Bit() && isAtLeastKernelVersion(6, 7, 0)) {
         ALOGE("Android platform with 32 bit kernel version >= 6.7.0 is unsupported");
-        return 1;
+        return 10;
     }
 
     // Various known ABI layout issues, particularly wrt. bpf and ipsec/xfrm.
     if (isAtLeastV && isKernel32Bit() && isX86()) {
         ALOGE("Android V requires X86 kernel to be 64-bit.");
-        if (!isTV()) return 1;
+        if (!isTV()) return 11;
     }
 
     if (isAtLeastV) {
@@ -1897,10 +1741,10 @@ static int doLoad(char** argv, char * const envp[]) {
             ALOGW("[Arm KernelUpRev] 32-bit userspace unsupported on 6.2+ kernels.");
         } else if (isArm()) {
             ALOGE("[Arm] 64-bit userspace required on 6.2+ kernels (%d).", first_api_level);
-            return 1;
+            return 12;
         } else { // x86 since RiscV cannot be 32-bit
             ALOGE("[x86] 64-bit userspace required on 6.2+ kernels.");
-            return 1;
+            return 13;
         }
     }
 
@@ -1914,32 +1758,32 @@ static int doLoad(char** argv, char * const envp[]) {
     if (isUserspace32bit() && isAtLeastKernelVersion(6, 13, 0)) {
         // due to previous check only reachable on Arm && (<=T kernel uprev || TV || Wear)
         ALOGE("64-bit userspace required on 6.13+ kernels.");
-        return 1;
+        return 14;
     }
 
     if (isAtLeast25Q2) {
         FILE * f = fopen("/system/etc/init/netbpfload.rc", "re");
         if (!f) {
             ALOGE("failure opening /system/etc/init/netbpfload.rc");
-            return 1;
+            return 15;
         }
         int y = -1, q = -1, a = -1, b = -1, c = -1;
         int v = fscanf(f, "# %d %d %d %d %d #", &y, &q, &a, &b, &c);
         ALOGI("detected %d of 5: %dQ%d api:%d.%d.%d", v, y, q, a, b, c);
         fclose(f);
-        if (v != 5) return 1;
-        if (y < 2025 || y > 2099) return 1;
-        if (q < 1 || q > 4) return 1;
-        if (a < 36) return 1;
-        if (b < 0 || b > 4) return 1;
-        if (c < 0) return 1;
+        if (v != 5) return 16;
+        if (y < 2025 || y > 2099) return 17;
+        if (q < 1 || q > 4) return 18;
+        if (a < 36) return 19;
+        if (b < 0 || b > 4) return 20;
+        if (c < 0) return 21;
     }
 
     // Ensure we can determine the Android build type.
     if (!isEng() && !isUser() && !isUserdebug()) {
         ALOGE("Failed to determine the build type: got %s, want 'eng', 'user', or 'userdebug'",
               getBuildType().c_str());
-        return 1;
+        return 22;
     }
 
     if (runningAsRoot) {
@@ -1949,8 +1793,8 @@ static int doLoad(char** argv, char * const envp[]) {
         // but we need 0 (enabled)
         // (this writeFile is known to fail on at least 4.19, but always defaults to 0 on
         // pre-5.13, on 5.13+ it depends on CONFIG_BPF_UNPRIV_DEFAULT_OFF)
-        if (writeFile("/proc/sys/kernel/unprivileged_bpf_disabled", "0\n") &&
-            isAtLeastKernelVersion(5, 13, 0)) return 1;
+        if (!writeFile("/proc/sys/kernel/unprivileged_bpf_disabled", "0\n") &&
+            isAtLeastKernelVersion(5, 13, 0)) return 23;
     }
 
     if (isAtLeastU) {
@@ -1965,12 +1809,12 @@ static int doLoad(char** argv, char * const envp[]) {
         //  kernel does not have CONFIG_BPF_JIT=y)
         // BPF_JIT is required by R VINTF (which means 4.14/4.19/5.4 kernels),
         // but 4.14/4.19 were released with P & Q, and only 5.4 is new in R+.
-        if (writeFile("/proc/sys/net/core/bpf_jit_enable", "1\n")) return 1;
+        if (!writeFile("/proc/sys/net/core/bpf_jit_enable", "1\n")) return 24;
 
         // Enable JIT kallsyms export for privileged users only
         // (Note: this (open) will fail with ENOENT 'No such file or directory' if
         //  kernel does not have CONFIG_HAVE_EBPF_JIT=y)
-        if (writeFile("/proc/sys/net/core/bpf_jit_kallsyms", "1\n")) return 1;
+        if (!writeFile("/proc/sys/net/core/bpf_jit_kallsyms", "1\n")) return 25;
     }
 
     if (runningAsRoot) {  // implies U QPR3+ and kernel 4.14+
@@ -1979,13 +1823,13 @@ static int doLoad(char** argv, char * const envp[]) {
         uint32_t progId = bpfGetNextProgId(0);  // expect 0 with errno == ENOENT
         if (progId || errno != ENOENT) {
             ALOGE("bpfGetNextProgId(zero) returned %u (errno %d)", progId, errno);
-            return 1;
+            return 26;
         }
         errno = 0;
         uint32_t mapId = bpfGetNextMapId(0);  // expect 0 with errno == ENOENT
         if (mapId || errno != ENOENT) {
             ALOGE("bpfGetNextMapId(zero) returned %u (errno %d)", mapId, errno);
-            return 1;
+            return 27;
         }
     } else if (isAtLeastKernelVersion(4, 14, 0)) {  // implies S through U QPR2
         // bpfGetNext{Prog,Map}Id require 4.14+
@@ -1998,7 +1842,7 @@ static int doLoad(char** argv, char * const envp[]) {
             if (!next && errno == ENOENT) break;
             if (next <= mapId) {
                 ALOGE("bpfGetNextMapId(%u) returned %u errno %d", mapId, next, errno);
-                return 1;
+                return 28;
             }
             mapId = next;
         }
@@ -2011,8 +1855,8 @@ static int doLoad(char** argv, char * const envp[]) {
             // which causes bpfGetNextMapId to behave as bpfGetNextProgId,
             // and thus it should return 0 with errno == ENOENT.
             ALOGE("bpfGetNextMapId(final %d) returned %d errno %d", mapId, next, errno);
-            if (next || errno != ENOENT) return 1;
-            if (isAtLeastT || isAtLeastKernelVersion(4, 20, 0)) return 1;
+            if (next || errno != ENOENT) return 29;
+            if (isAtLeastT || isAtLeastKernelVersion(4, 20, 0)) return 30;
             // implies Android S with 4.14 or 4.19 kernel
             ALOGW("Enabling bpfCmdFixupIsNeeded.");
             bpfCmdFixupIsNeeded = true;
@@ -2025,28 +1869,28 @@ static int doLoad(char** argv, char * const envp[]) {
     // (this must be done first to allow create_location and pin_subdir functionality,
     //  which could otherwise fail with ENOENT during object pinning or renaming,
     //  due to ordering issues)
-    if (createDir("/sys/fs/bpf/tethering")) return 1;
+    if (!createDir("/sys/fs/bpf/tethering")) return 31;
     // This is technically T+ but S also needs it for the 'mainline_done' file.
-    if (createDir("/sys/fs/bpf/netd_shared")) return 1;
+    if (!createDir("/sys/fs/bpf/netd_shared")) return 32;
 
     if (isAtLeastT) {
-        if (createDir("/sys/fs/bpf/netd_readonly")) return 1;
-        if (createDir("/sys/fs/bpf/net_shared")) return 1;
-        if (createDir("/sys/fs/bpf/net_private")) return 1;
+        if (!createDir("/sys/fs/bpf/netd_readonly")) return 33;
+        if (!createDir("/sys/fs/bpf/net_shared")) return 34;
+        if (!createDir("/sys/fs/bpf/net_private")) return 35;
 
         // This one is primarily meant for triggering genfscon rules.
-        if (createDir("/sys/fs/bpf/loader")) return 1;
+        if (!createDir("/sys/fs/bpf/loader")) return 36;
     }
 
     // Load all ELF objects, create programs and maps, and pin them
-    if (loadAllObjects(bpfloader_ver)) {
+    if (!loadAllObjects(bpfloader_ver)) {
         ALOGE("=== CRITICAL FAILURE LOADING BPF PROGRAMS ===");
         ALOGE("If this triggers reliably, you're probably missing kernel options or patches.");
         ALOGE("If this triggers randomly, you might be hitting some memory allocation "
               "problems or startup script race.");
         ALOGE("--- DO NOT EXPECT SYSTEM TO BOOT SUCCESSFULLY ---");
         sleep(20);
-        return 2;
+        return 37;
     }
 
     {
@@ -2057,26 +1901,25 @@ static int doLoad(char** argv, char * const envp[]) {
         int kernel_bugs = bpfCmdFixupIsNeeded;
         if (writeToMapEntry(map, &zero, &kernel_bugs, BPF_ANY)) {
             ALOGE("Failure to write into index 0 of kernel bugs array.");
-            return 1;
+            return 38;
         }
 
         int one = 1;
         int value = 123;
         if (writeToMapEntry(map, &one, &value, BPF_ANY)) {
             ALOGE("Critical kernel bug - failure to write into index 1 of 2 element bpf map array.");
-            if (isAtLeastT) return 1;
+            if (isAtLeastT) return 39;
         }
 
         int ret = bpfFdPin(map, "/sys/fs/bpf/tethering/map_kernel_bugs");
         if (ret) {
-            const int err = errno;
-            ALOGE("pin -> %d [%d:%s]", ret, err, strerror(err));
-            return -err;
+            ALOGE("pin -> %d [%d:%s]", ret, errno, strerror(errno));
+            return 40;
         }
     }
 
     // leave a flag that we're done
-    if (createDir("/sys/fs/bpf/netd_shared/mainline_done")) return 1;
+    if (!createDir("/sys/fs/bpf/netd_shared/mainline_done")) return 41;
 
     // platform bpfloader will only succeed when run as root
     if (!runningAsRoot) {
@@ -2102,7 +1945,7 @@ static int doLoad(char** argv, char * const envp[]) {
     const char * args[] = { platformBpfLoader, NULL, };
     execve(args[0], (char**)args, envp);
     ALOGE("FATAL: execve('%s'): %d[%s]", platformBpfLoader, errno, strerror(errno));
-    return 1;
+    return 42;
 }
 
 }  // namespace bpf
