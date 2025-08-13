@@ -74,9 +74,9 @@ import com.android.net.module.util.InterfaceParams;
 import com.android.net.module.util.NetworkStackConstants;
 import com.android.net.module.util.SharedLog;
 import com.android.net.module.util.Struct.S32;
+import com.android.net.module.util.Struct.S64;
 import com.android.net.module.util.bpf.Tether4Key;
 import com.android.net.module.util.bpf.Tether4Value;
-import com.android.net.module.util.bpf.TetherStatsKey;
 import com.android.net.module.util.bpf.TetherStatsValue;
 import com.android.net.module.util.ip.ConntrackMonitor;
 import com.android.net.module.util.ip.ConntrackMonitor.ConntrackEventConsumer;
@@ -448,11 +448,11 @@ public class BpfCoordinator {
         }
 
         /** Get stats BPF map. */
-        @Nullable public IBpfMap<TetherStatsKey, TetherStatsValue> getBpfStatsMap() {
+        @Nullable public IBpfMap<S32, TetherStatsValue> getBpfStatsMap() {
             if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_STATS_MAP_PATH,
-                    TetherStatsKey.class, TetherStatsValue.class);
+                    S32.class, TetherStatsValue.class);
             } catch (ErrnoException e) {
                 Log.e(TAG, "Cannot create stats map: " + e);
                 return null;
@@ -460,11 +460,11 @@ public class BpfCoordinator {
         }
 
         /** Get limit BPF map. */
-        @Nullable public IBpfMap<TetherLimitKey, TetherLimitValue> getBpfLimitMap() {
+        @Nullable public IBpfMap<S32, S64> getBpfLimitMap() {
             if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_LIMIT_MAP_PATH,
-                    TetherLimitKey.class, TetherLimitValue.class);
+                    S32.class, S64.class);
             } catch (ErrnoException e) {
                 Log.e(TAG, "Cannot create limit map: " + e);
                 return null;
@@ -472,11 +472,11 @@ public class BpfCoordinator {
         }
 
         /** Get dev BPF map. */
-        @Nullable public IBpfMap<TetherDevKey, TetherDevValue> getBpfDevMap() {
+        @Nullable public IBpfMap<S32, S32> getBpfDevMap() {
             if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_DEV_MAP_PATH,
-                    TetherDevKey.class, TetherDevValue.class);
+                    S32.class, S32.class);
             } catch (ErrnoException e) {
                 Log.e(TAG, "Cannot create dev map: " + e);
                 return null;
@@ -1370,7 +1370,7 @@ public class BpfCoordinator {
         }
     }
     private void dumpBpfStats(@NonNull IndentingPrintWriter pw) {
-        try (IBpfMap<TetherStatsKey, TetherStatsValue> map = mDeps.getBpfStatsMap()) {
+        try (IBpfMap<S32, TetherStatsValue> map = mDeps.getBpfStatsMap()) {
             if (map == null) {
                 pw.println("No BPF stats map");
                 return;
@@ -1522,7 +1522,7 @@ public class BpfCoordinator {
         // expected argument order.
         // TODO: dump downstream4 map.
         if (CollectionUtils.contains(args, DUMPSYS_RAWMAP_ARG_STATS)) {
-            try (IBpfMap<TetherStatsKey, TetherStatsValue> statsMap = mDeps.getBpfStatsMap()) {
+            try (IBpfMap<S32, TetherStatsValue> statsMap = mDeps.getBpfStatsMap()) {
                 BpfDump.dumpRawMap(statsMap, pw);
             } catch (IOException e) {
                 pw.println("Error dumping stats map: " + e);
@@ -1636,7 +1636,7 @@ public class BpfCoordinator {
     }
 
     private void dumpDevmap(@NonNull IndentingPrintWriter pw) {
-        try (IBpfMap<TetherDevKey, TetherDevValue> map = mDeps.getBpfDevMap()) {
+        try (IBpfMap<S32, S32> map = mDeps.getBpfDevMap()) {
             if (map == null) {
                 pw.println("No devmap support");
                 return;
@@ -1651,8 +1651,8 @@ public class BpfCoordinator {
                 // Only get upstream interface name. Just do the best to make the index readable.
                 // TODO: get downstream interface name because the index is either upstream or
                 // downstream interface in dev map.
-                pw.println(String.format("%d (%s) -> %d (%s)", k.ifIndex, getIfName(k.ifIndex),
-                        v.ifIndex, getIfName(v.ifIndex)));
+                pw.println(String.format("%d (%s) -> %d (%s)", k.val, getIfName(k.val),
+                        v.val, getIfName(v.val)));
             });
         } catch (ErrnoException | IOException e) {
             pw.println("Error dumping dev map: " + e);
