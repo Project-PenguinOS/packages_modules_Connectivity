@@ -125,7 +125,7 @@ class BpfMapRO {
         return nextKey;
     }
 
-    Result<Value> readValue(const Key key) const {
+    Result<Value> readValue(const Key& key) const {
         Value value;
         if (findMapEntry(mMapFd, &key, &value)) {
             return ErrnoErrorf("BpfMap::readValue() failed");
@@ -147,6 +147,50 @@ class BpfMapRO {
         return {};
     }
 
+    // Observed 4 <= sizeof(Key) <= 16 (48 for Java), 1 <= sizeof(Value) <= 32 (64 for Java)
+    // You can uncomment the following to check:
+    //   static_assert(sizeof(Key) >= 4);
+    //   static_assert(sizeof(Key) <= 16); // 48 observed, but not in C++
+    //   static_assert(sizeof(Value) >= 1);
+    //   static_assert(sizeof(Value) <= 32); // 64 observed, but not in C++
+
+    // ~16KiB initial stack usage seems reasonable
+    static constexpr int BATCHSIZE = 16384 / (sizeof(Key) + sizeof(Value));
+    static_assert(BATCHSIZE >= 256, "consider Key/Value size, whether incr mem limit, decr batch req");
+    static_assert(BATCHSIZE * sizeof(Key) + BATCHSIZE * sizeof(Value) <= 16384);
+
+    Result<void> doBulkLookupAndMaybeDelete(bool del, const function<void(const Key &, const Value &)> &f) const {
+        union { Key k; uint32_t nr; } batch;
+        bool first = true;
+
+        // starting with N == 1 fails with -28/ENOSPC in:
+        //   BpfNetworkStatsTest.cpp BpfNetworkStatsHelperTest#TestGetStatsSortedAndGrouped
+        // requiring us to loop back around, kernel code itself claims that in practice 5
+        // is almost always enough for a bucket (which is what you'd expect, it's not a good
+        // hashtable if there's lots of items in a single bucket)
+        //
+        // Since we start with 256+ we shouldn't ever actually need to increase N...
+        // Also note that the 'true' condition is not really an infinite loop,
+        // as we'll blow up the stack and crash instead of looping infinitely.
+        // But that also shouldn't happen cause it would imply/require a ridiculously
+        // large bpf map sitting entirely in one bucket...
+        for (int N = BATCHSIZE; true; N *= 2) {
+            // N is how many we have space for, can grow on demand as needed
+            Key keys[N];
+            Value values[N];
+            for (;;) {
+                uint32_t count = N; // how many to fetch (and possibly delete)
+                int rv = batchLookupAndMaybeDelete(mMapFd, first ? NULL : &batch, &batch, &keys, &values, &count, del);
+                if (rv && errno == ENOSPC) break;  // not enough space for full HASH bucket, go around the *outer* loop
+                if (rv && errno != ENOENT) return ErrnoErrorf("BpfMap::doBulkLookupAndMaybeDelete() failed");
+                // count is now how many *were* fetched (and possibly delete)
+                for (unsigned i = 0; i < count; ++i) f(keys[i], values[i]);
+                if (rv) return {};  // ENOENT -> success
+                first = false;
+            }
+        }
+    }
+
   public:
     // Function that tries to get map from a pinned path.
     [[clang::reinitializes]] Result<void> init(const char* path) {
@@ -166,8 +210,14 @@ class BpfMapRO {
         return curKey.error();
     }
 
-    // Does not allow early termination - may be implemented with bulk api
+    // Does not allow early termination (via f erroring out) - may be implemented with bulk api
     Result<void> forAll(const function<void(const Key &)> &f) const {
+        // No kernel bpfmap bulk lookup api which doesn't return both keys & values.
+        if (isAtLeastKernelVersion(5, 10, 0)) return doBulkLookupAndMaybeDelete(/*delete*/ false,
+            [&f](const Key &key, const Value &) {
+                f(key);
+            }
+        );
         return iterate(
             [&f](const Key &key) -> Result<void> {
                 f(key);
@@ -191,8 +241,9 @@ class BpfMapRO {
         return curKey.error();
     }
 
-    // Does not allow early termination - maybe implemented with bulk api
+    // Does not allow early termination (via f erroring out) - maybe implemented with bulk api
     Result<void> forAll(const function<void(const Key &, const Value &)> &f) const {
+        if (isAtLeastKernelVersion(5, 10, 0)) return doBulkLookupAndMaybeDelete(/*delete*/ false, f);
         return iterate(
             [&f](const Key &key, const Value &value) -> Result<void> {
                 f(key, value);
@@ -301,16 +352,41 @@ template <class Key, class Value>
 class BpfMap : public BpfMapRW<Key, Value> {
   protected:
     using BpfMapRW<Key, Value>::mMapFd;
+    using BpfMapRW<Key, Value>::doBulkLookupAndMaybeDelete;
 
   public:
     using BpfMapRW<Key, Value>::BpfMapRW;
     using BpfMapRW<Key, Value>::getFirstKey;
+    using BpfMapRW<Key, Value>::getNextKey;
+    using BpfMapRW<Key, Value>::readValue;
 
     Result<void> deleteValue(const Key& key) {
         if (deleteMapEntry(mMapFd, &key)) {
             return ErrnoErrorf("BpfMap::deleteValue() failed");
         }
         return {};
+    }
+
+    Result<Value> readAndDeleteValue(const Key& key) {
+        if (isAtLeastKernelVersion(5, 4, 0)) {
+            Value value;
+            if (!findAndDeleteMapEntry(mMapFd, &key, &value)) return value;
+            if (errno == ENOENT) return ErrnoErrorf("BpfMap::readAndDeleteValue() failed");
+        };
+
+        // fallback path in case of weird error and for pre-5.4 kernels
+
+        Result<Value> v = readValue(key);
+        if (!v.ok()) return v;  // most likely ENOENT
+        Result<void> res = deleteValue(key);
+        if (res.ok()) return v;
+        // We already have the data, not clear what to do on delete failure...
+        // Let's just log something...
+        // (but ignore ENOENT in case we're racing against someone else)
+        if (res.error().code() != ENOENT)
+            ALOGE("BpfMap::readAndDeleteValue(): read but failed to delete data %s",
+                  strerror(res.error().code()));
+        return v;
     }
 
     Result<void> clear() {
@@ -328,6 +404,21 @@ class BpfMap : public BpfMapRW<Key, Value> {
                 return res.error();
             }
         }
+    }
+
+    // Does not allow early termination (via f erroring out) - maybe implemented with bulk api
+    Result<void> consume(const std::function<void(const Key&, const Value&)>& f) {
+        if (isAtLeastKernelVersion(5, 10, 0)) return doBulkLookupAndMaybeDelete(/*delete*/true, f);
+        Result<Key> curKey = getFirstKey();
+        while (curKey.ok()) {
+            const Result<Key> &nextKey = getNextKey(curKey.value());
+            Result<Value> curValue = readAndDeleteValue(curKey.value());
+            // on readAndDelete error (most likely ENOENT due to a delete race) move to next key...
+            if (curValue.ok()) f(curKey.value(), curValue.value());
+            curKey = nextKey;
+        }
+        if (curKey.error().code() == ENOENT) return {};
+        return curKey.error();
     }
 };
 

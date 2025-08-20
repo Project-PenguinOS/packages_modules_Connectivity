@@ -95,6 +95,7 @@ import com.android.server.connectivity.SatelliteAccessController
 import com.android.testutils.ContentResolverWithFakeSettingsProvider
 import com.android.testutils.visibleOnHandlerThread
 import com.android.testutils.waitForIdle
+import com.android.tethering.mainline.beta.Flags.FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER
 import java.net.InetAddress
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
@@ -131,7 +132,8 @@ internal const val VERSION_T = 3
 internal const val VERSION_U = 4
 internal const val VERSION_V = 5
 internal const val VERSION_B = 6
-internal const val VERSION_MAX = VERSION_B
+internal const val VERSION_25Q4 = 7
+internal const val VERSION_MAX = VERSION_25Q4
 
 internal const val CALLING_UID_UNMOCKED = Process.INVALID_UID
 
@@ -193,7 +195,8 @@ open class CSTest {
         it[ConnectivityFlags.DELAY_DESTROY_SOCKETS] = true
         it[ConnectivityFlags.USE_DECLARED_METHODS_FOR_CALLBACKS] = true
         it[ConnectivityFlags.QUEUE_CALLBACKS_FOR_FROZEN_APPS] = true
-        it[ConnectivityFlags.QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER] = true
+        it[ConnectivityFlags.QUEUE_NETWORK_AGENT_EVENTS_AFTER_B] = true
+        it[FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER] = true
         it[ConnectivityFlags.CLOSE_QUIC_CONNECTION] = true
         it[ConnectivityFlags.EARLY_LINK_PROPERTIES_UPDATE_FOR_VPN] = true
         it[ConnectivityFlags.CONSTRAINED_DATA_SATELLITE_METRICS] = true
@@ -358,6 +361,10 @@ open class CSTest {
         ) =
             (cr as ContentResolverWithFakeSettingsProvider).registerContentObserver(uri, observer)
 
+        override fun registerContentObserverAsUser(cr: ContentResolver, uri: Uri,
+            notifyForDescendants: Boolean, observer: ContentObserver, userHandle: UserHandle) =
+            context.getContentResolver().registerContentObserverAsUser(uri, observer, userHandle)
+
         override fun makeCarrierPrivilegeAuthenticator(
                 context: Context,
                 tm: TelephonyManager,
@@ -474,6 +481,11 @@ open class CSTest {
         override fun isAtLeastU() = if (isSdkUnmocked) super.isAtLeastU() else sdkLevel >= VERSION_U
         override fun isAtLeastV() = if (isSdkUnmocked) super.isAtLeastV() else sdkLevel >= VERSION_V
         override fun isAtLeastB() = if (isSdkUnmocked) super.isAtLeastB() else sdkLevel >= VERSION_B
+        override fun isAtLeast25Q4() = if (isSdkUnmocked) {
+            super.isAtLeast25Q4()
+        } else {
+            sdkLevel >= VERSION_25Q4
+        }
 
         private var callingUid = CALLING_UID_UNMOCKED
 
@@ -558,6 +570,11 @@ open class CSTest {
         }
 
         override fun shouldBluetoothTetheringUseRandomAddress() = false
+
+        override fun shouldQueueNetworkAgentEventsInSystemServer() =
+                enabledFeatures[FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER]
+                        ?: fail("Unmocked FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER," +
+                                " see CSTest.enabledFeatures")
     }
 
     inner class PermDeps : PermissionMonitor.Dependencies() {
