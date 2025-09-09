@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 Samsung Electronics. 
+ * Copyright (C) 2025 Samsung Electronics.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
  */
 
 #include <linux/bpf.h>
+#include <linux/filter.h>
 #include <linux/if.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
@@ -28,30 +29,21 @@
 #include <linux/in6.h>
 #include <linux/ip.h>
 #include <linux/ipv6.h>
+#include <linux/pkt_cls.h>
 #include <linux/tcp.h>
 #include <stdint.h>
-#include "bpf_helpers.h"
-#include <tcpAccECN.h>
-#include <linux/pkt_cls.h>
-#include <linux/filter.h>
 
-// Offsets from beginning of L4 (TCP) header
-#define TCP_OFFSET(field) offsetof(struct tcphdr, field)
+// The resulting .o needs to load on Android 26Q2+
+#define BPFLOADER_MIN_VER BPFLOADER_MAINLINE_26Q2_VERSION
+#define BPF_OBJ_NAME "tcpAccECN"
+#define DEFAULT_BPF_PIN_SUBDIR "netd_shared"
 
-// Offsets from beginning of L3 (IPv4) header
-#define IP4_OFFSET(field) offsetof(struct iphdr, field)
-#define IP6_OFFSET(field) offsetof(struct ipv6hdr, field)
-#define IP4_TCP_OFFSET(field) (sizeof(struct iphdr) + TCP_OFFSET(field))
-#define IP6_TCP_OFFSET(field) (sizeof(struct ipv6hdr) + TCP_OFFSET(field))
+#include "bpf_net_helpers.h"
+#include "tcpAccECN.h"
 
-// Offsets from beginning of L2 (ie. Ethernet) header (which must be present)
-#define ETH_IP4_OFFSET(field) (ETH_HLEN + IP4_OFFSET(field))
-#define ETH_IP4_TCP_OFFSET(field) (ETH_HLEN + IP4_TCP_OFFSET(field))
-#define ETH_IP6_OFFSET(field) (ETH_HLEN + IP6_OFFSET(field))
-#define ETH_IP6_TCP_OFFSET(field) (ETH_HLEN + IP6_TCP_OFFSET(field))
-
-#define IP4_TCP_FLAGS_OFF (sizeof(struct iphdr) + 12)
-#define IP6_TCP_FLAGS_OFF (sizeof(struct ipv6hdr) + 12)
+#define TCP_FLAGS_OFF 12
+#define IP4_TCP_FLAGS_OFF (sizeof(struct iphdr) + TCP_FLAGS_OFF)
+#define IP6_TCP_FLAGS_OFF (sizeof(struct ipv6hdr) + TCP_FLAGS_OFF)
 
 #define ETH_IP4_TCP_FLAGS_OFF (ETH_HLEN + IP4_TCP_FLAGS_OFF)
 #define ETH_IP6_TCP_FLAGS_OFF (ETH_HLEN + IP6_TCP_FLAGS_OFF)
@@ -66,26 +58,9 @@ DEFINE_BPF_MAP(l4s_accecn_ce_map, LRU_HASH, uint32_t, uint32_t, L4S_ACCECN_MAP_S
 DEFINE_BPF_MAP(l4s_accecn_byte_map, LRU_HASH, uint32_t, EcnByteCounters, L4S_ACCECN_MAP_SIZE)
 DEFINE_BPF_MAP(l4s_accecn_mss_map, LRU_HASH, uint32_t, uint16_t, L4S_ACCECN_MAP_SIZE)
 
-static int (*bpf_skb_store_bytes)(struct __sk_buff* skb, __u32 offset, const void* from, __u32 len,
-                                  __u64 flags) = (void*)BPF_FUNC_skb_store_bytes;
-
-static int (*bpf_l4_csum_replace)(struct __sk_buff* skb, __u32 offset, __u64 from, __u64 to,
-                                  __u64 flags) = (void*)BPF_FUNC_l4_csum_replace;
-
-static int (*bpf_l3_csum_replace)(struct __sk_buff* skb, __u32 offset, __u64 from, __u64 to,
-                                  __u64 flags) = (void*)BPF_FUNC_l3_csum_replace;
-
-static int (*bpf_skb_load_bytes)(struct __sk_buff *skb, int off, void *to, int len) = (void *) BPF_FUNC_skb_load_bytes;
-static int64_t (*bpf_csum_diff)(__be32 *from, __u32 from_size, __be32 *to, __u32 to_size, __wsum seed) = (void*) BPF_FUNC_csum_diff;
-static int (*bpf_sock_ops_cb_flags_set)(struct bpf_sock_ops *skops, int flags) = (void *) BPF_FUNC_sock_ops_cb_flags_set;
-static int (*bpf_reserve_hdr_opt)(struct bpf_sock_ops *skops, int space, int flags) = (void *) BPF_FUNC_reserve_hdr_opt;
-static int (*bpf_store_hdr_opt)(struct bpf_sock_ops *skops, void *from, int len, int flags) = (void *) BPF_FUNC_store_hdr_opt;
-
-// Android only supports little endian architectures
-#define htons(x) (__builtin_constant_p(x) ? ___constant_swab16(x) : __builtin_bswap16(x))
-#define htonl(x) (__builtin_constant_p(x) ? ___constant_swab32(x) : __builtin_bswap32(x))
-#define ntohs(x) htons(x)
-#define ntohl(x) htonl(x)
+static long (*bpf_sock_ops_cb_flags_set)(struct bpf_sock_ops *skops, int flags) = (void *) BPF_FUNC_sock_ops_cb_flags_set;
+static long (*bpf_reserve_hdr_opt)(struct bpf_sock_ops *skops, int space, long flags) = (void *) BPF_FUNC_reserve_hdr_opt;
+static long (*bpf_store_hdr_opt)(struct bpf_sock_ops *skops, const void *from, int len, long flags) = (void *) BPF_FUNC_store_hdr_opt;
 
 static inline __attribute__((always_inline)) int
 find_accecn_options_offset(struct __sk_buff *skb, uint8_t offset) {
@@ -163,7 +138,7 @@ parse_tcp_mss_option(struct __sk_buff *skb, uint8_t offset) {
     return -1;
 }
 
-DEFINE_BPF_PROG("sockops/l4s_accecn_option", AID_ROOT, AID_SYSTEM, l4s_accecn_option)
+DEFINE_BPF_PROG_KVER(sockops, accecn_option, , AID_SYSTEM, 6_1)
 (struct bpf_sock_ops *skops) {
     switch (skops->op) {
         case BPF_SOCK_OPS_TCP_CONNECT_CB:
@@ -190,8 +165,8 @@ DEFINE_BPF_PROG("sockops/l4s_accecn_option", AID_ROOT, AID_SYSTEM, l4s_accecn_op
         }
         case BPF_SOCK_OPS_WRITE_HDR_OPT_CB:
         {
-            struct {
-                __u8 kind; 
+            static const struct {
+                __u8 kind;
                 __u8 length;
                 __u8 data[CUSTOM_TCP_OPTION_SIZE - 2];
             } __attribute__((packed)) tcp_option = {
@@ -217,7 +192,7 @@ DEFINE_BPF_PROG("sockops/l4s_accecn_option", AID_ROOT, AID_SYSTEM, l4s_accecn_op
     return 1;
 }
 
-DEFINE_BPF_PROG("schedcls/ingress/l4s_accecn_eth", AID_ROOT, AID_SYSTEM, sched_cls_ingress_l4s_accecn_eth)
+DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_eth, , AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
     void* data = (void*)(long)skb->data;
     void* data_end = (void*)(long)skb->data_end;
@@ -272,7 +247,7 @@ DEFINE_BPF_PROG("schedcls/ingress/l4s_accecn_eth", AID_ROOT, AID_SYSTEM, sched_c
     uint32_t *conn_count = bpf_l4s_accecn_ce_map_lookup_elem(&conn_key);
 
     EcnByteCounters* byte_count = bpf_l4s_accecn_byte_map_lookup_elem(&flow_key);
- 
+
     int tcp_flags_offset = isIpv4 ? ETH_IP4_TCP_FLAGS_OFF : ETH_IP6_TCP_FLAGS_OFF;
 
     if (!ce_count) {
@@ -301,7 +276,7 @@ DEFINE_BPF_PROG("schedcls/ingress/l4s_accecn_eth", AID_ROOT, AID_SYSTEM, sched_c
                 if (!byte_count) {
                     int is_accecn = find_accecn_options_offset(skb, hdr_len);
                     if (is_accecn != -1) {
-                        EcnByteCounters new_cnt = {
+                        static const EcnByteCounters new_cnt = {
                             .ceb = 0,
                             .e0b = 1,
                             .e1b = 1,
@@ -336,7 +311,6 @@ DEFINE_BPF_PROG("schedcls/ingress/l4s_accecn_eth", AID_ROOT, AID_SYSTEM, sched_c
         // update the map if CE is marked
         if (ip_ecn == 0b11) {
             __sync_fetch_and_add(ce_count, ce_packets);
-            return TC_ACT_PIPE;
         }
 
         if (byte_count) {
@@ -353,7 +327,7 @@ DEFINE_BPF_PROG("schedcls/ingress/l4s_accecn_eth", AID_ROOT, AID_SYSTEM, sched_c
 }
 
 
-DEFINE_BPF_PROG("schedcls/egress/l4s_accecn_eth", AID_ROOT, AID_SYSTEM, sched_cls_egress_l4s_accecn_eth)
+DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, , AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
     void* data = (void*)(long)skb->data;
     void* data_end = (void*)(long)skb->data_end;
@@ -443,7 +417,7 @@ DEFINE_BPF_PROG("schedcls/egress/l4s_accecn_eth", AID_ROOT, AID_SYSTEM, sched_cl
             __u8 ace_option[12] = {0};
             __u32 e0b_val = htonl((__u32)(byte_count->e0b & 0x0000000000FFFFFF)) >> 8;
             __u32 ceb_val = htonl((__u32)(byte_count->ceb & 0x0000000000FFFFFF)) >> 8;
-            __u32 e1b_val = htonl((__u32)(byte_count->e1b & 0x0000000000FFFFFF)) >> 8; 
+            __u32 e1b_val = htonl((__u32)(byte_count->e1b & 0x0000000000FFFFFF)) >> 8;
             __builtin_memcpy(&ace_option[0], &e0b_val, 3);
             __builtin_memcpy(&ace_option[3], &ceb_val, 3);
             __builtin_memcpy(&ace_option[6], &e1b_val, 3);
@@ -458,20 +432,20 @@ DEFINE_BPF_PROG("schedcls/egress/l4s_accecn_eth", AID_ROOT, AID_SYSTEM, sched_cl
             ret = bpf_l4_csum_replace(skb, tcp_csum_offset, 0, (__u64)res, 0);
             if (ret) return TC_ACT_PIPE;
 
-            ret = bpf_skb_store_bytes(skb, hdr_len + offset + 2, &e0b_val, 3, BPF_F_RECOMPUTE_CSUM);
+            ret = bpf_skb_store_bytes(skb, hdr_len + offset + 2, &e1b_val, 3, BPF_F_RECOMPUTE_CSUM);
             if (ret) return TC_ACT_PIPE;
 
             ret = bpf_skb_store_bytes(skb, hdr_len + offset + 5, &ceb_val, 3, BPF_F_RECOMPUTE_CSUM);
             if (ret) return TC_ACT_PIPE;
 
-            ret = bpf_skb_store_bytes(skb, hdr_len + offset + 8, &e1b_val, 3, BPF_F_RECOMPUTE_CSUM);
+            ret = bpf_skb_store_bytes(skb, hdr_len + offset + 8, &e0b_val, 3, BPF_F_RECOMPUTE_CSUM);
             if (ret) return TC_ACT_PIPE;
         }
     }
     return TC_ACT_PIPE;
 }
 
-DEFINE_BPF_PROG("schedcls/ingress/l4s_accecn_rawip", AID_ROOT, AID_SYSTEM, sched_cls_ingress_l4s_accecn_rawip)
+DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_rawip, , AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
     void* data = (void*)(long)skb->data;
     void* data_end = (void*)(long)skb->data_end;
@@ -555,7 +529,7 @@ DEFINE_BPF_PROG("schedcls/ingress/l4s_accecn_rawip", AID_ROOT, AID_SYSTEM, sched
                 if (!byte_count) {
                     int is_accecn = find_accecn_options_offset(skb, hdr_len);
                     if (is_accecn != -1) {
-                        EcnByteCounters new_cnt = {
+                        static const EcnByteCounters new_cnt = {
                             .ceb = 0,
                             .e0b = 1,
                             .e1b = 1,
@@ -590,7 +564,6 @@ DEFINE_BPF_PROG("schedcls/ingress/l4s_accecn_rawip", AID_ROOT, AID_SYSTEM, sched
         // update the map if CE is marked
         if (ip_ecn == 0b11) {
             __sync_fetch_and_add(ce_count, ce_packets);
-            return TC_ACT_PIPE;
         }
 
         if (byte_count) {
@@ -607,7 +580,7 @@ DEFINE_BPF_PROG("schedcls/ingress/l4s_accecn_rawip", AID_ROOT, AID_SYSTEM, sched
 }
 
 
-DEFINE_BPF_PROG("schedcls/egress/l4s_accecn_rawip", AID_ROOT, AID_SYSTEM, sched_cls_egress_l4s_accecn_rawip)
+DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, , AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
     void* data = (void*)(long)skb->data;
     void* data_end = (void*)(long)skb->data_end;
@@ -697,7 +670,7 @@ DEFINE_BPF_PROG("schedcls/egress/l4s_accecn_rawip", AID_ROOT, AID_SYSTEM, sched_
             __u8 ace_option[12] = {0};
             __u32 e0b_val = htonl((__u32)(byte_count->e0b & 0x0000000000FFFFFF)) >> 8;
             __u32 ceb_val = htonl((__u32)(byte_count->ceb & 0x0000000000FFFFFF)) >> 8;
-            __u32 e1b_val = htonl((__u32)(byte_count->e1b & 0x0000000000FFFFFF)) >> 8; 
+            __u32 e1b_val = htonl((__u32)(byte_count->e1b & 0x0000000000FFFFFF)) >> 8;
             __builtin_memcpy(&ace_option[0], &e0b_val, 3);
             __builtin_memcpy(&ace_option[3], &ceb_val, 3);
             __builtin_memcpy(&ace_option[6], &e1b_val, 3);
@@ -724,6 +697,3 @@ DEFINE_BPF_PROG("schedcls/egress/l4s_accecn_rawip", AID_ROOT, AID_SYSTEM, sched_
     }
     return TC_ACT_PIPE;
 }
-
-LICENSE("Apache 2.0");
-CRITICAL("eBPF tcpAccECN");
