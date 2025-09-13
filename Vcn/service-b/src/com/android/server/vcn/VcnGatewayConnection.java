@@ -859,6 +859,7 @@ public class VcnGatewayConnection extends StateMachine {
 
         if (mNetworkAgent != null) {
             logWtf("NetworkAgent was non-null in onQuitting");
+            mVcnMetrics.logVcnNetworkNotConnected(mId, mNetworkAgent.getIdentityHashCode());
             mNetworkAgent.unregister();
             mNetworkAgent = null;
         }
@@ -1496,6 +1497,7 @@ public class VcnGatewayConnection extends StateMachine {
 
         protected void teardownNetwork() {
             if (mNetworkAgent != null) {
+                mVcnMetrics.logVcnNetworkNotConnected(mId, mNetworkAgent.getIdentityHashCode());
                 mNetworkAgent.unregister();
                 mNetworkAgent = null;
             }
@@ -1860,10 +1862,13 @@ public class VcnGatewayConnection extends StateMachine {
                                 if (mIsQuitting.getValue()) {
                                     return; // Ignore; VcnGatewayConnection quitting or already quit
                                 }
+                                // TODO(b/443831229): check if mNetworkAgent is stale first.
 
                                 switch (status) {
                                     case NetworkAgent.VALIDATION_STATUS_VALID:
                                         clearFailedAttemptCounterAndSafeModeAlarm();
+                                        mVcnMetrics.logVcnNetworkValidated(
+                                                mId, mNetworkAgent.getIdentityHashCode());
                                         break;
                                     case NetworkAgent.VALIDATION_STATUS_NOT_VALID:
                                         // Trigger re-validation of underlying networks; if it
@@ -1877,6 +1882,8 @@ public class VcnGatewayConnection extends StateMachine {
                                         // Will only set a new alarm if no safe mode alarm is
                                         // currently scheduled.
                                         setSafeModeAlarm();
+                                        mVcnMetrics.logVcnNetworkNotValidated(
+                                                mId, mNetworkAgent.getIdentityHashCode());
                                         break;
                                     default:
                                         logWtf(
@@ -1889,6 +1896,7 @@ public class VcnGatewayConnection extends StateMachine {
 
             agent.register();
             agent.markConnected();
+            mVcnMetrics.logVcnNetworkConnected(mId, agent.getIdentityHashCode());
 
             return agent;
         }
@@ -2982,6 +2990,7 @@ public class VcnGatewayConnection extends StateMachine {
     @VisibleForTesting(visibility = Visibility.PRIVATE)
     public static class VcnNetworkAgent {
         private final NetworkAgent mImpl;
+        private final int mId;
 
         public VcnNetworkAgent(
                 @NonNull VcnContext vcnContext,
@@ -3013,6 +3022,7 @@ public class VcnGatewayConnection extends StateMachine {
                             validationStatusCallback.accept(status);
                         }
                     };
+            mId = System.identityHashCode(this);
         }
 
         /** Registers the underlying NetworkAgent */
@@ -3043,6 +3053,11 @@ public class VcnGatewayConnection extends StateMachine {
         /** Sends new NetworkCapabilities for the underlying NetworkAgent */
         public void setUnderlyingNetworks(@Nullable List<Network> underlyingNetworks) {
             mImpl.setUnderlyingNetworks(underlyingNetworks);
+        }
+
+        /** Retrieves the identity hash code of the underlying NetworkAgent */
+        public int getIdentityHashCode() {
+            return mId;
         }
 
         /** Retrieves the Network for the underlying NetworkAgent */
