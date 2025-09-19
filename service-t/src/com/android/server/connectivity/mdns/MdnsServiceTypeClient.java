@@ -1077,7 +1077,9 @@ public class MdnsServiceTypeClient {
      */
     public Set<FilterRepliesInfo> getFilterRepliesInfo() {
         ensureRunningOnHandlerThread(handler);
-        return new ArraySet<>(offloadInfo.values());
+        final Set<FilterRepliesInfo> info = new ArraySet<>();
+        info.addAll(offloadInfo.values());
+        return info;
     }
 
     /**

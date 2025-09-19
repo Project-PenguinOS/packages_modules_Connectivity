@@ -27,11 +27,14 @@ import android.net.EthernetPortSelector;
 import android.net.InetAddresses;
 import android.net.LinkAddress;
 import android.net.MacAddress;
+import android.net.ProxyInfo;
 import android.net.StaticIpConfiguration;
+import android.net.Uri;
 import android.os.Build;
 
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.EthernetPortSelectorProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.LinkAddressProto;
+import com.android.server.network.configstore.proto.NetworkConfigStoreProto.ManualProxyConfigProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.MeteredOverrideProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.StaticIpv4ConfigurationProto;
 import com.android.testutils.DevSdkIgnoreRule;
@@ -62,6 +65,15 @@ public class ProtoConfigUtilsTest {
     private static final String DOMAIN2 = "test.net";
     private static final String DNS_IP_ADDR_1 = "1.2.3.4";
     private static final String DNS_IP_ADDR_2 = "5.6.7.8";
+    private static final String PROXY_HOST = "10.10.10.10";
+    private static final int PROXY_PORT = 88;
+    private static final List<String> PROXY_EXCLUSION_LIST = Arrays.asList("host1", "host2");
+    private static final String PAC_URL = "https://test.example.com/proxy.pac";
+
+    private static final ProxyInfo DIRECT_PROXY_INFO =
+            ProxyInfo.buildDirectProxy(PROXY_HOST, PROXY_PORT, PROXY_EXCLUSION_LIST);
+    private static final ProxyInfo PAC_PROXY_INFO =
+            ProxyInfo.buildPacProxy(Uri.parse(PAC_URL));
 
     private static final ArrayList<InetAddress> DNS_SERVERS = new ArrayList<>(List.of(
             InetAddresses.parseNumericAddress(DNS_IP_ADDR_1),
@@ -240,5 +252,44 @@ public class ProtoConfigUtilsTest {
                 NullPointerException.class, () -> {
                     ProtoConfigUtils.convertStaticIpConfigurationFromProto(null);
                 });
+    }
+
+    @Test
+    public void testConvertProxyInfoToManualProxyProto() {
+        final ManualProxyConfigProto proto =
+                ProtoConfigUtils.convertProxyInfoToManualProxyProto(DIRECT_PROXY_INFO);
+
+        assertNotNull(proto);
+        Assert.assertEquals(PROXY_HOST, proto.getHost());
+        Assert.assertEquals(PROXY_PORT, proto.getPort());
+        Assert.assertEquals(PROXY_EXCLUSION_LIST, proto.getExclusionHostsList());
+    }
+
+    @Test
+    public void testConvertProxyInfoToManualProxyProto_nullInput() {
+        assertThrows("ProxyInfo must not be null.",
+                NullPointerException.class,
+                () -> ProtoConfigUtils.convertProxyInfoToManualProxyProto(null));
+    }
+
+    @Test
+    public void testConvertManualProxyProtoToProxyInfo() {
+        final ManualProxyConfigProto proto = ManualProxyConfigProto.newBuilder()
+                .setHost(PROXY_HOST)
+                .setPort(PROXY_PORT)
+                .addAllExclusionHosts(PROXY_EXCLUSION_LIST)
+                .build();
+
+        final ProxyInfo proxyInfo = ProtoConfigUtils.convertManualProxyProtoToProxyInfo(proto);
+
+        assertNotNull(proxyInfo);
+        assertEquals(DIRECT_PROXY_INFO, proxyInfo);
+    }
+
+    @Test
+    public void testConvertManualProxyProtoToProxyInfo_nullInput() {
+        assertThrows("ManualProxyConfigProto must not be null.",
+                NullPointerException.class,
+                () -> ProtoConfigUtils.convertManualProxyProtoToProxyInfo(null));
     }
 }

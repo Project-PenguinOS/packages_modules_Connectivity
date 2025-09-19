@@ -23,12 +23,14 @@ import android.net.EthernetPortSelector;
 import android.net.InetAddresses;
 import android.net.LinkAddress;
 import android.net.MacAddress;
+import android.net.ProxyInfo;
 import android.net.StaticIpConfiguration;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.EthernetPortSelectorProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.LinkAddressProto;
+import com.android.server.network.configstore.proto.NetworkConfigStoreProto.ManualProxyConfigProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.MeteredOverrideProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.StaticIpv4ConfigurationProto;
 
@@ -217,5 +219,32 @@ public class ProtoConfigUtils {
         }
 
         return builder.build();
+    }
+
+    /**
+     * Converts a {@link ProxyInfo} object to a corresponding {@link ManualProxyConfigProto} object.
+     */
+    public static ManualProxyConfigProto convertProxyInfoToManualProxyProto(ProxyInfo proxyInfo) {
+        requireNonNull(proxyInfo, "ProxyInfo must not be null.");
+        ManualProxyConfigProto.Builder manualProxyBuilder =
+                ManualProxyConfigProto.newBuilder()
+                        .setHost(proxyInfo.getHost())
+                        .setPort(proxyInfo.getPort());
+
+        for (String exclusionHost : proxyInfo.getExclusionList()) {
+            manualProxyBuilder.addExclusionHosts(exclusionHost);
+        }
+        return manualProxyBuilder.build();
+    }
+
+    /**
+     * Converts a {@link ManualProxyConfigProto} object to a corresponding {@link ProxyInfo} object.
+     */
+    public static ProxyInfo convertManualProxyProtoToProxyInfo(ManualProxyConfigProto manualProxy) {
+        requireNonNull(manualProxy, "ManualProxyConfigProto must not be null.");
+        return ProxyInfo.buildDirectProxy(
+                manualProxy.getHost(),
+                manualProxy.getPort(),
+                manualProxy.getExclusionHostsList());
     }
 }
