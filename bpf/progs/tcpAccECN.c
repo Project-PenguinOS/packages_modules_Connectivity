@@ -248,8 +248,6 @@ DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_eth, , AID_SYSTEM, 6_1)
 
     uint32_t flow_key = (tcph->source << 16) | tcph->dest;
     uint32_t *ce_count = bpf_l4s_accecn_ce_map_lookup_elem(&flow_key);
-    uint32_t conn_key = 0;
-    uint32_t *conn_count = bpf_l4s_accecn_ce_map_lookup_elem(&conn_key);
 
     EcnByteCounters* byte_count = bpf_l4s_accecn_byte_map_lookup_elem(&flow_key);
 
@@ -272,6 +270,8 @@ DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_eth, , AID_SYSTEM, 6_1)
                 }
 
                 uint32_t oneConnection = 1;
+                uint32_t conn_key = 0;
+                uint32_t *conn_count = bpf_l4s_accecn_ce_map_lookup_elem(&conn_key);
                 if (!conn_count) {
                     bpf_l4s_accecn_ce_map_update_elem(&conn_key, &oneConnection, 0);
                 } else {
@@ -495,8 +495,6 @@ DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_rawip, , AID_SYSTEM, 6_1)
 
     uint32_t flow_key = (tcph->source << 16) | tcph->dest;
     uint32_t *ce_count = bpf_l4s_accecn_ce_map_lookup_elem(&flow_key);
-    uint32_t conn_key = 0;
-    uint32_t *conn_count = bpf_l4s_accecn_ce_map_lookup_elem(&conn_key);
 
     EcnByteCounters* byte_count = bpf_l4s_accecn_byte_map_lookup_elem(&flow_key);
 
@@ -519,6 +517,8 @@ DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_rawip, , AID_SYSTEM, 6_1)
                 }
 
                 uint32_t oneConnection = 1;
+                uint32_t conn_key = 0;
+                uint32_t *conn_count = bpf_l4s_accecn_ce_map_lookup_elem(&conn_key);
                 if (!conn_count) {
                     bpf_l4s_accecn_ce_map_update_elem(&conn_key, &oneConnection, 0);
                 } else {

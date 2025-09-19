@@ -213,3 +213,9 @@ _Static_assert(_Alignof(struct bpf_prog_def) == 4, "_Alignof struct bpf_prog_def
 #define BPFLOADER_MAINLINE_25Q4_VERSION   3610 // Android 25Q4 (36.1)
 #define BPFLOADER_MAINLINE_26Q1_VERSION   3612 // Android 26Q1 (36.1+)
 #define BPFLOADER_MAINLINE_26Q2_VERSION   3700 // Android 26Q2 (37.0)
+
+#ifdef __cplusplus
+// map_test_kernel_stats_map key definition.
+constexpr uint32_t BPF_KERNEL_STATS_MAP_KEY_TOTAL_OBJS_LOAD_TIME_MS = 0;
+constexpr uint32_t BPF_KERNEL_STATS_MAP_KEY_UBSAN_BUG = 1;
+#endif

@@ -1,6 +1,10 @@
 package: "com.android.tethering.mainline.beta"
 container: "com.android.tethering"
 
+# Do not add new flags to this file.
+# For platform flag, use frameworks/base/core/java/android/net/flags.aconfig
+# For module flag, use packages/modules/Connectivity/common/flags.aconfig
+
 flag {
     name: "bluetooth_tethering_randomized_address"
     namespace: "com_android_tethering"
@@ -27,7 +31,7 @@ flag {
     namespace: "com_android_tethering"
     description: "The flag enables the Tethering and WI-Fi P2p Group Owner mode local network agent."
     bug: "420590461"
-}    
+}
 
 flag {
     name: "nsd_selective_mdns_response_offload"
@@ -35,3 +39,7 @@ flag {
     description: "A flag to control whether the selective mDNS response offload should be enabled."
     bug: "410734687"
 }
+
+# Do not add new flags to this file.
+# For platform flag, use frameworks/base/core/java/android/net/flags.aconfig
+# For module flag, use packages/modules/Connectivity/common/flags.aconfig

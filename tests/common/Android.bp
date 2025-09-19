@@ -119,7 +119,7 @@ android_test {
         "mockito-target-extended-minus-junit4",
         "modules-utils-native-coverage-listener",
         "ConnectivityCoverageTestsLib",
-        "com.android.tethering.mainline.beta.flags-aconfig-java",
+        "com.android.tethering.mainline.beta.flags-aconfig-java-deprecated",
         "flag-junit",
     ],
     jni_libs: [

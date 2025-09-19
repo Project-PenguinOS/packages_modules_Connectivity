@@ -67,9 +67,9 @@ java_defaults {
     static_libs: [
         "androidx.annotation_annotation",
         "connectivity-net-module-utils-bpf",
-        "com.android.net.flags-aconfig-java",
+        "com.android.net.flags-aconfig-java-deprecated",
         "com.android.tethering.beta.test.flags-aconfig-java",
-        "com.android.tethering.mainline.beta.flags-aconfig-java",
+        "com.android.tethering.mainline.beta.flags-aconfig-java-deprecated",
         "modules-utils-build",
         "modules-utils-statemachine",
         "networkstack-client",

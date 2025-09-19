@@ -21,17 +21,22 @@ import android.net.EthernetConfiguration;
 import android.net.EthernetConfiguration.MeteredOverride;
 import android.net.EthernetPortSelector;
 import android.net.InetAddresses;
+import android.net.IpConfiguration;
+import android.net.IpConfiguration.IpAssignment;
 import android.net.LinkAddress;
 import android.net.MacAddress;
 import android.net.ProxyInfo;
 import android.net.StaticIpConfiguration;
+import android.net.Uri;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.EthernetPortSelectorProto;
+import com.android.server.network.configstore.proto.NetworkConfigStoreProto.IpConfigurationProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.LinkAddressProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.ManualProxyConfigProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.MeteredOverrideProto;
+import com.android.server.network.configstore.proto.NetworkConfigStoreProto.PacUrlConfigProto;
 import com.android.server.network.configstore.proto.NetworkConfigStoreProto.StaticIpv4ConfigurationProto;
 
 import java.net.Inet4Address;
@@ -246,5 +251,57 @@ public class ProtoConfigUtils {
                 manualProxy.getHost(),
                 manualProxy.getPort(),
                 manualProxy.getExclusionHostsList());
+    }
+
+    /**
+     * Converts a {@link ProxyInfo} object to a corresponding {@link PacUrlConfigProto} object.
+     *
+     * @throws IllegalArgumentException if the {@code proxyInfo} does not contain a valid PAC URL.
+     */
+    public static PacUrlConfigProto convertProxyInfoToPacProxyProto(ProxyInfo proxyInfo) {
+        requireNonNull(proxyInfo, "ProxyInfo must not be null.");
+        final Uri url = proxyInfo.getPacFileUrl();
+        if (url == null || Uri.EMPTY.equals(url)) {
+            throw new IllegalArgumentException("PAC URL is null or empty");
+        }
+        return PacUrlConfigProto.newBuilder().setPacUrl(url.toString()).build();
+    }
+
+    /**
+     * Converts a {@link PacUrlConfigProto} object to a corresponding {@link ProxyInfo} object.
+     */
+    public static ProxyInfo convertPacProxyProtoToProxyInfo(PacUrlConfigProto pacProxy) {
+        requireNonNull(pacProxy, "PacUrlConfigProto must not be null.");
+        return ProxyInfo.buildPacProxy(Uri.parse(pacProxy.getPacUrl()));
+    }
+
+    /**
+     * Converts an {@link IpConfiguration} object to a corresponding
+     * {@link IpConfigurationProto} object.
+     *
+     * @throws IllegalArgumentException if {@code ipConfig} has an invalid static IP config or
+     * invalid proxy info
+     */
+    public static IpConfigurationProto convertIpConfigurationToProto(IpConfiguration ipConfig) {
+        requireNonNull(ipConfig, "IP configuration is null, convert to proto failed.");
+        final IpConfigurationProto.Builder builder = IpConfigurationProto.newBuilder();
+
+        if (ipConfig.getIpAssignment() == IpAssignment.STATIC) {
+            builder.setStaticIpv4Config(
+                    convertStaticIpConfigurationToProto(ipConfig.getStaticIpConfiguration()));
+        }
+
+        final ProxyInfo proxyInfo = ipConfig.getHttpProxy();
+        if (proxyInfo != null) {
+            switch (ipConfig.getProxySettings()) {
+                case STATIC -> builder.setManualProxyConfig(
+                        convertProxyInfoToManualProxyProto(proxyInfo));
+                case PAC -> builder.setPacUrlConfig(convertProxyInfoToPacProxyProto(proxyInfo));
+                case NONE, UNASSIGNED -> { /* Do nothing */ }
+                default -> throw new IllegalArgumentException("Invalid proxy settings while "
+                        + "writing: " + ipConfig.getProxySettings() + ", abort parsing process");
+            }
+        }
+        return builder.build();
     }
 }
