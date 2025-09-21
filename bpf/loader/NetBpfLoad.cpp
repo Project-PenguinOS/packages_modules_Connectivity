@@ -82,6 +82,9 @@ using std::ios;
 using std::optional;
 using std::string;
 using std::vector;
+using std::chrono::duration_cast;
+using std::chrono::milliseconds;
+using std::chrono::steady_clock;
 
 namespace android {
 namespace bpf {
@@ -734,6 +737,11 @@ static bool isBtfSupported(enum bpf_map_type type) {
     return type != BPF_MAP_TYPE_DEVMAP_HASH && type != BPF_MAP_TYPE_RINGBUF;
 }
 
+// Duplicates and stores the kernel_stats_map fd during BPF object loading.
+// Entries are written to this map once the object is loaded.
+// Note: We cannot reopen this BPF map later because of sepolicy limitations.
+static unique_fd bpfKernelStatsMapFd;
+
 static int pinMap(const borrowed_fd& fd, const struct bpf_map_def& mapDef) {
         int ret;
         if (mapDef.create_location[0]) {
@@ -772,6 +780,15 @@ static int pinMap(const borrowed_fd& fd, const struct bpf_map_def& mapDef) {
             ALOGE("chown(%s, %u, %u) = %d [%d:%s]", mapDef.pin_location, mapDef.uid, mapDef.gid,
                   ret, err, strerror(err));
             return -err;
+        }
+
+        if (!strcmp(mapDef.pin_location, "/sys/fs/bpf/tethering/map_test_kernel_stats_map")) {
+            bpfKernelStatsMapFd = unique_fd(fcntl(fd.get(), F_DUPFD_CLOEXEC, 0));
+            if (!bpfKernelStatsMapFd.ok()) {
+                const int err = errno;
+                ALOGE("fcntl(%d, F_DUPFD_CLOEXEC, 0) failed [%d:%s]", fd.get(), err, strerror(err));
+                return -err;
+            }
         }
 
         if (isAtLeastKernelVersion(4, 14)) {
@@ -1870,6 +1887,7 @@ static int doLoad(char** argv, char * const envp[]) {
         // nothing we can do.
     }
 
+    auto start = steady_clock::now();
     // Load all ELF objects, create programs and maps, and pin them
     if (!loadAllObjects()) {
         ALOGE("=== CRITICAL FAILURE LOADING BPF PROGRAMS ===");
@@ -1881,41 +1899,28 @@ static int doLoad(char** argv, char * const envp[]) {
         return 38;
     }
 
+    auto end = steady_clock::now();
+    auto timeTaken = duration_cast<milliseconds>(end - start).count();
+    ALOGD("Loaded total objects took %lld ms", timeTaken);
     {
-        // Create a trivial bpf map: a two element array [int->int]
-        unique_fd map(createMap(BPF_MAP_TYPE_ARRAY, sizeof(int), sizeof(int), 2, 0));
-
-        int one = 1;
-        int value = 123;
-        if (writeToMapEntry(map, &one, &value, BPF_ANY)) {
-            ALOGE("Critical kernel bug - failure to write into index 1 of 2 element bpf map array.");
-            if (isAtLeastT) return 39;
+        uint32_t key = BPF_KERNEL_STATS_MAP_KEY_TOTAL_OBJS_LOAD_TIME_MS;
+        if (writeToMapEntry(bpfKernelStatsMapFd, &key, &timeTaken, BPF_ANY)) {
+            ALOGE("Failed to write object load time to kernel stats map, err: [%d, %s]",
+                  errno, strerror(errno));
+            return 39;
         }
 
-        const char* const kernel_bugs_map_path = "/sys/fs/bpf/tethering/map_kernel_bugs";
-        int ret = bpfFdPin(map, kernel_bugs_map_path);
-        if (ret) {
-            ALOGE("pin -> %d [%d:%s]", ret, errno, strerror(errno));
-            return 40;
-        }
-
-        ret = chmod(kernel_bugs_map_path, 0440);
-        if (ret) {
-            ALOGE("chmod %s 0440 -> %d [%d:%s]", kernel_bugs_map_path,
-                  ret, errno, strerror(errno));
-            return 41;
-        }
-
-        ret = chown(kernel_bugs_map_path, AID_ROOT, AID_NETWORK_STACK);
-        if (ret) {
-            ALOGE("chown %s %d %d -> %d [%d:%s]", kernel_bugs_map_path, AID_ROOT,
-                  AID_NETWORK_STACK, ret, errno, strerror(errno));
-            return 42;
+        uint32_t value = 123;
+        key = BPF_KERNEL_STATS_MAP_KEY_UBSAN_BUG;
+        if (writeToMapEntry(bpfKernelStatsMapFd, &key, &value, BPF_ANY)) {
+            ALOGE("Critical kernel bug - failure to write into index 1 of 2 element bpf map array."
+                  "[%d, %s]", errno, strerror(errno));
+            if (isAtLeastT) return 40;
         }
     }
 
     // leave a flag that we're done
-    if (!createDir("/sys/fs/bpf/netd_shared/mainline_done")) return 43;
+    if (!createDir("/sys/fs/bpf/netd_shared/mainline_done")) return 41;
 
     // platform bpfloader will only succeed when run as root
     if (!runningAsRoot) {
@@ -1941,7 +1946,7 @@ static int doLoad(char** argv, char * const envp[]) {
     const char * args[] = { platformBpfLoader, NULL, };
     execve(args[0], (char**)args, envp);
     ALOGE("FATAL: execve('%s'): %d[%s]", platformBpfLoader, errno, strerror(errno));
-    return 44;
+    return 42;
 }
 
 }  // namespace bpf

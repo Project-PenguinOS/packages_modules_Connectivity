@@ -59,7 +59,14 @@ static inline int get_api_level_full() {
     const int api_level_fuller = a * 100 + b * 10 + c * 2;  // 3x.y.z -> 3xy[2z]
 
     const bool unreleased = (base::GetProperty("ro.build.version.codename", "REL") != "REL");
-    return std::max(api_level_fuller, api_level_full) + unreleased;
+    int rv = std::max(api_level_fuller, api_level_full) + unreleased;
+
+    // We are past goog/main 25Q4 branch point, as such:
+    // - 26Q1/next is currently reporting 36.1.1 REL ie. 3612
+    // - 26Q2/trunk_staging is reporting 36.1.1 !REL ie. 3613 (but will eventually become 3700)
+    if (rv == 3613) rv = 3700;
+
+    return rv;
 }
 
 const int api_level_full = get_api_level_full();

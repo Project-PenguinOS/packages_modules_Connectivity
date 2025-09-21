@@ -129,7 +129,7 @@ java_sdk_library {
         // static_libs is not used to compile stubs. So libs which have
         // been included in static_libs might still need to
         // be in stub_only_libs to be usable when generating the API stubs.
-        "com.android.net.flags-aconfig-java",
+        "com.android.net.flags-aconfig-java-deprecated",
         "com.android.nearby.flags-aconfig-java",
         "com.android.net.thread.flags-aconfig-java",
         // Use prebuilt framework-connectivity stubs to avoid circular dependencies
@@ -197,7 +197,7 @@ java_sdk_library {
         "//packages/modules/Wifi/service/tests/wifitests",
     ],
     aconfig_declarations: [
-        "com.android.net.flags-aconfig",
+        "com.android.net.flags-aconfig-deprecated",
         "com.android.net.thread.flags-aconfig",
         "nearby_flags",
     ],

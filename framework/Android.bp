@@ -89,7 +89,7 @@ java_defaults {
         "framework-wifi.stubs.module_lib",
     ],
     static_libs: [
-        "com.android.net.flags-aconfig-java",
+        "com.android.net.flags-aconfig-java-deprecated",
         "android.net.platform.flags-aconfig-java-export",
         // Not using the latest stable version because all functions in the latest version of
         // mdns_aidl_interface are deprecated.
@@ -225,7 +225,7 @@ java_sdk_library {
         baseline_filename: "lint-baseline.xml",
     },
     aconfig_declarations: [
-        "com.android.net.flags-aconfig",
+        "com.android.net.flags-aconfig-deprecated",
         "com.android.net.http.flags-aconfig",
         "com.android.networksecurity.flags-aconfig",
     ],

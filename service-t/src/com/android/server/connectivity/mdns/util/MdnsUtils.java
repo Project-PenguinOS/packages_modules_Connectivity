@@ -22,7 +22,6 @@ import static com.android.server.connectivity.mdns.MdnsConstants.FLAG_TRUNCATED;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
-import android.annotation.RequiresApi;
 import android.net.Network;
 import android.net.nsd.OffloadEngine;
 import android.net.nsd.OffloadServiceInfo;
@@ -30,6 +29,8 @@ import android.os.Build;
 import android.os.SystemClock;
 import android.util.ArraySet;
 import android.util.Pair;
+
+import androidx.annotation.RequiresApi;
 
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.DnsUtils;
