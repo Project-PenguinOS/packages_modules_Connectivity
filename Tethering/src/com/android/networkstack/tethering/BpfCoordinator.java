@@ -1750,13 +1750,16 @@ public class BpfCoordinator {
                     && Objects.equals(this.sourcePrefix, that.sourcePrefix)
                     && Objects.equals(this.inDstMac, that.inDstMac)
                     && Objects.equals(this.outSrcMac, that.outSrcMac)
-                    && Objects.equals(this.outDstMac, that.outDstMac);
+                    && Objects.equals(this.outDstMac, that.outDstMac)
+                    && this.pmtu == that.pmtu;
         }
 
         @Override
         public int hashCode() {
-            return 13 * upstreamIfindex + 41 * downstreamIfindex
-                    + Objects.hash(sourcePrefix, inDstMac, outSrcMac, outDstMac);
+            return 13 * upstreamIfindex
+                    + 41 * downstreamIfindex
+                    + Objects.hash(sourcePrefix, inDstMac, outSrcMac, outDstMac)
+                    + 7 * pmtu;
         }
 
         @Override
@@ -1766,7 +1769,8 @@ public class BpfCoordinator {
                     + ", sourcePrefix: " + sourcePrefix
                     + ", inDstMac: " + inDstMac
                     + ", outSrcMac: " + outSrcMac
-                    + ", outDstMac: " + outDstMac;
+                    + ", outDstMac: " + outDstMac
+                    + ", pmtu: " + pmtu;
         }
     }
 

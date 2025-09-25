@@ -81,6 +81,16 @@ const bool isAtLeast25Q4 = (api_level_full >= 3610);  // 36.1
 const bool isAtLeast26Q1 = (api_level_full >= 3612);  // 36.1+
 const bool isAtLeast26Q2 = (api_level_full >= 3700);  // 37.0
 
+static inline const std::string& getBuildType() {
+    static const std::string t = base::GetProperty("ro.build.type", "unknown");
+    return t;
+}
+
+// The following functions classify the 3 Android build types.
+const bool isEng = (getBuildType() == "eng");
+const bool isUser = (getBuildType() == "user");
+const bool isUserdebug = (getBuildType() == "userdebug");
+
 // See kernel's net/core/sock_diag.c __sock_gen_cookie()
 // the implementation of which guarantees 0 will never be returned,
 // primarily because 0 is used to mean not yet initialized,

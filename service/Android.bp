@@ -239,6 +239,7 @@ java_library {
         "//packages/modules/Connectivity/tests:__subpackages__",
         "//packages/modules/Connectivity/thread/service:__subpackages__",
         "//packages/modules/Connectivity/thread/tests:__subpackages__",
+        "//packages/modules/Connectivity/Vcn/service-b",
     ],
 }
 
@@ -280,10 +281,8 @@ java_defaults {
         "service-networksecurity-pre-jarjar",
         service_remoteauth_pre_jarjar_lib,
         "service-thread-pre-jarjar",
-    ] + select(release_flag("RELEASE_MOVE_VCN_TO_MAINLINE"), {
-        true: ["service-connectivity-b-pre-jarjar"],
-        default: [],
-    }),
+        "service-connectivity-b-pre-jarjar",
+    ],
 
     // The below libraries are not actually needed to build since no source is compiled
     // (only combining prebuilt static_libs), but they are necessary so that R8 has the right

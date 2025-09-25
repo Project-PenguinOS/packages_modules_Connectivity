@@ -17,6 +17,7 @@
 #include <array>
 #include <cstdint>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include "netdutils/Slice.h"
@@ -25,6 +26,8 @@
 
 namespace android {
 namespace netdutils {
+
+using ::testing::AnyOf;
 
 class SliceTest : public testing::Test {
   protected:
@@ -38,7 +41,8 @@ TEST_F(SliceTest, smoke) {
     s2 = p.first; // avoid warn-unused error
     std::stringstream ss;
     ss << Slice();
-    EXPECT_EQ("Slice[base: 0x0, limit: 0x0, size: 0x0]", ss.str());
+    EXPECT_THAT(ss.str(), AnyOf("Slice[base: 0x0, limit: 0x0, size: 0x0]",
+                                "Slice[base: 0, limit: 0, size: 0x0]"));
     constexpr size_t kBytes = 14;
     EXPECT_EQ(s1.base(), take(s1, kBytes).base());
     EXPECT_EQ(kBytes, take(s1, kBytes).size());

@@ -149,11 +149,9 @@ bootclasspath_fragment {
     contents: [
         "framework-connectivity",
         "framework-connectivity-t",
+        "framework-connectivity-b",
         "framework-tethering",
-    ] + select(release_flag("RELEASE_MOVE_VCN_TO_MAINLINE"), {
-        true: ["framework-connectivity-b"],
-        default: [],
-    }),
+    ],
     apex_available: ["com.android.tethering"],
 
     // The bootclasspath_fragments that provide APIs on which this depends.
