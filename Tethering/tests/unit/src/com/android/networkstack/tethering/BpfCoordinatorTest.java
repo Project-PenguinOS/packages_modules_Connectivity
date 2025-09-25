@@ -2665,7 +2665,7 @@ public class BpfCoordinatorTest {
                 UPSTREAM_IFINDEX, DOWNSTREAM_IFINDEX, UPSTREAM_PREFIX, DOWNSTREAM_MAC);
         assertEquals("upstreamIfindex: 1001, downstreamIfindex: 2001, "
                 + "sourcePrefix: 2001:db8:0:1234::/64, inDstMac: 12:34:56:78:90:ab, "
-                + "outSrcMac: 00:00:00:00:00:00, outDstMac: 00:00:00:00:00:00",
+                + "outSrcMac: 00:00:00:00:00:00, outDstMac: 00:00:00:00:00:00, pmtu: 1400",
                 upstreamRule.toString());
     }
 

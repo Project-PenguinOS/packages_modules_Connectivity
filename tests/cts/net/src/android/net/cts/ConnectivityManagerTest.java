@@ -231,11 +231,11 @@ import com.android.testutils.DevSdkIgnoreRunner;
 import com.android.testutils.DeviceConfigRule;
 import com.android.testutils.DeviceInfoUtils;
 import com.android.testutils.DumpTestUtils;
-import com.android.testutils.TestableNetworkCallback.Event;
 import com.android.testutils.SkipPresubmit;
 import com.android.testutils.TestHttpServer;
 import com.android.testutils.TestNetworkTracker;
 import com.android.testutils.TestableNetworkCallback;
+import com.android.testutils.TestableNetworkCallback.Event;
 
 import junit.framework.AssertionFailedError;
 
@@ -3199,7 +3199,7 @@ public class ConnectivityManagerTest {
 
         allowBadWifi();
 
-        try {
+        testAndCleanup(() -> {
             final Network cellNetwork = networkCallbackRule.requestCell();
             ensureCellIsValidated();
             final Network wifiNetwork = prepareValidatedNetwork();
@@ -3239,11 +3239,11 @@ public class ConnectivityManagerTest {
                     entry -> cellNetwork.equals(entry.getNetwork()));
             // The network should not validate again.
             wifiCb.assertNoCallback(NO_CALLBACK_TIMEOUT_MS, c -> isValidatedCaps(c));
-        } finally {
+        }, () -> {
             resetAvoidBadWifi(previousAvoidBadWifi);
             mHttpServer.stop();
             mTestValidationConfigRule.runAfterNextCleanup(this::reconnectWifiAndEnsureValidated);
-        }
+        });
     }
 
     private boolean isValidatedCaps(Event c) {
