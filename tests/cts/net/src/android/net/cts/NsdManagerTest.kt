@@ -17,6 +17,7 @@ package android.net.cts
 
 import android.Manifest.permission.MANAGE_TEST_NETWORKS
 import android.Manifest.permission.NETWORK_SETTINGS
+import android.Manifest.permission.READ_DEVICE_CONFIG
 import android.app.compat.CompatChanges
 import android.net.ConnectivityManager
 import android.net.ConnectivityManager.NetworkCallback
@@ -108,6 +109,7 @@ import com.android.testutils.pollForReply
 import com.android.testutils.runAsShell
 import com.android.testutils.tryTest
 import com.android.testutils.waitForIdle
+import com.android.tethering.mainline.beta.Flags
 import java.io.File
 import java.io.IOException
 import java.net.Inet6Address
@@ -731,7 +733,18 @@ class NsdManagerTest {
         assertTrue(serviceInfo.hostname.endsWith("local"))
         // Test service types should not be in the priority list
         assertEquals(Integer.MAX_VALUE, serviceInfo.priority)
-        assertEquals(OffloadEngine.OFFLOAD_TYPE_REPLY.toLong(), serviceInfo.offloadType)
+        val isSelectiveMdnsResponseOffloadEnabled = runAsShell(READ_DEVICE_CONFIG) {
+            Flags.nsdSelectiveMdnsResponseOffload()
+        }
+        if (isSelectiveMdnsResponseOffloadEnabled) {
+            assertEquals(
+                (OffloadEngine.OFFLOAD_TYPE_REPLY
+                    or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong(),
+                serviceInfo.offloadType
+            )
+        } else {
+            assertEquals(OffloadEngine.OFFLOAD_TYPE_REPLY.toLong(), serviceInfo.offloadType)
+        }
         val offloadPayload = serviceInfo.offloadPayload
         assertNotNull(offloadPayload)
         val dnsPacket = TestDnsPacket(offloadPayload, dstAddr = multicastIpv6Addr)

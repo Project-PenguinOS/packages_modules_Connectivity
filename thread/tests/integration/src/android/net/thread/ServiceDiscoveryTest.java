@@ -64,6 +64,7 @@ import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestName;
 import org.junit.runner.RunWith;
 
 import java.net.Inet6Address;
@@ -101,7 +102,11 @@ public class ServiceDiscoveryTest {
     private static final Correspondence<byte[], byte[]> BYTE_ARRAY_EQUALITY =
             Correspondence.from(Arrays::equals, "is equivalent to");
 
+    private static final List<String> NO_JOIN_IN_SETUP_TESTS =
+            Arrays.asList("meshcopService_discoverableOnlyAfterJoin");
+
     @Rule public final ThreadFeatureCheckerRule mThreadRule = new ThreadFeatureCheckerRule();
+    @Rule public TestName mTestName = new TestName();
 
     private final Context mContext = ApplicationProvider.getApplicationContext();
     private final ThreadNetworkControllerWrapper mController =
@@ -119,7 +124,9 @@ public class ServiceDiscoveryTest {
         mController.leaveAndWait();
         var config = new ThreadConfiguration.Builder().setBorderRouterEnabled(true).build();
         mController.setConfigurationAndWait(config);
-        mController.joinAndWait(DEFAULT_DATASET);
+        if (!NO_JOIN_IN_SETUP_TESTS.contains(mTestName.getMethodName())) {
+            mController.joinAndWait(DEFAULT_DATASET);
+        }
         mNsdManager = mContext.getSystemService(NsdManager.class);
 
         mHandlerThread = new HandlerThread(TAG);
@@ -471,6 +478,21 @@ public class ServiceDiscoveryTest {
         Map<String, byte[]> txtMap = meshcopService.getAttributes();
         assertThat(txtMap.get("vn")).isEqualTo(expectedVendorName.getBytes(UTF_8));
         assertThat(txtMap.get("mn")).isEqualTo(expectedModelName.getBytes(UTF_8));
+    }
+
+    @Test
+    public void meshcopService_discoverableOnlyAfterJoin() throws Exception {
+        // Verify meshcop service is not discoverable. When running this test case, the controller
+        // won't join the network at first.
+        assertThrows(
+                TimeoutException.class, () -> discoverService(mNsdManager, "_meshcop._udp"));
+
+        // Join the network.
+        mController.joinAndWait(DEFAULT_DATASET);
+
+        // Verify meshcop service is discoverable.
+        NsdServiceInfo discoveredService = discoverService(mNsdManager, "_meshcop._udp");
+        assertThat(discoveredService).isNotNull();
     }
 
     @Test

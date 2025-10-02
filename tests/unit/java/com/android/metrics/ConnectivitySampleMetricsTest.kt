@@ -263,7 +263,7 @@ class ConnectivitySampleMetricsTest : CSTest() {
         val statsBefore = csHandler.onHandler { service.sampleConnectivityState() }
         assertEquals(0, statsBefore.satelliteAccessInfo.optinUidCount)
 
-        doReturn(3).`when`(satelliteAccessController).cachedOptInUidsCount
+        doReturn(3).`when`(appOptInDefaultNetworkController).cachedOptInUidsCount
         val statsAfter = csHandler.onHandler { service.sampleConnectivityState() }
         assertEquals(if (expectUpdated) 3 else 0, statsAfter.satelliteAccessInfo.optinUidCount)
     }

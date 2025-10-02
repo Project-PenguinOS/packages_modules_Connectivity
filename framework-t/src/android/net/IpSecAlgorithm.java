@@ -201,6 +201,7 @@ public final class IpSecAlgorithm implements Parcelable {
     public static final String AUTH_CRYPT_CHACHA20_POLY1305 = "rfc7539esp(chacha20,poly1305)";
 
     /** @hide */
+    // LINT.IfChange
     @StringDef({
         CRYPT_AES_CBC,
         CRYPT_AES_CTR,
@@ -216,6 +217,7 @@ public final class IpSecAlgorithm implements Parcelable {
     })
     @Retention(RetentionPolicy.SOURCE)
     public @interface AlgorithmName {}
+    // LINT.ThenChange(../../../../../../../frameworks/base/services/core/java/com/android/server/connectivity/VpnConnectivityMetrics.java)
 
     /** @hide */
     @VisibleForTesting
