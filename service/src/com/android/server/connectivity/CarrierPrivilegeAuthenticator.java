@@ -20,7 +20,6 @@ import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 
 import static com.android.net.module.util.HandlerUtils.ensureRunningOnHandlerThread;
-import static com.android.server.connectivity.ConnectivityFlags.CARRIER_SERVICE_CHANGED_USE_CALLBACK;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -48,7 +47,6 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.modules.utils.HandlerExecutor;
 import com.android.modules.utils.build.SdkLevel;
-import com.android.net.module.util.DeviceConfigUtils;
 import com.android.networkstack.apishim.TelephonyManagerShimImpl;
 import com.android.networkstack.apishim.common.TelephonyManagerShim;
 import com.android.networkstack.apishim.common.TelephonyManagerShim.CarrierPrivilegesListenerShim;
@@ -82,7 +80,6 @@ public class CarrierPrivilegeAuthenticator {
     private final Handler mHandler;
     @NonNull
     private final List<PrivilegeListener> mCarrierPrivilegesChangedListeners = new ArrayList<>();
-    private final boolean mUseCallbacksForServiceChanged;
     private final boolean mRequestRestrictedWifiEnabled;
     @NonNull
     private final BiConsumer<Integer, Integer> mListener;
@@ -97,8 +94,6 @@ public class CarrierPrivilegeAuthenticator {
         mContext = c;
         mTelephonyManager = t;
         mTelephonyManagerShim = telephonyManagerShim;
-        mUseCallbacksForServiceChanged = deps.isFeatureNotChickenedOut(
-                c, CARRIER_SERVICE_CHANGED_USE_CALLBACK);
         mRequestRestrictedWifiEnabled = requestRestrictedWifiEnabled;
         mListener = listener;
         if (mRequestRestrictedWifiEnabled) {
@@ -157,13 +152,6 @@ public class CarrierPrivilegeAuthenticator {
         public HandlerThread makeHandlerThread() {
             return new HandlerThread(TAG);
         }
-
-        /**
-         * @see DeviceConfigUtils#isTetheringFeatureNotChickenedOut
-         */
-        public boolean isFeatureNotChickenedOut(Context context, String name) {
-            return DeviceConfigUtils.isTetheringFeatureNotChickenedOut(context, name);
-        }
     }
 
     private void simConfigChanged() {
@@ -175,7 +163,6 @@ public class CarrierPrivilegeAuthenticator {
             unregisterCarrierPrivilegesListeners();
             mModemCount = mTelephonyManager.getActiveModemCount();
             registerCarrierPrivilegesListeners(mModemCount);
-            if (!mUseCallbacksForServiceChanged) updateCarrierServiceUid();
         }
     }
 
@@ -210,28 +197,9 @@ public class CarrierPrivilegeAuthenticator {
         }
 
         @Override
-        public void onCarrierPrivilegesChanged(
-                @NonNull List<String> privilegedPackageNames,
-                @NonNull int[] privilegedUids) {
-            ensureRunningOnHandlerThread(mHandler);
-            if (mUseCallbacksForServiceChanged) return;
-            // Re-trigger the synchronous check (which is also very cheap due
-            // to caching in CarrierPrivilegesTracker). This allows consistency
-            // with the onSubscriptionsChangedListener and broadcasts.
-            updateCarrierServiceUid();
-        }
-
-        @Override
         public void onCarrierServiceChanged(@Nullable final String carrierServicePackageName,
                 final int carrierServiceUid) {
             ensureRunningOnHandlerThread(mHandler);
-            if (!mUseCallbacksForServiceChanged) {
-                // Re-trigger the synchronous check (which is also very cheap due
-                // to caching in CarrierPrivilegesTracker). This allows consistency
-                // with the onSubscriptionsChangedListener and broadcasts.
-                updateCarrierServiceUid();
-                return;
-            }
             synchronized (mLock) {
                 CarrierServiceUidWithSubId oldPair =
                         mCarrierServiceUidWithSubId.get(mLogicalSlot);
@@ -366,30 +334,6 @@ public class CarrierPrivilegeAuthenticator {
                 return subIds[0];
             }
             return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
-        }
-    }
-
-    @VisibleForTesting
-    void updateCarrierServiceUid() {
-        synchronized (mLock) {
-            SparseArray<CarrierServiceUidWithSubId> copy = mCarrierServiceUidWithSubId.clone();
-            mCarrierServiceUidWithSubId.clear();
-            for (int i = 0; i < mModemCount; i++) {
-                int subId = getSubId(i);
-                mCarrierServiceUidWithSubId.put(
-                        i,
-                        new CarrierServiceUidWithSubId(
-                                getCarrierServicePackageUidForSlot(i), subId));
-            }
-            for (int i = 0; i < copy.size(); ++i) {
-                CarrierServiceUidWithSubId oldPair = copy.valueAt(i);
-                CarrierServiceUidWithSubId newPair = mCarrierServiceUidWithSubId.get(copy.keyAt(i));
-                if (oldPair.mUid != Process.INVALID_UID
-                        && oldPair.mSubId != SubscriptionManager.INVALID_SUBSCRIPTION_ID
-                        && !oldPair.equals(newPair)) {
-                    mListener.accept(oldPair.mUid, oldPair.mSubId);
-                }
-            }
         }
     }
 

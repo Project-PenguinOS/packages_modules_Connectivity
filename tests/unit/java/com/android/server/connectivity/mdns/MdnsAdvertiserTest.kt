@@ -154,7 +154,16 @@ private val OFFLOAD_SERVICEINFO = OffloadServiceInfo(
     "Android_test.local",
     TEST_OFFLOAD_PACKET1,
     0, /* priority */
-    OffloadEngine.OFFLOAD_TYPE_REPLY.toLong()
+    (OffloadEngine.OFFLOAD_TYPE_REPLY or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong()
+)
+
+private val OFFLOAD_FILTER_REPLIES_SERVICEINFO = OffloadServiceInfo(
+    OffloadServiceInfo.Key("TestServiceName", "_advertisertest._tcp"),
+    listOf(TEST_SUBTYPE),
+    "Android_test.local",
+    TEST_OFFLOAD_PACKET1,
+    0, /* priority */
+    OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong()
 )
 
 private val OFFLOAD_SERVICE_INFO_GOOGLECAST = OffloadServiceInfo(
@@ -163,7 +172,7 @@ private val OFFLOAD_SERVICE_INFO_GOOGLECAST = OffloadServiceInfo(
     "Android_test.local",
     TEST_OFFLOAD_PACKET1,
     Int.MAX_VALUE,
-    OffloadEngine.OFFLOAD_TYPE_REPLY.toLong()
+    (OffloadEngine.OFFLOAD_TYPE_REPLY or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong()
 )
 
 private val OFFLOAD_SERVICEINFO_NO_SUBTYPE = OffloadServiceInfo(
@@ -172,7 +181,7 @@ private val OFFLOAD_SERVICEINFO_NO_SUBTYPE = OffloadServiceInfo(
     "Android_test.local",
     TEST_OFFLOAD_PACKET1,
     0, /* priority */
-    OffloadEngine.OFFLOAD_TYPE_REPLY.toLong()
+    (OffloadEngine.OFFLOAD_TYPE_REPLY or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong()
 )
 
 private val OFFLOAD_SERVICEINFO_NO_SUBTYPE2 = OffloadServiceInfo(
@@ -181,7 +190,7 @@ private val OFFLOAD_SERVICEINFO_NO_SUBTYPE2 = OffloadServiceInfo(
     "Android_test.local",
     TEST_OFFLOAD_PACKET2,
     0, /* priority */
-    OffloadEngine.OFFLOAD_TYPE_REPLY.toLong()
+    (OffloadEngine.OFFLOAD_TYPE_REPLY or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong()
 )
 
 private val SERVICES_PRIORITY_LIST = arrayOf(
@@ -211,7 +220,8 @@ class MdnsAdvertiserTest {
     private val mockDeps = mock(MdnsAdvertiser.Dependencies::class.java)
     private val context = mock(Context::class.java)
     private val resources = mock(Resources::class.java)
-    private val flags = MdnsFeatureFlags.newBuilder().setIsMdnsOffloadFeatureEnabled(true).build()
+    private val flags = MdnsFeatureFlags.newBuilder().setIsMdnsOffloadFeatureEnabled(true)
+        .setIsSelectiveMdnsResponseOffloadEnabled(true).build()
 
     @Before
     fun setUp() {
@@ -419,6 +429,14 @@ class MdnsAdvertiserTest {
             eq(ALL_NETWORKS_SERVICE_SUBTYPE),
             any()
         )
+        verify(offloadCb).onOffloadStartOrUpdate(
+            TEST_INTERFACE1,
+            OFFLOAD_FILTER_REPLIES_SERVICEINFO
+        )
+        verify(offloadCb).onOffloadStartOrUpdate(
+            TEST_INTERFACE2,
+            OFFLOAD_FILTER_REPLIES_SERVICEINFO
+        )
 
         doReturn(false).`when`(mockInterfaceAdvertiser1).isProbing(SERVICE_ID_1)
         postSync { intAdvCbCaptor1.value.onServiceProbingSucceeded(
@@ -494,6 +512,7 @@ class MdnsAdvertiserTest {
                 NsdServiceInfo("TestService2", "_PRIORITYTEST._udp").apply {
                     port = 12345
                     hostAddresses = listOf(TEST_ADDR)
+                    network = TEST_NETWORK_1
                 },
                 DEFAULT_ADVERTISING_OPTION,
                 TEST_CLIENT_UID_1
@@ -503,6 +522,7 @@ class MdnsAdvertiserTest {
                 NsdServiceInfo("TestService3", "_notprioritized._tcp").apply {
                     port = 12345
                     hostAddresses = listOf(TEST_ADDR)
+                    network = TEST_NETWORK_1
                 },
                 DEFAULT_ADVERTISING_OPTION,
                 TEST_CLIENT_UID_1
@@ -526,6 +546,33 @@ class MdnsAdvertiserTest {
             any(),
             any()
         )
+        verify(mockInterfaceAdvertiser1).addService(eq(SERVICE_ID_1), any(), any())
+        verify(mockInterfaceAdvertiser1).addService(eq(SERVICE_ID_2), any(), any())
+        verify(mockInterfaceAdvertiser1).addService(eq(SERVICE_ID_3), any(), any())
+        verify(offloadCb).onOffloadStartOrUpdate(eq(TEST_INTERFACE1), eq(OffloadServiceInfo(
+            OffloadServiceInfo.Key("TestServiceName", "_advertisertest._tcp"),
+            emptyList() /* subtypes */,
+            "Android_test.local",
+            TEST_OFFLOAD_PACKET1,
+            0, /* priority */
+            OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong()
+        )))
+        verify(offloadCb).onOffloadStartOrUpdate(eq(TEST_INTERFACE1), eq(OffloadServiceInfo(
+            OffloadServiceInfo.Key("TestService2", "_PRIORITYTEST._udp"),
+            emptyList() /* subtypes */,
+            "Android_test.local",
+            TEST_OFFLOAD_PACKET1,
+            5, /* priority */
+            OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong()
+        )))
+        verify(offloadCb).onOffloadStartOrUpdate(eq(TEST_INTERFACE1), eq(OffloadServiceInfo(
+            OffloadServiceInfo.Key("TestService3", "_notprioritized._tcp"),
+            emptyList() /* subtypes */,
+            "Android_test.local",
+            TEST_OFFLOAD_PACKET1,
+            Integer.MAX_VALUE, /* priority */
+            OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong()
+        )))
 
         doReturn(false).`when`(mockInterfaceAdvertiser1).isProbing(SERVICE_ID_1)
         doReturn(false).`when`(mockInterfaceAdvertiser1).isProbing(SERVICE_ID_2)
@@ -546,7 +593,7 @@ class MdnsAdvertiserTest {
             "Android_test.local",
             TEST_OFFLOAD_PACKET1,
             5, /* priority */
-            OffloadEngine.OFFLOAD_TYPE_REPLY.toLong()
+            (OffloadEngine.OFFLOAD_TYPE_REPLY or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong()
         )))
         verify(offloadCb).onOffloadStartOrUpdate(eq(TEST_INTERFACE1), eq(OffloadServiceInfo(
             OffloadServiceInfo.Key("TestService3", "_notprioritized._tcp"),
@@ -554,7 +601,7 @@ class MdnsAdvertiserTest {
             "Android_test.local",
             TEST_OFFLOAD_PACKET1,
             Integer.MAX_VALUE, /* priority */
-            OffloadEngine.OFFLOAD_TYPE_REPLY.toLong()
+            (OffloadEngine.OFFLOAD_TYPE_REPLY or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong()
         )))
     }
 
@@ -795,6 +842,14 @@ class MdnsAdvertiserTest {
             argThat { it.matches(ALL_NETWORKS_SERVICE) },
             any()
         )
+        verify(offloadCb).onOffloadStartOrUpdate(eq(TEST_INTERFACE1), eq(OffloadServiceInfo(
+            OffloadServiceInfo.Key("TestServiceName", "_advertisertest._tcp"),
+            emptyList() /* subtypes */,
+            "Android_test.local",
+            TEST_OFFLOAD_PACKET1,
+            0, /* priority */
+            OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong()
+        )))
 
         val updateOptions = MdnsAdvertisingOptions.newBuilder().setIsOnlyUpdate(true).build()
 
@@ -824,6 +879,10 @@ class MdnsAdvertiserTest {
             TEST_CLIENT_UID_1
         ) }
         verify(mockInterfaceAdvertiser1).updateService(eq(SERVICE_ID_1), eq(setOf(TEST_SUBTYPE)))
+        verify(offloadCb).onOffloadStartOrUpdate(
+            eq(TEST_INTERFACE1),
+            eq(OFFLOAD_FILTER_REPLIES_SERVICEINFO)
+        )
 
         // Newly created MdnsInterfaceAdvertiser will get addService() call.
         postSync { socketCb.onSocketCreated(TEST_SOCKETKEY_2, mockSocket2, listOf(TEST_LINKADDR2)) }
@@ -831,6 +890,10 @@ class MdnsAdvertiserTest {
             eq(SERVICE_ID_1),
             argThat { it.matches(ALL_NETWORKS_SERVICE_SUBTYPE) },
             any()
+        )
+        verify(offloadCb).onOffloadStartOrUpdate(
+            eq(TEST_INTERFACE2),
+            eq(OFFLOAD_FILTER_REPLIES_SERVICEINFO)
         )
     }
 

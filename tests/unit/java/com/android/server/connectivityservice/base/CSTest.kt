@@ -91,7 +91,8 @@ import com.android.server.connectivity.NetworkRequestStateStatsMetrics
 import com.android.server.connectivity.PermissionMonitor
 import com.android.server.connectivity.ProxyTracker
 import com.android.server.connectivity.QuicConnectionCloser
-import com.android.server.connectivity.SatelliteAccessController
+import com.android.server.connectivity.AppOptInDefaultNetworkController
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.testutils.ContentResolverWithFakeSettingsProvider
 import com.android.testutils.visibleOnHandlerThread
 import com.android.testutils.waitForIdle
@@ -186,7 +187,6 @@ open class CSTest {
     // permissions using static contexts.
     val enabledFeatures = HashMap<String, Boolean>().also {
         it[ConnectivityFlags.NO_REMATCH_ALL_REQUESTS_ON_REGISTER] = true
-        it[ConnectivityFlags.REQUEST_RESTRICTED_WIFI] = true
         it[ConnectivityService.KEY_DESTROY_FROZEN_SOCKETS_VERSION] = true
         it[ConnectivityService.ALLOW_SYSUI_CONNECTIVITY_REPORTS] = true
         it[ConnectivityService.ALLOW_SATALLITE_NETWORK_FALLBACK] = true
@@ -254,7 +254,7 @@ open class CSTest {
     val bluetoothManager = mock<BluetoothManager>()
 
     val multicastRoutingCoordinatorService = mock<MulticastRoutingCoordinatorService>()
-    val satelliteAccessController = mock<SatelliteAccessController>()
+    val appOptInDefaultNetworkController = mock<AppOptInDefaultNetworkController>()
     val satelliteCoarseUsageMetricsCollector = mock<SatelliteCoarseUsageMetricsCollector>()
     val defaultNetworkRematchMetrics = mock<DefaultNetworkRematchMetrics>()
     val satisfiedByLocalNetworkMetrics = mock<SatisfiedByLocalNetworkMetrics>()
@@ -361,8 +361,13 @@ open class CSTest {
         ) =
             (cr as ContentResolverWithFakeSettingsProvider).registerContentObserver(uri, observer)
 
-        override fun registerContentObserverAsUser(cr: ContentResolver, uri: Uri,
-            notifyForDescendants: Boolean, observer: ContentObserver, userHandle: UserHandle) =
+        override fun registerContentObserverAsUser(
+            cr: ContentResolver,
+            uri: Uri,
+            notifyForDescendants: Boolean,
+            observer: ContentObserver,
+            userHandle: UserHandle
+        ) =
             context.getContentResolver().registerContentObserverAsUser(uri, observer, userHandle)
 
         override fun makeCarrierPrivilegeAuthenticator(
@@ -372,14 +377,15 @@ open class CSTest {
                 listener: BiConsumer<Int, Int>,
                 handler: Handler
         ) = if (SdkLevel.isAtLeastT()) mock<CarrierPrivilegeAuthenticator>() else null
-        var satelliteNetworkFallbackUidUpdate = BiConsumer<Set<Int>, Set<Int>> {_, _ -> }
-        override fun makeSatelliteAccessController(
-            context: Context,
-            updateSatelliteNetworkFallackUid: BiConsumer<Set<Int>, Set<Int>>,
-            csHandlerThread: Handler
-        ): SatelliteAccessController? {
-            satelliteNetworkFallbackUidUpdate = updateSatelliteNetworkFallackUid
-            return satelliteAccessController
+        var appOptInDefaultNetworkPoliciesUpdate =
+                Consumer<List<AppOptInDefaultNetworkPolicy>> { _ -> }
+        override fun makeAppOptInDefaultNetworkController(
+                context: Context,
+                updateAppOptInDefaultNetworkPolicies: Consumer<List<AppOptInDefaultNetworkPolicy>>,
+                csHandlerThread: Handler
+        ): AppOptInDefaultNetworkController? {
+            appOptInDefaultNetworkPoliciesUpdate = updateAppOptInDefaultNetworkPolicies
+            return appOptInDefaultNetworkController
         }
 
         override fun makeSatelliteCoarseUsageMetricsCollector(

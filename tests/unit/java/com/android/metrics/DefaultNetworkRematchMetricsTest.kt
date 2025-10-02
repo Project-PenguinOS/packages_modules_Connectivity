@@ -35,7 +35,7 @@ import android.stats.connectivity.ValidatedState.VS_VALID
 import com.android.metrics.DefaultNetworkRematchMetrics.Dependencies
 import com.android.server.ConnectivityService
 import com.android.server.ConnectivityService.PREFERENCE_ORDER_NONE
-import com.android.server.ConnectivityService.PREFERENCE_ORDER_SATELLITE_FALLBACK
+import com.android.server.ConnectivityService.PREFERENCE_ORDER_APP_OPT_IN
 import com.android.server.connectivity.FullScore
 import com.android.server.connectivity.NetworkAgentInfo
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
@@ -82,7 +82,7 @@ class DefaultNetworkRematchMetricsTest {
     }
 
     private val nri = mock(ConnectivityService.NetworkRequestInfo::class.java).also {
-                doReturn(PREFERENCE_ORDER_SATELLITE_FALLBACK).`when`(it).preferenceOrderForNetd
+                doReturn(PREFERENCE_ORDER_APP_OPT_IN).`when`(it).preferenceOrderForNetd
                 doReturn(emptySet<UidRange>()).`when`(it).uids
             }
 

@@ -75,6 +75,7 @@ import com.android.net.module.util.NetworkStackConstants;
 import com.android.net.module.util.SharedLog;
 import com.android.net.module.util.Struct.S32;
 import com.android.net.module.util.Struct.S64;
+import com.android.net.module.util.Struct.U32;
 import com.android.net.module.util.bpf.Tether4Key;
 import com.android.net.module.util.bpf.Tether4Value;
 import com.android.net.module.util.bpf.TetherStatsValue;
@@ -137,8 +138,19 @@ public class BpfCoordinator {
     private static final String TETHER_LIMIT_MAP_PATH = makeMapPath("limit");
     private static final String TETHER_ERROR_MAP_PATH = makeMapPath("error");
     private static final String TETHER_DEV_MAP_PATH = makeMapPath("dev");
+    private static final String TEST_KERNEL_STATS_MAP_PATH =
+                "/sys/fs/bpf/tethering/map_test_kernel_stats_map";
     private static final String DUMPSYS_RAWMAP_ARG_STATS = "--stats";
     private static final String DUMPSYS_RAWMAP_ARG_UPSTREAM4 = "--upstream4";
+
+    // The key definition needs to be in sync with BpfSyscallWrapper.h#BPF_KERNEL_STATS_MAP_KEYS
+    @VisibleForTesting
+    public static final U32 TETHER_KERNEL_STATS_MAP_TOTAL_OBJS_LOAD_TIME_KEY = new U32(0);
+    @VisibleForTesting
+    public static final U32 TETHER_KERNEL_STATS_MAP_UBSAN_BUG_KEY = new U32(1);
+    @VisibleForTesting
+    public static final long TETHER_KERNEL_STATS_MAP_UBSAN_BUG_VALUE_OK = 123;
+
 
     /** The names of all the BPF counters defined in offload.h. */
     public static final String[] sBpfCounterNames = getBpfCounterNames();
@@ -495,6 +507,17 @@ public class BpfCoordinator {
             }
         }
 
+        /** Get kernel stats BPF map. */
+        @Nullable public IBpfMap<U32, U32> getBpfKernelStatsMap() {
+            try {
+                return new BpfMap<>(TEST_KERNEL_STATS_MAP_PATH,
+                        BpfMap.BPF_F_RDONLY, U32.class, U32.class);
+            } catch (ErrnoException e) {
+                Log.e(TAG, "Cannot create kernel stats map: " + e);
+                return null;
+            }
+        }
+
         /** Send a TetheringActiveSessionsReported event. */
         public void sendTetheringActiveSessionsReported(int lastMaxSessionCount) {
             ConnectivityStatsLog.write(ConnectivityStatsLog.TETHERING_ACTIVE_SESSIONS_REPORTED,
@@ -507,6 +530,21 @@ public class BpfCoordinator {
                     ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_BPF_COORDINATOR_SHIM_INIT_ERROR);
         }
 
+        /** Send a BpfUbsanKernelBugError event. */
+        public void sendBpfUbsanKernelBugError() {
+            ConnectivityStatsLog.write(ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                    ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_BPF_UBSAN_KERNEL_BUG_ERROR);
+        }
+
+        /** Send a BpfTotalObjectsLoadTimeMilliseconds event*/
+        public void sendBpfTotalObjectsLoadTimeMilliseconds(long loadTimeMs) {
+            ConnectivityStatsLog.write_non_chained(
+                    ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_DURATION_EVENT_OCCURRED,
+                    1073 /* NETWORK_STACK_UID */,
+                    TAG,
+                    ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_DURATION_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_DURATION_EVENT_TYPE_BPF_TOTAL_OBJECTS_LOAD_TIME_MILLISECONDS,
+                    loadTimeMs);
+        }
         /**
          * @see DeviceConfigUtils#isTetheringFeatureEnabled
          */
@@ -554,6 +592,8 @@ public class BpfCoordinator {
         // BPF IPv4 forwarding only supports on S+.
         mSupportActiveSessionsMetrics = mDeps.isAtLeastS()
                 && mDeps.isFeatureEnabled(mDeps.getContext(), TETHER_ACTIVE_SESSIONS_METRICS);
+
+        collectAndSendKernelStatsMetrics();
     }
 
     /**
@@ -1281,6 +1321,31 @@ public class BpfCoordinator {
         if (!isAnyForwardingPairOnUpstream(extIface)) {
             maybeDetachProgramImpl(extIface);
         }
+    }
+
+    /**
+     * Collect kernel stats BPF map and send metrics
+     */
+    private void collectAndSendKernelStatsMetrics() {
+        mHandler.post(() -> {
+            IBpfMap<U32, U32> map = mDeps.getBpfKernelStatsMap();
+            if (map == null) {
+                return;
+            }
+
+            try {
+                final long value = map.getValue(TETHER_KERNEL_STATS_MAP_UBSAN_BUG_KEY).val;
+                if (value != TETHER_KERNEL_STATS_MAP_UBSAN_BUG_VALUE_OK) {
+                    mDeps.sendBpfUbsanKernelBugError();
+                }
+
+                final long loadTime = map.getValue(
+                        TETHER_KERNEL_STATS_MAP_TOTAL_OBJS_LOAD_TIME_KEY).val;
+                mDeps.sendBpfTotalObjectsLoadTimeMilliseconds(loadTime);
+            } catch (ErrnoException e) {
+                Log.e(TAG, "Error dumping kernel stats map: " + e);
+            }
+        });
     }
 
     // TODO: make mInterfaceNames accessible to the shim and move this code to there.

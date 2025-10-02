@@ -174,6 +174,41 @@ public class MdnsAdvertiser {
         return false;
     }
 
+    private void notifyOffloadStartOrUpdate(@NonNull MdnsInterfaceAdvertiser advertiser,
+            int serviceId, Registration registration, @OffloadEngine.OffloadType long offloadType) {
+        final String interfaceName = advertiser.getSocketInterfaceName();
+        final List<OffloadServiceInfoWrapper> existingOffloadServiceInfoWrappers =
+                mInterfaceOffloadServices.computeIfAbsent(interfaceName,
+                        k -> new ArrayList<>());
+        // Remove existing offload services from cache for update.
+        existingOffloadServiceInfoWrappers.removeIf(item -> item.mServiceId == serviceId);
+
+        byte[] rawOffloadPacket = advertiser.getRawOffloadPayload(serviceId);
+        final OffloadServiceInfoWrapper newOffloadServiceInfoWrapper =
+                createOffloadService(serviceId, registration, rawOffloadPacket,
+                        offloadType);
+        existingOffloadServiceInfoWrappers.add(newOffloadServiceInfoWrapper);
+        mOffloadCb.onOffloadStartOrUpdate(interfaceName,
+                newOffloadServiceInfoWrapper.mOffloadServiceInfo);
+    }
+
+    private void maybeStartOrUpdateOffload(@NonNull MdnsInterfaceAdvertiser advertiser, int id,
+            @NonNull Registration registration) {
+        if (!mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) return;
+
+        final String serviceType = registration.getServiceInfo().getServiceType();
+        if (isInOffloadDenyList(serviceType)) {
+            mSharedLog.i("Offload denied for service type: " + serviceType);
+        } else if (serviceType == null) {
+            mSharedLog.i("Ignore offload for custom host. id=" + id);
+        } else {
+            final long offloadType = advertiser.isProbing(id)
+                    ? OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES
+                    :OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES | OffloadEngine.OFFLOAD_TYPE_REPLY;
+            notifyOffloadStartOrUpdate(advertiser, id, registration, offloadType);
+        }
+    }
+
     private final MdnsInterfaceAdvertiser.Callback mInterfaceAdvertiserCb =
             new MdnsInterfaceAdvertiser.Callback() {
         @Override
@@ -192,20 +227,11 @@ public class MdnsAdvertiser {
                 if (isInOffloadDenyList(serviceType)) {
                     mSharedLog.i("Offload denied for service type: " + serviceType);
                 } else {
-                    final String interfaceName = advertiser.getSocketInterfaceName();
-                    final List<OffloadServiceInfoWrapper> existingOffloadServiceInfoWrappers =
-                            mInterfaceOffloadServices.computeIfAbsent(interfaceName,
-                                    k -> new ArrayList<>());
-                    // Remove existing offload services from cache for update.
-                    existingOffloadServiceInfoWrappers.removeIf(
-                            item -> item.mServiceId == serviceId);
-
-                    byte[] rawOffloadPacket = advertiser.getRawOffloadPayload(serviceId);
-                    final OffloadServiceInfoWrapper newOffloadServiceInfoWrapper =
-                            createOffloadService(serviceId, registration, rawOffloadPacket);
-                    existingOffloadServiceInfoWrappers.add(newOffloadServiceInfoWrapper);
-                    mOffloadCb.onOffloadStartOrUpdate(interfaceName,
-                            newOffloadServiceInfoWrapper.mOffloadServiceInfo);
+                    long offloadType = OffloadEngine.OFFLOAD_TYPE_REPLY;
+                    if (mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) {
+                        offloadType |= OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
+                    }
+                    notifyOffloadStartOrUpdate(advertiser, serviceId, registration, offloadType);
                 }
             }
 
@@ -244,7 +270,12 @@ public class MdnsAdvertiser {
                         return;
                     }
                     if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled) {
-                        maybeSendOffloadStop(a.getSocketInterfaceName(), serviceId);
+                        if (mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) {
+                            notifyOffloadStartOrUpdate(a, serviceId, registration,
+                                    OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES);
+                        } else {
+                            maybeSendOffloadStop(a.getSocketInterfaceName(), serviceId);
+                        }
                     }
                 });
                 return;
@@ -524,8 +555,10 @@ public class MdnsAdvertiser {
             mPendingRegistrations.put(id, registration);
             for (int i = 0; i < mAdvertisers.size(); i++) {
                 try {
-                    mAdvertisers.valueAt(i).addService(id, registration.getServiceInfo(),
+                    final MdnsInterfaceAdvertiser advertiser = mAdvertisers.valueAt(i);
+                    advertiser.addService(id, registration.getServiceInfo(),
                             registration.getAdvertisingOptions());
+                    maybeStartOrUpdateOffload(advertiser, id, registration);
                 } catch (NameConflictException e) {
                     mSharedLog.wtf("Name conflict adding services that should have unique names",
                             e);
@@ -540,8 +573,9 @@ public class MdnsAdvertiser {
         void updateService(int id, @NonNull Registration registration) {
             mPendingRegistrations.put(id, registration);
             for (int i = 0; i < mAdvertisers.size(); i++) {
-                mAdvertisers.valueAt(i).updateService(
-                        id, registration.getServiceInfo().getSubtypes());
+                final MdnsInterfaceAdvertiser advertiser = mAdvertisers.valueAt(i);
+                advertiser.updateService(id, registration.getServiceInfo().getSubtypes());
+                maybeStartOrUpdateOffload(advertiser, id, registration);
             }
         }
 
@@ -590,8 +624,10 @@ public class MdnsAdvertiser {
             for (int i = 0; i < mPendingRegistrations.size(); i++) {
                 final Registration registration = mPendingRegistrations.valueAt(i);
                 try {
-                    advertiser.addService(mPendingRegistrations.keyAt(i),
-                            registration.getServiceInfo(), registration.getAdvertisingOptions());
+                    final int id = mPendingRegistrations.keyAt(i);
+                    advertiser.addService(id, registration.getServiceInfo(),
+                            registration.getAdvertisingOptions());
+                    maybeStartOrUpdateOffload(advertiser, id, registration);
                 } catch (NameConflictException e) {
                     mSharedLog.wtf("Name conflict adding services that should have unique names",
                             e);
@@ -1025,7 +1061,8 @@ public class MdnsAdvertiser {
     }
 
     private OffloadServiceInfoWrapper createOffloadService(int serviceId,
-            @NonNull Registration registration, byte[] rawOffloadPacket) {
+            @NonNull Registration registration, byte[] rawOffloadPacket,
+            @OffloadEngine.OffloadType long offloadType) {
         final NsdServiceInfo nsdServiceInfo = registration.getServiceInfo();
         final Integer mapPriority = mServiceTypeToOffloadPriority.get(
                 DnsUtils.toDnsUpperCase(nsdServiceInfo.getServiceType()));
@@ -1038,8 +1075,7 @@ public class MdnsAdvertiser {
                 String.join(".", mDeviceHostName),
                 rawOffloadPacket,
                 priority,
-                // TODO: set the offloadType based on the callback timing.
-                OffloadEngine.OFFLOAD_TYPE_REPLY);
+                offloadType);
         return new OffloadServiceInfoWrapper(serviceId, offloadServiceInfo);
     }
 }

@@ -23,8 +23,9 @@ import android.net.NetworkCapabilities.TRANSPORT_CELLULAR
 import android.net.NetworkCapabilities.TRANSPORT_WIFI
 import android.net.UidRange
 import android.os.Build
-import com.android.server.ConnectivityService.PREFERENCE_ORDER_SATELLITE_FALLBACK
+import com.android.server.ConnectivityService.PREFERENCE_ORDER_APP_OPT_IN
 import com.android.server.ConnectivityStatsLog.DEFAULT_NETWORK_REMATCH__REMATCH_REASON__RMR_NETWORK_DISCONNECTED
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.postAndWait
@@ -131,7 +132,7 @@ class CSDefaultNetworkRematchMetricsTest : CSTest() {
     ) {
         inOrder.verify(defaultNetworkRematchMetrics).addEvent(
                 argThat {
-                    it.preferenceOrderForNetd == PREFERENCE_ORDER_SATELLITE_FALLBACK &&
+                    it.preferenceOrderForNetd == PREFERENCE_ORDER_APP_OPT_IN &&
                             it.uids.contains(UidRange(expectedUid, expectedUid))
                 },
                 argThat { it?.network == oldNetwork },
@@ -140,9 +141,10 @@ class CSDefaultNetworkRematchMetricsTest : CSTest() {
         )
     }
 
-    private fun updateSatelliteNetworkFallbackUids(messagingUids: Set<Int>, optinUids: Set<Int>) {
+    private fun updateAppOptInDefaultNetworkPolicies(
+            policies: List<AppOptInDefaultNetworkPolicy>) {
         csHandler.postAndWait {
-            deps.satelliteNetworkFallbackUidUpdate!!.accept(messagingUids, optinUids)
+            deps.appOptInDefaultNetworkPoliciesUpdate!!.accept(policies)
         }
     }
 
@@ -156,7 +158,14 @@ class CSDefaultNetworkRematchMetricsTest : CSTest() {
         // The satellite request is created and immediately satisfied by NO_SERVICE_NETWORK
         // if it rematches when no network is available.
         deps.elapsedRealtime = t1
-        updateSatelliteNetworkFallbackUids(setOf(), setOf(TEST_UID))
+        var policies = listOf(
+                AppOptInDefaultNetworkPolicy(
+                        true,  // isSatelliteOptIn
+                        false, // isSatelliteRoleSms
+                        setOf(TEST_UID)
+                )
+        )
+        updateAppOptInDefaultNetworkPolicies(policies)
         // The request created and rematched immediately so it satisfied by null with no time.
         expectAddSatelliteEvent(inOrder, TEST_UID, null, NO_SERVICE_NETWORK, 0)
 
@@ -173,7 +182,14 @@ class CSDefaultNetworkRematchMetricsTest : CSTest() {
         //  1. Remove opt-in UID request for TEST_UID.
         //  2. Create opt-in UID request for TEST_UID + TEST_UID2.
         deps.elapsedRealtime = t3
-        updateSatelliteNetworkFallbackUids(setOf(), setOf(TEST_UID, TEST_UID2))
+        policies = listOf(
+                AppOptInDefaultNetworkPolicy(
+                        true,  // isSatelliteOptIn
+                        false, // isSatelliteRoleSms
+                        setOf(TEST_UID, TEST_UID2)
+                )
+        )
+        updateAppOptInDefaultNetworkPolicies(policies)
         // The removed request reports nothing.
         // TODO: Consider reports another event when the request is being removed.
         //  Uncomment expectAddSatelliteEvent(inOrder, TEST_UID, naiCell.network, null, t3 - t2)

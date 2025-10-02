@@ -41,6 +41,7 @@ import android.os.Looper
 import android.os.Process
 import android.os.UserHandle
 import androidx.test.filters.SmallTest
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
@@ -63,8 +64,7 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.eq
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.never
-import org.mockito.Mockito.times
-import org.mockito.Mockito.verify
+import java.util.Collections.emptyList
 
 const val UID1 = 184
 const val UID2 = 10184
@@ -150,10 +150,11 @@ class CSPreferenceTest : CSTest() {
 
     private fun <K, V> Map<K, V>.eachValue(what: (V) -> Unit) = forEach { what(it.value) }
 
-    private fun updateSatellitePreference(roleUids: Set<Int>, optinUids: Set<Int>) =
-        csHandler.postAndWait {
-            deps.satelliteNetworkFallbackUidUpdate.accept(roleUids, optinUids)
-        }
+    private fun updateAppOptInDefaultNetworkPolicies(
+            policies: List<AppOptInDefaultNetworkPolicy>) =
+            csHandler.postAndWait {
+                deps.appOptInDefaultNetworkPoliciesUpdate.accept(policies)
+            }
 
     fun doTestSatellitePreference_PreferenceInstalledFirst(satelliteRestricted: Boolean) {
         // Connect some wifi agent and file callbacks.
@@ -164,7 +165,19 @@ class CSPreferenceTest : CSTest() {
         callbacks.eachValue { it.expectAvailableCallbacks(wifiAgent.network, validated = false) }
 
         // Now file the preference and make sure no callbacks are sent.
-        updateSatellitePreference(setOf(SMSUID), setOf(UID1, UID2))
+        val policies = listOf(
+                AppOptInDefaultNetworkPolicy(
+                        false /* isSatelliteOptIn */,
+                        true /* isSatelliteRoleSms */,
+                        setOf(SMSUID)
+                ),
+                AppOptInDefaultNetworkPolicy(
+                        true /* isSatelliteOptIn */,
+                        false /* isSatelliteRoleSms */,
+                        setOf(UID1, UID2)
+                )
+        )
+        updateAppOptInDefaultNetworkPolicies(policies)
         callbacks.eachValue { it.assertNoCallback() }
 
         // Connect the satellite agent. Because there is a default network, no callbacks are
@@ -229,7 +242,19 @@ class CSPreferenceTest : CSTest() {
 
         // Now file the preference and make sure no callbacks are sent because there
         // is a wifi agent.
-        updateSatellitePreference(setOf(SMSUID), setOf(UID1, UID2))
+        val policies = listOf(
+                AppOptInDefaultNetworkPolicy(
+                        false /* isSatelliteOptIn */,
+                        true /* isSatelliteRoleSms */,
+                        setOf(SMSUID)
+                ),
+                AppOptInDefaultNetworkPolicy(
+                        true /* isSatelliteOptIn */,
+                        false /* isSatelliteRoleSms */,
+                        setOf(UID1, UID2)
+                )
+        )
+        updateAppOptInDefaultNetworkPolicies(policies)
         callbacks.eachValue { it.assertNoCallback() }
 
         // Disconnect satellite. No callbacks are sent since everyone is on wifi.
@@ -237,7 +262,7 @@ class CSPreferenceTest : CSTest() {
         callbacks.eachValue { it.assertNoCallback() }
 
         // Remove all settings
-        updateSatellitePreference(emptySet(), emptySet())
+        updateAppOptInDefaultNetworkPolicies(emptyList())
 
         // Connect a new satellite agent. No callback is sent yet, wifi is still connected
         val satelliteAgent = Agent(
@@ -254,7 +279,7 @@ class CSPreferenceTest : CSTest() {
 
         // Install the preference again. If satellite is unrestricted, then the opted-in
         // UIDs go on it.
-        updateSatellitePreference(setOf(SMSUID), setOf(UID1, UID2))
+        updateAppOptInDefaultNetworkPolicies(policies)
         if (satelliteRestricted) {
             callbacks[UID1]!!.assertNoCallback()
             callbacks[UID2]!!.assertNoCallback()
@@ -324,23 +349,49 @@ class CSPreferenceTest : CSTest() {
         )
         satelliteCallback.assertNoCallback()
 
-        updateSatellitePreference(emptySet(), setOf(UID1))
+        val policies = listOf(
+                AppOptInDefaultNetworkPolicy(
+                        true /* isSatelliteOptIn */,
+                        false /* isSatelliteRoleSms */,
+                        setOf(UID1)
+                )
+        )
+        updateAppOptInDefaultNetworkPolicies(policies)
         satelliteCallback.expect<Needed>()
         satelliteCallback.assertNoCallback()
         restrictedSatelliteCallback.assertNoCallback()
 
-        updateSatellitePreference(emptySet(), emptySet())
+        updateAppOptInDefaultNetworkPolicies(emptyList())
         satelliteCallback.expect<Unneeded>()
         satelliteCallback.assertNoCallback()
         restrictedSatelliteCallback.assertNoCallback()
 
-        updateSatellitePreference(setOf(SMSUID), emptySet())
+        val policies1 = listOf(
+                AppOptInDefaultNetworkPolicy(
+                        false /* isSatelliteOptIn */,
+                        true /* isSatelliteRoleSms */,
+                        setOf(SMSUID)
+                ),
+        )
+        updateAppOptInDefaultNetworkPolicies(policies1)
         satelliteCallback.expect<Needed> { it.isRestricted }
         restrictedSatelliteCallback.expect<Needed> { it.isRestricted }
         satelliteCallback.assertNoCallback()
         restrictedSatelliteCallback.assertNoCallback()
 
-        updateSatellitePreference(setOf(SMSUID), setOf(UID1))
+        val policies2 = listOf(
+                AppOptInDefaultNetworkPolicy(
+                        false /* isSatelliteOptIn */,
+                        true /* isSatelliteRoleSms */,
+                        setOf(SMSUID)
+                ),
+                AppOptInDefaultNetworkPolicy(
+                        true /* isSatelliteOptIn */,
+                        false /* isSatelliteRoleSms */,
+                        setOf(UID1)
+                )
+        )
+        updateAppOptInDefaultNetworkPolicies(policies2)
         // TODO : ideally ConnectivityService would not send unneeded then needed. This is
         // happening because updating the preferences removes the requests, which causes a
         // rematch (where the requests are not registered), then adds the requests again, which
@@ -356,7 +407,7 @@ class CSPreferenceTest : CSTest() {
         satelliteCallback.assertNoCallback()
         restrictedSatelliteCallback.assertNoCallback()
 
-        updateSatellitePreference(emptySet(), setOf(UID1))
+        updateAppOptInDefaultNetworkPolicies(policies)
         val mark2 = satelliteCallback.mark
         satelliteCallback.eventuallyExpect<Unneeded>(from = mark2) { it.isRestricted }
         satelliteCallback.eventuallyExpect<Unneeded>(from = mark2) { !it.isRestricted }
@@ -366,7 +417,7 @@ class CSPreferenceTest : CSTest() {
         satelliteCallback.assertNoCallback()
         restrictedSatelliteCallback.assertNoCallback()
 
-        updateSatellitePreference(setOf(SMSUID), setOf(UID1))
+        updateAppOptInDefaultNetworkPolicies(policies2)
         restrictedSatelliteCallback.expect<Needed> { it.isRestricted }
         satelliteCallback.expect<Unneeded> { !it.isRestricted }
         val mark3 = satelliteCallback.mark
