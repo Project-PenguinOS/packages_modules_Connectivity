@@ -35,7 +35,7 @@ java_defaults {
 
     static_libs: [
         "ConnectivityWifiP2pMultiDevicesSnippetLib",
-        "Harrier",
+        "bedstead",
         "TetheringCommonTests",
         "com.android.net.flags-aconfig-java-deprecated",
         "compatibility-device-util-axt",

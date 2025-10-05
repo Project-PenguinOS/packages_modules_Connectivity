@@ -331,8 +331,8 @@ class BpfMapRW : public BpfMapRO<Key, Value> {
   public:
     using BpfMapRO<Key, Value>::BpfMapRO;
 
-    explicit BpfMapRW<Key, Value>(const char* pathname) {
-        mMapFd.reset(mapRetrieveRW(pathname));
+    explicit BpfMapRW<Key, Value>(const char* pathname, bool exclusive = false) {
+        mMapFd.reset(exclusive ? mapRetrieveExclusiveRW(pathname) : mapRetrieveRW(pathname));
         abortOnMismatch(/* writable */ true);
     }
 
