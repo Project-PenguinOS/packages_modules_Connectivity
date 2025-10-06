@@ -123,6 +123,14 @@ static long (*bpf_skb_change_head)(struct __sk_buff* skb, __u32 head_room,
 static long (*bpf_skb_adjust_room)(struct __sk_buff* skb, __s32 len_diff, __u32 mode,
                                    __u64 flags) = (void*)BPF_FUNC_skb_adjust_room;
 
+static struct bpf_sock *(*bpf_sk_lookup_tcp)(
+    void *ctx, struct bpf_sock_tuple *tuple, __u32 tuple_size, __u64 netns,
+    __u64 flags) = (void *)BPF_FUNC_sk_lookup_tcp;
+static struct bpf_sock *(*bpf_sk_lookup_udp)(
+    void *ctx, struct bpf_sock_tuple *tuple, __u32 tuple_size, __u64 netns,
+    __u64 flags) = (void *)BPF_FUNC_sk_lookup_udp;
+static int (*bpf_sk_release)(void *sock) = (void *)BPF_FUNC_sk_release;
+
 // Android only supports little endian architectures
 #define htons(x) (__builtin_constant_p(x) ? ___constant_swab16(x) : __builtin_bswap16(x))
 #define htonl(x) (__builtin_constant_p(x) ? ___constant_swab32(x) : __builtin_bswap32(x))

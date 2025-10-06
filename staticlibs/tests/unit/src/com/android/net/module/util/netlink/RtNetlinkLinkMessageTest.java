@@ -358,4 +358,59 @@ public class RtNetlinkLinkMessageTest {
         final NetlinkMessage msg = NetlinkMessage.parse(byteBuffer, NETLINK_ROUTE);
         assertNull(msg);
     }
+
+    @Test
+    public void testParseRtNetlinkMessageWithProtinfo() {
+        final String msgBytes =
+                "38000000100000000100000000000000"   // nlmsghdr (16 bytes)
+                + "000001000200000043100000FFFFFFFF" // ifinfomsg (16 bytes)
+                + "090003006574683000000000"         // IFLA_IFNAME (12 bytes)
+                + "0c000c00"                         // IFLA_PROTINFO
+                + "08000100C0000000";                // Nested IFLA_INET6_FLAGS (8 bytes): M=1,O=1
+        final ByteBuffer byteBuffer = toByteBuffer(msgBytes);
+        byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
+
+        final NetlinkMessage msg = NetlinkMessage.parse(byteBuffer, NETLINK_ROUTE);
+        assertNotNull(msg);
+
+        assertTrue(msg instanceof RtNetlinkLinkMessage);
+        assertEquals(0xC0, ((RtNetlinkLinkMessage) msg).getInet6Flags());
+    }
+
+    @Test
+    public void testParseRtNetlinkMessageWithAfspec() {
+        final String msgBytes =
+                "7C000000100000000100000000000000"   // nlmsghdr (16 bytes)
+                + "000001000200000043100000FFFFFFFF" // ifinfomsg (16 bytes)
+                + "090003006574683000000000"         // IFLA_IFNAME (12 bytes)
+                + "50001A00"                         // IFLA_AF_SPEC (84 bytes)
+                    + "1C000200"                     // Nested AF_INET (28 bytes)
+                        + "18000100"                 // Nested IFLA_INET_CONF (24 bytes)
+                        + "0000000000000000000000000000000000000000" // 20 bytes of dummy payload
+                    + "30000A00"                     // Nested AF_INET6 (48 bytes)
+                        + "0800010080000000"         // Nested IFLA_INET6_FLAGS (8 bytes): M=0,O=1
+                        + "24000600"                 // Nested IFLA_INET6_CONF (36 bytes)
+                        + "00000000000000000000000000000000"  // 16 bytes of dummy payload
+                        + "00000000000000000000000000000000"; // 16 bytes of dummy payload
+        final ByteBuffer byteBuffer = toByteBuffer(msgBytes);
+        byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
+
+        final NetlinkMessage msg = NetlinkMessage.parse(byteBuffer, NETLINK_ROUTE);
+        assertNotNull(msg);
+
+        assertTrue(msg instanceof RtNetlinkLinkMessage);
+        assertEquals(0x80, ((RtNetlinkLinkMessage) msg).getInet6Flags());
+    }
+
+    @Test
+    public void testParseRtNetlinkMessageWithoutInet6Flags() {
+        final ByteBuffer byteBuffer = toByteBuffer(RTM_NEWLINK_HEX);
+        byteBuffer.order(ByteOrder.LITTLE_ENDIAN);
+
+        final NetlinkMessage msg = NetlinkMessage.parse(byteBuffer, NETLINK_ROUTE);
+        assertNotNull(msg);
+
+        assertTrue(msg instanceof RtNetlinkLinkMessage);
+        assertEquals(-1, ((RtNetlinkLinkMessage) msg).getInet6Flags());
+    }
 }

@@ -92,8 +92,10 @@ STRUCT_SIZE(PacketTrace, 8+4+4 + 4+4 + 2+2 + 1+1+1+1);
 
 typedef struct {
     uint64_t cookie;
+    uint32_t gid;
+    uint32_t uid;
 } SkStorageValue;
-STRUCT_SIZE(SkStorageValue, 8);
+STRUCT_SIZE(SkStorageValue, 8 + 4 + 4);
 
 #define STATS_MAP_SIZE 5000
 #define CONFIGURATION_MAP_SIZE 2

@@ -133,10 +133,13 @@ DEFINE_BPF_MAP_EXT(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000,
 #define DEFINE_NETD_BPF_PROG(TYPE, NAME, VER) \
     DEFINE_NETD_BPF_PROG_KVER(TYPE, NAME, VER, 4_9)
 
-#define DEFINE_NETD_V_BPF_PROG_KVER(TYPE, NAME, VER, minKV)                         \
-    DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, AID_ROOT, AID_ROOT, minKV, INF,            \
+#define DEFINE_NETD_V_BPF_PROG_KVER_RANGE(TYPE, NAME, VER, minKV, maxKV)            \
+    DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, AID_ROOT, AID_ROOT, minKV, maxKV,          \
                         BPFLOADER_MAINLINE_V_VERSION, BPFLOADER_MAX_VER, MANDATORY, \
                         "netd_readonly", DEFAULT_BPF_PIN_SUBDIR)
+
+#define DEFINE_NETD_V_BPF_PROG_KVER(TYPE, NAME, VER, minKV) \
+    DEFINE_NETD_V_BPF_PROG_KVER_RANGE(TYPE, NAME, VER, minKV, INF)
 
 // programs that only need to be usable by the system server
 #define DEFINE_SYS_BPF_PROG(TYPE, NAME, VER) \
@@ -776,7 +779,12 @@ static __always_inline inline int inet_socket_create(struct bpf_sock* sk,
                                                      const struct kver_uint kver) {
     if (KVER_IS_AT_LEAST(kver, 5, 10, 0)) {
         SkStorageValue *v = bpf_sk_storage_get(sk, 0, BPF_SK_STORAGE_GET_F_CREATE);
-        if (v) v->cookie = bpf_get_sk_cookie(sk);
+        if (v) {
+            v->cookie = bpf_get_sk_cookie(sk);
+            uint64_t gid_uid = bpf_get_current_uid_gid();
+            v->uid = gid_uid;
+            v->gid = (gid_uid >> 32);
+        }
     }
     return (get_app_permissions() & BPF_PERMISSION_INTERNET) ? BPF_ALLOW : BPF_DISALLOW;
 }
@@ -854,12 +862,22 @@ DEFINE_NETD_BPF_PROG_KVER(bind6, inet6_bind, , 4_19)
     return block_port(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, , 4_19)
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect4, inet4_connect, 4_19, 4_19, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, , 4_19)
+DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, 5_10, 5_10)
+(struct bpf_sock_addr *ctx) {
+    return check_localhost(ctx);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect6, inet6_connect, 4_19, 4_19, 5_10)
+(struct bpf_sock_addr *ctx) {
+    return check_localhost(ctx);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, 5_10, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
@@ -874,12 +892,23 @@ DEFINE_NETD_V_BPF_PROG_KVER(recvmsg6, udp6_recvmsg, , 4_19)
     return check_localhost(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, , 4_19)
+
+DEFINE_NETD_BPF_PROG_KVER_RANGE(sendmsg4, udp4_sendmsg, 4_19, 4_19, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, , 4_19)
+DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, 5_10, 5_10)
+(struct bpf_sock_addr *ctx) {
+    return check_localhost(ctx);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg6, udp6_sendmsg, 4_19, 4_19, 5_10)
+(struct bpf_sock_addr *ctx) {
+    return check_localhost(ctx);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, 5_10, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
