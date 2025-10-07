@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 The Android Open Source Project
+ * Copyright (C) 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,18 @@
  * limitations under the License.
  */
 
-package com.android.server.net;
+package com.android.server;
 
-import com.android.net.module.util.Struct;
-import com.android.net.module.util.Struct.Field;
-import com.android.net.module.util.Struct.Type;
+import android.net.IEthernetManager;
 
 /**
- * Key for uid stats map.
+ * Abstract base class for EthernetServiceImpl.
+ *
+ * Exists to allow switching between old and new implementations at
+ * run time.
+ *
+ * TODO: remove this when there is only one implementation.
  */
-public class UidStatsMapKey extends Struct {
-    @Field(order = 0, type = Type.S32)
-    public final int uid;
-
-    public UidStatsMapKey(final int uid) {
-        this.uid = uid;
-    }
+public abstract class BaseEthernetServiceImpl extends IEthernetManager.Stub {
+    abstract public void start();
 }

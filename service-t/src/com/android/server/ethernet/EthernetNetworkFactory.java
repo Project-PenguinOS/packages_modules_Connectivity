@@ -602,6 +602,12 @@ public class EthernetNetworkFactory {
             if (null != capabilities) {
                 setCapabilities(capabilities);
             }
+
+            // If no request is currently being served (Mode.NONE) or the interface is in local NCM
+            // mode (Mode.LOCAL), do not restart the interface. updateInterface() does not affect
+            // the NCM capabilities or IpConfiguration.
+            if (mMode != Mode.GLOBAL) return;
+
             // TODO: Update this logic to only do a restart if required. Although a restart may
             //  be required due to the capabilities or ipConfiguration values, not all
             //  capabilities changes require a restart.
@@ -647,7 +653,7 @@ public class EthernetNetworkFactory {
             }
 
             final ProvisioningConfiguration.Builder config = new ProvisioningConfiguration.Builder()
-                    .withProvisioningTimeoutMs(0);
+                    .withProvisioningTimeoutMs(0 /* infinite */);
 
             if (mMode == Mode.GLOBAL && mIpConfig.getIpAssignment() == IpAssignment.STATIC) {
                 // TODO: add ProvisioningConfiguration.Builder#withIpConfiguration
@@ -746,6 +752,7 @@ public class EthernetNetworkFactory {
             return true;
         }
 
+        /** Stops serving the network. Safe to call no matter the current state of the interface. */
         private void stop() {
             // Unregister NetworkAgent before stopping IpClient, so destroyNativeNetwork (which
             // deletes routes) hopefully happens before stop() finishes execution. Otherwise, it may
@@ -819,10 +826,8 @@ public class EthernetNetworkFactory {
         }
 
         void maybeRestart() {
-            if (mIpClient == null) {
-                Log.i(TAG, String.format("maybeRestart() called on stopped interface %s", mPort));
-                return;
-            }
+            // Only restart if the interface is currently running.
+            if (mIpClient == null) return;
             if (DBG) Log.d(TAG, "Restart IpClient on: " + mPort);
 
             // Calling stop() resets the mode.

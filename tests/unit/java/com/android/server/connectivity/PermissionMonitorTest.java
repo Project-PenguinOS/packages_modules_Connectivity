@@ -1462,7 +1462,7 @@ public class PermissionMonitorTest {
                         }
                     }
                     return true;
-                }), any(), any());
+                }), eq(NETWORK_STACK), any());
         final BroadcastReceiver originalReceiver = receiverCaptor.getValue();
         return new BroadcastReceiver() {
             @Override
@@ -1813,6 +1813,47 @@ public class PermissionMonitorTest {
         mBpfMapMonitor.expectTrafficPerm(appId1Perm, MOCK_APPID1);
         mBpfMapMonitor.expectTrafficPerm(appId2Perm, MOCK_APPID2);
         mBpfMapMonitor.expectTrafficPerm(appId3Perm, MOCK_APPID3);
+    }
+
+    @Test
+    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
+    public void testOnPermissionsChanged_logsLatency_lnpDeveloperOptInEnabled() {
+        PackageManager.OnPermissionsChangedListener listener =
+                setupMocksAndCaptureRegisteredListener(/* isLnpDeveloperOptInEnabled */ true);
+
+        listener.onPermissionsChanged(MOCK_UID11);
+
+        verify(mDeps).logPermissionChangeListenerLatency(anyInt());
+    }
+
+    @Test
+    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
+    public void testOnPermissionsChanged_logsLatency_lnpDeveloperOptInDisabled() {
+        PackageManager.OnPermissionsChangedListener listener =
+                setupMocksAndCaptureRegisteredListener(/* isLnpDeveloperOptInEnabled */ false);
+
+        listener.onPermissionsChanged(MOCK_UID11);
+
+        verify(mDeps, never()).logPermissionChangeListenerLatency(anyInt());
+    }
+
+    /**
+     * Sets up mock dependencies, verifies that a permissions listener was registered,
+     * and returns the captured listener for further testing.
+     */
+    private PackageManager.OnPermissionsChangedListener setupMocksAndCaptureRegisteredListener(
+            boolean isLnpDeveloperOptInEnabled) {
+        assumeTrue(BpfNetMaps.isAtLeast25Q2());
+        ArgumentCaptor<PackageManager.OnPermissionsChangedListener> listenerCaptor =
+                ArgumentCaptor.forClass(PackageManager.OnPermissionsChangedListener.class);
+        verify(mPackageManager).addOnPermissionsChangeListener(listenerCaptor.capture());
+        PackageManager.OnPermissionsChangedListener listener = listenerCaptor.getValue();
+
+        when(mDeps.shouldEnforceLocalNetRestrictions(anyInt())).thenReturn(true);
+        when(mDeps.isLnpDeveloperOptInEnabled()).thenReturn(isLnpDeveloperOptInEnabled);
+        when(mPermissionManager.checkPermissionForPreflight(
+                anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
+        return listener;
     }
 
     @Test

@@ -114,6 +114,8 @@ android_test {
         "mockito-target-extended-minus-junit4",
         "modules-utils-native-coverage-listener",
         "ConnectivityCoverageTestsLib",
+        "com.android.tethering.mainline.beta.flags-aconfig-java",
+        "flag-junit",
     ],
     jni_libs: [
         // For mockito extended
@@ -122,6 +124,7 @@ android_test {
         // For NetworkStackUtils included in NetworkStackBase
         "libnetworkstackutilsjni",
         "libandroid_net_connectivity_com_android_net_module_util_jni",
+        "libandroid_net_connectivity_com_android_net_module_util_jni_CommonConnectivityJni",
         "libcom_android_networkstack_tethering_util_jni",
         // For framework tests
         "libservice-connectivity",

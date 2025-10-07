@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 The Android Open Source Project
+ * Copyright 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,6 @@
  * limitations under the License.
  */
 
-package com.android.net.module.util.bpf;
+package android.net.thread;
 
-import com.android.net.module.util.Struct;
-import com.android.net.module.util.Struct.Field;
-import com.android.net.module.util.Struct.Type;
-
-/**
- * Key for cookie tag map.
- */
-public class CookieTagMapKey extends Struct {
-    @Field(order = 0, type = Type.S64)
-    public final long socketCookie;
-
-    public CookieTagMapKey(final long socketCookie) {
-        this.socketCookie = socketCookie;
-    }
-}
+parcelable ThreadNetworkSpecifier;

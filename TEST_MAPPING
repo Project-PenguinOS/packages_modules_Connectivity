@@ -435,12 +435,23 @@
       "name": "CtsNetTestCasesUpdateStatsPermission"
     }
   ],
-  "tv-presubmit": [
+  "hsum-presubmit": [
     {
       "name": "CtsNetTestCases"
     },
     {
-      "name": "CtsNativeNetTestCases"
+      "name": "CtsNativeNetDnsTestCases"
+    },
+    {
+      "name": "CtsNetTestCasesInternetPermission"
+    },
+    {
+      "name": "CtsNetTestCasesUpdateStatsPermission"
+    }
+  ],
+  "tv-presubmit": [
+    {
+      "name": "CtsNetTestCases"
     },
     {
       "name": "CtsNativeNetDnsTestCases"
@@ -470,6 +481,19 @@
     },
     {
       "path": "vendor/xts/gts-tests/hostsidetests/networkstack"
+    }
+  ],
+  "wear-cts-presubmit": [
+    {
+      "name": "CtsNetTestCases",
+      "options": [
+        {
+          "exclude-filter": "android.net.cts.NetworkValidationTest#testCapportApiCallbacks"
+        }
+      ]
+    },
+    {
+      "name": "CtsNetTestCasesUpdateStatsPermission"
     }
   ]
 }

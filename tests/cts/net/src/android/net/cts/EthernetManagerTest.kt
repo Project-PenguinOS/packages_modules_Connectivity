@@ -24,12 +24,16 @@ import android.net.EthernetManager
 import android.net.EthernetManager.ETHERNET_STATE_DISABLED
 import android.net.EthernetManager.ETHERNET_STATE_ENABLED
 import android.net.EthernetManager.InterfaceStateListener
+import android.net.EthernetManager.LISTENER_FLAG_DEFAULT
+import android.net.EthernetManager.LISTENER_FLAG_INCLUDE_NCM
 import android.net.EthernetManager.ROLE_CLIENT
 import android.net.EthernetManager.ROLE_NONE
 import android.net.EthernetManager.ROLE_SERVER
 import android.net.EthernetManager.STATE_ABSENT
 import android.net.EthernetManager.STATE_LINK_DOWN
 import android.net.EthernetManager.STATE_LINK_UP
+import android.net.EthernetManager.TEST_INTERFACE_MODE_ETHERNET
+import android.net.EthernetManager.TEST_INTERFACE_MODE_NCM
 import android.net.EthernetManager.TetheredInterfaceCallback
 import android.net.EthernetManager.TetheredInterfaceRequest
 import android.net.EthernetNetworkManagementException
@@ -70,12 +74,12 @@ import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.DeviceInfoUtils.isKernelVersionAtLeast
 import com.android.testutils.NdResponder
+import com.android.testutils.PollPacketReader
+import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.TestableNetworkCallback.Event.Available
 import com.android.testutils.TestableNetworkCallback.Event.CapabilitiesChanged
 import com.android.testutils.TestableNetworkCallback.Event.LinkPropertiesChanged
 import com.android.testutils.TestableNetworkCallback.Event.Lost
-import com.android.testutils.PollPacketReader
-import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.assertThrows
 import com.android.testutils.runAsShell
 import com.android.testutils.waitForIdle
@@ -104,17 +108,23 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 private const val TAG = "EthernetManagerTest"
+
 // This timeout does not affect the test duration for passing tests. It needs to be long enough to
 // account for RS delay (and potentially the first retry interval (4s)). There have been failures
 // where the interface did not gain provisioning within the allotted timeout.
 private const val TIMEOUT_MS = 10_000L
+
 // Timeout used to confirm no callbacks matching given criteria are received. Must be long enough to
 // process all callbacks including ip provisioning when using the updateConfiguration API.
 // Note that increasing this timeout increases the test duration.
 private const val NO_CALLBACK_TIMEOUT_MS = 500L
 
-private val DEFAULT_IP_CONFIGURATION = IpConfiguration(IpConfiguration.IpAssignment.DHCP,
-        IpConfiguration.ProxySettings.NONE, null, null)
+private val DEFAULT_IP_CONFIGURATION = IpConfiguration(
+        IpConfiguration.IpAssignment.DHCP,
+        IpConfiguration.ProxySettings.NONE,
+        null,
+        null
+)
 private val ETH_REQUEST: NetworkRequest = NetworkRequest.Builder()
         .addTransportType(TRANSPORT_TEST)
         .addTransportType(TRANSPORT_ETHERNET)
@@ -287,17 +297,24 @@ class EthernetManagerTest {
         }
 
         private fun createChangeEvent(iface: String, state: Int, role: Int) =
-                InterfaceStateChanged(iface, state, role,
-                        if (state != STATE_ABSENT) DEFAULT_IP_CONFIGURATION else null)
+                InterfaceStateChanged(
+                        iface,
+                        state,
+                        role,
+                        if (state != STATE_ABSENT) DEFAULT_IP_CONFIGURATION else null
+                )
 
         fun eventuallyExpect(expected: Event) {
             val cb = events.poll(TIMEOUT_MS) { it == expected }
             assertNotNull(cb, "Never received expected $expected. Received: ${events.backtrace()}")
         }
 
-        fun eventuallyExpect(iface: EthernetTestInterface, state: Int, role: Int) {
-            eventuallyExpect(createChangeEvent(iface.name, state, role))
+        fun eventuallyExpect(ifname: String, state: Int, role: Int) {
+            eventuallyExpect(createChangeEvent(ifname, state, role))
         }
+
+        fun eventuallyExpect(iface: EthernetTestInterface, state: Int, role: Int) =
+                eventuallyExpect(iface.name, state, role)
 
         fun eventuallyExpect(state: Int) {
             eventuallyExpect(EthernetStateChanged(state))
@@ -364,7 +381,7 @@ class EthernetManagerTest {
     fun setUp() {
         assumeTrue(isEthernetSupported())
         setIncludeTestInterfaces(true)
-        addInterfaceStateListener(ifaceListener)
+        addInterfaceStateListener(ifaceListener, LISTENER_FLAG_INCLUDE_NCM)
         // Handler.post() events may get processed after native fd events, so it is possible that
         // RTM_NEWLINK (from a subsequent createInterface() call) arrives before the interface state
         // listener is registered. This affects the callbacks and breaks the tests.
@@ -423,8 +440,11 @@ class EthernetManagerTest {
                 SystemProperties.getInt("service.adb.tcp.port", -1) > -1)
     }
 
-    private fun addInterfaceStateListener(listener: EthernetStateListener) {
-        em.addInterfaceStateListener(handler::post, listener)
+    private fun addInterfaceStateListener(
+        listener: EthernetStateListener,
+        flags: Int = LISTENER_FLAG_DEFAULT,
+    ) {
+        em.addInterfaceStateListener(handler::post, listener, flags)
         addedListeners.add(listener)
     }
 
@@ -454,6 +474,18 @@ class EthernetManagerTest {
         runAsShell(NETWORK_SETTINGS) {
             em.setIncludeTestInterfaces(value)
         }
+        // Wait for the call to be processed by calling setEthernetEnabled() which waits on a
+        // completion callback.
+        setEthernetEnabled(ethernetEnabled)
+    }
+
+    private fun setIncludeTestInterfaces(mode: Int) {
+        runAsShell(NETWORK_SETTINGS) {
+            em.setIncludeTestInterfaces(mode)
+        }
+        // Wait for the call to be processed by calling setEthernetEnabled() which waits on a
+        // completion callback.
+        setEthernetEnabled(ethernetEnabled)
     }
 
     private fun removeInterface(iface: EthernetTestInterface) {
@@ -465,7 +497,8 @@ class EthernetManagerTest {
     private fun requestNetwork(request: NetworkRequest): TestableNetworkCallback {
         return TestableNetworkCallback(
                 timeoutMs = TIMEOUT_MS,
-                noCallbackTimeoutMs = NO_CALLBACK_TIMEOUT_MS).also {
+                noCallbackTimeoutMs = NO_CALLBACK_TIMEOUT_MS
+        ).also {
             cm.requestNetwork(request, it)
             registeredCallbacks.add(it)
         }
@@ -474,7 +507,8 @@ class EthernetManagerTest {
     private fun registerNetworkListener(request: NetworkRequest): TestableNetworkCallback {
         return TestableNetworkCallback(
                 timeoutMs = TIMEOUT_MS,
-                noCallbackTimeoutMs = NO_CALLBACK_TIMEOUT_MS).also {
+                noCallbackTimeoutMs = NO_CALLBACK_TIMEOUT_MS
+        ).also {
             cm.registerNetworkCallback(request, it)
             registeredCallbacks.add(it)
         }
@@ -511,20 +545,27 @@ class EthernetManagerTest {
     }
 
     private fun updateConfiguration(
-        iface: EthernetTestInterface,
+        ifname: String,
         ipConfig: IpConfiguration? = null,
         capabilities: NetworkCapabilities? = null
     ) = EthernetOutcomeReceiver().also {
         runAsShell(MANAGE_TEST_NETWORKS) {
             em.updateConfiguration(
-                iface.name,
+                ifname,
                 EthernetNetworkUpdateRequest.Builder()
                     .setIpConfiguration(ipConfig)
                     .setNetworkCapabilities(capabilities).build(),
                 handler::post,
-                it)
+                it
+            )
         }
     }
+
+    private fun updateConfiguration(
+        iface: EthernetTestInterface,
+        ipConfig: IpConfiguration? = null,
+        capabilities: NetworkCapabilities? = null
+    ) = updateConfiguration(iface.name, ipConfig, capabilities)
 
     // WARNING: check that isAdbOverEthernet() is false before calling setEthernetEnabled(false).
     private fun setEthernetEnabled(enabled: Boolean) {
@@ -688,18 +729,15 @@ class EthernetManagerTest {
         val iface2 = createInterface()
         val iface3 = createInterface()
 
-        // Prevent test interfaces from being tracked and wait for the call to be processed by
-        // calling setEthernetEnabled() which waits on a completion callback.
+        // Prevent test interfaces from being tracked.
         setIncludeTestInterfaces(false)
-        setEthernetEnabled(true)
 
         val listener = EthernetStateListener()
         addInterfaceStateListener(listener)
         listener.assertNoCallback()
 
-        // Include test interfaces again, and ensure that they are tracked properly.
+        // Include test interfaces again.
         setIncludeTestInterfaces(true)
-        setEthernetEnabled(true)
 
         listener.expectCallback(iface1, STATE_LINK_UP, ROLE_CLIENT)
         listener.expectCallback(iface2, STATE_LINK_UP, ROLE_CLIENT)
@@ -942,6 +980,9 @@ class EthernetManagerTest {
 
     @Test
     fun testEnableDisableInterface_disableEnableEthernet() {
+        // The test calls setEthernetEnabled(false).
+        assumeFalse(isAdbOverEthernet())
+
         val iface = createInterface()
         val listener = EthernetStateListener()
         addInterfaceStateListener(listener)
@@ -953,7 +994,7 @@ class EthernetManagerTest {
         listener.eventuallyExpect(iface, STATE_LINK_DOWN, ROLE_CLIENT)
         enableInterface(iface).expectError()
         disableInterface(iface).expectError()
-        listener.assertNoCallback()
+        // Note: don't call listener.assertNoCallback() as additional interfaces may be present
 
         // When ethernet is enabled, enable/disableInterface() should succeed.
         setEthernetEnabled(true)
@@ -1078,6 +1119,17 @@ class EthernetManagerTest {
     }
 
     @Test
+    fun testUpdateConfiguration_callbacksForMissingInterface() {
+        val listener = EthernetStateListener()
+        addInterfaceStateListener(listener)
+
+        val bogusIfname = "testtap000"
+        updateConfiguration(bogusIfname, STATIC_IP_CONFIGURATION).expectResult(bogusIfname)
+
+        listener.eventuallyExpect(bogusIfname, STATE_ABSENT, ROLE_NONE)
+    }
+
+    @Test
     fun testAddInterface_disableEnableEthernet() {
         val listener = EthernetStateListener()
         addInterfaceStateListener(listener)
@@ -1092,9 +1144,10 @@ class EthernetManagerTest {
         listener.eventuallyExpect(iface, STATE_LINK_UP, ROLE_CLIENT)
     }
 
-
     @Test
     fun testRemoveInterface_disableEnableEthernet() {
+        assumeNoInterfaceForTetheringAvailable()
+
         // Set up 2 interfaces for testing
         val iface1 = createInterface()
         val listener = EthernetStateListener()
@@ -1179,5 +1232,100 @@ class EthernetManagerTest {
         // The global network will come back up once the local request disappears.
         releaseRequest(cb2)
         cb.expect<Available>()
+    }
+
+    @Test
+    fun testNcmOnlyNetwork() {
+        assumeNoInterfaceForTetheringAvailable()
+
+        setIncludeTestInterfaces(TEST_INTERFACE_MODE_NCM)
+        val iface = createInterface()
+
+        val eth = requestNetwork(ETH_REQUEST)
+        eth.assertNoCallback()
+
+        val ncm = runAsShell(CONNECTIVITY_USE_RESTRICTED_NETWORKS) { requestNetwork(LOCAL_REQUEST) }
+        ncm.expect<Available>()
+    }
+
+    @Test
+    fun testNonNcmNetwork() {
+        assumeNoInterfaceForTetheringAvailable()
+
+        setIncludeTestInterfaces(TEST_INTERFACE_MODE_ETHERNET)
+        val iface = createInterface()
+
+        val eth = requestNetwork(ETH_REQUEST)
+        eth.expect<Available>()
+
+        val ncm = runAsShell(CONNECTIVITY_USE_RESTRICTED_NETWORKS) { requestNetwork(LOCAL_REQUEST) }
+        ncm.assertNoCallback()
+        eth.assertNeverLost()
+    }
+
+    @Test
+    fun testCallbacks_doNotIncludeNcmOnlyInterfaces() {
+        // It is unlikely that an NCM-only "interface" is present while running this test.
+        assumeNoInterfaceForTetheringAvailable()
+
+        setIncludeTestInterfaces(TEST_INTERFACE_MODE_NCM)
+        val iface = createInterface()
+
+        val listener = EthernetStateListener()
+        addInterfaceStateListener(listener)
+        listener.assertNoCallback()
+    }
+
+    @Test
+    fun testRequestTetheredNetwork_doesNotReturnNcmOnlyInterface() {
+        assumeNoInterfaceForTetheringAvailable()
+
+        setIncludeTestInterfaces(TEST_INTERFACE_MODE_NCM)
+        val ncm = createInterface()
+
+        val listener = requestTetheredInterface()
+        // Call setEthernetEnabled(true) so the TetheredInterface request is guaranteed to be
+        // processed before calling expectOnAvailable().
+        setEthernetEnabled(true)
+        assertFailsWith(TimeoutException::class) { listener.expectOnAvailable(0) }
+    }
+
+    @Test
+    fun testEnableDisableInterface_ncmOnlyInterface() {
+        setIncludeTestInterfaces(TEST_INTERFACE_MODE_NCM)
+
+        // TODO: consider ignoring NCM-only interfaces in enable/disableInterface()
+        val iface = createInterface()
+        val listener = EthernetStateListener()
+        addInterfaceStateListener(listener, LISTENER_FLAG_INCLUDE_NCM)
+        listener.eventuallyExpect(iface, STATE_LINK_UP, ROLE_CLIENT)
+
+        disableInterface(iface).expectResult(iface.name)
+        listener.eventuallyExpect(iface, STATE_LINK_DOWN, ROLE_CLIENT)
+
+        enableInterface(iface).expectResult(iface.name)
+        listener.eventuallyExpect(iface, STATE_LINK_UP, ROLE_CLIENT)
+    }
+
+    @Test
+    fun testGetInterfaceList_doesNotIncludeNcmOnlyInterfaces() {
+        setIncludeTestInterfaces(TEST_INTERFACE_MODE_NCM)
+
+        val ncm = createInterface()
+        val ifaces = em.getInterfaceList()
+        assertThat(ifaces).doesNotContain(ncm.name)
+    }
+
+    @Test
+    fun testUpdateConfiguration_forNcmOnlyInterface() {
+        setIncludeTestInterfaces(TEST_INTERFACE_MODE_NCM)
+
+        val iface = createInterface()
+        val ncm = runAsShell(CONNECTIVITY_USE_RESTRICTED_NETWORKS) { requestNetwork(LOCAL_REQUEST) }
+        ncm.expect<Available>()
+
+        // Updating the configuration does not affect the NCM interface.
+        updateConfiguration(iface, STATIC_IP_CONFIGURATION, TEST_CAPS).expectResult(iface.name)
+        ncm.assertNeverLost()
     }
 }

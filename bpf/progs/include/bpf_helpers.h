@@ -37,16 +37,11 @@
 // Android Mainline BpfLoader when running on Android 26Q2 (sdk 37.0)
 #define BPFLOADER_MAINLINE_26Q2_VERSION (BPFLOADER_MAINLINE_26Q1_VERSION + 1u)
 
-/* For mainline module use, you can #define BPFLOADER_{MIN/MAX}_VER
- * before #include "bpf_helpers.h" to change which bpfloaders will
- * process the resulting .o file.
- *
- * While this will work outside of mainline too, there just is no point to
- * using it when the .o and the bpfloader ship in sync with each other.
- * In which case it's just best to use the default.
+/* You should #define BPFLOADER_{MIN/MAX}_VER before #include "bpf_helpers.h"
+ * to change which bpfloaders will process the resulting .o file.
  */
 #ifndef BPFLOADER_MIN_VER
-#define BPFLOADER_MIN_VER NEED_TO_DEFINE_BPFLOADER_MIN_VER  // inclusive, ie. >=
+#error "You must define BPFLOADER_MIN_VER"  // inclusive, ie. >=
 #endif
 
 #ifndef BPFLOADER_MAX_VER
@@ -58,36 +53,14 @@
 
 /* Must be present in every program, example usage:
  *   LICENSE("GPL"); or LICENSE("Apache 2.0");
- *
- * We also take this opportunity to embed a bunch of other useful values in
- * the resulting .o (This is to enable some limited forward compatibility
- * with mainline module shipped ebpf programs)
- *
- * The bpfloader_{min/max}_ver defines the [min, max) range of bpfloader
- * versions that should load this .o file (bpfloaders outside of this range
- * will simply ignore/skip this *entire* .o)
- * The [inclusive,exclusive) matches what we do for kernel ver dependencies.
- *
- * The size_of_bpf_{map,prog}_def allow the bpfloader to load programs where
- * these structures have been extended with additional fields (they will of
- * course simply be ignored then).
- *
- * If missing, bpfloader_{min/max}_ver default to 0/0x10000 ie. [v0.0, v1.0),
- * while size_of_bpf_{map/prog}_def default to 32/20 which are the v0.0 sizes.
  */
-#define LICENSE(NAME)                                                                              \
-    unsigned int _bpfloader_min_ver SECTION("bpfloader_min_ver") = BPFLOADER_MIN_VER;              \
-    unsigned int _bpfloader_max_ver SECTION("bpfloader_max_ver") = BPFLOADER_MAX_VER;              \
-    size_t _size_of_bpf_map_def SECTION("size_of_bpf_map_def") = sizeof(struct bpf_map_def);       \
-    size_t _size_of_bpf_prog_def SECTION("size_of_bpf_prog_def") = sizeof(struct bpf_prog_def);    \
-    char _license[] SECTION("license") = (NAME)
+#define LICENSE(NAME) char _license[] SECTION("license") = (NAME)
 
 // Helpers for writing kernel version specific bpf programs
 
 struct kver_uint { unsigned int kver; };
 #define KVER_(v) ((struct kver_uint){ .kver = (v) })
 #define KVER(a, b, c) KVER_(((a) << 24) + ((b) << 16) + (c))
-#define KVER_NONE KVER_(0)
 #define KVER_4_9  KVER(4, 9, 0)
 #define KVER_4_14 KVER(4, 14, 0)
 #define KVER_4_19 KVER(4, 19, 0)
@@ -169,6 +142,33 @@ struct sdk_level_uint { unsigned int sdk_level; };
  * See cs/p:aosp-master%20-file:prebuilts/%20file:genfs_contexts%20"genfscon%20bpf"
  */
 
+#define IS_VALID_PIN_DIR(min_loader, pin_subdir) \
+    ( \
+        !__builtin_strcmp(pin_subdir, "tethering") || \
+        (min_loader >= BPFLOADER_MAINLINE_T_VERSION) && \
+            ( \
+                !__builtin_strcmp(pin_subdir, "net_private")   || \
+                !__builtin_strcmp(pin_subdir, "net_shared")    || \
+                !__builtin_strcmp(pin_subdir, "netd_readonly") || \
+                !__builtin_strcmp(pin_subdir, "netd_shared")   || \
+                !__builtin_strcmp(pin_subdir, "loader") \
+            ) \
+    )
+
+#define IS_EMPTY_STRING(s) !__builtin_strcmp(s, "")
+
+#define VALIDATE_SELINUX_CONTEXT(min_loader, pin_subdir) \
+    _Static_assert(IS_EMPTY_STRING(pin_subdir) \
+                || IS_VALID_PIN_DIR(min_loader, pin_subdir), pin_subdir " is invalid"); \
+    _Static_assert(IS_EMPTY_STRING(pin_subdir) \
+                || (min_loader >= BPFLOADER_MAINLINE_T_VERSION), "selinux_context requires T+")
+
+#define VALIDATE_PIN_DIR(min_loader, pin_subdir) \
+    _Static_assert(IS_VALID_PIN_DIR(min_loader, pin_subdir), pin_subdir " is invalid")
+
+#define CREATE_LOCATION(selinux_context) \
+    __builtin_choose_expr(IS_EMPTY_STRING(selinux_context), "", "/sys/fs/bpf/" selinux_context "/tmp")
+
 /*
  * Helper functions called from eBPF programs written in C. These are
  * implemented in the kernel sources.
@@ -204,26 +204,26 @@ struct sdk_level_uint { unsigned int sdk_level; };
  * the contents is only ever used during bpf program loading & map creation
  * by the bpf loader, and not by the eBPF program itself.
  */
-static void* (*bpf_map_lookup_elem_unsafe)(const struct bpf_map_def* map,
+static void* (*bpf_map_lookup_elem_unsafe)(const void* map,
                                            const void* key) = (void*)BPF_FUNC_map_lookup_elem;
-static int (*bpf_map_update_elem_unsafe)(const struct bpf_map_def* map, const void* key,
-                                         const void* value, unsigned long long flags) = (void*)
+static long (*bpf_map_update_elem_unsafe)(const void* map, const void* key,
+                                          const void* value, unsigned long long flags) = (void*)
         BPF_FUNC_map_update_elem;
-static int (*bpf_map_delete_elem_unsafe)(const struct bpf_map_def* map,
-                                         const void* key) = (void*)BPF_FUNC_map_delete_elem;
-static int (*bpf_ringbuf_output_unsafe)(const struct bpf_map_def* ringbuf,
-                                        const void* data, __u64 size, __u64 flags) = (void*)
+static long (*bpf_map_delete_elem_unsafe)(const void* map,
+                                          const void* key) = (void*)BPF_FUNC_map_delete_elem;
+static long (*bpf_ringbuf_output_unsafe)(const void* ringbuf,
+                                         const void* data, __u64 size, __u64 flags) = (void*)
         BPF_FUNC_ringbuf_output;
-static void* (*bpf_ringbuf_reserve_unsafe)(const struct bpf_map_def* ringbuf,
+static void* (*bpf_ringbuf_reserve_unsafe)(const void* ringbuf,
                                            __u64 size, __u64 flags) = (void*)
         BPF_FUNC_ringbuf_reserve;
 static void (*bpf_ringbuf_submit_unsafe)(const void* data, __u64 flags) = (void*)
         BPF_FUNC_ringbuf_submit;
-static void* (*bpf_sk_storage_get_unsafe) (const struct bpf_map_def* sk_storage, const void* sk,
+static void* (*bpf_sk_storage_get_unsafe) (const void* sk_storage, const void* sk,
                                            const void* value, unsigned long long flags) = (void*)
         BPF_FUNC_sk_storage_get;
-static int (*bpf_sk_storage_delete_unsafe) (const struct bpf_map_def* sk_storage,
-                                            const void* sk) = (void*) BPF_FUNC_sk_storage_delete;
+static long (*bpf_sk_storage_delete_unsafe) (const void* sk_storage,
+                                             const void* sk) = (void*) BPF_FUNC_sk_storage_delete;
 
 #define BPF_ANNOTATE_KV_PAIR(name, type_key, type_val)  \
         struct ____btf_map_##name {                     \
@@ -236,33 +236,59 @@ static int (*bpf_sk_storage_delete_unsafe) (const struct bpf_map_def* sk_storage
 
 #define ABSOLUTE(x) ((x) < 0 ? -(x) : (x))
 
-#define DEFAULT_BPF_MAP_FLAGS(type, num_entries, mapflags)         \
-    ( (mapflags) |                                                 \
-      ((num_entries) < 0 ? BPF_F_NO_PREALLOC : 0) |                \
-      ( (type == BPF_MAP_TYPE_LPM_TRIE ||                          \
-         type == BPF_MAP_TYPE_SK_STORAGE) ? BPF_F_NO_PREALLOC : 0) \
-    )
+#define BPF_MAP_TYPE_MMAPABLE_ARRAY BPF_MAP_TYPE_ARRAY
 
-#define DEFINE_BPF_MAP_BASE(the_map, TYPE, keysize, valuesize, num_entries, \
-                            usr, grp, md, selinux, pindir, share, minkver,  \
-                            maxkver, minloader, maxloader, mapflags)        \
-    const struct bpf_map_def SECTION("maps") the_map = {                    \
-        .type = BPF_MAP_TYPE_##TYPE,                                        \
-        .key_size = (keysize),                                              \
-        .value_size = (valuesize),                                          \
-        .max_entries = ABSOLUTE(num_entries),                               \
-        .map_flags = DEFAULT_BPF_MAP_FLAGS(BPF_MAP_TYPE_##TYPE, num_entries, mapflags), \
-        .uid = (usr),                                                       \
-        .gid = (grp),                                                       \
-        .mode = (md),                                                       \
-        .bpfloader_min_ver = (minloader),                                   \
-        .bpfloader_max_ver = (maxloader),                                   \
-        .min_kver = (minkver).kver,                                         \
-        .max_kver = (maxkver).kver,                                         \
-        .selinux_context = (selinux),                                       \
-        .pin_subdir = (pindir),                                             \
-        .shared = (share).shared,                                           \
+#define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_ARRAY		0
+#define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_DEVMAP_HASH	0
+#define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_HASH		0
+#define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_LPM_TRIE		BPF_F_NO_PREALLOC
+#define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_MMAPABLE_ARRAY	BPF_F_MMAPABLE
+#define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_PERCPU_ARRAY	0
+#define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_RINGBUF		0
+#define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_SK_STORAGE	BPF_F_NO_PREALLOC
+
+#define DEFAULT_BPF_MAP_FLAGS(TYPE, num_entries, mapflags) \
+    (DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_##TYPE | ((num_entries) < 0 ? BPF_F_NO_PREALLOC : 0) | (mapflags))
+
+#define DEFINE_BPF_MAP_BASE(the_map, TYPE, keysize, valuesize, num_entries, usr, grp, md,       \
+                            selinux, pindir, minkver, maxkver, minloader, maxloader, mapflags)  \
+    VALIDATE_SELINUX_CONTEXT(minloader, selinux);                                               \
+    VALIDATE_PIN_DIR(minloader, pindir);                                                        \
+    const struct bpf_map_def SECTION(".android_maps") the_map##_def = {                         \
+        .type = BPF_MAP_TYPE_##TYPE,                                                            \
+        .key_size = (keysize),                                                                  \
+        .value_size = (valuesize),                                                              \
+        .max_entries = ABSOLUTE(num_entries),                                                   \
+        .map_flags = DEFAULT_BPF_MAP_FLAGS(TYPE, num_entries, mapflags),                        \
+        .uid = (usr),                                                                           \
+        .gid = (grp),                                                                           \
+        .mode = (md),                                                                           \
+        .bpfloader_min_ver = (minloader),                                                       \
+        .bpfloader_max_ver = (maxloader),                                                       \
+        .min_kver = (minkver).kver,                                                             \
+        .max_kver = (maxkver).kver,                                                             \
+        .create_location = CREATE_LOCATION(selinux),                                            \
+        .pin_location = "/sys/fs/bpf/" pindir "/map_" BPF_OBJ_NAME "_" #the_map "\0",           \
+        .name_idx = __builtin_strlen("/sys/fs/bpf/" pindir "/map_" BPF_OBJ_NAME "_"),           \
     };
+
+#define __uint(name, val) int (*name)[val]
+#define __type(name, val) typeof(val) *name
+
+#define DEFINE_LIBBPF_MAP(the_map, TYPE, KeyType, ValueType, num_entries, mapflags) \
+    struct {                                                                        \
+        __uint(type, BPF_MAP_TYPE_##TYPE);                                          \
+        __uint(map_flags, DEFAULT_BPF_MAP_FLAGS(TYPE, num_entries, mapflags));      \
+        __type(key, KeyType);                                                       \
+        __type(value, ValueType);                                                   \
+        __uint(max_entries, ABSOLUTE(num_entries));                                 \
+    } the_map SECTION(".maps");
+
+#define DEFINE_LIBBPF_RINGBUF(the_map, num_entries)  \
+    struct {                                         \
+        __uint(type, BPF_MAP_TYPE_RINGBUF);          \
+        __uint(max_entries, ABSOLUTE(num_entries));  \
+    } the_map SECTION(".maps");
 
 // Type safe macro to declare a ring buffer and related output functions.
 // Compatibility:
@@ -272,10 +298,11 @@ static int (*bpf_sk_storage_delete_unsafe) (const struct bpf_map_def* sk_storage
 // * The definition below sets a map min_kver of 5.10 which requires targeting
 //   a BPFLOADER_MIN_VER >= BPFLOADER_S_VERSION.
 #define DEFINE_BPF_RINGBUF_EXT(the_map, ValueType, size_bytes, usr, grp, md,   \
-                               selinux, pindir, share, min_loader, max_loader) \
+                               selinux, pindir, min_loader, max_loader)        \
     DEFINE_BPF_MAP_BASE(the_map, RINGBUF, 0, 0, size_bytes, usr, grp, md,      \
-                        selinux, pindir, share, KVER_5_10, KVER_INF,           \
+                        selinux, pindir, KVER_5_10, KVER_INF,                  \
                         min_loader, max_loader, 0);                            \
+    DEFINE_LIBBPF_RINGBUF(the_map, size_bytes);                                \
                                                                                \
     _Static_assert((size_bytes) >= 4096, "min 4 kiB ringbuffer size");         \
     _Static_assert((size_bytes) <= 0x10000000, "max 256 MiB ringbuffer size"); \
@@ -297,19 +324,20 @@ static int (*bpf_sk_storage_delete_unsafe) (const struct bpf_map_def* sk_storage
         bpf_ringbuf_submit_unsafe(v, 0);                                       \
     }
 
-#define DEFINE_BPF_RINGBUF(the_map, ValueType, size_bytes, usr, grp, md)                \
-    DEFINE_BPF_RINGBUF_EXT(the_map, ValueType, size_bytes, usr, grp, md,                \
-                           DEFAULT_BPF_MAP_SELINUX_CONTEXT, DEFAULT_BPF_MAP_PIN_SUBDIR, \
-                           PRIVATE, BPFLOADER_MIN_VER, BPFLOADER_MAX_VER)
+#define DEFINE_BPF_RINGBUF(the_map, ValueType, size_bytes, usr, grp, md)            \
+    DEFINE_BPF_RINGBUF_EXT(the_map, ValueType, size_bytes, usr, grp, md,            \
+                           DEFAULT_BPF_MAP_SELINUX_CONTEXT, DEFAULT_BPF_PIN_SUBDIR, \
+                           BPFLOADER_MIN_VER, BPFLOADER_MAX_VER)
 
 // Type safe macro to declare a sk storage and related accessor functions.
 // BPF_MAP_TYPE_SK_STORAGE was introduced in kernel 5.2 but this map requires BTF and
 // BTF is enabled on kernel 5.10 or higher.
 #define DEFINE_BPF_SK_STORAGE_EXT(the_map, ValueType, usr, grp, md, selinux, pindir,    \
-                                  share, min_loader, max_loader, mapFlags)              \
+                                  min_loader, max_loader, mapFlags)                     \
     DEFINE_BPF_MAP_BASE(the_map, SK_STORAGE, sizeof(uint32_t), sizeof(ValueType),       \
-                        0, usr, grp, md, selinux, pindir, share,                        \
+                        0, usr, grp, md, selinux, pindir,                               \
                         KVER_5_10, KVER_INF, min_loader, max_loader, mapFlags);         \
+    DEFINE_LIBBPF_MAP(the_map, SK_STORAGE, uint32_t, ValueType, 0, mapFlags);           \
     BPF_ANNOTATE_KV_PAIR(the_map, uint32_t, ValueType);                                 \
                                                                                         \
     static inline __always_inline __unused ValueType* bpf_##the_map##_get(              \
@@ -322,10 +350,11 @@ static int (*bpf_sk_storage_delete_unsafe) (const struct bpf_map_def* sk_storage
         return bpf_sk_storage_delete_unsafe(&the_map, sk);                              \
     };
 
-#define DEFINE_BPF_SK_STORAGE(the_map, TypeOfValue)                                      \
-    DEFINE_BPF_SK_STORAGE_EXT(the_map, TypeOfValue,                                      \
-                              AID_ROOT, AID_NET_BW_ACCT, 0060, "fs_bpf_net_shared", "",  \
-                              PRIVATE, BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, 0)
+#define DEFINE_BPF_SK_STORAGE(the_map, TypeOfValue)                          \
+    DEFINE_BPF_SK_STORAGE_EXT(the_map, TypeOfValue,                          \
+                              AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", \
+                              DEFAULT_BPF_PIN_SUBDIR,                        \
+                              BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, 0)
 
 /* There exist buggy kernels with pre-T OS, that due to
  * kernel patch "[ALPS05162612] bpf: fix ubsan error"
@@ -336,7 +365,7 @@ static int (*bpf_sk_storage_delete_unsafe) (const struct bpf_map_def* sk_storage
 
 #ifdef THIS_BPF_PROGRAM_IS_FOR_TEST_PURPOSES_ONLY
 #define BPF_MAP_ASSERT_OK(type, entries, mode)
-#elif BPFLOADER_MIN_VER >= BPFLOADER_T_VERSION
+#elif BPFLOADER_MIN_VER >= BPFLOADER_MAINLINE_T_VERSION
 #define BPF_MAP_ASSERT_OK(type, entries, mode)
 #else
 #define BPF_MAP_ASSERT_OK(type, entries, mode) \
@@ -346,10 +375,11 @@ static int (*bpf_sk_storage_delete_unsafe) (const struct bpf_map_def* sk_storage
 
 /* type safe macro to declare a map and related accessor functions */
 #define DEFINE_BPF_MAP_EXT(the_map, TYPE, KeyType, ValueType, num_entries, usr, grp, md,         \
-                           selinux, pindir, share, min_loader, max_loader, mapFlags)             \
+                           selinux, pindir, min_loader, max_loader, mapFlags)                    \
   DEFINE_BPF_MAP_BASE(the_map, TYPE, sizeof(KeyType), sizeof(ValueType),                         \
-                      num_entries, usr, grp, md, selinux, pindir, share,                         \
-                      KVER_NONE, KVER_INF, min_loader, max_loader, mapFlags);                    \
+                      num_entries, usr, grp, md, selinux, pindir,                                \
+                      KVER_4_9, KVER_INF, min_loader, max_loader, mapFlags);                     \
+    DEFINE_LIBBPF_MAP(the_map, TYPE, KeyType, ValueType, num_entries, mapFlags);                 \
     BPF_MAP_ASSERT_OK(BPF_MAP_TYPE_##TYPE, (num_entries), (md));                                 \
     _Static_assert(sizeof(KeyType) < 1024, "aosp/2370288 requires < 1024 byte keys");            \
     _Static_assert(sizeof(ValueType) < 65536, "aosp/2370288 requires < 65536 byte values");      \
@@ -369,29 +399,31 @@ static int (*bpf_sk_storage_delete_unsafe) (const struct bpf_map_def* sk_storage
         return bpf_map_delete_elem_unsafe(&the_map, k);                                          \
     };
 
+#ifndef BPF_OBJ_NAME
+#error "Must define BPF_OBJ_NAME"
+#endif
+
 #ifndef DEFAULT_BPF_MAP_SELINUX_CONTEXT
 #define DEFAULT_BPF_MAP_SELINUX_CONTEXT ""
 #endif
 
-#ifndef DEFAULT_BPF_MAP_PIN_SUBDIR
-#define DEFAULT_BPF_MAP_PIN_SUBDIR ""
+#ifndef DEFAULT_BPF_PIN_SUBDIR
+#error "Must define DEFAULT_BPF_PIN_SUBDIR"
 #endif
 
 #ifndef DEFAULT_BPF_MAP_UID
 #define DEFAULT_BPF_MAP_UID AID_ROOT
-#elif BPFLOADER_MIN_VER < 28u
-#error "Bpf Map UID must be left at default of AID_ROOT for BpfLoader prior to v0.28"
 #endif
 
 // for maps not meant to be accessed from userspace
 #define DEFINE_BPF_MAP_KERNEL_INTERNAL(the_map, TYPE, KeyType, ValueType, num_entries)           \
     DEFINE_BPF_MAP_EXT(the_map, TYPE, KeyType, ValueType, num_entries, AID_ROOT, AID_ROOT, 0000, \
-                       "fs_bpf_loader", "", PRIVATE, BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, 0)
+                       "loader", DEFAULT_BPF_PIN_SUBDIR, BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, 0)
 
 #define DEFINE_BPF_MAP_UGM(the_map, TYPE, KeyType, ValueType, num_entries, usr, grp, md) \
     DEFINE_BPF_MAP_EXT(the_map, TYPE, KeyType, ValueType, num_entries, usr, grp, md,     \
-                       DEFAULT_BPF_MAP_SELINUX_CONTEXT, DEFAULT_BPF_MAP_PIN_SUBDIR,      \
-                       PRIVATE, BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, 0)
+                       DEFAULT_BPF_MAP_SELINUX_CONTEXT, DEFAULT_BPF_PIN_SUBDIR,          \
+                       BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, 0)
 
 #define DEFINE_BPF_MAP(the_map, TYPE, KeyType, ValueType, num_entries) \
     DEFINE_BPF_MAP_UGM(the_map, TYPE, KeyType, ValueType, num_entries, \
@@ -434,10 +466,10 @@ unsigned long long load_byte(void* skb, unsigned long long off) asm("llvm.bpf.lo
 unsigned long long load_half(void* skb, unsigned long long off) asm("llvm.bpf.load.half");
 unsigned long long load_word(void* skb, unsigned long long off) asm("llvm.bpf.load.word");
 
-static int (*bpf_probe_read)(void* dst, int size, void* unsafe_ptr) = (void*) BPF_FUNC_probe_read;
-static int (*bpf_probe_read_str)(void* dst, int size, void* unsafe_ptr) = (void*) BPF_FUNC_probe_read_str;
-static int (*bpf_probe_read_user)(void* dst, int size, const void* unsafe_ptr) = (void*)BPF_FUNC_probe_read_user;
-static int (*bpf_probe_read_user_str)(void* dst, int size, const void* unsafe_ptr) = (void*) BPF_FUNC_probe_read_user_str;
+static long (*bpf_probe_read)(void* dst, int size, void* unsafe_ptr) = (void*) BPF_FUNC_probe_read;
+static long (*bpf_probe_read_str)(void* dst, int size, void* unsafe_ptr) = (void*) BPF_FUNC_probe_read_str;
+static long (*bpf_probe_read_user)(void* dst, int size, const void* unsafe_ptr) = (void*)BPF_FUNC_probe_read_user;
+static long (*bpf_probe_read_user_str)(void* dst, int size, const void* unsafe_ptr) = (void*) BPF_FUNC_probe_read_user_str;
 static unsigned long long (*bpf_ktime_get_ns)(void) = (void*) BPF_FUNC_ktime_get_ns;
 static unsigned long long (*bpf_ktime_get_boot_ns)(void) = (void*)BPF_FUNC_ktime_get_boot_ns;
 static unsigned long long (*bpf_get_current_pid_tgid)(void) = (void*) BPF_FUNC_get_current_pid_tgid;
@@ -449,31 +481,88 @@ static long (*bpf_get_current_comm)(void* buf, uint32_t buf_size) = (void*) BPF_
 static struct bpf_sock* (*bpf_sk_fullsock)(struct bpf_sock* sk) = (void*) BPF_FUNC_sk_fullsock;
 
 // GPL only:
-static int (*bpf_trace_printk)(const char* fmt, int fmt_size, ...) = (void*) BPF_FUNC_trace_printk;
+static long (*bpf_trace_printk)(const char* fmt, int fmt_size, ...) = (void*) BPF_FUNC_trace_printk;
 #define bpf_printf(s, n...) bpf_trace_printk(s, sizeof(s), ## n)
 // Note: bpf only supports up to 3 arguments, log via: bpf_printf("msg %d %d %d", 1, 2, 3);
 // and read via the blocking: sudo cat /sys/kernel/debug/tracing/trace_pipe
 
-#define DEFINE_BPF_PROG_EXT(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv, max_kv,  \
-                            min_loader, max_loader, opt, selinux, pindir)                \
-    const struct bpf_prog_def SECTION("progs") the_prog##_def = {                        \
-        .uid = (prog_uid),                                                               \
-        .gid = (prog_gid),                                                               \
-        .min_kver = (min_kv).kver,                                                       \
-        .max_kver = (max_kv).kver,                                                       \
-        .optional = (opt).optional,                                                      \
-        .bpfloader_min_ver = (min_loader),                                               \
-        .bpfloader_max_ver = (max_loader),                                               \
-        .selinux_context = (selinux),                                                    \
-        .pin_subdir = (pindir),                                                          \
-    };                                                                                   \
-    SECTION(SECTION_NAME)                                                                \
-    int the_prog
+#define BPF_PROG_TYPE_bind4             BPF_PROG_TYPE_CGROUP_SOCK_ADDR
+#define BPF_PROG_TYPE_bind6             BPF_PROG_TYPE_CGROUP_SOCK_ADDR
+#define BPF_PROG_TYPE_cgroupskb         BPF_PROG_TYPE_CGROUP_SKB
+#define BPF_PROG_TYPE_cgroupsock        BPF_PROG_TYPE_CGROUP_SOCK
+#define BPF_PROG_TYPE_cgroupsockcreate  BPF_PROG_TYPE_CGROUP_SOCK
+#define BPF_PROG_TYPE_cgroupsockrelease BPF_PROG_TYPE_CGROUP_SOCK
+#define BPF_PROG_TYPE_connect4          BPF_PROG_TYPE_CGROUP_SOCK_ADDR
+#define BPF_PROG_TYPE_connect6          BPF_PROG_TYPE_CGROUP_SOCK_ADDR
+#define BPF_PROG_TYPE_egress            BPF_PROG_TYPE_CGROUP_SKB
+#define BPF_PROG_TYPE_getsockopt        BPF_PROG_TYPE_CGROUP_SOCKOPT
+#define BPF_PROG_TYPE_ingress           BPF_PROG_TYPE_CGROUP_SKB
+#define BPF_PROG_TYPE_postbind4         BPF_PROG_TYPE_CGROUP_SOCK
+#define BPF_PROG_TYPE_postbind6         BPF_PROG_TYPE_CGROUP_SOCK
+#define BPF_PROG_TYPE_recvmsg4          BPF_PROG_TYPE_CGROUP_SOCK_ADDR
+#define BPF_PROG_TYPE_recvmsg6          BPF_PROG_TYPE_CGROUP_SOCK_ADDR
+#define BPF_PROG_TYPE_schedact          BPF_PROG_TYPE_SCHED_ACT
+#define BPF_PROG_TYPE_schedcls          BPF_PROG_TYPE_SCHED_CLS
+#define BPF_PROG_TYPE_sendmsg4          BPF_PROG_TYPE_CGROUP_SOCK_ADDR
+#define BPF_PROG_TYPE_sendmsg6          BPF_PROG_TYPE_CGROUP_SOCK_ADDR
+#define BPF_PROG_TYPE_setsockopt        BPF_PROG_TYPE_CGROUP_SOCKOPT
+#define BPF_PROG_TYPE_skfilter          BPF_PROG_TYPE_SOCKET_FILTER
+#define BPF_PROG_TYPE_sockops           BPF_PROG_TYPE_SOCK_OPS
+#define BPF_PROG_TYPE_sysctl            BPF_PROG_TYPE_CGROUP_SYSCTL
+#define BPF_PROG_TYPE_xdp               BPF_PROG_TYPE_XDP
 
-#define DEFINE_BPF_PROG_KVER_RANGE_OPT(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv, max_kv, \
-                                       opt)                                                        \
-    DEFINE_BPF_PROG_EXT(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv, max_kv,                \
-                        BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, opt, "", "")
+#define BPF_PROG_ATTACH_TYPE_DEFAULT BPF_CGROUP_INET_INGRESS
+
+#define BPF_PROG_ATTACH_TYPE_bind4             BPF_CGROUP_INET4_BIND
+#define BPF_PROG_ATTACH_TYPE_bind6             BPF_CGROUP_INET6_BIND
+#define BPF_PROG_ATTACH_TYPE_cgroupskb         BPF_PROG_ATTACH_TYPE_DEFAULT
+#define BPF_PROG_ATTACH_TYPE_cgroupsock        BPF_PROG_ATTACH_TYPE_DEFAULT
+#define BPF_PROG_ATTACH_TYPE_cgroupsockcreate  BPF_CGROUP_INET_SOCK_CREATE
+#define BPF_PROG_ATTACH_TYPE_cgroupsockrelease BPF_CGROUP_INET_SOCK_RELEASE
+#define BPF_PROG_ATTACH_TYPE_connect4          BPF_CGROUP_INET4_CONNECT
+#define BPF_PROG_ATTACH_TYPE_connect6          BPF_CGROUP_INET6_CONNECT
+#define BPF_PROG_ATTACH_TYPE_egress            BPF_CGROUP_INET_EGRESS
+#define BPF_PROG_ATTACH_TYPE_getsockopt        BPF_CGROUP_GETSOCKOPT
+#define BPF_PROG_ATTACH_TYPE_ingress           BPF_CGROUP_INET_INGRESS
+#define BPF_PROG_ATTACH_TYPE_postbind4         BPF_CGROUP_INET4_POST_BIND
+#define BPF_PROG_ATTACH_TYPE_postbind6         BPF_CGROUP_INET6_POST_BIND
+#define BPF_PROG_ATTACH_TYPE_recvmsg4          BPF_CGROUP_UDP4_RECVMSG
+#define BPF_PROG_ATTACH_TYPE_recvmsg6          BPF_CGROUP_UDP6_RECVMSG
+#define BPF_PROG_ATTACH_TYPE_schedact          BPF_PROG_ATTACH_TYPE_DEFAULT
+#define BPF_PROG_ATTACH_TYPE_schedcls          BPF_PROG_ATTACH_TYPE_DEFAULT
+#define BPF_PROG_ATTACH_TYPE_sendmsg4          BPF_CGROUP_UDP4_SENDMSG
+#define BPF_PROG_ATTACH_TYPE_sendmsg6          BPF_CGROUP_UDP6_SENDMSG
+#define BPF_PROG_ATTACH_TYPE_setsockopt        BPF_CGROUP_SETSOCKOPT
+#define BPF_PROG_ATTACH_TYPE_skfilter          BPF_PROG_ATTACH_TYPE_DEFAULT
+#define BPF_PROG_ATTACH_TYPE_sockops           BPF_CGROUP_SOCK_OPS
+#define BPF_PROG_ATTACH_TYPE_sysctl            BPF_CGROUP_SYSCTL
+#define BPF_PROG_ATTACH_TYPE_xdp               BPF_PROG_ATTACH_TYPE_DEFAULT
+
+#define DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, prog_uid, prog_gid, min_kv, max_kv,              \
+                            min_loader, max_loader, opt, selinux, pindir)                     \
+    VALIDATE_SELINUX_CONTEXT(min_loader, selinux);                                            \
+    VALIDATE_PIN_DIR(min_loader, pindir);                                                     \
+    const struct bpf_prog_def SECTION(".android_progs") TYPE##_##NAME##_##VER##_def = {       \
+        .type = BPF_PROG_TYPE_##TYPE,                                                         \
+        .attach_type = BPF_PROG_ATTACH_TYPE_##TYPE,                                           \
+        .uid = (prog_uid),                                                                    \
+        .gid = (prog_gid),                                                                    \
+        .min_kver = (KVER_##min_kv).kver,                                                     \
+        .max_kver = (KVER_##max_kv).kver,                                                     \
+        .optional = (opt).optional,                                                           \
+        .bpfloader_min_ver = (min_loader),                                                    \
+        .bpfloader_max_ver = (max_loader),                                                    \
+        .create_location = CREATE_LOCATION(selinux),                                          \
+        .pin_location = "/sys/fs/bpf/" pindir "/prog_" BPF_OBJ_NAME "_" #TYPE "_" #NAME "\0", \
+        .name_idx = __builtin_strlen("/sys/fs/bpf/" pindir "/prog_" BPF_OBJ_NAME "_"),        \
+    };                                                                                        \
+    SECTION(#TYPE "/" #NAME "$" #VER)                                                         \
+    long TYPE##_##NAME##_##VER
+
+#define DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, VER, prog_gid, min_kv, max_kv, opt) \
+    DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, AID_ROOT, prog_gid, min_kv, max_kv,           \
+                        BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, opt,                     \
+                        DEFAULT_BPF_MAP_SELINUX_CONTEXT, DEFAULT_BPF_PIN_SUBDIR)
 
 // Programs (here used in the sense of functions/sections) marked optional are allowed to fail
 // to load (for example due to missing kernel patches).
@@ -487,26 +576,19 @@ static int (*bpf_trace_printk)(const char* fmt, int fmt_size, ...) = (void*) BPF
 // ie. a non-optional program in a critical .o is mandatory for kernels matching the min/max kver.
 
 // programs requiring a kernel version >= min_kv && < max_kv
-#define DEFINE_BPF_PROG_KVER_RANGE(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv, max_kv) \
-    DEFINE_BPF_PROG_KVER_RANGE_OPT(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv, max_kv, \
-                                   MANDATORY)
-#define DEFINE_OPTIONAL_BPF_PROG_KVER_RANGE(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv, \
-                                            max_kv)                                             \
-    DEFINE_BPF_PROG_KVER_RANGE_OPT(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv, max_kv, \
-                                   OPTIONAL)
+#define DEFINE_BPF_PROG_KVER_RANGE(TYPE, NAME, VER, prog_gid, min_kv, max_kv) \
+    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, VER, prog_gid, min_kv, max_kv, MANDATORY)
+#define DEFINE_OPTIONAL_BPF_PROG_KVER_RANGE(TYPE, NAME, VER, prog_gid, min_kv, max_kv)  \
+    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, VER, prog_gid, min_kv, max_kv, OPTIONAL)
 
 // programs requiring a kernel version >= min_kv
-#define DEFINE_BPF_PROG_KVER(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv)                 \
-    DEFINE_BPF_PROG_KVER_RANGE_OPT(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv, KVER_INF, \
-                                   MANDATORY)
-#define DEFINE_OPTIONAL_BPF_PROG_KVER(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv)        \
-    DEFINE_BPF_PROG_KVER_RANGE_OPT(SECTION_NAME, prog_uid, prog_gid, the_prog, min_kv, KVER_INF, \
-                                   OPTIONAL)
+#define DEFINE_BPF_PROG_KVER(TYPE, NAME, VER, prog_gid, min_kv)                 \
+    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, VER, prog_gid, min_kv, INF, MANDATORY)
+#define DEFINE_OPTIONAL_BPF_PROG_KVER(TYPE, NAME, VER, prog_gid, min_kv)        \
+    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, VER, prog_gid, min_kv, INF, OPTIONAL)
 
 // programs with no kernel version requirements
-#define DEFINE_BPF_PROG(SECTION_NAME, prog_uid, prog_gid, the_prog) \
-    DEFINE_BPF_PROG_KVER_RANGE_OPT(SECTION_NAME, prog_uid, prog_gid, the_prog, KVER_NONE, KVER_INF, \
-                                   MANDATORY)
-#define DEFINE_OPTIONAL_BPF_PROG(SECTION_NAME, prog_uid, prog_gid, the_prog) \
-    DEFINE_BPF_PROG_KVER_RANGE_OPT(SECTION_NAME, prog_uid, prog_gid, the_prog, KVER_NONE, KVER_INF, \
-                                   OPTIONAL)
+#define DEFINE_BPF_PROG(TYPE, NAME, VER, prog_gid) \
+    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, VER, prog_gid, 4_9, INF, MANDATORY)
+#define DEFINE_OPTIONAL_BPF_PROG(TYPE, NAME, VER, prog_gid) \
+    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, VER, prog_gid, 4_9, INF, OPTIONAL)

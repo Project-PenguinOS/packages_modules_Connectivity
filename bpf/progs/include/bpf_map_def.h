@@ -25,6 +25,10 @@
 // Pull in AID_* constants from //system/core/libcutils/include/private/android_filesystem_config.h
 #include <cutils/android_filesystem_config.h>
 
+#ifdef __cplusplus
+#include <type_traits>
+#endif
+
 /*
  * The bpf_{map,prog}_def structures are compiled for different architectures.
  * Once by the BPF compiler for the BPF architecture, and once by a C++
@@ -97,11 +101,6 @@ _Static_assert(_Alignof(unsigned long long) == 8, "_Alignof unsigned long long !
 #endif
 
 
-// for maps:
-struct shared_bool { bool shared; };
-#define PRIVATE ((struct shared_bool){ .shared = false })
-//#define SHARED ((struct shared_bool){ .shared = true })
-
 // for programs:
 struct optional_bool { bool optional; };
 #define MANDATORY ((struct optional_bool){ .optional = false })
@@ -110,18 +109,17 @@ struct optional_bool { bool optional; };
 
 // Length of strings (incl. selinux_context and pin_subdir)
 // in the bpf_map_def and bpf_prog_def structs.
-#define BPF_SELINUX_CONTEXT_CHAR_ARRAY_SIZE 32
-#define BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE 32
+#define BPF_DEF_CHAR_ARRAY_SIZE 70  // must be even for alignment sanity
 
 /*
  * Map structure to be used by Android eBPF C programs. The Android eBPF loader
  * uses this structure from eBPF object to create maps at boot time.
  *
  * The eBPF C program should define structure in the maps section using
- * SECTION("maps") otherwise it will be ignored by the eBPF loader.
+ * SECTION(".android_maps") otherwise it will be ignored by the eBPF loader.
  *
  * For example:
- *   const struct bpf_map_def SECTION("maps") mymap { .type=... , .key_size=... }
+ *   const struct bpf_map_def SECTION(".android_maps") mymap { .type=... , .key_size=... }
  *
  * See 'bpf_helpers.h' for helpful macros for eBPF program use.
  */
@@ -136,43 +134,46 @@ struct bpf_map_def {
     //   unsigned int inner_map_idx;
     //   unsigned int numa_node;
 
-    unsigned int zero;  // uid_t, for compat with old (buggy) bpfloader must be AID_ROOT == 0
+    unsigned int uid;   // uid_t
     unsigned int gid;   // gid_t
     unsigned int mode;  // mode_t
 
     unsigned int bpfloader_min_ver;
     unsigned int bpfloader_max_ver;
 
-    // kernelVersion() must be >= min_kver and < max_kver
+    // kernelVer must be >= min_kver and < max_kver
     unsigned int min_kver;
     unsigned int max_kver;
 
-    // These are fixed length strings, padded with null bytes
-    //
-    // overrides default selinux context (which is based on pin subdir)
-    char selinux_context[BPF_SELINUX_CONTEXT_CHAR_ARRAY_SIZE];
-    //
-    // overrides default prefix (which is based on .o location)
-    char pin_subdir[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE];
+    // These are fixed length ASCIIZ strings, padded with null bytes
+    char create_location[BPF_DEF_CHAR_ARRAY_SIZE];
+    char pin_location[BPF_DEF_CHAR_ARRAY_SIZE];
+    unsigned int name_idx;
 
-    bool shared;  // use empty string as 'file' component of pin path - allows cross .o map sharing
-
-    char pad0[3];  // manually pad up to 4 byte alignment, may be used for extensions in the future
-
-    unsigned int uid;   // uid_t
+#ifdef __cplusplus
+    const char * name() const { return this->pin_location + this->name_idx; }
+#endif
 };
+
+#ifdef __cplusplus
+static_assert(std::is_pod_v<struct bpf_map_def>);
+static_assert(std::is_standard_layout_v<struct bpf_map_def>);
+#endif
 
 // This needs to be updated whenever the above structure definition is expanded.
 // These asserts are here to make sure we have cross-6-arch consistency.
-_Static_assert(sizeof(struct bpf_map_def) == 120, "sizeof struct bpf_map_def != 120");
+_Static_assert(sizeof(struct bpf_map_def) == 52 + 2 * BPF_DEF_CHAR_ARRAY_SIZE, "wrong sizeof struct bpf_map_def");
 _Static_assert(__alignof__(struct bpf_map_def) == 4, "__alignof__ struct bpf_map_def != 4");
 _Static_assert(_Alignof(struct bpf_map_def) == 4, "_Alignof struct bpf_map_def != 4");
 
 struct bpf_prog_def {
+    enum bpf_prog_type type;
+    enum bpf_attach_type attach_type;
+
     unsigned int uid;
     unsigned int gid;
 
-    // kernelVersion() must be >= min_kver and < max_kver
+    // kernelVer must be >= min_kver and < max_kver
     unsigned int min_kver;
     unsigned int max_kver;
 
@@ -183,12 +184,22 @@ struct bpf_prog_def {
     unsigned int bpfloader_min_ver;
     unsigned int bpfloader_max_ver;
 
-    char selinux_context[BPF_SELINUX_CONTEXT_CHAR_ARRAY_SIZE];
-    char pin_subdir[BPF_PIN_SUBDIR_CHAR_ARRAY_SIZE];
+    char create_location[BPF_DEF_CHAR_ARRAY_SIZE];
+    char pin_location[BPF_DEF_CHAR_ARRAY_SIZE];
+    unsigned int name_idx;
+
+#ifdef __cplusplus
+    const char * name() const { return this->pin_location + this->name_idx; }
+#endif
 };
+
+#ifdef __cplusplus
+static_assert(std::is_pod_v<struct bpf_prog_def>);
+static_assert(std::is_standard_layout_v<struct bpf_prog_def>);
+#endif
 
 // This needs to be updated whenever the above structure definition is expanded.
 // These asserts are here to make sure we have cross-6-arch consistency.
-_Static_assert(sizeof(struct bpf_prog_def) == 92, "sizeof struct bpf_prog_def != 92");
+_Static_assert(sizeof(struct bpf_prog_def) == 40 + 2 * BPF_DEF_CHAR_ARRAY_SIZE, "wrong sizeof struct bpf_prog_def");
 _Static_assert(__alignof__(struct bpf_prog_def) == 4, "__alignof__ struct bpf_prog_def != 4");
 _Static_assert(_Alignof(struct bpf_prog_def) == 4, "_Alignof struct bpf_prog_def != 4");

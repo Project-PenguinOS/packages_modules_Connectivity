@@ -112,7 +112,9 @@ import com.android.server.connectivity.mdns.MdnsMultinetworkSocketClient;
 import com.android.server.connectivity.mdns.MdnsSearchOptions;
 import com.android.server.connectivity.mdns.MdnsServiceBrowserListener;
 import com.android.server.connectivity.mdns.MdnsServiceInfo;
+import com.android.server.connectivity.mdns.MdnsServiceTypeClient.FilterRepliesInfo;
 import com.android.server.connectivity.mdns.MdnsSocketProvider;
+import com.android.server.connectivity.mdns.OffloadCallback;
 import com.android.server.connectivity.mdns.util.MdnsUtils;
 
 import java.io.FileDescriptor;
@@ -1369,7 +1371,7 @@ public class NsdService extends INsdManager.Stub {
                             final String tag = "Client" + arg.uid + "-" + mClientNumberId++;
                             final NetworkNsdReportedMetrics metrics =
                                     mDeps.makeNetworkNsdReportedMetrics(
-                                            (int) mClock.elapsedRealtime());
+                                            (int) mClock.elapsedRealtime(), arg.uid);
                             clientInfo = new ClientInfo(cb, arg.uid, arg.useJavaBackend,
                                     mServiceLogs.forSubComponent(tag), metrics);
                             mClients.put(arg.connector, clientInfo);
@@ -2013,7 +2015,7 @@ public class NsdService extends INsdManager.Stub {
         handler.post(() -> mMdnsSocketClient.setCallback(mMdnsDiscoveryManager));
         mAdvertiser = deps.makeMdnsAdvertiser(handler.getLooper(), mMdnsSocketProvider,
                 new AdvertiserCallback(), LOGGER.forSubComponent("MdnsAdvertiser"),
-                mMdnsFeatureFlags, mContext);
+                mMdnsFeatureFlags, mContext, new MdnsOffloadCallback());
         mClock = deps.makeClock();
     }
 
@@ -2093,8 +2095,10 @@ public class NsdService extends INsdManager.Stub {
         public MdnsAdvertiser makeMdnsAdvertiser(
                 @NonNull Looper looper, @NonNull MdnsSocketProvider socketProvider,
                 @NonNull MdnsAdvertiser.AdvertiserCallback cb, @NonNull SharedLog sharedLog,
-                MdnsFeatureFlags featureFlags, Context context) {
-            return new MdnsAdvertiser(looper, socketProvider, cb, sharedLog, featureFlags, context);
+                MdnsFeatureFlags featureFlags, Context context, @NonNull OffloadCallback offloadCb
+        ) {
+            return new MdnsAdvertiser(
+                    looper, socketProvider, cb, sharedLog, featureFlags, context, offloadCb);
         }
 
         /**
@@ -2123,8 +2127,8 @@ public class NsdService extends INsdManager.Stub {
         /**
          * @see NetworkNsdReportedMetrics
          */
-        public NetworkNsdReportedMetrics makeNetworkNsdReportedMetrics(int clientId) {
-            return new NetworkNsdReportedMetrics(clientId);
+        public NetworkNsdReportedMetrics makeNetworkNsdReportedMetrics(int clientId, int uid) {
+            return new NetworkNsdReportedMetrics(clientId, uid);
         }
 
         /**
@@ -2220,6 +2224,27 @@ public class NsdService extends INsdManager.Stub {
         }
     }
 
+    /**
+     * Creates an {@link OffloadServiceInfo} object from a {@link FilterRepliesInfo} instance.
+     * This method facilitates the conversion of filtering criteria into a service information
+     * object suitable for offloading mechanisms.
+     *
+     * @param info The {@link FilterRepliesInfo} containing the filtering criteria.
+     * @return A new {@link OffloadServiceInfo} instance populated with data from the
+     *        {@code FilterRepliesInfo}.
+     */
+    @VisibleForTesting
+    static OffloadServiceInfo createOffloadServiceInfoFromFilterReplies(
+            @NonNull FilterRepliesInfo info) {
+        return  new OffloadServiceInfo(
+                new OffloadServiceInfo.Key(info.serviceName, info.serviceType),
+                new ArrayList<>(info.subtypes),
+                info.hostname,
+                null /* offloadPayload */,
+                0 /* priority */,
+                OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES);
+    }
+
     private void sendAllOffloadServiceInfos(@NonNull OffloadEngineInfo offloadEngineInfo) {
         final String targetInterface = offloadEngineInfo.mInterfaceName;
         final IOffloadEngine offloadEngine = offloadEngineInfo.mOffloadEngine;
@@ -2231,6 +2256,21 @@ public class NsdService extends INsdManager.Stub {
             } catch (RemoteException e) {
                 // Can happen in regular cases, do not log a stacktrace
                 Log.i(TAG, "Failed to send offload callback, remote died: " + e.getMessage());
+            }
+        }
+
+        // Check if the engine supports OFFLOAD_TYPE_FILTER_REPLIES
+        if ((offloadEngineInfo.mOffloadType & OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES) != 0) {
+            final List<FilterRepliesInfo> discoveryOffloadInfo =
+                    mMdnsDiscoveryManager.notifyOffloadStart(targetInterface);
+            for (FilterRepliesInfo info : discoveryOffloadInfo) {
+                try {
+                    offloadEngine.onOffloadServiceUpdated(
+                            createOffloadServiceInfoFromFilterReplies(info));
+                } catch (RemoteException e) {
+                    // Can happen in regular cases, do not log a stacktrace
+                    Log.i(TAG, "Failed to send offload callback, remote died: " + e.getMessage());
+                }
             }
         }
     }
@@ -2300,18 +2340,6 @@ public class NsdService extends INsdManager.Stub {
                     transactionId, request.calculateRequestDurationMs(mClock.elapsedRealtime()));
         }
 
-        @Override
-        public void onOffloadStartOrUpdate(@NonNull String interfaceName,
-                @NonNull OffloadServiceInfo offloadServiceInfo) {
-            sendOffloadServiceInfosUpdate(interfaceName, offloadServiceInfo, false /* isRemove */);
-        }
-
-        @Override
-        public void onOffloadStop(@NonNull String interfaceName,
-                @NonNull OffloadServiceInfo offloadServiceInfo) {
-            sendOffloadServiceInfosUpdate(interfaceName, offloadServiceInfo, true /* isRemove */);
-        }
-
         private ClientInfo getClientInfoOrLog(int transactionId) {
             final ClientInfo clientInfo = mTransactionIdToClientInfoMap.get(transactionId);
             if (clientInfo == null) {
@@ -2327,6 +2355,20 @@ public class NsdService extends INsdManager.Stub {
                         "Client request ID not found for service %d", transactionId));
             }
             return clientRequestId;
+        }
+    }
+
+    private class MdnsOffloadCallback implements OffloadCallback {
+        @Override
+        public void onOffloadStartOrUpdate(@NonNull String interfaceName,
+                @NonNull OffloadServiceInfo offloadServiceInfo) {
+            sendOffloadServiceInfosUpdate(interfaceName, offloadServiceInfo, false /* isRemove */);
+        }
+
+        @Override
+        public void onOffloadStop(@NonNull String interfaceName,
+                @NonNull OffloadServiceInfo offloadServiceInfo) {
+            sendOffloadServiceInfosUpdate(interfaceName, offloadServiceInfo, true /* isRemove */);
         }
     }
 

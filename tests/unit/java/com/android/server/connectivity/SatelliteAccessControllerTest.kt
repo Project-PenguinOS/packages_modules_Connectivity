@@ -396,7 +396,10 @@ class SatelliteAccessControllerTest {
                 .getApplicationInfo(TEST_PACKAGE1, PackageManager.GET_META_DATA)
         doReturn(PackageInfo()).`when`(pm).getPackageInfo(
                 eq(TEST_PACKAGE1),
-                eq(PackageManager.GET_SERVICES or PackageManager.GET_META_DATA)
+                eq(
+                    PackageManager.GET_SERVICES or PackageManager.GET_META_DATA or
+                        PackageManager.MATCH_DISABLED_COMPONENTS
+                )
         )
         onPackageAdded(TEST_PACKAGE1, TEST_UID1)
         verify(callback, never()).accept(any(), any())
@@ -428,7 +431,8 @@ class SatelliteAccessControllerTest {
         packageInfo.services = arrayOf(serviceInfo)
         doReturn(packageInfo).`when`(pm).getPackageInfo(
                 TEST_PACKAGE1,
-                PackageManager.GET_SERVICES or PackageManager.GET_META_DATA
+                PackageManager.GET_SERVICES or PackageManager.GET_META_DATA or
+                        PackageManager.MATCH_DISABLED_COMPONENTS
         )
 
         onPackageAdded(TEST_PACKAGE1, TEST_UID1)
@@ -445,7 +449,10 @@ class SatelliteAccessControllerTest {
         packageInfo.services = arrayOf(serviceInfo)
         doReturn(packageInfo).`when`(pm).getPackageInfo(
                 eq(TEST_PACKAGE1),
-                eq(PackageManager.GET_SERVICES or PackageManager.GET_META_DATA)
+                eq(
+                    PackageManager.GET_SERVICES or PackageManager.GET_META_DATA or
+                        PackageManager.MATCH_DISABLED_COMPONENTS
+                )
         )
         onPackageAdded(TEST_PACKAGE1, TEST_UID1)
         verify(callback, never()).accept(any(), any())
@@ -594,6 +601,8 @@ class SatelliteAccessControllerTest {
         mockIsSatelliteDataOptimizedAppForUser(SECONDARY_USER, SMS_APP1, true)
         mockIsSatelliteDataOptimizedAppForUser(PRIMARY_USER, SMS_APP2, true)
         mockIsSatelliteDataOptimizedAppForUser(SECONDARY_USER, SMS_APP2, true)
+        doReturn(listOf(PRIMARY_USER_HANDLE, SECONDARY_USER_HANDLE))
+                .`when`(userManager).getUserHandles(true)
 
         val inOrder = inOrder(callback)
         onUserAddedWithInstalledPackageList(PRIMARY_USER_HANDLE, emptyList())

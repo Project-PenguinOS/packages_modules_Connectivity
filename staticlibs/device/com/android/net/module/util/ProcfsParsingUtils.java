@@ -55,7 +55,7 @@ public final class ProcfsParsingUtils {
     private static final String IPV4_MCAST_PATH = "/proc/net/igmp";
     private static final String IPV6_MCAST_PATH = "/proc/net/igmp6";
     private static final String IPV4_DEFAULT_TTL_PATH = "/proc/sys/net/ipv4/ip_default_ttl";
-    private static final String SYS_CLASS_NET_PATH = "/sys/class/net";
+    private static final String SYS_CLASS_NET_PATH = "/sys/class/net/";
 
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
 
@@ -78,7 +78,7 @@ public final class ProcfsParsingUtils {
                 lines.add(line);
             }
         } catch (IOException e) {
-            Log.wtf(TAG, "failed to read " + filePath, e);
+            Log.e(TAG, "failed to read " + filePath, e);
         }
 
         return lines;
@@ -131,10 +131,7 @@ public final class ProcfsParsingUtils {
      * If the list is empty or contains multiple lines, it assumes a default value for 1500.
      *
      * @param lines A list of strings, expected to contain the MTU value as its sole element.
-     * @return The parsed MTU value as an integer. Returns `IPV4_MIN_MTU` if `ipv4` is true
-     * and the input `lines` size is not 1, otherwise returns `IPV6_MIN_MTU` if `ipv4`
-     * is false and the input `lines` size is not 1. If `lines` has exactly one
-     * element, returns the integer parsed from that string.
+     * @return The parsed MTU value as an integer.
      */
     @VisibleForTesting
     public static int parseInterfaceMtu(final List<String> lines) {

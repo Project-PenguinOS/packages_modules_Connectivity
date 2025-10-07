@@ -254,7 +254,6 @@ import android.app.usage.NetworkStatsManager;
 import android.compat.testing.PlatformCompatChangeRule;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
-import android.content.ContentProvider;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
@@ -267,6 +266,7 @@ import android.content.pm.ResolveInfo;
 import android.content.pm.ServiceInfo;
 import android.content.pm.UserInfo;
 import android.content.res.Resources;
+import android.database.ContentObserver;
 import android.location.LocationManager;
 import android.net.CaptivePortal;
 import android.net.CaptivePortalData;
@@ -373,7 +373,6 @@ import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.telephony.data.EpsBearerQosSessionAttributes;
 import android.telephony.data.NrQosSessionAttributes;
-import android.test.mock.MockContentResolver;
 import android.text.TextUtils;
 import android.util.ArraySet;
 import android.util.Log;
@@ -393,6 +392,7 @@ import com.android.internal.util.test.BroadcastInterceptingContext;
 import com.android.internal.util.test.FakeSettingsProvider;
 import com.android.metrics.DefaultNetworkRematchMetrics;
 import com.android.metrics.SatelliteCoarseUsageMetricsCollector;
+import com.android.metrics.SatisfiedByLocalNetworkMetrics;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.ArrayTrackRecord;
 import com.android.net.module.util.BaseNetdUnsolicitedEventListener;
@@ -428,6 +428,7 @@ import com.android.server.connectivity.SatelliteAccessController;
 import com.android.server.connectivity.TcpKeepaliveController;
 import com.android.server.connectivity.UidRangeUtils;
 import com.android.server.net.NetworkPinner;
+import com.android.testutils.ContentResolverWithFakeSettingsProvider;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
 import com.android.testutils.FunctionalUtils.Function3;
@@ -654,6 +655,7 @@ public class ConnectivityServiceTest {
     @Mock SatelliteAccessController mSatelliteAccessController;
     @Mock SatelliteCoarseUsageMetricsCollector mSatelliteCoarseUsageMetricsCollector;
     @Mock DefaultNetworkRematchMetrics mDefaultNetworkRematchMetrics;
+    @Mock SatisfiedByLocalNetworkMetrics mSatisfiedByLocalNetworkMetrics;
 
     // BatteryStatsManager is final and cannot be mocked with regular mockito, so just mock the
     // underlying binder calls.
@@ -684,7 +686,7 @@ public class ConnectivityServiceTest {
     }
 
     private class MockContext extends BroadcastInterceptingContext {
-        private final MockContentResolver mContentResolver;
+        private final ContentResolverWithFakeSettingsProvider mContentResolver;
 
         @Spy private Resources mInternalResources;
         private final LinkedBlockingQueue<Intent> mStartedActivities = new LinkedBlockingQueue<>();
@@ -701,7 +703,7 @@ public class ConnectivityServiceTest {
             }).when(mInternalResources).getString(resId);
         }
 
-        MockContext(Context base, ContentProvider settingsProvider) {
+        MockContext(Context base) {
             super(base);
 
             mInternalResources = spy(base.getResources());
@@ -725,8 +727,7 @@ public class ConnectivityServiceTest {
                 mockStringResource(resId);
             }
 
-            mContentResolver = new MockContentResolver();
-            mContentResolver.addProvider(Settings.AUTHORITY, settingsProvider);
+            mContentResolver = new ContentResolverWithFakeSettingsProvider();
         }
 
         @Override
@@ -1899,10 +1900,14 @@ public class ConnectivityServiceTest {
         mockHasSystemFeature(FEATURE_WIFI_DIRECT, true);
         mockHasSystemFeature(FEATURE_ETHERNET, true);
         doReturn(true).when(mTelephonyManager).isDataCapable();
+        // This will return the same object for all subscription IDs. This is
+        // fine for all tests at the time of this writing, but if the difference
+        // becomes important for all tests, then it may be necessary to create a
+        // new one per subId. See [CSTest#createContextAsUser] above for a model.
+        doReturn(mTelephonyManager).when(mTelephonyManager).createForSubscriptionId(anyInt());
 
         FakeSettingsProvider.clearSettingsProvider();
-        mServiceContext = new MockContext(InstrumentationRegistry.getContext(),
-                new FakeSettingsProvider());
+        mServiceContext = new MockContext(InstrumentationRegistry.getContext());
         mServiceContext.setUseRegisteredHandlers(true);
         mServiceContext.setPermission(NETWORK_FACTORY, PERMISSION_GRANTED);
         mServiceContext.setPermission(NETWORK_STACK, PERMISSION_GRANTED);
@@ -2025,6 +2030,20 @@ public class ConnectivityServiceTest {
         }
 
         @Override
+        public void registerContentObserver(ContentResolver cr, Uri uri,
+                boolean notifyForDescendants, ContentObserver observer) {
+            ((ContentResolverWithFakeSettingsProvider) mServiceContext.getContentResolver())
+                    .registerContentObserver(uri, observer);
+        }
+
+        @Override
+        public void registerContentObserverAsUser(ContentResolver cr, Uri uri,
+                boolean notifyForDescendants, ContentObserver observer, UserHandle userHandle) {
+            ((ContentResolverWithFakeSettingsProvider) mServiceContext.getContentResolver())
+                    .registerContentObserverAsUser(uri, observer, userHandle);
+        }
+
+        @Override
         public NetworkStackClientBase getNetworkStack() {
             return mNetworkStack;
         }
@@ -2106,6 +2125,12 @@ public class ConnectivityServiceTest {
         @Override
         public DefaultNetworkRematchMetrics makeDefaultNetworkRematchMetrics() {
             return mDefaultNetworkRematchMetrics;
+        }
+
+        @Override
+        public SatisfiedByLocalNetworkMetrics makeSatisfiedByLocalNetworkMetrics(Context context,
+                Handler handler) {
+            return mSatisfiedByLocalNetworkMetrics;
         }
 
         @Override
@@ -2219,10 +2244,12 @@ public class ConnectivityServiceTest {
                 case ConnectivityFlags.REQUEST_RESTRICTED_WIFI:
                 case ConnectivityFlags.USE_DECLARED_METHODS_FOR_CALLBACKS:
                 case ConnectivityFlags.QUEUE_CALLBACKS_FOR_FROZEN_APPS:
-                case ConnectivityFlags.QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER:
+                case ConnectivityFlags.QUEUE_NETWORK_AGENT_EVENTS_AFTER_B:
                 case ConnectivityFlags.CLOSE_QUIC_CONNECTION:
                 case ConnectivityFlags.EARLY_LINK_PROPERTIES_UPDATE_FOR_VPN:
                 case ConnectivityFlags.CONSTRAINED_DATA_SATELLITE_METRICS:
+                case ConnectivityFlags.SATISFIED_BY_LOCAL_NETWORK_METRICS:
+                case ConnectivityFlags.USE_SATELLITE_REPORTED_SUSPENDED_AND_ROAMING:
                     return true;
                 default:
                     throw new UnsupportedOperationException("Unknown flag " + name
@@ -2417,6 +2444,16 @@ public class ConnectivityServiceTest {
         @Override
         public L2capNetworkProvider makeL2capNetworkProvider(Context context) {
             return null;
+        }
+
+        @Override
+        public boolean shouldBluetoothTetheringUseRandomAddress() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldQueueNetworkAgentEventsInSystemServer() {
+            return true;
         }
     }
 
@@ -5870,21 +5907,18 @@ public class ConnectivityServiceTest {
         ContentResolver cr = mServiceContext.getContentResolver();
         Settings.Global.putInt(cr, ConnectivitySettingsManager.MOBILE_DATA_ALWAYS_ON,
                 enable ? 1 : 0);
-        mService.updateAlwaysOnNetworks();
         waitForIdle();
     }
 
     private void setPrivateDnsSettings(int mode, String specifier) {
         ConnectivitySettingsManager.setPrivateDnsMode(mServiceContext, mode);
         ConnectivitySettingsManager.setPrivateDnsHostname(mServiceContext, specifier);
-        mService.updatePrivateDnsSettings();
         waitForIdle();
     }
 
     private void setIngressRateLimit(int rateLimitInBytesPerSec) {
         ConnectivitySettingsManager.setIngressRateLimitInBytesPerSecond(mServiceContext,
                 rateLimitInBytesPerSec);
-        mService.updateIngressRateLimit();
         waitForIdle();
     }
 
@@ -13060,8 +13094,8 @@ public class ConnectivityServiceTest {
                 nc, null /* localNetworkConfig */,
                 new NetworkScore.Builder().setLegacyInt(0).build(),
                 mServiceContext, null, new NetworkAgentConfig(), mService, null, null, 0,
-                INVALID_UID, TEST_LINGER_DELAY_MS, mQosCallbackTracker,
-                new ConnectivityService.Dependencies());
+                INVALID_UID, false /* isAppSpecificNetwork */, TEST_LINGER_DELAY_MS,
+                mQosCallbackTracker, new ConnectivityService.Dependencies());
     }
 
     @Test
@@ -17782,12 +17816,18 @@ public class ConnectivityServiceTest {
     }
 
     @Test
-    public void testAutomotiveEthernetAllowedUids() throws Exception {
+    public void testAutomotiveEthernetAllowedUids_withAutoFeature() throws Exception {
         mServiceContext.setPermission(NETWORK_FACTORY, PERMISSION_GRANTED);
         mServiceContext.setPermission(MANAGE_TEST_NETWORKS, PERMISSION_GRANTED);
 
         // Has automotive feature.
         validateAutomotiveEthernetAllowedUids(true);
+    }
+
+    @Test
+    public void testAutomotiveEthernetAllowedUids_withoutAutoFeature() throws Exception {
+        mServiceContext.setPermission(NETWORK_FACTORY, PERMISSION_GRANTED);
+        mServiceContext.setPermission(MANAGE_TEST_NETWORKS, PERMISSION_GRANTED);
 
         // No automotive feature.
         validateAutomotiveEthernetAllowedUids(false);
@@ -18094,7 +18134,6 @@ public class ConnectivityServiceTest {
 
     private void setAndUpdateMobileDataPreferredUids(Set<Integer> uids) {
         ConnectivitySettingsManager.setMobileDataPreferredUids(mServiceContext, uids);
-        mService.updateMobileDataPreferredUids();
         waitForIdle();
     }
 
@@ -18298,19 +18337,17 @@ public class ConnectivityServiceTest {
      */
     @Test
     public void testMobileDataPreferredUidsChangedCountsRequestsCorrectlyOnSet() throws Exception {
-        ConnectivitySettingsManager.setMobileDataPreferredUids(mServiceContext,
-                Set.of(PRIMARY_USER_HANDLE.getUid(TEST_PACKAGE_UID)));
+        Set uids = Set.of(PRIMARY_USER_HANDLE.getUid(TEST_PACKAGE_UID));
+        ConnectivitySettingsManager.setMobileDataPreferredUids(mServiceContext, uids);
         // Leave one request available so MDO preference set up above can be set.
         withRequestCountersAcquired(1 /* countToLeaveAvailable */, () ->
                 withPermission(NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK,
                         Process.myPid(), Process.myUid(), () -> {
                             // Set initially to test the limit prior to having existing requests.
-                            mService.updateMobileDataPreferredUids();
-                            waitForIdle();
+                            setAndUpdateMobileDataPreferredUids(uids);
 
                             // re-set so as to test the limit as part of replacing existing requests
-                            mService.updateMobileDataPreferredUids();
-                            waitForIdle();
+                            setAndUpdateMobileDataPreferredUids(uids);
                         }));
     }
 
@@ -19328,7 +19365,7 @@ public class ConnectivityServiceTest {
         verifyClatdStop(null /* inOrder */, MOBILE_IFNAME);
     }
 
-    private static final int EXPECTED_TEST_METHOD_COUNT = 332;
+    private static final int EXPECTED_TEST_METHOD_COUNT = 333;
 
     @Test
     public void testTestMethodCount() {
