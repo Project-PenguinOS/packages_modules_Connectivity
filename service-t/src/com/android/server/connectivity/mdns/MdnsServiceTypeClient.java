@@ -786,28 +786,34 @@ public class MdnsServiceTypeClient {
 
     private void notifyRemovedServiceToListeners(@NonNull MdnsResponse response,
             @NonNull String message) {
+        final String serviceInstanceName = response.getServiceInstanceName();
+        if (serviceInstanceName == null) {
+            return;
+        }
+
         for (int i = 0; i < listeners.size(); i++) {
+            final ListenerInfo listenerInfo = listeners.valueAt(i);
             if (!responseMatchesInstanceNameAndSubtypes(response,
-                    listeners.valueAt(i).searchOptions.getResolveInstanceName(),
-                    listeners.valueAt(i).searchOptions.getSubtypes())) {
+                    listenerInfo.searchOptions.getResolveInstanceName(),
+                    listenerInfo.searchOptions.getSubtypes())) {
                 continue;
             }
-            final MdnsServiceBrowserListener listener = listeners.keyAt(i);
-            if (response.getServiceInstanceName() != null) {
-                if (!listeners.valueAt(i).unsetServiceDiscovered(
-                        response.getServiceInstanceName())) {
-                    // Skip the lost callback if this service has not been notified previously
-                    continue;
-                }
-                final MdnsServiceInfo serviceInfo = buildMdnsServiceInfoFromResponse(
-                        response, serviceTypeLabels, clock.elapsedRealtime());
-                if (response.isComplete()) {
-                    sharedLog.log(message + ". onServiceRemoved: " + serviceInfo);
-                    listener.onServiceRemoved(serviceInfo);
-                }
-                sharedLog.log(message + ". onServiceNameRemoved: " + serviceInfo);
-                listener.onServiceNameRemoved(serviceInfo);
+
+            if (!listenerInfo.unsetServiceDiscovered(serviceInstanceName)) {
+                // Skip the lost callback if this service has not been notified previously
+                continue;
             }
+
+            final MdnsServiceBrowserListener listener = listeners.keyAt(i);
+            final MdnsServiceInfo serviceInfo = buildMdnsServiceInfoFromResponse(
+                    response, serviceTypeLabels, clock.elapsedRealtime());
+
+            if (response.isComplete()) {
+                sharedLog.log(message + ". onServiceRemoved: " + serviceInfo);
+                listener.onServiceRemoved(serviceInfo);
+            }
+            sharedLog.log(message + ". onServiceNameRemoved: " + serviceInfo);
+            listener.onServiceNameRemoved(serviceInfo);
         }
     }
 
@@ -816,8 +822,6 @@ public class MdnsServiceTypeClient {
         ensureRunningOnHandlerThread(handler);
         for (MdnsResponse response : serviceCache.getCachedServices(
                 cacheKey, false /* excludeExpiredServices */)) {
-            final String name = response.getServiceInstanceName();
-            if (name == null) continue;
             notifyRemovedServiceToListeners(response, "Socket destroyed");
         }
         shutDown();

@@ -20,24 +20,9 @@
  *              Includes separate handling for Ethernet and raw IP packets.
  */
 
-#include <linux/bpf.h>
-#include <linux/filter.h>
-#include <linux/if.h>
-#include <linux/if_ether.h>
-#include <linux/if_packet.h>
-#include <linux/in.h>
-#include <linux/in6.h>
-#include <linux/ip.h>
-#include <linux/ipv6.h>
-#include <linux/pkt_cls.h>
-#include <linux/tcp.h>
-#include <stdint.h>
-
 // The resulting maps/programs need to load on Android 26Q2+
 #undef BPFLOADER_MIN_VER
 #define BPFLOADER_MIN_VER BPFLOADER_MAINLINE_26Q2_VERSION
-
-#include "bpf_net_helpers.h"
 
 #define TCP_FLAGS_OFF 12
 #define IP4_TCP_FLAGS_OFF (sizeof(struct iphdr) + TCP_FLAGS_OFF)

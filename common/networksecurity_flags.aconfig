@@ -17,3 +17,11 @@ flag {
     bug: "319829948"
     is_fixed_read_only: true
 }
+
+flag {
+    name: "encrypted_client_hello_dns"
+    namespace: "network_security"
+    description: "Enable new ECH-related DNS resolver changes"
+    bug: "419020719"
+    is_fixed_read_only: true
+}
