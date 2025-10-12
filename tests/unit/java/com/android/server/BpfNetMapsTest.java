@@ -68,6 +68,7 @@ import static android.system.OsConstants.EINVAL;
 import static android.system.OsConstants.EPERM;
 
 import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
+import static com.android.tethering.flags.Flags.FLAG_PERMISSION_MAP_UID_MIGRATION;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -77,6 +78,7 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeFalse;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.spy;
@@ -99,6 +101,7 @@ import android.util.IndentingPrintWriter;
 import androidx.test.filters.SmallTest;
 
 import com.android.modules.utils.build.SdkLevel;
+import com.android.net.module.util.BpfBoolean;
 import com.android.net.module.util.IBpfMap;
 import com.android.net.module.util.Struct.Bool;
 import com.android.net.module.util.Struct.S32;
@@ -115,6 +118,8 @@ import com.android.testutils.DevSdkIgnoreRule.IgnoreAfter;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.DevSdkIgnoreRunner;
 import com.android.testutils.TestBpfMap;
+import com.android.testutils.com.android.testutils.SetFeatureFlagsRule;
+import com.android.testutils.com.android.testutils.SetFeatureFlagsRule.FeatureFlag;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -128,6 +133,7 @@ import java.io.StringWriter;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 @RunWith(DevSdkIgnoreRunner.class)
@@ -138,6 +144,16 @@ public final class BpfNetMapsTest {
 
     @Rule
     public final DevSdkIgnoreRule ignoreRule = new DevSdkIgnoreRule();
+
+    final HashMap<String, Boolean> mFeatureFlags = new HashMap<>();
+    // This will set feature flags from @FeatureFlag annotations
+    // into the map before setUp() runs.
+    @Rule
+    public final SetFeatureFlagsRule mSetFeatureFlagsRule =
+            new SetFeatureFlagsRule((name, enabled) -> {
+                mFeatureFlags.put(name, enabled);
+                return null;
+            }, (name) -> mFeatureFlags.getOrDefault(name, false));
 
     private static final int TEST_UID = 10086;
     private static final int[] TEST_UIDS = {10002, 10003};
@@ -186,6 +202,8 @@ public final class BpfNetMapsTest {
     private final IBpfMap<S32, U8> mDataSaverEnabledMap = new TestBpfMap<>(S32.class, U8.class);
     private final IBpfMap<IngressDiscardKey, IngressDiscardValue> mIngressDiscardMap =
             new TestBpfMap<>(IngressDiscardKey.class, IngressDiscardValue.class);
+    private final BpfBoolean mUidMigrationEnabledBpfBoolean =
+            new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
 
     @Before
     public void setUp() throws Exception {
@@ -194,6 +212,8 @@ public final class BpfNetMapsTest {
         doReturn(TEST_IF_INDEX).when(mInterfaceTracker).getInterfaceIndex(TEST_IF_NAME);
         doReturn(TEST_IF_NAME).when(mDeps).getIfName(TEST_IF_INDEX);
         doReturn(0).when(mDeps).synchronizeKernelRCU();
+        doAnswer(invocation -> mFeatureFlags.getOrDefault(FLAG_PERMISSION_MAP_UID_MIGRATION, true))
+                .when(mDeps).isPermissionMapUidMigrationEnabled();
         BpfNetMaps.setConfigurationMapForTest(mConfigurationMap);
         mConfigurationMap.updateEntry(UID_RULES_CONFIGURATION_KEY, new U32(0));
         mConfigurationMap.updateEntry(
@@ -206,6 +226,8 @@ public final class BpfNetMapsTest {
         BpfNetMaps.setDataSaverEnabledMapForTest(mDataSaverEnabledMap);
         mDataSaverEnabledMap.updateEntry(DATA_SAVER_ENABLED_KEY, new U8(DATA_SAVER_DISABLED));
         BpfNetMaps.setIngressDiscardMapForTest(mIngressDiscardMap);
+        BpfNetMaps.setUidMigrationEnabledBpfBooleanForTest(mUidMigrationEnabledBpfBoolean);
+        BpfNetMaps.setInitializedForTest(false);
         mBpfNetMaps = new BpfNetMaps(mContext, mNetd, mDeps, mInterfaceTracker);
     }
 
@@ -1601,5 +1623,33 @@ public final class BpfNetMapsTest {
                 DATA_SAVER_ENABLED,
                 false /* expectRestricted */
         );
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    public void testSetUidMigrationDisabled() throws Exception {
+        assertFalse(mUidMigrationEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    public void testSetUidMigrationEnabled() throws Exception {
+        assertTrue(mUidMigrationEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    public void testDumpUidMigrationMapDisabled() throws Exception {
+        assertDumpContains(getDump(), "sUidMigrationEnabledBpfBoolean: false");
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    public void testDumpUidMigrationMapEnsabled() throws Exception {
+        assertDumpContains(getDump(), "sUidMigrationEnabledBpfBoolean: true");
     }
 }

@@ -1,2 +1,9 @@
 package: "com.android.tethering.flags"
 container: "com.android.tethering"
+
+flag {
+    name: "permission_map_uid_migration"
+    namespace: "com_android_tethering"
+    description: "The flag enables the bpf permission map migration from appid to uid."
+    bug: "436242702"
+}

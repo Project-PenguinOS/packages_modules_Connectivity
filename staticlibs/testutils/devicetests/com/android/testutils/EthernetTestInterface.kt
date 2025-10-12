@@ -23,16 +23,13 @@ import android.net.EthernetManager.InterfaceStateListener
 import android.net.EthernetManager.STATE_ABSENT
 import android.net.EthernetManager.STATE_LINK_UP
 import android.net.IpConfiguration
-import android.net.TestNetworkInterface
 import android.os.Handler
-import android.util.Log
+import android.os.HandlerThread
 import com.android.net.module.util.ArrayTrackRecord
 import com.android.testutils.EthernetTestInterface.EthernetStateListener.Event.InterfaceStateChanged
 import java.net.NetworkInterface
-import kotlin.concurrent.Volatile
 import kotlin.test.assertNotNull
 
-private const val TAG = "EthernetTestInterface"
 private const val TIMEOUT_MS = 5_000L
 
 /**
@@ -43,9 +40,8 @@ private const val TIMEOUT_MS = 5_000L
  */
 class EthernetTestInterface(
     private val context: Context,
-    private val handler: Handler,
-    val testIface: TestNetworkInterface
-) {
+    val testIface: AutoCloseableTestNetworkInterface
+) : AutoCloseable {
     private class EthernetStateListener(private val trackedIface: String) : InterfaceStateListener {
         val events = ArrayTrackRecord<Event>().newReadHead()
 
@@ -75,6 +71,9 @@ class EthernetTestInterface(
         }
     }
 
+    private val handlerThread = HandlerThread(testIface.interfaceName).apply { start() }
+    private val handler = Handler(handlerThread.looper)
+
     val name get() = testIface.interfaceName
     val mtu: Int
         get() {
@@ -85,7 +84,7 @@ class EthernetTestInterface(
     val packetReader = PollPacketReader(handler, testIface.fileDescriptor.fileDescriptor, mtu)
     private val listener = EthernetStateListener(name)
     private val em = context.getSystemService(EthernetManager::class.java)!!
-    @Volatile private var cleanedUp = false
+    private var cleanedUp = false
 
     init{
         em.addInterfaceStateListener(handler::post, listener)
@@ -98,11 +97,18 @@ class EthernetTestInterface(
         handler.waitForIdle(TIMEOUT_MS)
     }
 
-    fun destroy() {
-        // packetReader.stop() closes the test interface.
+    override fun close() {
+        if (cleanedUp) return
+        cleanedUp = true
+
+        // packetReader.stop() closes the test interface, so there is no need to explicitly call
+        // testIface.close().
         handler.post { packetReader.stop() }
         handler.waitForIdle(TIMEOUT_MS)
         listener.eventuallyExpect(STATE_ABSENT)
+
+        handlerThread.quitSafely()
+        handlerThread.join()
 
         // setIncludeTestInterfaces() posts on the handler and does not run synchronously. However,
         // there should be no need for a synchronization mechanism here. If the next test is
@@ -112,14 +118,5 @@ class EthernetTestInterface(
             em.setIncludeTestInterfaces(false)
         }
         em.removeInterfaceStateListener(listener)
-
-        cleanedUp = true
-    }
-
-    protected fun finalize() {
-        if (!cleanedUp) {
-            Log.wtf(TAG, "destroy() was not called for interface $name.")
-            destroy()
-        }
     }
 }

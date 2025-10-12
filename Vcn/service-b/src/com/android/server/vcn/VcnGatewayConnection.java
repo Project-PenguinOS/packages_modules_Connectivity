@@ -18,11 +18,13 @@ package com.android.server.vcn;
 
 import static android.net.NetworkCapabilities.NET_CAPABILITY_DUN;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_CONGESTED;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VCN_MANAGED;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_TEMPORARILY_NOT_METERED;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 import static android.net.ipsec.ike.exceptions.IkeProtocolException.ERROR_TYPE_AUTHENTICATION_FAILED;
@@ -210,7 +212,14 @@ public class VcnGatewayConnection extends StateMachine {
     static final String SAFEMODE_TIMEOUT_ALARM = TAG + "_SAFEMODE_TIMEOUT_ALARM";
 
     private static final int[] MERGED_CAPABILITIES =
-            new int[] {NET_CAPABILITY_NOT_METERED, NET_CAPABILITY_NOT_ROAMING};
+            new int[] {
+                NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED,
+                NET_CAPABILITY_NOT_CONGESTED,
+                NET_CAPABILITY_NOT_METERED,
+                NET_CAPABILITY_NOT_ROAMING,
+                NET_CAPABILITY_TEMPORARILY_NOT_METERED
+            };
+
     private static final int ARG_NOT_PRESENT = Integer.MIN_VALUE;
 
     private static final String DISCONNECT_REASON_INTERNAL_ERROR = "Uncaught exception: ";
@@ -2298,7 +2307,6 @@ public class VcnGatewayConnection extends StateMachine {
 
         builder.addTransportType(TRANSPORT_CELLULAR);
         builder.addCapability(NET_CAPABILITY_NOT_VCN_MANAGED);
-        builder.addCapability(NET_CAPABILITY_NOT_CONGESTED);
         builder.addCapability(NET_CAPABILITY_NOT_SUSPENDED);
 
         // Add exposed capabilities
