@@ -90,6 +90,7 @@ java_defaults {
     ],
     static_libs: [
         "com.android.net.flags-aconfig-java-deprecated",
+        "com.android.tethering.flags-aconfig-java",
         "android.net.platform.flags-aconfig-java-export",
         // Not using the latest stable version because all functions in the latest version of
         // mdns_aidl_interface are deprecated.
@@ -226,6 +227,7 @@ java_sdk_library {
     },
     aconfig_declarations: [
         "com.android.net.flags-aconfig-deprecated",
+        "com.android.tethering.flags-aconfig",
         "com.android.net.http.flags-aconfig",
         "com.android.networksecurity.flags-aconfig",
     ],

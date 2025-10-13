@@ -30,8 +30,11 @@ public class HostsideSelfDeclaredNetworkCapabilitiesCheckTest extends HostsideNe
     private static final String TEST_CLASS_NAME = ".NetworkSelfDeclaredCapabilitiesTest";
     private static final String WITH_SELF_DECLARED_CAPABILITIES_METHOD =
             "requestNetwork_withSelfDeclaredCapabilities";
-    private static final String LACKING_SELF_DECLARED_CAPABILITIES_METHOD =
-            "requestNetwork_lackingRequiredSelfDeclaredCapabilities";
+    private static final String LACKING_SELF_DECLARED_CAPABILITIES_ALL_METHOD =
+            "requestNetwork_lackingRequiredSelfDeclaredCapabilities_all";
+    private static final String LACKING_SELF_DECLARED_CAPABILITIES_UNIFIED_COMMUNICATIONS_METHOD =
+            "requestNetwork_lackingRequiredSelfDeclaredCapabilities_unifiedCommunications";
+
     private static final String WITHOUT_REQUEST_CAPABILITIES_METHOD =
             "requestNetwork_withoutRequestCapabilities";
 
@@ -59,7 +62,10 @@ public class HostsideSelfDeclaredNetworkCapabilitiesCheckTest extends HostsideNe
         // the ConnectivityManager.requestNetwork() call will fail if the properly is not declared.
         runDeviceTests(TEST_APP_PKG,
                 TEST_APP_PKG + TEST_CLASS_NAME,
-                LACKING_SELF_DECLARED_CAPABILITIES_METHOD);
+                LACKING_SELF_DECLARED_CAPABILITIES_ALL_METHOD);
+        runDeviceTests(TEST_APP_PKG,
+                TEST_APP_PKG + TEST_CLASS_NAME,
+                LACKING_SELF_DECLARED_CAPABILITIES_UNIFIED_COMMUNICATIONS_METHOD);
         runDeviceTests(TEST_APP_PKG,
                 TEST_APP_PKG + TEST_CLASS_NAME,
                 WITHOUT_REQUEST_CAPABILITIES_METHOD);
@@ -86,9 +92,11 @@ public class HostsideSelfDeclaredNetworkCapabilitiesCheckTest extends HostsideNe
         installPackage(TEST_WITHOUT_PROPERTY_IN_CURRENT_SDK_APK);
         runDeviceTests(TEST_APP_PKG,
                 TEST_APP_PKG + TEST_CLASS_NAME,
-                LACKING_SELF_DECLARED_CAPABILITIES_METHOD);
+                LACKING_SELF_DECLARED_CAPABILITIES_ALL_METHOD);
+        runDeviceTests(TEST_APP_PKG,
+                TEST_APP_PKG + TEST_CLASS_NAME,
+                LACKING_SELF_DECLARED_CAPABILITIES_UNIFIED_COMMUNICATIONS_METHOD);
         uninstallPackage(TEST_APP_PKG, true);
-
 
         // Updates package.
         installPackage(TEST_WITH_PROPERTY_IN_CURRENT_SDK_APK);
@@ -99,4 +107,3 @@ public class HostsideSelfDeclaredNetworkCapabilitiesCheckTest extends HostsideNe
 
     }
 }
-

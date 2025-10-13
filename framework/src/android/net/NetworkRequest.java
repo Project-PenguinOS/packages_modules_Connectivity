@@ -141,6 +141,7 @@ import java.util.Set;
  *  <network-capabilities-declaration xmlns:android="http://schemas.android.com/apk/res/android">
  *     <uses-network-capability android:name="NET_CAPABILITY_PRIORITIZE_LATENCY"/>
  *     <uses-network-capability android:name="NET_CAPABILITY_PRIORITIZE_BANDWIDTH"/>
+ *     <uses-network-capability android:name="NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS"/>
  * </network-capabilities-declaration>
  *  }
  *  </pre>

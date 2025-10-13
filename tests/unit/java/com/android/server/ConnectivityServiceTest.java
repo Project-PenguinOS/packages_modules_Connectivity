@@ -6989,6 +6989,8 @@ public class ConnectivityServiceTest {
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .addCapability(NetworkCapabilities
+                        .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                 .build();
         final TestNetworkCallback cb = new TestNetworkCallback();
         mCm.requestNetwork(networkRequest, cb);
@@ -7063,6 +7065,8 @@ public class ConnectivityServiceTest {
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .addCapability(NetworkCapabilities
+                        .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                 .build();
         final TestNetworkCallback cb = new TestNetworkCallback();
         final Exception e = assertThrows(SecurityException.class,
@@ -7077,11 +7081,13 @@ public class ConnectivityServiceTest {
     public void requestNetwork_withNetworkSliceDeclaration_shouldSucceed() throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_both);
+                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_all);
 
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .addCapability(NetworkCapabilities
+                        .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                 .build();
         final TestNetworkCallback cb = new TestNetworkCallback();
         mCm.requestNetwork(networkRequest, cb);
@@ -7094,11 +7100,13 @@ public class ConnectivityServiceTest {
     public void requestNetwork_withNetworkSliceDeclaration_shouldUseCache() throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_both);
+                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_all);
 
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .addCapability(NetworkCapabilities
+                        .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                 .build();
         final TestNetworkCallback cb = new TestNetworkCallback();
         mCm.requestNetwork(networkRequest, cb);

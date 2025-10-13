@@ -2339,6 +2339,10 @@ public class MdnsServiceTypeClientTests {
 
     @Test
     public void testGetFilterRepliesInfo() throws Exception {
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+                .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
+        client = makeMdnsServiceTypeClient(flags);
+
         final String instanceName = "instance1";
         final String subtype = "subtype";
         final MdnsSearchOptions resolveOptions = MdnsSearchOptions.newBuilder()
@@ -2375,6 +2379,10 @@ public class MdnsServiceTypeClientTests {
 
     @Test
     public void testGetFilterRepliesInfo_twoDiscoveryRequests() throws Exception {
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+                .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
+        client = makeMdnsServiceTypeClient(flags);
+
         final String subtype = "subtype";
         final MdnsSearchOptions discoverOptions1 = MdnsSearchOptions.newBuilder().build();
         final MdnsSearchOptions discoverOptions2 = MdnsSearchOptions.newBuilder()
@@ -2401,6 +2409,10 @@ public class MdnsServiceTypeClientTests {
 
     @Test
     public void testGetFilterRepliesInfo_combineSubtypes() throws Exception {
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+                .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
+        client = makeMdnsServiceTypeClient(flags);
+
         final String subtype1 = "subtype1";
         final String subtype2 = "subtype2";
         final MdnsSearchOptions discoverOptions1 = MdnsSearchOptions.newBuilder()

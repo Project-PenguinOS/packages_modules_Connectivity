@@ -7,3 +7,10 @@ flag {
     description: "The flag enables the bpf permission map migration from appid to uid."
     bug: "436242702"
 }
+
+flag {
+  name: "net_capability_prioritize_unified_communications"
+  namespace: "com_android_tethering"
+  description: "Flag for NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS API"
+  bug: "430509489"
+}

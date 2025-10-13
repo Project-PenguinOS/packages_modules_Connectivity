@@ -22,6 +22,7 @@ package android.net.cts
 import android.Manifest.permission
 import android.content.pm.PackageManager.FEATURE_AUTOMOTIVE
 import android.content.pm.PackageManager.FEATURE_LEANBACK
+import android.content.pm.PackageManager.FEATURE_PC
 import android.content.pm.PackageManager.FEATURE_WATCH
 import android.content.pm.PackageManager.FEATURE_WIFI
 import android.net.ConnectivityManager
@@ -198,6 +199,11 @@ class ApfIntegrationTest {
                 // Ideally, this would use assumeFalse(isAutomotive) here, but this isn't fully
                 // supported by the test infra (see comment above). Thus, the proper assumption
                 // check is later done in the #setup (@Before).
+                return
+            }
+
+            // TODO(b/450670091): Run APF tests on desktop devices once the feature is ready.
+            if (pm.hasSystemFeature(FEATURE_PC)) {
                 return
             }
 

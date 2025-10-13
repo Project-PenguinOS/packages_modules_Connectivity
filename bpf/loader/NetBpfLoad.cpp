@@ -1385,11 +1385,11 @@ static bool loadObject(const char* const progPath, const bool useLibbpf = false)
 #define BPFROOT APEXROOT "/etc/bpf/mainline/"
 
 static bool loadAllObjects() {
-    bool libbpf = isAtLeast26Q1 || useLibBpf;
+    bool libbpf = isAtLeast25Q4 || useLibBpf;
     if (!loadObject(BPFROOT "offload.o")) return false;
-    if (!loadObject(BPFROOT "test.o", libbpf)) return false;
+    if (!loadObject(BPFROOT "test.o", true)) return false;
     if (!loadObject(BPFROOT "clatd.o", libbpf)) return false;
-    if (!loadObject(BPFROOT "dscpPolicy.o", libbpf)) return false;
+    if (!loadObject(BPFROOT "dscpPolicy.o", true)) return false;
     if (!loadObject(BPFROOT "netd.o", libbpf)) return false;
     return true;
 }

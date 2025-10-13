@@ -19,6 +19,7 @@ package com.google.snippet.connectivity
 import android.Manifest.permission.NETWORK_SETTINGS
 import android.Manifest.permission.OVERRIDE_WIFI_CONFIG
 import android.content.pm.PackageManager.FEATURE_AUTOMOTIVE
+import android.content.pm.PackageManager.FEATURE_PC
 import android.content.pm.PackageManager.FEATURE_TELEPHONY
 import android.content.pm.PackageManager.FEATURE_WIFI
 import android.net.ConnectivityManager
@@ -89,6 +90,9 @@ class ConnectivityMultiDevicesSnippet : Snippet {
 
     @Rpc(description = "Check whether the device has automotive feature.")
     fun hasAutomotiveFeature() = pm.hasSystemFeature(FEATURE_AUTOMOTIVE)
+
+    @Rpc(description = "Check whether the device has PC feature.")
+    fun hasPCFeature() = pm.hasSystemFeature(FEATURE_PC)
 
     @Rpc(description = "Check whether the device supporters AP + STA concurrency.")
     fun isStaApConcurrencySupported() = wifiManager.isStaApConcurrencySupported()
