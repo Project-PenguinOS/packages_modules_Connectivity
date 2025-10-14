@@ -9242,7 +9242,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
         return networkCapabilities.hasCapability(
                 NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
                 || networkCapabilities.hasCapability(
-                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY);
+                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
+                || networkCapabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS);
     }
 
     private void enforceRequestCapabilitiesDeclaration(@NonNull final String callerPackageName,

@@ -895,7 +895,7 @@ DEFINE_NETD_V_BPF_PROG_KVER(recvmsg6, udp6_recvmsg, , 4_19)
 }
 
 
-DEFINE_NETD_BPF_PROG_KVER_RANGE(sendmsg4, udp4_sendmsg, 4_19, 4_19, 5_10)
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg4, udp4_sendmsg, 4_19, 4_19, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }

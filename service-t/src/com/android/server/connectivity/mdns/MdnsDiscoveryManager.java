@@ -33,6 +33,7 @@ import com.android.server.connectivity.mdns.MdnsServiceTypeClient.FilterRepliesI
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -414,6 +415,10 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
     public List<FilterRepliesInfo> notifyOffloadStart(@NonNull String interfaceName) {
         discoveryExecutor.ensureRunningOnHandlerThread();
         sharedLog.log("notifyOffloadStart for interface:" + interfaceName);
+
+        if (mdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) {
+            return Collections.emptyList();
+        }
 
         final List<FilterRepliesInfo> info = new ArrayList<>();
         for (MdnsServiceTypeClient serviceTypeClient :

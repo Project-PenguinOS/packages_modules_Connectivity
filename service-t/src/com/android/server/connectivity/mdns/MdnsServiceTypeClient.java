@@ -533,6 +533,8 @@ public class MdnsServiceTypeClient {
 
     private void updateOffloadInfo(@NonNull String serviceName,
             @Nullable FilterRepliesInfo newInfo) {
+        if (!featureFlags.mIsSelectiveMdnsResponseOffloadEnabled) return;
+
         final FilterRepliesInfo combinedInfo;
         if (!serviceName.equals(SERVICE_NAME_DISCOVERY)) { // Resolution
             combinedInfo = newInfo;
@@ -543,15 +545,14 @@ public class MdnsServiceTypeClient {
         final FilterRepliesInfo oldInfo = offloadInfo.get(serviceName);
         if (combinedInfo == null) {
             offloadInfo.remove(serviceName);
-            if (featureFlags.mIsSelectiveMdnsResponseOffloadEnabled && oldInfo != null) {
+            if (oldInfo != null) {
                 offloadCallback.onOffloadStop(
                         socketKey.getInterfaceName(),
                         createOffloadServiceInfoFromFilterReplies(oldInfo));
             }
         } else {
             offloadInfo.put(serviceName, combinedInfo);
-            if (featureFlags.mIsSelectiveMdnsResponseOffloadEnabled
-                    && (oldInfo == null || !oldInfo.equals(combinedInfo))) {
+            if (oldInfo == null || !oldInfo.equals(combinedInfo)) {
                 offloadCallback.onOffloadStartOrUpdate(
                         socketKey.getInterfaceName(),
                         createOffloadServiceInfoFromFilterReplies(combinedInfo));

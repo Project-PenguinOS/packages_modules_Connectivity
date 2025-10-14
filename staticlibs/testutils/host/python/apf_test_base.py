@@ -46,6 +46,13 @@ class ApfTestBase(multi_devices_test_base.MultiDevicesTestBase):
         'APF GMS-VSR requirements do not apply to automotive devices, skip'
         ' test.',
     )
+
+    # TODO(b/450670091): Run APF tests on desktop devices once the feature is ready.
+    asserts.abort_class_if(
+        self.client.hasPCFeature(),
+        'APF is not implemented on desktop devices, skip test.',
+    )
+
     # Fetch device properties and storing them locally for later use.
     # TODO: refactor to separate instances to store client and server device
     self.server_iface_name, client_network = (
