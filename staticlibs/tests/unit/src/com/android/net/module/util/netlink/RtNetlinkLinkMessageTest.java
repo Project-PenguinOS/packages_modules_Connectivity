@@ -269,8 +269,10 @@ public class RtNetlinkLinkMessageTest {
     @Test
     public void testCreateGetLinkMessage() {
         final String expectedHexBytes =
-                "20000000120005006824000000000000"    // struct nlmsghdr
-                + "00000000080000000000000000000000"; // struct ifinfomsg
+                // struct nlmsghdr,see {@link StructNlMsgHdr}
+                "20000000120005006824000000000000"
+                // struct ifinfomsg, see {@link StructIfinfoMsg}
+                + "00000000080000000000000000000000";
         final int interfaceIndex = 8;
         final int sequenceNumber = 0x2468;
 
@@ -312,6 +314,22 @@ public class RtNetlinkLinkMessageTest {
                 interfaceIndex,
                 sequenceNumber,
                 mtu);
+        assertNotNull(msg);
+        final byte[] bytes = msg.pack(ByteOrder.LITTLE_ENDIAN);  // For testing.
+        assertEquals(expectedHexBytes, HexDump.toHexString(bytes));
+    }
+
+    @Test
+    public void testCreateGetInterfaceMtuMessage() {
+        final String expectedHexBytes =
+                "20000000120005006824000000000000"    // struct nlmsghdr
+                + "00000000080000000000000000000000"; // struct ifinfomsg
+        final int interfaceIndex = 8;
+        final int sequenceNumber = 0x2468;
+
+        final RtNetlinkLinkMessage msg = RtNetlinkLinkMessage.createGetMtuMessage(
+                interfaceIndex,
+                sequenceNumber);
         assertNotNull(msg);
         final byte[] bytes = msg.pack(ByteOrder.LITTLE_ENDIAN);  // For testing.
         assertEquals(expectedHexBytes, HexDump.toHexString(bytes));

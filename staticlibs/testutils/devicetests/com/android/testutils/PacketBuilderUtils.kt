@@ -531,7 +531,9 @@ class Dhcp6Pkt(
         RECONFIGURE(10),
         INFORMATION_REQUEST(11), // INFORMATION-REQUEST
         RELAY_FORW(12),          // RELAY-FORW
-        RELAY_REPL(13);          // RELAY-REPL
+        RELAY_REPL(13),          // RELAY-REPL
+        ADDR_REG_INFORM(36),     // ADDR-REG-INFORM
+        ADDR_REG_REPLY(37);      // ADDR-REG-REPLY
 
         companion object {
             fun fromString(str: String) = valueOf(str.replace('-', '_'))
@@ -589,6 +591,21 @@ class Dhcp6Pkt(
         outputStream.write(bb.array())
         return this
     }
+
+    fun addIaAddressOption(addr: Inet6Address, valid: Int, preferred: Int): Dhcp6Pkt {
+        val bb = ByteBuffer.allocate(28)
+                .putShort(5) // OPTION_IAADDR
+                .putShort(24)
+                .put(addr.address)
+                .putInt(preferred)
+                .putInt(valid)
+        bb.flip()
+        outputStream.write(bb.array())
+        return this
+    }
+
+    fun addIaAddressOption(addr: String, valid: Int, preferred: Int) =
+            addIaAddressOption(Inet6Address.getByName(addr) as Inet6Address, valid, preferred)
 
     override fun build(payload: FinalizedPacket?, pseudo: PseudoHeaderPacket?): FinalizedPacket {
         if (payload != null) outputStream.write(payload.bytes)
