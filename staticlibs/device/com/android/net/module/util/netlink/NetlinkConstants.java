@@ -123,6 +123,8 @@ public class NetlinkConstants {
     public static final short RTM_NEWRULE                   = 32;
     public static final short RTM_DELRULE                   = 33;
     public static final short RTM_GETRULE                   = 34;
+    public static final short RTM_NEWQDISC                  = 36;
+    public static final short RTM_DELQDISC                  = 37;
     public static final short RTM_NEWPREFIX                 = 52;
     public static final short RTM_NEWNDUSEROPT              = 68;
 
@@ -154,6 +156,7 @@ public class NetlinkConstants {
     public static final int RTMGRP_IPV6_PREFIX = 1 << (RTNLGRP_IPV6_PREFIX - 1);
     public static final int RTNLGRP_ND_USEROPT = 20;
     public static final int RTMGRP_ND_USEROPT = 1 << (RTNLGRP_ND_USEROPT - 1);
+    public static final int RTMGRP_TC = 8;
 
     // Netlink family
     public static final short RTNL_FAMILY_IP6MR = 129;

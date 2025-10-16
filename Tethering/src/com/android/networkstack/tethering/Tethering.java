@@ -728,8 +728,7 @@ public class Tethering {
             if (request.isExemptFromEntitlementCheck()) {
                 mEntitlementMgr.setExemptedDownstreamType(type);
             } else {
-                mEntitlementMgr.startProvisioningIfNeeded(type,
-                        request.getShouldShowEntitlementUi());
+                mEntitlementMgr.startProvisioningIfNeeded(request);
             }
             enableTetheringInternal(true /* enabled */, request, listener);
             mTetheringMetrics.createBuilder(type, callerPkg);

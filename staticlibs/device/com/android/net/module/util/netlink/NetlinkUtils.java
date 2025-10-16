@@ -571,11 +571,8 @@ public class NetlinkUtils {
             getAndProcessNetlinkDumpMessages(
                     msg, NETLINK_ROUTE, RtNetlinkLinkMessage.class, consumer);
             return mtu[0];
-        } catch (ErrnoException
-            | InterruptedIOException
-            | SocketException
-            | NullPointerException e) {
-            Log.e(TAG, "Failed to get MTU for " + iface, e);
+        } catch (Exception e) {
+            Log.wtf(TAG, "Failed to get MTU for " + iface, e);
             return DEFAULT_INTERFACE_MTU;
         }
     }

@@ -42,6 +42,7 @@ import java.util.stream.Collectors;
 public final class OtDaemonController {
     public static final int DIAG_VENDOR_NAME_TLV_TYPE = 25;
     public static final int DIAG_VENDOR_MODEL_TLV_TYPE = 26;
+    public static final int DIAG_VENDOR_SW_VERSION_TLV_TYPE = 27;
 
     private static final String OT_CTL = "/system/bin/ot-ctl";
 

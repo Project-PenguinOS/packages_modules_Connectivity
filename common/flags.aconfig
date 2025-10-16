@@ -14,3 +14,10 @@ flag {
   description: "Flag for NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS API"
   bug: "430509489"
 }
+
+flag {
+    name: "show_entitlement_ui_to_requesters"
+    namespace: "com_android_tethering"
+    description: "Show entitlement UI to the requesters, instead of only admin users."
+    bug: "376792293"
+}
