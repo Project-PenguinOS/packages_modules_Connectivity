@@ -150,8 +150,7 @@ java_library {
     min_sdk_version: "30",
     static_libs: [
         "framework-connectivity-pre-jarjar-without-cronet",
-        "httpclient_api",
-        "httpclient_impl",
+        "httpengine",
     ],
     apex_available: [
         "com.android.tethering",
@@ -159,25 +158,11 @@ java_library {
     visibility: ["//packages/modules/Connectivity:__subpackages__"],
 }
 
-java_defaults {
-    name: "CronetJavaDefaults",
-    srcs: [":httpclient_api_sources"],
-    static_libs: [
-        "com.android.net.http.flags-aconfig-java",
-    ],
-    libs: [
-        "androidx.annotation_annotation",
-    ],
-    impl_only_static_libs: [
-        "httpclient_impl",
-    ],
-}
-
 java_sdk_library {
     name: "framework-connectivity",
     defaults: [
         "framework-connectivity-defaults",
-        "CronetJavaDefaults",
+        "httpengine_java_defaults",
     ],
     installable: true,
     jarjar_rules: ":framework-connectivity-jarjar-rules",

@@ -542,7 +542,7 @@ public class MdnsServiceTypeClientTests {
                 "service-instance-1", "192.0.2.123", 5353,
                 SERVICE_TYPE_LABELS,
                 Collections.emptyMap(), TEST_TTL,
-                TEST_ELAPSED_REALTIME - 1), socketKey);
+                TEST_ELAPSED_REALTIME - 1, "hostname"), socketKey);
         verify(mockDeps, times(2)).removeMessages(any(), eq(EVENT_START_QUERYTASK));
 
         // In backoff mode, the current scheduled task will not be canceled if the
@@ -2353,28 +2353,53 @@ public class MdnsServiceTypeClientTests {
         startSendAndReceive(mockListenerOne, resolveOptions);
         startSendAndReceive(mockListenerTwo, discoverOptions);
 
-        // Get a service response
-        processResponse(createResponse(instanceName, "192.0.2.0", 5353, SUBTYPE,
-                Collections.emptyMap() /* textAttributes */, TEST_TTL), socketKey);
-
         // Check offload service info. There should be two services for both resolution and
         // discovery.
         final Set<FilterRepliesInfo> offloadInfo = getFilterRepliesInfo();
         assertEquals(2, offloadInfo.size());
 
         final FilterRepliesInfo resolveInfo = new FilterRepliesInfo(
-                instanceName, SERVICE_TYPE, List.of(), "hostname");
+                instanceName, SERVICE_TYPE, List.of(), NO_HOSTNAME);
         final FilterRepliesInfo discoverInfo = new FilterRepliesInfo(
                 SERVICE_NAME_DISCOVERY, SERVICE_TYPE, List.of(subtype), NO_HOSTNAME);
         assertTrue(offloadInfo.containsAll(Set.of(resolveInfo, discoverInfo)));
+
+        // Get a service response
+        processResponse(createResponse(instanceName, "192.0.2.0", 5353, SUBTYPE,
+                Collections.emptyMap() /* textAttributes */, TEST_TTL), socketKey);
+
+        // Check offload service info again. The resolution info should be updated.
+        final Set<FilterRepliesInfo> offloadInfo2 = getFilterRepliesInfo();
+        assertEquals(2, offloadInfo2.size());
+
+        final FilterRepliesInfo resolveInfoWithHostname = new FilterRepliesInfo(
+                instanceName, SERVICE_TYPE, List.of(), "hostname");
+        assertTrue(offloadInfo2.containsAll(Set.of(resolveInfoWithHostname, discoverInfo)));
+
+        // Get a service response with a different hostname
+        final ArrayList<String> type = new ArrayList<>();
+        type.add(SUBTYPE);
+        type.add(MdnsConstants.SUBTYPE_LABEL);
+        type.addAll(Arrays.asList(SERVICE_TYPE_LABELS));
+        processResponse(createResponse(instanceName, "192.0.2.0", 5353, type.toArray(new String[0]),
+                Collections.emptyMap() /* textAttributes */, TEST_TTL, TEST_ELAPSED_REALTIME,
+                "otherHostname"), socketKey);
+
+        // Check offload service info again. The resolution info should be updated.
+        final Set<FilterRepliesInfo> offloadInfo3 = getFilterRepliesInfo();
+        assertEquals(2, offloadInfo3.size());
+
+        final FilterRepliesInfo resolveInfoWithOtherHostname = new FilterRepliesInfo(
+                instanceName, SERVICE_TYPE, List.of(), "otherHostname");
+        assertTrue(offloadInfo3.containsAll(Set.of(resolveInfoWithOtherHostname, discoverInfo)));
 
         // Stop the resolution listener
         stopSendAndReceive(mockListenerOne);
 
         // Check offload service info again. There should be only one service for discovery.
-        final Set<FilterRepliesInfo> offloadInfo2 = getFilterRepliesInfo();
-        assertEquals(1, offloadInfo2.size());
-        assertTrue(offloadInfo2.contains(discoverInfo));
+        final Set<FilterRepliesInfo> offloadInfo4 = getFilterRepliesInfo();
+        assertEquals(1, offloadInfo4.size());
+        assertTrue(offloadInfo4.contains(discoverInfo));
     }
 
     @Test
@@ -2650,7 +2675,7 @@ public class MdnsServiceTypeClientTests {
             @NonNull Map<String, String> textAttributes,
             long ptrTtlMillis) {
         return createResponse(serviceInstanceName, host, port, type, textAttributes, ptrTtlMillis,
-                TEST_ELAPSED_REALTIME);
+                TEST_ELAPSED_REALTIME, "hostname");
     }
 
     // Creates a mDNS response.
@@ -2661,7 +2686,8 @@ public class MdnsServiceTypeClientTests {
             @NonNull String[] type,
             @NonNull Map<String, String> textAttributes,
             long ptrTtlMillis,
-            long receiptTimeMillis) {
+            long receiptTimeMillis,
+            @NonNull String hostname) {
 
         final ArrayList<MdnsRecord> answerRecords = new ArrayList<>();
 
@@ -2687,14 +2713,14 @@ public class MdnsServiceTypeClientTests {
                 0 /* servicePriority */,
                 0 /* serviceWeight */,
                 port,
-                new String[]{"hostname"});
+                new String[]{hostname});
         answerRecords.add(serviceRecord);
 
         // Set A/AAAA record.
         if (host != null) {
             final InetAddress addr = InetAddresses.parseNumericAddress(host);
             final MdnsInetAddressRecord inetAddressRecord = new MdnsInetAddressRecord(
-                    new String[] {"hostname"} /* name */,
+                    new String[] {hostname} /* name */,
                     receiptTimeMillis,
                     false /* cacheFlush */,
                     TEST_TTL,

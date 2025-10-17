@@ -183,6 +183,9 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
     // The max vendor name length in utf-8 bytes
     private static final int MAX_VENDOR_NAME_UTF8_BYTES = 24;
 
+    // The max vendor software version length in utf-8 bytes
+    private static final int MAX_VENDOR_SW_VERSION_UTF8_BYTES = 16;
+
     // This regex pattern allows "XXXXXX", "XX:XX:XX" and "XX-XX-XX" OUI formats.
     // Note that this regex allows "XX:XX-XX" as well but we don't need to be a strict checker
     private static final String OUI_REGEX = "^([0-9A-Fa-f]{2}[:-]?){2}([0-9A-Fa-f]{2})$";
@@ -383,6 +386,20 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
             }
         }
         return vendorName;
+    }
+
+    static String getVendorSwVersion(Resources resources,
+            MockableSystemProperties systemProperties) {
+        final String PROP_SW_VERSION = "ro.build.id";
+        String vendorSwVersion = resources.getString(R.string.config_thread_vendor_sw_version);
+        if (vendorSwVersion.equalsIgnoreCase(PROP_SW_VERSION)) {
+            vendorSwVersion = systemProperties.get(PROP_SW_VERSION);
+            // Assume it's always ASCII chars in ro.build.id
+            if (vendorSwVersion.length() > MAX_VENDOR_SW_VERSION_UTF8_BYTES) {
+                vendorSwVersion = vendorSwVersion.substring(0, MAX_VENDOR_SW_VERSION_UTF8_BYTES);
+            }
+        }
+        return vendorSwVersion;
     }
 
     static String getModelName(Resources resources, MockableSystemProperties systemProperties) {
@@ -673,6 +690,7 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
                 .setBorderRouterAutoJoinEnabled(autoJoinEnabled)
                 .setCountryCodeEnabled(countryCodeEnabled)
                 .setVendorName(getVendorName(mResources.get(), mSystemProperties))
+                .setVendorSwVersion(getVendorSwVersion(mResources.get(), mSystemProperties))
                 .setModelName(getModelName(mResources.get(), mSystemProperties))
                 .build();
     }

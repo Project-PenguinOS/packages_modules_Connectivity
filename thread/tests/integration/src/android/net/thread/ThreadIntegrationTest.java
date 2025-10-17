@@ -25,6 +25,7 @@ import static android.net.thread.utils.IntegrationTestUtils.getIpv6Addresses;
 import static android.net.thread.utils.IntegrationTestUtils.getIpv6LinkAddresses;
 import static android.net.thread.utils.IntegrationTestUtils.waitFor;
 import static android.net.thread.utils.OtDaemonController.DIAG_VENDOR_MODEL_TLV_TYPE;
+import static android.net.thread.utils.OtDaemonController.DIAG_VENDOR_SW_VERSION_TLV_TYPE;
 import static android.net.thread.utils.OtDaemonController.DIAG_VENDOR_NAME_TLV_TYPE;
 import static android.net.thread.utils.ThreadNetworkControllerWrapper.JOIN_TIMEOUT;
 import static android.os.SystemClock.elapsedRealtime;
@@ -304,11 +305,13 @@ public class ThreadIntegrationTest {
     public void networkDiagnostic_vendorAndModelNameAreSet() throws Exception {
         mController.joinAndWait(DEFAULT_DATASET);
 
-        var tlvTypes = List.of(DIAG_VENDOR_NAME_TLV_TYPE, DIAG_VENDOR_MODEL_TLV_TYPE);
+        var tlvTypes = List.of(DIAG_VENDOR_NAME_TLV_TYPE, DIAG_VENDOR_MODEL_TLV_TYPE,
+                DIAG_VENDOR_SW_VERSION_TLV_TYPE);
         var result = mOtCtl.netDiagGet(mOtCtl.getMlEid(), tlvTypes);
 
         assertThat(result.get("Vendor Name")).isNotEmpty();
         assertThat(result.get("Vendor Model")).isNotEmpty();
+        assertThat(result.get("Vendor SW Version")).isNotEmpty();
     }
 
     private NetworkCapabilities registerNetworkCallbackAndWait(NetworkRequest request)

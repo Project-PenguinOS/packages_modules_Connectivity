@@ -137,7 +137,7 @@ class Dhcp6PdTest {
         val p = iface.packetReader.poll(SHORT_TIMEOUT_MS) {
             it != null && predicate(it)
         }
-        assertNull(p)
+        assertNull(p, "got: " + p?.toHexString())
     }
 
     private fun assertNoDhcp6Packet() {
@@ -326,10 +326,95 @@ class Dhcp6PdTest {
     @Test
     @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
     fun testAddrReg_startedByOFlag() {
+        val prefix = "2001:db8:1::/64"
+        val ra = RaPkt(flags = "O")
+            .addPioOption(prefix, flags = "LA", valid = 900, preferred = 600)
+            .addRdnssOption(dns = "2001:4860::8888")
+        ndResponder.addRouterEntry(ROUTER_MAC, ROUTER_V6, ra)
+
+        val (srcAddr, inform) = expectDhcp6Packet<Dhcp6AddrRegInformPacket>()
+
+        assertThat(srcAddr).isEqualTo(inform.mIaAddress)
+        assertThat(IpPrefix(prefix).contains(inform.mIaAddress)).isTrue()
+
+        // Account for possible delays and minor rounding errors.
+        assertThat(inform.mValid).isAtLeast(895)
+        assertThat(inform.mValid).isAtMost(901)
+        assertThat(inform.mPreferred).isAtLeast(595)
+        assertThat(inform.mPreferred).isAtMost(601)
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
+    fun testAddrReg_retries() {
         val ra = RaPkt(flags = "O")
             .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")
             .addRdnssOption(dns = "2001:4860::8888")
         ndResponder.addRouterEntry(ROUTER_MAC, ROUTER_V6, ra)
-        expectDhcp6Packet<Dhcp6AddrRegInformPacket>()
+
+        // Account for initial transmission and 3 retries.
+        for (i in 0 until 4) {
+            expectDhcp6Packet<Dhcp6AddrRegInformPacket>()
+        }
+        assertNoDhcp6Packet()
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
+    fun testAddrReg_supportTimeout() {
+        run {
+            val ra = RaPkt(flags = "M")
+                .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")
+                .addRdnssOption(dns = "2001:4860::8888")
+            ndResponder.addRouterEntry(ROUTER_MAC, ROUTER_V6, ra)
+        }
+
+        // Account for all AddrRegInform packets (2 addresses * 4)
+        for (i in 0 until 8) {
+            expectDhcp6Packet<Dhcp6AddrRegInformPacket>()
+        }
+        assertNoDhcp6Packet()
+
+        // Wait >15 seconds.
+        Thread.sleep(15_100)
+        assertNoDhcp6Packet()
+
+        // Send another RA (from another router) with a new address
+        run {
+            val ether = EtherPkt(src = "f4:34:f0:64:52:fe", dst = "33:33:00:00:00:01")
+            val ipv6 = Ip6Pkt(src = "fe80::12", dst = "ff02::1")
+            val ra = RaPkt(flags = "M")
+                .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")
+                .addPioOption(prefix = "2001:db8:42::/64", flags = "LA")
+                .addRdnssOption(dns = "2001:4860::8888")
+            iface.sendPacket(ether / ipv6 / ra)
+        }
+        assertNoDhcp6Packet()
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
+    fun testAddrReg_success() {
+        val ra = RaPkt(flags = "MO")
+            .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")
+            .addRdnssOption(dns = "2001:4860::8888")
+        ndResponder.addRouterEntry(ROUTER_MAC, ROUTER_V6, ra)
+
+        // Expect 2 ADDR-REG-INFORM packets (EUI-64 and privacy address). Generate replies for
+        // both.
+        for (i in 0 until 2) {
+            val (srcAddr, info) = expectDhcp6Packet<Dhcp6AddrRegInformPacket>()
+
+            // Reply to the ADDR-REG-INFORM
+            val ether = EtherPkt(src = ROUTER_MAC, dst = localMac)
+            val ipv6 = Ip6Pkt(src = ROUTER_V6, dst = srcAddr)
+            val udp = UdpPkt(sport = 547, dport = 546)
+            val dhcp6 = Dhcp6Pkt(type = "ADDR-REG-REPLY", transId = info.transactionId)
+                .addClientIdentifierOption(info.clientDuid)
+                .addServerIdentifierOption(byteArrayOf(1, 2, 3, 4, 5, 6))
+                .addIaAddressOption(info.mIaAddress, info.mValid.toInt(), info.mPreferred.toInt())
+            iface.sendPacket(ether / ipv6 / udp / dhcp6)
+        }
+        assertNoDhcp6Packet()
     }
 }
