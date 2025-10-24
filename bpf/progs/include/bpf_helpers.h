@@ -6,37 +6,6 @@
 
 #include "bpf_map_def.h"
 
-// Android Mainline BpfLoader when running on Android S (sdk=31)
-// Note: this value (and the following +1u's) are hardcoded in NetBpfLoad.cpp
-#define BPFLOADER_MAINLINE_S_VERSION 42u
-
-// Android Mainline BpfLoader when running on Android T (sdk=33)
-#define BPFLOADER_MAINLINE_T_VERSION (BPFLOADER_MAINLINE_S_VERSION + 1u)
-
-// Android Mainline BpfLoader when running on Android U (sdk=34)
-#define BPFLOADER_MAINLINE_U_VERSION (BPFLOADER_MAINLINE_T_VERSION + 1u)
-
-// Android Mainline BpfLoader when running on Android U QPR3
-#define BPFLOADER_MAINLINE_U_QPR3_VERSION (BPFLOADER_MAINLINE_U_VERSION + 1u)
-
-// Android Mainline BpfLoader when running on Android V (sdk=35)
-#define BPFLOADER_MAINLINE_V_VERSION (BPFLOADER_MAINLINE_U_QPR3_VERSION + 1u)
-
-// Android Mainline BpfLoader when running on Android 25Q2 (sdk=36 aka 36.0)
-#define BPFLOADER_MAINLINE_25Q2_VERSION (BPFLOADER_MAINLINE_V_VERSION + 1u)
-
-// Android Mainline BpfLoader when running on Android 25Q3 (sdk 36.0+)
-#define BPFLOADER_MAINLINE_25Q3_VERSION (BPFLOADER_MAINLINE_25Q2_VERSION + 1u)
-
-// Android Mainline BpfLoader when running on Android 25Q4 (sdk 36.1)
-#define BPFLOADER_MAINLINE_25Q4_VERSION (BPFLOADER_MAINLINE_25Q3_VERSION + 1u)
-
-// Android Mainline BpfLoader when running on Android 26Q1 (sdk 36.1+)
-#define BPFLOADER_MAINLINE_26Q1_VERSION (BPFLOADER_MAINLINE_25Q4_VERSION + 1u)
-
-// Android Mainline BpfLoader when running on Android 26Q2 (sdk 37.0)
-#define BPFLOADER_MAINLINE_26Q2_VERSION (BPFLOADER_MAINLINE_26Q1_VERSION + 1u)
-
 /* You should #define BPFLOADER_{MIN/MAX}_VER before #include "bpf_helpers.h"
  * to change which bpfloaders will process the resulting .o file.
  */
@@ -100,20 +69,20 @@ struct sdk_level_uint { unsigned int sdk_level; };
 //      SDK_LEVEL_Sv2    SDK_LEVEL_(3200) // Android 12L    [32]
 #define SDK_LEVEL_T      SDK_LEVEL_(3300) // Android 13     [33]
 #define SDK_LEVEL_U      SDK_LEVEL_(3400) // Android 14/U   [34]
-//      SDK_LEVEL_U_QPR1 SDK_LEVEL_(3401) // Android 14/U QPR1
-//      SDK_LEVEL_24Q1   SDK_LEVEL_(3402) // Android 14/U QPR2
-//      SDK_LEVEL_24Q2   SDK_LEVEL_(3403) // Android 14/U QPR3
+//      SDK_LEVEL_U_QPR1 SDK_LEVEL_(3402) // Android 14/U QPR1
+//      SDK_LEVEL_24Q1   SDK_LEVEL_(3404) // Android 14/U QPR2
+//      SDK_LEVEL_24Q2   SDK_LEVEL_(3406) // Android 14/U QPR3
 #define SDK_LEVEL_24Q3   SDK_LEVEL_(3500) // Android 15/V   [35]
-//      SDK_LEVEL_24Q4   SDK_LEVEL_(3501) // Android 15/V QPR1
-//      SDK_LEVEL_25Q1   SDK_LEVEL_(3502) // Android 15/V QPR2
+//      SDK_LEVEL_24Q4   SDK_LEVEL_(3502) // Android 15/V QPR1
+//      SDK_LEVEL_25Q1   SDK_LEVEL_(3504) // Android 15/V QPR2
 #define SDK_LEVEL_25Q2   SDK_LEVEL_(3600) // Android 16 (B) [36.0]
-//      SDK_LEVEL_25Q3   SDK_LEVEL_(3601) // Android 16 QPR
+//      SDK_LEVEL_25Q3   SDK_LEVEL_(3602) // Android 16 QPR
 #define SDK_LEVEL_25Q4   SDK_LEVEL_(3610) // Android 16.1   [36.1]
-//      SDK_LEVEL_26Q1   SDK_LEVEL_(3611) // Android 16.1 QPR
+//      SDK_LEVEL_26Q1   SDK_LEVEL_(3612) // Android 16.1 QPR
 #define SDK_LEVEL_26Q2   SDK_LEVEL_(3700) // Android 17 (C) [37.0]
-//      SDK_LEVEL_26Q3   SDK_LEVEL_(3701) // Android 17 QPR
+//      SDK_LEVEL_26Q3   SDK_LEVEL_(3702) // Android 17 QPR
 #define SDK_LEVEL_26Q4   SDK_LEVEL_(3710) // Android 17.1   [37.1]
-//      SDK_LEVEL_27Q1   SDK_LEVEL_(3711) // Android 17.1 QPR
+//      SDK_LEVEL_27Q1   SDK_LEVEL_(3712) // Android 17.1 QPR
 #define SDK_LEVEL_27Q2   SDK_LEVEL_(3800) // Android 18     [38.0]
 
 #define SDK_LEVEL_IS_AT_LEAST(lvl, v) ((lvl).sdk_level >= (SDK_LEVEL_##v).sdk_level)
@@ -242,6 +211,7 @@ static long (*bpf_sk_storage_delete_unsafe) (const void* sk_storage,
 #define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_DEVMAP_HASH	0
 #define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_HASH		0
 #define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_LPM_TRIE		BPF_F_NO_PREALLOC
+#define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_LRU_HASH		0
 #define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_MMAPABLE_ARRAY	BPF_F_MMAPABLE
 #define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_PERCPU_ARRAY	0
 #define DEFAULT_FLAGS_FOR_BPF_MAP_TYPE_RINGBUF		0

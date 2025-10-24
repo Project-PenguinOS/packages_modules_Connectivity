@@ -25,6 +25,7 @@ import static android.net.NetworkCapabilities.TRANSPORT_ETHERNET;
 import static android.net.NetworkCapabilities.TRANSPORT_TEST;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 import static android.net.NetworkCapabilities.transportNamesOf;
+import static android.os.Process.INVALID_UID;
 import static android.system.OsConstants.EEXIST;
 import static android.system.OsConstants.EIO;
 import static android.system.OsConstants.ENOENT;
@@ -93,6 +94,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.function.Consumer;
@@ -1654,6 +1656,27 @@ public class NetworkAgentInfo implements NetworkRanker.Scoreable {
     }
 
     /**
+     * Get the delegate UIDs of the apps that are allowed to perform network traffic for captive.
+     */
+    public Set<Integer> getCaptivePortalDelegateUids() {
+        return new ArraySet<>(mCaptivePortalDelegateUids.values());
+    }
+
+    /**
+     * Clear all the delegate UIDs.
+     */
+    public void clearCaptivePortalDelegateUids() {
+        mCaptivePortalDelegateUids.clear();
+    }
+
+    /**
+     * Check if the given uid is the delegate uid of the given caller.
+     */
+    public boolean isCurrentUidDelegate(@NonNull CaptivePortalImpl caller, int uid) {
+        return uid == mCaptivePortalDelegateUids.getOrDefault(caller, INVALID_UID);
+    }
+
+    /**
      * Set the delegate UID of the app that is allowed to perform network traffic for captive
      * portal login, and configure the netd bypass rule with this delegated UID.
      *
@@ -1664,6 +1687,13 @@ public class NetworkAgentInfo implements NetworkRanker.Scoreable {
      */
     public int setCaptivePortalDelegateUid(@NonNull final CaptivePortalImpl caller, int uid) {
         HandlerUtils.ensureRunningOnHandlerThread(mHandler);
+        if (!mConnServiceDeps.isAtLeastV()) {
+            // For Android U and below, only update the map and return. The connectivity service
+            // will handle the bypass rules configuration.
+            // per network bypass (setAllowBypassVpnOnNetwork) is only available on V+.
+            mCaptivePortalDelegateUids.put(caller, uid);
+            return 0;
+        }
         int errorCode = setAllowBypassVpnOnNetwork(true /* allow */, uid, network.netId);
         if (errorCode != 0 && errorCode != EEXIST) return errorCode;
         if (errorCode == EEXIST) {
@@ -1700,6 +1730,13 @@ public class NetworkAgentInfo implements NetworkRanker.Scoreable {
      */
     public int removeCaptivePortalDelegateUid(@NonNull final CaptivePortalImpl caller) {
         HandlerUtils.ensureRunningOnHandlerThread(mHandler);
+        if (!mConnServiceDeps.isAtLeastV()) {
+            // For Android U and below, only update the map and return. The connectivity service
+            // will handle the bypass rules configuration.
+            // per network bypass (setAllowBypassVpnOnNetwork) is only available on V+.
+            mCaptivePortalDelegateUids.remove(caller);
+            return 0;
+        }
         final Integer maybeDelegateUid = mCaptivePortalDelegateUids.remove(caller);
         if (maybeDelegateUid == null) return 0;
         if (mCaptivePortalDelegateUids.values().contains(maybeDelegateUid)) return 0;

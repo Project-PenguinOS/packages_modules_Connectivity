@@ -38,15 +38,15 @@ java_aconfig_library {
 }
 
 aconfig_declarations {
-    name: "tethering.mainline.beta.flags",
+    name: "tethering.mainline.beta.flags.deprecated",
     package: "com.android.tethering.mainline.beta",
     container: "com.android.tethering",
-    srcs: ["mainline_beta.aconfig"],
+    srcs: ["mainline_beta.aconfig.deprecated"],
 }
 
 java_aconfig_library {
-    name: "com.android.tethering.mainline.beta.flags-aconfig-java",
-    aconfig_declarations: "tethering.mainline.beta.flags",
+    name: "com.android.tethering.mainline.beta.flags-aconfig-java-deprecated",
+    aconfig_declarations: "tethering.mainline.beta.flags.deprecated",
     defaults: ["framework-minus-apex-aconfig-java-defaults"],
     min_sdk_version: "30",
     apex_available: [
@@ -55,17 +55,37 @@ java_aconfig_library {
 }
 
 aconfig_declarations {
-    name: "com.android.net.flags-aconfig",
+    name: "tethering.readonly.flags",
+    package: "com.android.tethering.readonly.flags",
+    container: "com.android.tethering",
+    srcs: ["mainline_beta_readonly.aconfig"],
+}
+
+cc_aconfig_library {
+    name: "libtetheringflags",
+    aconfig_declarations: "tethering.readonly.flags",
+    mode: "force-read-only",
+    shared: {
+        enabled: false,
+    },
+    min_sdk_version: "30",
+    apex_available: [
+        "com.android.tethering",
+    ],
+}
+
+aconfig_declarations {
+    name: "com.android.net.flags-aconfig-deprecated",
     package: "com.android.net.flags",
     exportable: true,
     container: "com.android.tethering",
-    srcs: ["flags.aconfig"],
+    srcs: ["flags.aconfig.deprecated"],
     visibility: ["//packages/modules/Connectivity:__subpackages__"],
 }
 
 java_aconfig_library {
-    name: "com.android.net.flags-aconfig-java",
-    aconfig_declarations: "com.android.net.flags-aconfig",
+    name: "com.android.net.flags-aconfig-java-deprecated",
+    aconfig_declarations: "com.android.net.flags-aconfig-deprecated",
     defaults: ["framework-minus-apex-aconfig-java-defaults"],
     min_sdk_version: "30",
     apex_available: [
@@ -79,8 +99,8 @@ java_aconfig_library {
 // there is no any safety mechanism that prevents the module from
 // deleting the flag by mistake, regressing on previous platform versions.
 java_aconfig_library {
-    name: "com.android.net.flags-aconfig-java-export",
-    aconfig_declarations: "com.android.net.flags-aconfig",
+    name: "com.android.net.flags-aconfig-java-export-deprecated",
+    aconfig_declarations: "com.android.net.flags-aconfig-deprecated",
     defaults: ["framework-minus-apex-aconfig-java-defaults"],
     min_sdk_version: "30",
     apex_available: [
@@ -101,6 +121,15 @@ java_aconfig_library {
     name: "com.android.net.thread.flags-aconfig-java",
     aconfig_declarations: "com.android.net.thread.flags-aconfig",
     defaults: ["framework-minus-apex-aconfig-java-defaults"],
+    min_sdk_version: "30",
+    apex_available: [
+        "com.android.tethering",
+    ],
+}
+
+cc_aconfig_library {
+    name: "libthreadflags",
+    aconfig_declarations: "com.android.net.thread.flags-aconfig",
     min_sdk_version: "30",
     apex_available: [
         "com.android.tethering",

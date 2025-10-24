@@ -23,10 +23,14 @@ import static com.android.server.connectivity.mdns.MdnsConstants.FLAG_TRUNCATED;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.Network;
+import android.net.nsd.OffloadEngine;
+import android.net.nsd.OffloadServiceInfo;
 import android.os.Build;
 import android.os.SystemClock;
 import android.util.ArraySet;
 import android.util.Pair;
+
+import androidx.annotation.RequiresApi;
 
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.DnsUtils;
@@ -37,6 +41,7 @@ import com.android.server.connectivity.mdns.MdnsPacketWriter;
 import com.android.server.connectivity.mdns.MdnsRecord;
 import com.android.server.connectivity.mdns.MdnsResponse;
 import com.android.server.connectivity.mdns.MdnsServiceInfo;
+import com.android.server.connectivity.mdns.MdnsServiceTypeClient;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -392,5 +397,32 @@ public class MdnsUtils {
                         DnsUtils.equalsIgnoreDnsCase(
                                 MdnsConstants.SUBTYPE_PREFIX + requiredSub, actualSub)));
         return matchesInstanceName && matchesSubtype;
+    }
+
+    /**
+     * Creates an {@link OffloadServiceInfo} object from a
+     * {@link MdnsServiceTypeClient.FilterRepliesInfo} instance.
+     *
+     * This method facilitates the conversion of filtering criteria into a service information
+     * object suitable for offloading mechanisms.
+     *
+     * @param info The {@link MdnsServiceTypeClient.FilterRepliesInfo} containing the filtering
+     *             criteria.
+     * @return A new {@link OffloadServiceInfo} instance populated with data from the
+     *        {@code FilterRepliesInfo}.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    public static OffloadServiceInfo createOffloadServiceInfoFromFilterReplies(
+            @NonNull MdnsServiceTypeClient.FilterRepliesInfo info) {
+        return new OffloadServiceInfo(
+                new OffloadServiceInfo.Key(info.serviceName, info.serviceType),
+                new ArrayList<>(info.subtypes),
+                info.hostname,
+                null /* offloadPayload */,
+                // Set the priority to 0 because APF will not prioritize some services. Instead, it
+                // would simply allow every mDNS reply to pass through if there are too many
+                // offloaded services, so there is no point in setting priorities.
+                0 /* priority */,
+                OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES);
     }
 }

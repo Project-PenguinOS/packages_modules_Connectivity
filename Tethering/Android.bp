@@ -22,7 +22,10 @@ package {
 java_defaults {
     name: "TetheringApiLevel",
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: select(release_flag("RELEASE_DEPRECATE_MAINLINE_R_SUPPORT"), {
+        true: "31",
+        default: "30",
+    }),
 }
 
 java_defaults {
@@ -64,8 +67,9 @@ java_defaults {
     static_libs: [
         "androidx.annotation_annotation",
         "connectivity-net-module-utils-bpf",
-        "com.android.net.flags-aconfig-java",
+        "com.android.net.flags-aconfig-java-deprecated",
         "com.android.tethering.beta.test.flags-aconfig-java",
+        "com.android.tethering.mainline.beta.flags-aconfig-java-deprecated",
         "modules-utils-build",
         "modules-utils-statemachine",
         "networkstack-client",

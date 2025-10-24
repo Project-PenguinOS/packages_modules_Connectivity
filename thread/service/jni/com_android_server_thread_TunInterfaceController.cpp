@@ -84,7 +84,7 @@ static void com_android_server_thread_TunInterfaceController_setInterfaceUp(
     struct ifreq ifr;
     ScopedUtfChars ifName(env, interfaceName);
 
-    ifr.ifr_flags = isUp ? IFF_UP : 0;
+    ifr.ifr_flags = isUp ? IFF_UP | IFF_MULTICAST | IFF_NOARP : 0;
     strlcpy(ifr.ifr_name, ifName.c_str(), sizeof(ifr.ifr_name));
 
     int inet6 = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, IPPROTO_IP);

@@ -71,9 +71,9 @@ public class EthernetServiceImpl extends BaseEthernetServiceImpl {
         mTracker = tracker;
     }
 
-    private void enforceAutomotiveDevice(final @NonNull String methodName) {
+    private void enforceAutomotiveDevice() {
         PermissionUtils.enforceSystemFeature(mContext, PackageManager.FEATURE_AUTOMOTIVE,
-                methodName + " is only available on automotive devices.");
+                "Only available on automotive devices.");
     }
 
     @CheckResult
@@ -310,15 +310,16 @@ public class EthernetServiceImpl extends BaseEthernetServiceImpl {
         }
     }
 
-    private void enforceAdminPermission(final String iface, boolean enforceAutomotive,
-            final String logMessage) {
+    private void maybeEnforceAutomotiveDevice(String iface) {
+        if (mTracker.isValidTestInterface(iface)) return;
+        enforceAutomotiveDevice();
+    }
+
+    private void enforceAdminPermission(final String iface) {
         if (mTracker.isValidTestInterface(iface)) {
             enforceManageTestNetworksPermission();
         } else {
             enforceNetworkManagementPermission();
-            if (enforceAutomotive) {
-                enforceAutomotiveDevice(logMessage);
-            }
         }
     }
 
@@ -333,9 +334,10 @@ public class EthernetServiceImpl extends BaseEthernetServiceImpl {
         // TODO: validate that iface is listed in overlay config_ethernet_interfaces
         // only automotive devices are allowed to set the NetworkCapabilities using this API
         final NetworkCapabilities nc = request.getNetworkCapabilities();
-        enforceAdminPermission(
-                iface, nc != null, "updateConfiguration() with non-null capabilities");
+        enforceAdminPermission(iface);
         if (nc != null) {
+            // Currently, configuring NetworkCapabilities is only available on automotive devices.
+            maybeEnforceAutomotiveDevice(iface);
             validateOrSetNetworkSpecifier(iface, nc);
             maybeValidateTestCapabilities(iface, nc);
             maybeValidateEthernetTransport(iface, nc);
@@ -357,7 +359,7 @@ public class EthernetServiceImpl extends BaseEthernetServiceImpl {
         Objects.requireNonNull(iface);
         throwIfEthernetNotStarted();
 
-        enforceAdminPermission(iface, false, "enableInterface()");
+        enforceAdminPermission(iface);
 
         final long ident = Binder.clearCallingIdentity();
         try {
@@ -374,7 +376,7 @@ public class EthernetServiceImpl extends BaseEthernetServiceImpl {
         Objects.requireNonNull(iface);
         throwIfEthernetNotStarted();
 
-        enforceAdminPermission(iface, false, "disableInterface()");
+        enforceAdminPermission(iface);
 
         final long ident = Binder.clearCallingIdentity();
         try {

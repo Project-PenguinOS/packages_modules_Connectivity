@@ -19,7 +19,6 @@ package com.android.server.connectivity.mdns;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_LOCAL_NETWORK;
 import static android.net.NetworkCapabilities.TRANSPORT_BLUETOOTH;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
-import static android.net.NetworkCapabilities.TRANSPORT_THREAD;
 import static android.net.NetworkCapabilities.TRANSPORT_VPN;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 
@@ -594,17 +593,6 @@ public class MdnsSocketProviderTest {
         runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
 
         postNetworkAvailable(TRANSPORT_CELLULAR);
-        testCallback.expectedNoCallback();
-    }
-
-    @Test
-    public void testNoSocketCreatedForThread() {
-        startMonitoringSockets();
-
-        final TestSocketCallback testCallback = new TestSocketCallback();
-        runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
-
-        postNetworkAvailable(TRANSPORT_THREAD);
         testCallback.expectedNoCallback();
     }
 
