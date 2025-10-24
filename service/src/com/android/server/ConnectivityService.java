@@ -160,6 +160,7 @@ import static com.android.net.module.util.PermissionUtils.enforceAnyPermissionOf
 import static com.android.net.module.util.PermissionUtils.enforceNetworkStackPermission;
 import static com.android.net.module.util.PermissionUtils.enforceNetworkStackPermissionOr;
 import static com.android.net.module.util.PermissionUtils.hasAnyPermissionOf;
+import static com.android.net.module.util.netlink.RtNetlinkQdiscMessage.CLSACT;
 import static com.android.server.ConnectivityStatsLog.CONNECTIVITY_STATE_SAMPLE;
 import static com.android.server.ConnectivityStatsLog.DEFAULT_NETWORK_REMATCH__REMATCH_REASON__RMR_NETWORK_DISCONNECTED;
 import static com.android.server.NetIdManager.MAX_NET_ID;
@@ -321,6 +322,7 @@ import android.provider.Settings;
 import android.stats.connectivity.RequestType;
 import android.sysprop.NetworkProperties;
 import android.system.ErrnoException;
+import android.system.Os;
 import android.system.OsConstants;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -377,6 +379,7 @@ import com.android.net.module.util.ip.NetlinkMonitor;
 import com.android.net.module.util.netlink.InetDiagMessage;
 import com.android.net.module.util.netlink.NetlinkConstants;
 import com.android.net.module.util.netlink.NetlinkMessage;
+import com.android.net.module.util.netlink.NetlinkUtils;
 import com.android.net.module.util.netlink.RtNetlinkAddressMessage;
 import com.android.net.module.util.netlink.StructIfaddrMsg;
 import com.android.networkstack.apishim.BroadcastOptionsShimImpl;
@@ -437,6 +440,7 @@ import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -445,6 +449,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.ConcurrentModificationException;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -2043,6 +2048,40 @@ public class ConnectivityService extends IConnectivityManager.Stub
         /** Whether the flag for connectivity service socket destroy is enabled or not. */
         public boolean flagConnectivityServiceDestroySocket() {
             return Flags.connectivityServiceDestroySocket();
+        }
+
+        /** Whether the flag for connectivity service modify qdisc clsact is enabled or not. */
+        public boolean flagConnectivityServiceModifyQdiscClsact() {
+            return Flags.connectivityServiceModifyQdiscClsact();
+        }
+
+        /**
+         * Retrieves the network interface index for a given interface name.
+         */
+        public int if_nametoindex(@NonNull String iface) {
+            return Os.if_nametoindex(iface);
+        }
+
+        /**
+         * Sends a Netlink request to add a `clsact` qdisc for a given network interface.
+         */
+        public boolean sendNewRtmQdiscClsactRequest(int ifIndex) {
+            return NetlinkUtils.sendRtmNewQdiscRequest(ifIndex, CLSACT);
+        }
+
+        /**
+         * Sends a Netlink request to remove a `clsact` qdisc for a given network interface.
+         */
+        public boolean sendDelRtmQdiscClsactRequest(int ifIndex) {
+            return NetlinkUtils.sendRtmDelQdiscRequest(ifIndex, CLSACT);
+        }
+
+        /**
+         * Retrieves all the network interfaces on the local machine.
+         */
+        public @Nullable Enumeration<NetworkInterface> getNetworkInterfaces()
+                throws SocketException {
+            return NetworkInterface.getNetworkInterfaces();
         }
 
         /**
@@ -4385,6 +4424,26 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
     }
 
+    private void maybeClearTcQdiscClsact() {
+        if (!mDeps.flagConnectivityServiceModifyQdiscClsact()) return;
+
+        final Enumeration<NetworkInterface> networkInterfaces;
+        try {
+            networkInterfaces = mDeps.getNetworkInterfaces();
+            if (networkInterfaces == null) return;
+        } catch (SocketException e) {
+            Log.e(TAG, "Failed to get network interfaces", e);
+            return;
+        }
+
+        while (networkInterfaces.hasMoreElements()) {
+            final int ifIndex = networkInterfaces.nextElement().getIndex();
+            if (ifIndex <= 0) continue;
+
+            mDeps.sendDelRtmQdiscClsactRequest(ifIndex);
+        }
+    }
+
     @VisibleForTesting
     static String createDeliveryGroupKeyForConnectivityAction(NetworkInfo info) {
         final StringBuilder sb = new StringBuilder();
@@ -4484,6 +4543,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (mSatisfiedByLocalNetworkMetrics != null) {
             mSatisfiedByLocalNetworkMetrics.start();
         }
+
+        // Clear all clsact stubs on all interfaces.
+        mHandler.post(() -> maybeClearTcQdiscClsact());
+
         // Wait PermissionMonitor to finish the permission update. Then MultipathPolicyTracker won't
         // have permission problem. While CV#block() is unbounded in time and can in principle block
         // forever, this replaces a synchronous call to PermissionMonitor#initialize, which
@@ -10470,6 +10533,32 @@ public class ConnectivityService extends IConnectivityManager.Stub
         updateLinkProperties(nai, new LinkProperties(nai.linkProperties), null);
     }
 
+    private void maybeModifyQdiscClsact(
+            @NonNull String iface, @NonNull NetworkAgentInfo nai, Boolean add) {
+        if (!mDeps.flagConnectivityServiceModifyQdiscClsact()) return;
+        // The clsact attaching of v4- tun interface is triggered by ClatdCoordinator::maybeStartBpf
+        // because the clat is started before the v4- interface is added to the network and the
+        // clat startup needs to add {in, e}gress filters.
+        // TODO: remove this workaround once v4- tun interface clsact attaching is moved out from
+        // ClatdCoordinator::maybeStartBpf.
+        if (iface.startsWith("v4-") && add) return;
+        if (nai.isVPN()) return;
+
+        final int ifIndex = mDeps.if_nametoindex(iface);
+        if (ifIndex == 0) {
+            if (add) {
+                Log.e(TAG, "Failed to get interface index for " + iface);
+            }
+            return;
+        }
+
+        if (add) {
+            mDeps.sendNewRtmQdiscClsactRequest(ifIndex);
+        } else {
+            mDeps.sendDelRtmQdiscClsactRequest(ifIndex);
+        }
+    }
+
     /**
      * @param naData captive portal data from NetworkAgent
      * @param apiData captive portal data from capport API
@@ -10571,6 +10660,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 try {
                     if (DBG) log("Adding iface " + iface + " to network " + netId);
                     mRoutingCoordinatorService.addInterfaceToNetwork(netId, iface);
+                    maybeModifyQdiscClsact(iface, nai, true /* add */);
                     wakeupModifyInterface(iface, nai, true);
                     mDeps.reportNetworkInterfaceForTransports(mContext, iface,
                             nai.networkCapabilities.getTransportTypes());
@@ -10590,6 +10680,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 if (DBG) log("Removing iface " + iface + " from network " + netId);
                 wakeupModifyInterface(iface, nai, false);
                 mRoutingCoordinatorService.removeInterfaceFromNetwork(netId, iface);
+                maybeModifyQdiscClsact(iface, nai, false /* add */);
                 mInterfaceTracker.removeInterface(iface);
             } catch (Exception e) {
                 loge("Exception removing interface: " + e);

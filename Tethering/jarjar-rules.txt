@@ -18,3 +18,6 @@ rule com.google.protobuf.** com.android.networkstack.tethering.protobuf@1
 
 # Classes for hardware offload hidl interface
 rule android.hidl.base.V1_0.DebugInfo* com.android.networkstack.tethering.hidl.base.V1_0.DebugInfo@1
+
+# Classes from android.net.platform.flags-aconfig-java-export
+rule android.net.platform.flags.** com.android.networkstack.tethering.flags.@1

@@ -576,4 +576,46 @@ public class NetlinkUtils {
             return DEFAULT_INTERFACE_MTU;
         }
     }
+
+    /**
+     * Send an RTM_NEWQDISC message to kernel to add qdisc
+     *
+     * @param ifIndex interface index.
+     * @param qdisc qdisc class.
+     */
+    public static boolean sendRtmNewQdiscRequest(int ifIndex, @NonNull String qdisc) {
+        Objects.requireNonNull(qdisc, "Qdisc to be added should not be null.");
+        final byte[] msg = RtNetlinkQdiscMessage.newRtmNewQdiscMessage(ifIndex, qdisc);
+        try {
+            NetlinkUtils.sendOneShotKernelMessage(NETLINK_ROUTE, msg);
+            return true;
+        } catch (ErrnoException e) {
+            Log.e(TAG, String.format(
+                        "Fail to send RTM_NEWQDISC to add %s for interface with index: %d",
+                        qdisc, ifIndex), e);
+            return false;
+        }
+    }
+
+    /**
+     * Send an RTM_DELQDISC message to kernel to delete qdisc.
+     *
+     * @param ifIndex interface index.
+     * @param qdisc qdisc class.
+     */
+    public static boolean sendRtmDelQdiscRequest(int ifIndex, @NonNull String qdisc) {
+        Objects.requireNonNull(qdisc, "Qdisc to be deleted should not be null.");
+        final byte[] msg = RtNetlinkQdiscMessage.newRtmDelQdiscMessage(ifIndex, qdisc);
+        try {
+            NetlinkUtils.sendOneShotKernelMessage(NETLINK_ROUTE, msg);
+            return true;
+        } catch (ErrnoException e) {
+            if (e.errno != OsConstants.ENOENT) {
+                Log.e(TAG, String.format(
+                        "Fail to send RTM_DELQDISC to delete %s for interface with index: %d",
+                        qdisc, ifIndex), e);
+            }
+            return false;
+        }
+    }
 }

@@ -84,6 +84,7 @@ java_defaults {
         "net-utils-connectivity-apks",
         "netd-client",
         "tetheringstatsprotos",
+        "android.net.platform.flags-aconfig-java-export",
     ],
     defaults: ["TetheringExternalLibs"],
     libs: [
@@ -256,6 +257,7 @@ java_library_static {
     ],
     static_libs: ["tetheringprotos"],
     apex_available: ["com.android.tethering"],
+    sdk_version: "system_current",
     min_sdk_version: "30",
 }
 

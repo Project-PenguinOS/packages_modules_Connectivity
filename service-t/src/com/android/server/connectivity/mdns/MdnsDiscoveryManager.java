@@ -416,7 +416,7 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
         discoveryExecutor.ensureRunningOnHandlerThread();
         sharedLog.log("notifyOffloadStart for interface:" + interfaceName);
 
-        if (mdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) {
+        if (!mdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) {
             return Collections.emptyList();
         }
 

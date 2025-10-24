@@ -36,12 +36,14 @@ import static android.net.TetheringManager.TETHER_ERROR_TETHER_IFACE_ERROR;
 import static android.net.TetheringManager.TETHER_ERROR_UNTETHER_IFACE_ERROR;
 import static android.net.TetheringManager.TetheringRequest.checkStaticAddressConfiguration;
 import static android.net.dhcp.IDhcpServer.STATUS_SUCCESS;
+import static android.net.platform.flags.Flags.connectivityServiceModifyQdiscClsact;
 import static android.net.util.NetworkConstants.asByte;
 import static android.system.OsConstants.RT_SCOPE_UNIVERSE;
 
 import static com.android.net.module.util.ConnectivityCommonFlags.USE_ROUTE_PARCEL_IPCS;
 import static com.android.net.module.util.Inet4AddressUtils.intToInet4AddressHTH;
 import static com.android.net.module.util.NetworkStackConstants.RFC7421_PREFIX_LENGTH;
+import static com.android.net.module.util.netlink.RtNetlinkQdiscMessage.CLSACT;
 import static com.android.networkstack.tethering.TetheringConfiguration.USE_SYNC_SM;
 import static com.android.networkstack.tethering.TetheringFeatureFlags.TETHERING_AND_P2P_GO_LOCAL_AGENT;
 import static com.android.networkstack.tethering.util.PrefixUtils.asIpPrefix;
@@ -74,6 +76,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
+import android.system.Os;
 import android.util.ArraySet;
 import android.util.Log;
 import android.util.SparseArray;
@@ -95,6 +98,7 @@ import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.SharedLog;
 import com.android.net.module.util.SyncStateMachine.StateInfo;
 import com.android.net.module.util.ip.InterfaceController;
+import com.android.net.module.util.netlink.NetlinkUtils;
 import com.android.networkstack.tethering.BpfCoordinator;
 import com.android.networkstack.tethering.TetheringConfiguration;
 import com.android.networkstack.tethering.metrics.TetheringMetrics;
@@ -238,6 +242,11 @@ public class IpServer extends StateMachineShim {
          */
         public boolean isFeatureNotChickenedOut(Context context, String name) {
             return DeviceConfigUtils.isTetheringFeatureNotChickenedOut(context, name);
+        }
+
+        /** Whether the flag for connectivity service modify qdisc clsact is enabled or not. */
+        public boolean isConnectivityServiceModifyQdiscClsactEnabled() {
+            return connectivityServiceModifyQdiscClsact();
         }
 
         /** Create a NetworkAgent instance to be used by IpServer. */
@@ -1125,6 +1134,24 @@ public class IpServer extends StateMachineShim {
         mStaticIpv4ClientAddr = request.getClientStaticIpv4Address();
     }
 
+    private void maybeModifyQdiscClsact(boolean add) {
+        if (!mDeps.isConnectivityServiceModifyQdiscClsactEnabled()) return;
+
+        final int ifIndex = Os.if_nametoindex(mIfaceName);
+        if (ifIndex == 0) {
+            if (add) {
+                mLog.e("Failed to find interface index for " + mIfaceName + ".");
+            }
+            return;
+        }
+
+        if (add) {
+            NetlinkUtils.sendRtmNewQdiscRequest(ifIndex, CLSACT);
+        } else {
+            NetlinkUtils.sendRtmDelQdiscRequest(ifIndex, CLSACT);
+        }
+    }
+
     class InitialState extends State {
         @Override
         public void enter() {
@@ -1232,6 +1259,7 @@ public class IpServer extends StateMachineShim {
                 if (mTetheringAgent == null) {
                     NetdUtils.networkAddInterface(mNetd, LOCAL_NET_ID, mIfaceName,
                             20 /* maxAttempts */, 50 /* pollingIntervalMs */);
+                    maybeModifyQdiscClsact(true /* add */);
                     // Activate a route to dest and IPv6 link local.
                     NetdUtils.modifyRoute(mNetd, NetdUtils.ModifyOperation.ADD, LOCAL_NET_ID,
                             new RouteInfo(asIpPrefix(mIpv4Address), null, mIfaceName,
@@ -1275,6 +1303,7 @@ public class IpServer extends StateMachineShim {
                 } finally {
                     if (mTetheringAgent == null) {
                         mNetd.networkRemoveInterface(LOCAL_NET_ID, mIfaceName);
+                        maybeModifyQdiscClsact(false /* add */);
                     }
                 }
             } catch (RemoteException | ServiceSpecificException e) {

@@ -53,6 +53,7 @@ import android.net.PacProxyManager
 import android.net.Uri
 import android.net.connectivity.ConnectivityCompatChanges.ENABLE_MATCH_LOCAL_NETWORK
 import android.net.networkstack.NetworkStackClientBase
+import android.net.platform.flags.Flags.FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT
 import android.os.BatteryStatsManager
 import android.os.Bundle
 import android.os.Handler
@@ -98,6 +99,8 @@ import com.android.testutils.visibleOnHandlerThread
 import com.android.testutils.waitForIdle
 import com.android.tethering.mainline.beta.Flags.FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER
 import java.net.InetAddress
+import java.net.NetworkInterface
+import java.util.Enumeration
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -119,6 +122,7 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 
 internal const val HANDLER_TIMEOUT_MS = 2_000L
+internal const val HANDLER_SHORT_TIMEOUT_MS = 100L
 internal const val BROADCAST_TIMEOUT_MS = 3_000L
 internal const val TEST_PACKAGE_NAME = "com.android.test.package"
 internal const val WIFI_WOL_IFNAME = "test_wlan_wol"
@@ -202,6 +206,7 @@ open class CSTest {
         it[ConnectivityFlags.CONSTRAINED_DATA_SATELLITE_METRICS] = true
         it[ConnectivityFlags.SATISFIED_BY_LOCAL_NETWORK_METRICS] = true
         it[ConnectivityFlags.USE_SATELLITE_REPORTED_SUSPENDED_AND_ROAMING] = true
+        it[FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT] = false
     }
     fun setFeatureEnabled(flag: String, enabled: Boolean) = enabledFeatures.set(flag, enabled)
 
@@ -581,6 +586,45 @@ open class CSTest {
                 enabledFeatures[FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER]
                         ?: fail("Unmocked FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER," +
                                 " see CSTest.enabledFeatures")
+
+        override fun flagConnectivityServiceModifyQdiscClsact() =
+                enabledFeatures[FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT]
+                        ?: fail("Unmocked FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT, " +
+                                " see CSTest.enableFeatures")
+
+        internal val ifnameToIndexMap = HashMap<String, Int>()
+        override fun if_nametoindex(ifname: String): Int =
+            ifnameToIndexMap[ifname]!!
+
+        override fun getNetworkInterfaces(): Enumeration<NetworkInterface?>? {
+            return null
+        }
+
+        internal var orderedRtmQdiscClsactHistory =
+            ArrayTrackRecord<Pair<Int, Boolean>>().newReadHead()
+
+        override fun sendNewRtmQdiscClsactRequest(ifIndex: Int): Boolean {
+            return orderedRtmQdiscClsactHistory.add(Pair(ifIndex, true))
+        }
+
+        override fun sendDelRtmQdiscClsactRequest(ifIndex: Int): Boolean {
+            return orderedRtmQdiscClsactHistory.add(Pair(ifIndex, false))
+        }
+
+        fun expectRtmQdiscClsactRequest(
+            ifIndex: Int,
+            add: Boolean,
+            timeoutMs: Long = HANDLER_TIMEOUT_MS
+        ) {
+            assertNotNull(
+                orderedRtmQdiscClsactHistory.poll(timeoutMs)
+                { it.first == ifIndex && it.second == add }
+            )
+        }
+
+        fun expectNoRtmQdiscClsactRequest(timeoutMs: Long = HANDLER_SHORT_TIMEOUT_MS) {
+            assertNull(orderedRtmQdiscClsactHistory.poll(timeoutMs))
+        }
     }
 
     inner class PermDeps : PermissionMonitor.Dependencies() {

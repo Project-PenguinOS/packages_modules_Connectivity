@@ -486,6 +486,10 @@ public class MdnsDiscoveryManagerTests {
 
     @Test
     public void testNotifyOffloadStart() throws IOException {
+        final MdnsFeatureFlags mdnsFeatureFlags = MdnsFeatureFlags.newBuilder()
+                .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
+        discoveryManager = makeDiscoveryManager(mdnsFeatureFlags);
+
         final MdnsSearchOptions options =
                 MdnsSearchOptions.newBuilder().setNetwork(NETWORK_1).build();
         final FilterRepliesInfo info1 = new FilterRepliesInfo(

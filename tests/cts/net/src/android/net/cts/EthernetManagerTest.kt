@@ -1146,6 +1146,8 @@ class EthernetManagerTest {
 
     @Test
     fun testAddInterface_disableEnableEthernet() {
+        // The test calls setEthernetEnabled(false).
+        assumeFalse(isAdbOverEthernet())
         val listener = EthernetStateListener()
         addInterfaceStateListener(listener)
 
@@ -1214,6 +1216,8 @@ class EthernetManagerTest {
 
     @Test
     fun testGetInterfaceList_disableEnableEthernet() {
+        // The test calls setEthernetEnabled(false).
+        assumeFalse(isAdbOverEthernet())
         // Test that interface list can be obtained when ethernet is disabled.
         setEthernetEnabled(false)
         // Create two test interfaces and check the return list contains the interface names.
