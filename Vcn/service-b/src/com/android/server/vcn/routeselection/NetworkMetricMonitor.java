@@ -58,7 +58,7 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
 
     private boolean mIsSelectedUnderlyingNetwork;
     private boolean mIsStarted;
-    private boolean mIsValidationFailed;
+    private boolean mIsValidationSucceeded;
 
     protected NetworkMetricMonitor(
             @NonNull VcnContext vcnContext,
@@ -72,7 +72,9 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
 
         mIsSelectedUnderlyingNetwork = false;
         mIsStarted = false;
-        mIsValidationFailed = false;
+
+        // Assume the network is good before running validation
+        mIsValidationSucceeded = true;
     }
 
     /** Callback to notify caller of the validation result */
@@ -99,13 +101,13 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
      * <p>Subclasses MUST call super.stop() when overriding this method
      */
     public void stop() {
-        mIsValidationFailed = false;
+        mIsValidationSucceeded = true;
         mIsStarted = false;
     }
 
     /** Called by the subclasses when the validation result is ready */
-    protected void onValidationResultReceivedInternal(boolean isFailed) {
-        mIsValidationFailed = isFailed;
+    protected void onValidationResultReceivedInternal(boolean isSucceeded) {
+        mIsValidationSucceeded = isSucceeded;
         mCallback.onValidationResultReceived();
     }
 
@@ -189,8 +191,8 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
         // Subclasses MUST override it if they care
     }
 
-    public boolean isValidationFailed() {
-        return mIsValidationFailed;
+    public boolean isValidationSucceeded() {
+        return mIsValidationSucceeded;
     }
 
     public boolean isSelectedUnderlyingNetwork() {

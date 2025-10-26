@@ -351,6 +351,9 @@ class ApfIntegrationTest {
         // running APF on automotive as the device has almost infinite battery power.
         assumeFalse("Skip test: automotive device", pm.hasSystemFeature(FEATURE_AUTOMOTIVE))
 
+        // TODO(b/450670091): Run APF tests on desktop devices once the feature is ready.
+        assumeFalse("Skip test: desktop device", pm.hasSystemFeature(FEATURE_PC))
+
         networkCallback = TestableNetworkCallback()
         cm.requestNetwork(
                 NetworkRequest.Builder()
@@ -455,6 +458,16 @@ class ApfIntegrationTest {
             } else {
                 assertThat(caps.maximumApfProgramSize).isAtLeast(3000)
             }
+        }
+
+        // DEVICEs with CHIPSETs that set ro.board.first_api_level or ro.board.api_level to 202604
+        // or higher:
+        // - [GMS-VSR-5.3.12-020] MUST implement version 6.1 of the Android Packet Filtering (APF)
+        //   interpreter in the Wi-Fi firmware.
+        // - [GMS-VSR-5.3.12-021] MUST provide at least 4000 bytes of APF RAM.
+        if (vsrApiLevel >= 202604) {
+            assertThat(caps.apfVersionSupported).isEqualTo(6100)
+            assertThat(caps.maximumApfProgramSize).isAtLeast(4000)
         }
 
         // ApfFilter does not support anything but ARPHRD_ETHER.

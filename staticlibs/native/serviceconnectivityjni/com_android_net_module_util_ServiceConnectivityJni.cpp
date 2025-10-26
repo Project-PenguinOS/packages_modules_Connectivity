@@ -96,7 +96,7 @@ static void setTunTapCarrierEnabledImpl(JNIEnv *env, const char *iface,
 
 static int createTunTapImpl(JNIEnv *env, bool isTun, bool hasCarrier,
                             bool setIffMulticast, const char *iface) {
-  base::unique_fd tun(open("/dev/tun", O_RDWR | O_NONBLOCK));
+  base::unique_fd tun(open("/dev/tun", O_RDWR | O_NONBLOCK | O_CLOEXEC));
   ifreq ifr{};
 
   // Allocate interface.
