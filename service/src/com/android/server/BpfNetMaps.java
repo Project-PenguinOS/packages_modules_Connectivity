@@ -44,6 +44,7 @@ import static android.system.OsConstants.ENODEV;
 import static android.system.OsConstants.ENOENT;
 import static android.system.OsConstants.EOPNOTSUPP;
 
+import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
 import static com.android.server.connectivity.NetworkPermissions.PERMISSION_NONE;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_INTERNET;
@@ -150,6 +151,15 @@ public class BpfNetMaps {
             Pair.create(TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS, "PERMISSION_UPDATE_DEVICE_STATS")
     );
     private final InterfaceTracker mInterfaceTracker;
+    private static boolean sPermissionMapUidMigrationEnabled = false;
+
+    /**
+     * Get the cached com.android.tethering.flags.Flags#permissionMapUidMigration() so the flag
+     * value is process stable.
+     */
+    public boolean isUidMigrationEnabled() {
+        return sPermissionMapUidMigrationEnabled;
+    }
 
     /**
      * Set configurationMap for test.
@@ -379,7 +389,7 @@ public class BpfNetMaps {
             throw new IllegalStateException("Failed to initialize ingress discard map", e);
         }
 
-        if (isAtLeast25Q2()) {
+        if (isAtLeastB()) {
             if (sLocalNetAccessMap == null) {
                 sLocalNetAccessMap = getLocalNetAccessMap();
             }
@@ -404,8 +414,9 @@ public class BpfNetMaps {
             sUidMigrationEnabledBpfBoolean = getUidMigrationEnabledBpfBoolean();
         }
 
+        sPermissionMapUidMigrationEnabled = deps.isPermissionMapUidMigrationEnabled();
         try {
-            sUidMigrationEnabledBpfBoolean.set(deps.isPermissionMapUidMigrationEnabled());
+            sUidMigrationEnabledBpfBoolean.set(sPermissionMapUidMigrationEnabled);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Failed to set uid migration enabled map", e);
         }
@@ -465,6 +476,10 @@ public class BpfNetMaps {
         }
 
         /**
+         * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than permission
+         * map uid migration. Wrapper around permissionMapUidMigration() so that it can be mocked
+         * in unit test.
+         *
          * @see com.android.tethering.flags.Flags#permissionMapUidMigration()
          */
         public boolean isPermissionMapUidMigrationEnabled() {
@@ -510,18 +525,9 @@ public class BpfNetMaps {
     }
 
     private void throwIfPre25Q2(final String msg) {
-        if (!isAtLeast25Q2()) {
+        if (!isAtLeastB()) {
             throw new UnsupportedOperationException(msg);
         }
-    }
-
-    /*
-     ToDo : Remove this method when SdkLevel.isAtLeastB() is fixed, aosp is at sdk level 36 or use
-     NetworkStackUtils.isAtLeast25Q2 when it is moved to a static lib.
-     */
-    public static boolean isAtLeast25Q2() {
-        return SdkLevel.isAtLeastB()  || (SdkLevel.isAtLeastV()
-                && "Baklava".equals(Build.VERSION.CODENAME));
     }
 
     private void removeRule(final int uid, final long match, final String caller) {

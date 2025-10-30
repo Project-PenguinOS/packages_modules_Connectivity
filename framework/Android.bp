@@ -109,8 +109,24 @@ java_defaults {
         "app-compat-annotations",
         "framework-connectivity-t.stubs.module_lib",
         "framework-statsd.stubs.module_lib",
+        "framework-telecom.stubs.module_lib",
         "unsupportedappusage",
     ],
+    public: {
+        libs: [
+            "framework-telecom.stubs",
+        ],
+    },
+    system: {
+        libs: [
+            "framework-telecom.stubs.system",
+        ],
+    },
+    module_lib: {
+        libs: [
+            "framework-telecom.stubs.module_lib",
+        ],
+    },
     apex_available: [
         "com.android.tethering",
     ],

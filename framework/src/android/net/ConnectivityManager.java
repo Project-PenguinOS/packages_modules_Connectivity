@@ -1202,6 +1202,8 @@ public class ConnectivityManager {
     public static final long FEATURE_USE_DECLARED_METHODS_FOR_CALLBACKS = 1L;
     /** @hide */
     public static final long FEATURE_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER = 1L << 1;
+    /** @hide */
+    public static final long FEATURE_OTT_NETWORK_SLICING = 1L << 2;
 
     /** @hide */
     @Retention(RetentionPolicy.SOURCE)
@@ -6922,6 +6924,26 @@ public class ConnectivityManager {
     public void unregisterQuicConnectionClosePayload(final ParcelFileDescriptor pfd) {
         try {
             mService.unregisterQuicConnectionClosePayload(pfd);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+
+    /**
+     * Reports a change in the state of an OTT call.
+     * <p>
+     * This method is expected to be called only from {@code ConnectivityCallListenerService}
+     * running on the system server process.
+     *
+     * @param uid The UID of the application whose call state has changed.
+     * @param isAdded True if a call has been added, false if it has been removed.
+     * @throws SecurityException if the caller is not the system server.
+     * @hide
+     */
+    public void onOttCallStateChanged(int uid, boolean isAdded) {
+        try {
+            mService.onOttCallStateChanged(uid, isAdded);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

@@ -30,12 +30,15 @@ import java.util.Set;
 public class AppOptInDefaultNetworkPolicy {
     private final boolean mIsSatelliteOptIn;
     private final boolean mIsSatelliteRoleSms;
+    private final boolean mIsOtt;
     private final Set<Integer> mUids;
 
+    // TODO (b/449897733): Refactor the constructor to Accept bitmask (policyFlags)
     public AppOptInDefaultNetworkPolicy(boolean isSatelliteOptIn, boolean isSatelliteRoleSms,
-            @NonNull Set<Integer> uids) {
+            boolean isOtt, @NonNull Set<Integer> uids) {
         mIsSatelliteOptIn = isSatelliteOptIn;
         mIsSatelliteRoleSms = isSatelliteRoleSms;
+        mIsOtt = isOtt;
         mUids = Collections.unmodifiableSet(new ArraySet<>(uids));
     }
 
@@ -45,6 +48,10 @@ public class AppOptInDefaultNetworkPolicy {
 
     public boolean isSatelliteRoleSms() {
         return mIsSatelliteRoleSms;
+    }
+
+    public boolean isOtt() {
+        return mIsOtt;
     }
 
     @NonNull
@@ -59,12 +66,13 @@ public class AppOptInDefaultNetworkPolicy {
         AppOptInDefaultNetworkPolicy that = (AppOptInDefaultNetworkPolicy) o;
         return mIsSatelliteOptIn == that.mIsSatelliteOptIn &&
                 mIsSatelliteRoleSms == that.mIsSatelliteRoleSms &&
+                mIsOtt == that.mIsOtt &&
                 mUids.equals(that.mUids);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mIsSatelliteOptIn, mIsSatelliteRoleSms, mUids);
+        return Objects.hash(mIsSatelliteOptIn, mIsSatelliteRoleSms, mIsOtt, mUids);
     }
 
     @Override
@@ -74,6 +82,8 @@ public class AppOptInDefaultNetworkPolicy {
                 + mIsSatelliteOptIn
                 + ", isSatelliteRoleSms="
                 + mIsSatelliteRoleSms
+                + ", isOtt="
+                + mIsOtt
                 + ", uids="
                 + mUids
                 + '}';

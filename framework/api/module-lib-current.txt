@@ -1,6 +1,10 @@
 // Signature format: 2.0
 package android.net {
 
+  @FlaggedApi("com.android.tethering.flags.enable_incall_service_api") public class ConnectivityCallListenerService extends android.telecom.InCallService {
+    ctor public ConnectivityCallListenerService();
+  }
+
   public final class ConnectivityFrameworkInitializer {
     method public static void registerServiceWrappers();
   }

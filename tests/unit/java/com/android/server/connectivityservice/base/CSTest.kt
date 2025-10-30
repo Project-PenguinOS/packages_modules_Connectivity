@@ -207,6 +207,7 @@ open class CSTest {
         it[ConnectivityFlags.SATISFIED_BY_LOCAL_NETWORK_METRICS] = true
         it[ConnectivityFlags.USE_SATELLITE_REPORTED_SUSPENDED_AND_ROAMING] = true
         it[FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT] = false
+        it[ConnectivityFlags.OTT_NETWORK_SLICING] = true
     }
     fun setFeatureEnabled(flag: String, enabled: Boolean) = enabledFeatures.set(flag, enabled)
 
