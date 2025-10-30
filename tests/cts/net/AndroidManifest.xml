@@ -38,6 +38,7 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
 
     <!-- This test also uses signature permissions through adopting the shell identity.
          The permissions acquired that way include (probably not exhaustive) :
@@ -48,7 +49,13 @@
                  android:usesCleartextTraffic="true">
         <uses-library android:name="android.test.runner" />
         <uses-library android:name="org.apache.http.legacy" android:required="false" />
-
+        <service android:name=".ConnectivityCallListenerServiceTest$TestConnectionService"
+                 android:permission="android.permission.BIND_CONNECTION_SERVICE"
+                 android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
     </application>
 
     <instrumentation android:name="androidx.test.runner.AndroidJUnitRunner"

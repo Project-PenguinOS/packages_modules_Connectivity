@@ -96,6 +96,18 @@ public class AppOptInDefaultNetworkController {
     private final Set<Integer> mSatelliteDataOptInUids = new ArraySet<>();
 
     /**
+     * A cache of UIDs for applications that are currently in an active Over-the-Top (OTT) call
+     * and require a high-priority network slice.
+     *
+     * <p>This set is dynamically populated by the {@code onOttCallStateChanged} method, which
+     * receives events when a call starts or ends. It serves as a primary input into the
+     * arbitration logic within this controller to determine which UIDs should receive a
+     * network request with a premium slicing preference.
+     *
+     */
+    private final Set<Integer> mOttSlicingUids = new ArraySet<>();
+
+    /**
      * A bitmask of flags representing the network policies that can be applied to a UID.
      *
      * <p>These flags are used to create a unique integer key for each combination of
@@ -107,6 +119,7 @@ public class AppOptInDefaultNetworkController {
             POLICY_NONE,
             POLICY_SATELLITE_ROLE_SMS,
             POLICY_SATELLITE_OPT_IN,
+            POLICY_OTT,
     })
     public @interface Policy {}
 
@@ -124,6 +137,11 @@ public class AppOptInDefaultNetworkController {
      * opted-in for satellite network access via its manifest metadata.
      */
     static final int POLICY_SATELLITE_OPT_IN = 1 << 1;
+
+    /**
+     * A policy flag indicating that the UID is ott call and is eligible for network slicing
+     */
+    static final int POLICY_OTT = 1 << 2;
 
     /**
      *  Monitor {@link android.app.role.OnRoleHoldersChangedListener#onRoleHoldersChanged(String,
@@ -285,7 +303,8 @@ public class AppOptInDefaultNetworkController {
             mergedSatelliteRoleSmsUids.addAll(mSatelliteRoleSmsUids.valueAt(i));
         }
         mLog.i("SmsRoleUids:" + mergedSatelliteRoleSmsUids
-                + " Opt-InUids:" + mSatelliteDataOptInUids);
+                + " Opt-InUids:" + mSatelliteDataOptInUids
+                + "ott-uids:" + mOttSlicingUids);
 
         // Group UIDs by their unique combination of policies using a bitmask.
         // SparseArray is efficient for integer keys. ArraySet for the UID values.
@@ -293,14 +312,17 @@ public class AppOptInDefaultNetworkController {
         final ArraySet<Integer> allUids = new ArraySet<>();
         allUids.addAll(mergedSatelliteRoleSmsUids);
         allUids.addAll(mSatelliteDataOptInUids);
+        allUids.addAll(mOttSlicingUids);
 
         for (int uid : allUids) {
             final boolean hasSmsRole = mergedSatelliteRoleSmsUids.contains(uid);
             final boolean hasOptedIn = mSatelliteDataOptInUids.contains(uid);
+            final boolean hasOtt = mOttSlicingUids.contains(uid);
 
             int policyFlags = POLICY_NONE;
             if (hasSmsRole) policyFlags |= POLICY_SATELLITE_ROLE_SMS;
             if (hasOptedIn) policyFlags |= POLICY_SATELLITE_OPT_IN;
+            if (hasOtt) policyFlags |= POLICY_OTT;
 
             ArraySet<Integer> uidsForPolicyFlags = uidsByPolicyFlags.get(policyFlags);
             if (uidsForPolicyFlags == null) {
@@ -318,6 +340,7 @@ public class AppOptInDefaultNetworkController {
             policies.add(new AppOptInDefaultNetworkPolicy(
                     (policyFlags & POLICY_SATELLITE_OPT_IN) != 0,
                     (policyFlags & POLICY_SATELLITE_ROLE_SMS) != 0,
+                    (policyFlags & POLICY_OTT) != 0,
                     uids));
         }
         return policies;
@@ -552,6 +575,30 @@ public class AppOptInDefaultNetworkController {
         return mContext.createContextAsUser(user, 0 /* flag */).getPackageManager();
     }
 
+    /**
+     * Entry point for OTT call state changes, forwarded from ConnectivityService.
+     *
+     * <p>This method updates the internal {@code mOttSlicingUids} set. A change to this set
+     * results in a call to {@link #reportUidDefaultNetworkPolicies()}, which causes the
+     * controller to re-arbitrate all network policies and send an updated
+     * {@code List<AppOptInDefaultNetworkInfo>} to ConnectivityService.
+     *
+     * @param uid The UID of the application involved in the call state change.
+     * @param isAdded True if the call is new, false if it has ended.
+     */
+    public void onOttCallStateChanged(int uid, boolean isAdded) {
+        HandlerUtils.ensureRunningOnHandlerThread(mConnectivityServiceHandler);
+        mLog.i("ott call uid received: " + uid + ", isAdded: " + isAdded);
+
+        // TODO (b/448567932) : Adding Metrics for unexpected onCall events
+        if (isAdded) {
+            mOttSlicingUids.add(uid);
+        } else {
+            mOttSlicingUids.remove(uid);
+        }
+        reportAppOptInDefaultNetworkPolicies();
+    }
+
     // Return cached opt-in uid list for metrics sampling.
     // Should only be called on handler thread.
     public int getCachedOptInUidsCount() {
@@ -570,6 +617,9 @@ public class AppOptInDefaultNetworkController {
         pw.println();
         pw.print("Opt-In Uids: ");
         pw.print(mSatelliteDataOptInUids);
+        pw.println();
+        pw.print("OttSlicingUids: ");
+        pw.print(mOttSlicingUids);
         pw.println();
         pw.println("Log:");
         mLog.reverseDump(pw);

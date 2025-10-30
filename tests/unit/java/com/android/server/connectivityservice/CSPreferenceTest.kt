@@ -169,11 +169,13 @@ class CSPreferenceTest : CSTest() {
                 AppOptInDefaultNetworkPolicy(
                         false /* isSatelliteOptIn */,
                         true /* isSatelliteRoleSms */,
+                        false /* isOtt */,
                         setOf(SMSUID)
                 ),
                 AppOptInDefaultNetworkPolicy(
                         true /* isSatelliteOptIn */,
                         false /* isSatelliteRoleSms */,
+                        false /* isOtt */,
                         setOf(UID1, UID2)
                 )
         )
@@ -246,11 +248,13 @@ class CSPreferenceTest : CSTest() {
                 AppOptInDefaultNetworkPolicy(
                         false /* isSatelliteOptIn */,
                         true /* isSatelliteRoleSms */,
+                        false /* isOtt */,
                         setOf(SMSUID)
                 ),
                 AppOptInDefaultNetworkPolicy(
                         true /* isSatelliteOptIn */,
                         false /* isSatelliteRoleSms */,
+                        false /* isOtt */,
                         setOf(UID1, UID2)
                 )
         )
@@ -353,6 +357,7 @@ class CSPreferenceTest : CSTest() {
                 AppOptInDefaultNetworkPolicy(
                         true /* isSatelliteOptIn */,
                         false /* isSatelliteRoleSms */,
+                        false /* isOtt */,
                         setOf(UID1)
                 )
         )
@@ -370,6 +375,7 @@ class CSPreferenceTest : CSTest() {
                 AppOptInDefaultNetworkPolicy(
                         false /* isSatelliteOptIn */,
                         true /* isSatelliteRoleSms */,
+                        false /* isOtt */,
                         setOf(SMSUID)
                 ),
         )
@@ -383,11 +389,13 @@ class CSPreferenceTest : CSTest() {
                 AppOptInDefaultNetworkPolicy(
                         false /* isSatelliteOptIn */,
                         true /* isSatelliteRoleSms */,
+                        false /* isOtt */,
                         setOf(SMSUID)
                 ),
                 AppOptInDefaultNetworkPolicy(
                         true /* isSatelliteOptIn */,
                         false /* isSatelliteRoleSms */,
+                        false /* isOtt */,
                         setOf(UID1)
                 )
         )

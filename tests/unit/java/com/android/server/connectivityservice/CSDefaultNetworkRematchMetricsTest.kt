@@ -162,6 +162,7 @@ class CSDefaultNetworkRematchMetricsTest : CSTest() {
                 AppOptInDefaultNetworkPolicy(
                         true,  // isSatelliteOptIn
                         false, // isSatelliteRoleSms
+                        false, // isOtt
                         setOf(TEST_UID)
                 )
         )
@@ -186,6 +187,7 @@ class CSDefaultNetworkRematchMetricsTest : CSTest() {
                 AppOptInDefaultNetworkPolicy(
                         true,  // isSatelliteOptIn
                         false, // isSatelliteRoleSms
+                        false, // isOtt
                         setOf(TEST_UID, TEST_UID2)
                 )
         )

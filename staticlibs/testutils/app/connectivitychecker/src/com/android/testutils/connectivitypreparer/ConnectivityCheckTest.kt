@@ -113,11 +113,9 @@ class ConnectivityCheckTest {
             Pair(network, ssid)
         }
 
-        // Checking QUIC is more important on Wi-Fi than cellular, as it finds firewall
-        // configuration problems on Wi-Fi, but cellular is not actionable by the test lab.
-        checkQuic(wifiNetwork, wifiSsid, ipv6 = false)
+        checkQuic(wifiNetwork, netLabel = "SSID $wifiSsid", ipv6 = false)
         if (!ipv6Unsupported(wifiSsid)) {
-            checkQuic(wifiNetwork, wifiSsid, ipv6 = true)
+            checkQuic(wifiNetwork, netLabel = "SSID $wifiSsid", ipv6 = true)
         }
     }
 
@@ -128,7 +126,7 @@ class ConnectivityCheckTest {
      * through due to firewalling. Ensure that devices are setup on a network that has the proper
      * allowlists before trying to run the tests.
      */
-    private fun checkQuic(network: Network, ssid: String, ipv6: Boolean) {
+    private fun checkQuic(network: Network, netLabel: String, ipv6: Boolean) {
         // Same endpoint as used in MultinetworkApiTest in CTS
         val hostname = "connectivitycheck.android.com"
         val targetAddrs = network.getAllByName(hostname)
@@ -183,9 +181,9 @@ class ConnectivityCheckTest {
                             HexDump.toHexString(headerBytes))
                 }
             }
-            fail("QUIC is not working on SSID $ssid connecting to $targetAddr " +
-                    "with local source port ${socket.localPort}: check the firewall for UDP port " +
-                    "443 access."
+            fail("QUIC is not working on $netLabel connecting to $targetAddr " +
+                    "with local source port ${socket.localPort}: check the firewall (for Wi-Fi) " +
+                    "or carrier/data plan (for cellular) for UDP port 443 access."
             )
         } cleanup {
             socket.close()
@@ -216,6 +214,7 @@ class ConnectivityCheckTest {
             "The device has a SIM card, but it does not supports data connectivity. " +
             "Check the data plan, and verify that mobile data is working. " + commonError
         )
-        connectUtil.ensureCellularValidated()
+        val network = connectUtil.ensureCellularValidated()
+        checkQuic(network, netLabel = "cellular", ipv6 = false)
     }
 }

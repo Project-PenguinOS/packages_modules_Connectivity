@@ -21,3 +21,10 @@ flag {
     description: "Show entitlement UI to the requesters, instead of only admin users."
     bug: "376792293"
 }
+
+flag {
+  name: "enable_incall_service_api"
+  namespace: "com_android_tethering"
+  description: "Flag for supporting IncallService API"
+  bug: "430509489"
+}
