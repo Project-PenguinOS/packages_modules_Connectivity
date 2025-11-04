@@ -174,6 +174,21 @@ public class MdnsAdvertiser {
         return false;
     }
 
+    /** Returns true if selective mDNS response offload is enabled. */
+    private boolean isMdnsFilterRepliesOffloadEnabled() {
+        return mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled;
+    }
+
+    /** Returns true if mDNS reply offload is enabled. */
+    private boolean isMdnsReplyOffloadEnabled() {
+        return mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled;
+    }
+
+    /** Returns true if any mDNS offload feature is enabled. */
+    private boolean isMdnsOffloadEnabled() {
+        return isMdnsReplyOffloadEnabled() || isMdnsFilterRepliesOffloadEnabled();
+    }
+
     private void notifyOffloadStartOrUpdate(@NonNull MdnsInterfaceAdvertiser advertiser,
             int serviceId, Registration registration, @OffloadEngine.OffloadType long offloadType) {
         final String interfaceName = advertiser.getSocketInterfaceName();
@@ -194,7 +209,7 @@ public class MdnsAdvertiser {
 
     private void maybeStartOrUpdateOffload(@NonNull MdnsInterfaceAdvertiser advertiser, int id,
             @NonNull Registration registration) {
-        if (!mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) return;
+        if (!isMdnsFilterRepliesOffloadEnabled()) return;
 
         final String serviceType = registration.getServiceInfo().getServiceType();
         if (isInOffloadDenyList(serviceType)) {
@@ -220,7 +235,7 @@ public class MdnsAdvertiser {
                                 + serviceId);
                         return;
                     }
-                    if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled
+                    if (isMdnsReplyOffloadEnabled()
                             // TODO: Enable offload when the serviceInfo contains a custom host.
                             && TextUtils.isEmpty(registration.getServiceInfo().getHostname())) {
                         final String serviceType = registration.getServiceInfo().getServiceType();
@@ -228,7 +243,7 @@ public class MdnsAdvertiser {
                             mSharedLog.i("Offload denied for service type: " + serviceType);
                         } else {
                             long offloadType = OffloadEngine.OFFLOAD_TYPE_REPLY;
-                            if (mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) {
+                            if (isMdnsFilterRepliesOffloadEnabled()) {
                                 offloadType |= OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
                             }
                             notifyOffloadStartOrUpdate(advertiser, serviceId, registration,
@@ -271,8 +286,8 @@ public class MdnsAdvertiser {
                             if (!a.maybeRestartProbingForConflict(serviceId)) {
                                 return;
                             }
-                            if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled) {
-                                if (mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) {
+                            if (isMdnsOffloadEnabled()) {
+                                if (isMdnsFilterRepliesOffloadEnabled()) {
                                     notifyOffloadStartOrUpdate(a, serviceId, registration,
                                             OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES);
                                 } else {
@@ -448,7 +463,7 @@ public class MdnsAdvertiser {
                         "unexpected onAdvertiserDestroyed() when there are pending registrations");
             }
 
-            if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled && removedAdvertiser != null) {
+            if (isMdnsOffloadEnabled() && removedAdvertiser != null) {
                 final String interfaceName = removedAdvertiser.getSocketInterfaceName();
                 // If the interface is destroyed, stop all hardware offloading on that
                 // interface.
@@ -592,7 +607,7 @@ public class MdnsAdvertiser {
                 final MdnsInterfaceAdvertiser advertiser = mAdvertisers.valueAt(i);
                 advertiser.removeService(id);
 
-                if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled) {
+                if (isMdnsOffloadEnabled()) {
                     maybeSendOffloadStop(advertiser.getSocketInterfaceName(), id);
                 }
             }
@@ -658,7 +673,7 @@ public class MdnsAdvertiser {
             }
             advertiser.updateAddresses(addresses);
 
-            if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled) {
+            if (isMdnsReplyOffloadEnabled()) {
                 // Update address should trigger offload packet update.
                 final String interfaceName = advertiser.getSocketInterfaceName();
                 final List<OffloadServiceInfoWrapper> existingOffloadServiceInfoWrappers =

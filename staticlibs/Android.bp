@@ -118,6 +118,8 @@ java_library {
         "framework/**/DnsSvcbRecord.java",
         "framework/**/HexDump.java",
         "framework/**/NetworkStackConstants.java",
+        "framework/**/SvcParam.java",
+        "framework/**/SvcParamUtils.java",
     ],
     sdk_version: "module_current",
     visibility: [

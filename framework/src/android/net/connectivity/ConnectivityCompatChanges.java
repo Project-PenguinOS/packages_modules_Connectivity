@@ -19,6 +19,7 @@ import android.compat.annotation.ChangeId;
 import android.compat.annotation.Disabled;
 import android.compat.annotation.EnabledAfter;
 import android.compat.annotation.EnabledSince;
+import android.net.nsd.NsdManager;
 import android.os.Build;
 
 /**
@@ -85,6 +86,26 @@ public final class ConnectivityCompatChanges {
     @ChangeId
     @EnabledAfter(targetSdkVersion = Build.VERSION_CODES.TIRAMISU)
     public static final long ENABLE_PLATFORM_MDNS_BACKEND = 270306772L;
+
+    /**
+     * Do not throw when unregistering listeners that are not registered in NsdManager.
+     *
+     * {@link NsdManager#stopServiceDiscovery(NsdManager.DiscoveryListener)},
+     * {@link NsdManager#stopServiceResolution(NsdManager.ResolveListener)},
+     * {@link NsdManager#unregisterServiceInfoCallback(NsdManager.ServiceInfoCallback)},
+     * {@link NsdManager#unregisterService(NsdManager.RegistrationListener)}
+     * will not throw if the listener is not registered when this change is active.
+     *
+     * Older apps generally need to try/catch the {@link IllegalArgumentException} otherwise, as
+     * the listener may be unregistered automatically when
+     * {@link NsdManager.DiscoveryListener#onStartDiscoveryFailed(String, int)} is called, which
+     * is hard to manage.
+     *
+     * @hide
+     */
+    @ChangeId
+    @EnabledAfter(targetSdkVersion = Build.VERSION_CODES.BAKLAVA)
+    public static final long ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS = 450699352L;
 
     /**
      * Apps targeting Android V or higher receive network callbacks from local networks as default

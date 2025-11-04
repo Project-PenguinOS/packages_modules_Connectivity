@@ -371,6 +371,16 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
                 mOtDaemonCallbackProxy);
         otDaemon.asBinder().linkToDeath(() -> mHandler.post(this::onOtDaemonDied), 0);
         mOtDaemon = otDaemon;
+
+        // The Border Router features depend on the infra link state. When ot-daemon is re-started,
+        // ensure the latest infra link state is set to prevent Border Router features from being
+        // disabled until the next upstream network link properties change.
+        if (mNetworkToLinkProperties.containsKey(mUpstreamNetwork)) {
+            setInfraLinkState(
+                newInfraLinkStateBuilder(
+                    mNetworkToLinkProperties.get(mUpstreamNetwork)).build());
+        }
+
         mHandler.post(mNat64CidrController::maybeUpdateNat64Cidr);
         return mOtDaemon;
     }

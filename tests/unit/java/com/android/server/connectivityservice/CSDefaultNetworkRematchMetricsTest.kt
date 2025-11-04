@@ -26,6 +26,7 @@ import android.os.Build
 import com.android.server.ConnectivityService.PREFERENCE_ORDER_APP_OPT_IN
 import com.android.server.ConnectivityStatsLog.DEFAULT_NETWORK_REMATCH__REMATCH_REASON__RMR_NETWORK_DISCONNECTED
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_OPT_IN
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.postAndWait
@@ -159,12 +160,7 @@ class CSDefaultNetworkRematchMetricsTest : CSTest() {
         // if it rematches when no network is available.
         deps.elapsedRealtime = t1
         var policies = listOf(
-                AppOptInDefaultNetworkPolicy(
-                        true,  // isSatelliteOptIn
-                        false, // isSatelliteRoleSms
-                        false, // isOtt
-                        setOf(TEST_UID)
-                )
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN, setOf(TEST_UID))
         )
         updateAppOptInDefaultNetworkPolicies(policies)
         // The request created and rematched immediately so it satisfied by null with no time.
@@ -184,12 +180,8 @@ class CSDefaultNetworkRematchMetricsTest : CSTest() {
         //  2. Create opt-in UID request for TEST_UID + TEST_UID2.
         deps.elapsedRealtime = t3
         policies = listOf(
-                AppOptInDefaultNetworkPolicy(
-                        true,  // isSatelliteOptIn
-                        false, // isSatelliteRoleSms
-                        false, // isOtt
-                        setOf(TEST_UID, TEST_UID2)
-                )
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN,
+                setOf(TEST_UID, TEST_UID2))
         )
         updateAppOptInDefaultNetworkPolicies(policies)
         // The removed request reports nothing.

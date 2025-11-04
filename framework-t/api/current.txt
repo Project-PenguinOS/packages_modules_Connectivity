@@ -265,6 +265,7 @@ package android.net.nsd {
     field public static final int FAILURE_INTERNAL_ERROR = 0; // 0x0
     field public static final int FAILURE_MAX_LIMIT = 4; // 0x4
     field public static final int FAILURE_OPERATION_NOT_RUNNING = 5; // 0x5
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final int FAILURE_PERMISSION_DENIED = 7; // 0x7
     field public static final int NSD_STATE_DISABLED = 1; // 0x1
     field public static final int NSD_STATE_ENABLED = 2; // 0x2
     field public static final int PROTOCOL_DNS_SD = 1; // 0x1

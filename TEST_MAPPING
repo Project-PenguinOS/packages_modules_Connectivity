@@ -57,6 +57,20 @@
       ]
     },
     {
+      "name": "CtsNetTestCasesLocalNetNoPermissions",
+      "options": [
+        {
+          "exclude-annotation": "com.android.testutils.SkipPresubmit"
+        },
+        {
+          "exclude-annotation": "com.android.testutils.SkipMainlinePresubmit"
+        },
+        {
+          "exclude-annotation": "androidx.test.filters.RequiresDevice"
+        }
+      ]
+    },
+    {
       "name": "bpf_existence_test"
     },
     {
@@ -202,6 +216,18 @@
     },
     {
       "name": "CtsNetTestCasesMaxTargetSdk33",
+      "options": [
+        {
+          "exclude-annotation": "com.android.testutils.SkipPresubmit"
+        },
+        {
+          "exclude-annotation": "androidx.test.filters.RequiresDevice"
+        }
+      ]
+    },
+    // CTS tests for local network access behavior when permissions are not granted
+    {
+      "name": "CtsNetTestCasesLocalNetNoPermissions",
       "options": [
         {
           "exclude-annotation": "com.android.testutils.SkipPresubmit"

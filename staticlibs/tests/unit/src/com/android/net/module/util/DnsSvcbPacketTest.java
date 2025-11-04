@@ -223,8 +223,8 @@ public class DnsSvcbPacketTest {
     @Test
     public void testSliceAndAdvance() throws Exception {
         final ByteBuffer buffer = ByteBuffer.wrap(new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9});
-        final ByteBuffer slice1 = DnsSvcbRecord.sliceAndAdvance(buffer, 3);
-        final ByteBuffer slice2 = DnsSvcbRecord.sliceAndAdvance(buffer, 4);
+        final ByteBuffer slice1 = SvcParamUtils.sliceAndAdvance(buffer, 3);
+        final ByteBuffer slice2 = SvcParamUtils.sliceAndAdvance(buffer, 4);
         assertEquals(0, slice1.position());
         assertEquals(3, slice1.capacity());
         assertEquals(3, slice1.remaining());
@@ -238,7 +238,7 @@ public class DnsSvcbPacketTest {
 
         // Nothing is read if out-of-bound access happens.
         assertThrows(BufferUnderflowException.class,
-                () -> DnsSvcbRecord.sliceAndAdvance(buffer, 5));
+                () -> SvcParamUtils.sliceAndAdvance(buffer, 5));
         assertEquals(7, buffer.position());
         assertEquals(9, buffer.capacity());
         assertEquals(2, buffer.remaining());
