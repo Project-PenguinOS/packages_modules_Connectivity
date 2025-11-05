@@ -46,7 +46,6 @@ import static android.net.connectivity.ConnectivityCompatChanges.RESTRICT_LOCAL_
 import static android.os.Process.SYSTEM_UID;
 import static android.permission.PermissionManager.PERMISSION_GRANTED;
 
-import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.server.connectivity.ConnectivityFlags.USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR;
 import static com.android.server.connectivity.PermissionMonitor.isHigherNetworkPermission;
 import static com.android.testutils.TestPermissionUtil.runAsShell;
@@ -338,7 +337,7 @@ public class PermissionMonitorTest {
         // This will return the wrong UID for the package when queried with other users.
         doReturn(packageInfo).when(mPackageManager)
                 .getPackageInfo(eq(packageName), anyInt() /* flag */);
-        if (isAtLeastB()) {
+        if (BpfNetMaps.isAtLeast25Q2()) {
             // Runtime permission checks for local net restrictions were introduced in 25Q2
             for (String permission : permissions) {
                 doReturn(PERMISSION_GRANTED).when(mPermissionManager).checkPermissionForPreflight(
@@ -405,7 +404,7 @@ public class PermissionMonitorTest {
         final String[] newPackages = Arrays.stream(oldPackages).filter(e -> !e.equals(packageName))
                 .toArray(String[]::new);
         doReturn(newPackages).when(mPackageManager).getPackagesForUid(eq(uid));
-        if (isAtLeastB()) {
+        if (BpfNetMaps.isAtLeast25Q2()){
             // Runtime permission checks for local net restrictions were introduced in 25Q2
             doReturn(PERMISSION_DENIED).when(mPermissionManager).checkPermissionForPreflight(
                     anyString(), argThat(as -> as.getUid() == uid));
@@ -899,7 +898,7 @@ public class PermissionMonitorTest {
     @Test
     @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onUserAdded() throws Exception {
-        assumeTrue(isAtLeastB());
+        assumeTrue(BpfNetMaps.isAtLeast25Q2());
         doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
@@ -919,7 +918,7 @@ public class PermissionMonitorTest {
     @Test
     @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onUserRemoved() throws Exception {
-        assumeTrue(isAtLeastB());
+        assumeTrue(BpfNetMaps.isAtLeast25Q2());
         doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
@@ -1333,7 +1332,7 @@ public class PermissionMonitorTest {
     @Test
     @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onPackageInstall() throws Exception {
-        assumeTrue(isAtLeastB());
+        assumeTrue(BpfNetMaps.isAtLeast25Q2());
         doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
@@ -1375,7 +1374,7 @@ public class PermissionMonitorTest {
     @Test
     @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onPackageUninstall() throws Exception {
-        assumeTrue(isAtLeastB());
+        assumeTrue(BpfNetMaps.isAtLeast25Q2());
         doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
@@ -1406,7 +1405,7 @@ public class PermissionMonitorTest {
     @Test
     @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onPackageRemoveThenAdd() throws Exception {
-        assumeTrue(isAtLeastB());
+        assumeTrue(BpfNetMaps.isAtLeast25Q2());
         doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
@@ -1802,7 +1801,7 @@ public class PermissionMonitorTest {
     @Test
     @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_setPermChanges() throws Exception {
-        assumeTrue(isAtLeastB());
+        assumeTrue(BpfNetMaps.isAtLeast25Q2());
         doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
@@ -1874,7 +1873,7 @@ public class PermissionMonitorTest {
      */
     private PackageManager.OnPermissionsChangedListener setupMocksAndCaptureRegisteredListener(
             boolean isLnpDeveloperOptInEnabled) {
-        assumeTrue(isAtLeastB());
+        assumeTrue(BpfNetMaps.isAtLeast25Q2());
         ArgumentCaptor<PackageManager.OnPermissionsChangedListener> listenerCaptor =
                 ArgumentCaptor.forClass(PackageManager.OnPermissionsChangedListener.class);
         verify(mPackageManager).addOnPermissionsChangeListener(listenerCaptor.capture());

@@ -17,6 +17,7 @@
 package android.net.nsd;
 
 import static android.net.InetAddresses.parseNumericAddress;
+import static android.net.connectivity.ConnectivityCompatChanges.ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS;
 import static android.net.nsd.NsdManager.checkServiceInfoForRegistration;
 
 import static com.android.net.module.util.HexDump.hexStringToByteArray;
@@ -59,9 +60,9 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import java.net.InetAddress;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
-import java.time.Duration;
 
 @DevSdkIgnoreRunner.MonitorThreadLeak
 @RunWith(DevSdkIgnoreRunner.class)
@@ -73,6 +74,9 @@ public class NsdManagerTest {
 
     @Rule
     public TestRule compatChangeRule = new PlatformCompatChangeRule();
+
+    @Rule
+    public TestRule ignoreRule = new DevSdkIgnoreRule();
 
     @Mock Context mContext;
     @Mock INsdManager mService;
@@ -752,6 +756,16 @@ public class NsdManagerTest {
                         .setNoService()
                         .setDefaultHost()
                         .setNoPublicKey().build()));
+    }
+
+    @EnableCompatChanges(ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
+    @Test
+    public void testUnregisterNonRegisteredCallback() {
+        mManager.stopServiceDiscovery(mock(NsdManager.DiscoveryListener.class));
+        mManager.unregisterServiceInfoCallback(mock(NsdManager.ServiceInfoCallback.class));
+        mManager.stopServiceResolution(mock(NsdManager.ResolveListener.class));
+        mManager.unregisterService(mock(NsdManager.RegistrationListener.class));
     }
 
     public void mustFail(Runnable fn) {

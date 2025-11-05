@@ -48,6 +48,9 @@ import android.util.ArraySet
 import com.android.net.module.util.CollectionUtils
 import com.android.server.ConnectivityService.PREFERENCE_ORDER_APP_OPT_IN
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_OTT
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_OPT_IN
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_ROLE_SMS
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
@@ -135,11 +138,7 @@ class CSSatelliteNetworkTest : CSTest() {
             PREFERENCE_ORDER_APP_OPT_IN
         )
         // Construct the policy object for UIDs with the SMS role.
-        var policy = AppOptInDefaultNetworkPolicy(
-                false /* isSatelliteOptIn */,
-                true /* isSatelliteRoleSms */,
-                false /* isOtt */,
-                uids)
+        var policy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, uids)
         updateAppOptInDefaultNetworkPolicies(listOf(policy))
         netdInOrder.verify(netd).networkAddUidRangesParcel(config1)
         netdInOrder.verify(netd, never()).networkRemoveUidRangesParcel(any())
@@ -153,11 +152,7 @@ class CSSatelliteNetworkTest : CSTest() {
             PREFERENCE_ORDER_APP_OPT_IN
         )
         // Construct the updated policy object with the smaller UID set.
-        policy = AppOptInDefaultNetworkPolicy(
-                false /* isSatelliteOptIn */,
-                true /* isSatelliteRoleSms */,
-                false /* isOtt */,
-                uids)
+        policy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, uids)
         updateAppOptInDefaultNetworkPolicies(listOf(policy))
         netdInOrder.verify(netd).networkRemoveUidRangesParcel(config1)
         netdInOrder.verify(netd).networkAddUidRangesParcel(config2)
@@ -205,11 +200,7 @@ class CSSatelliteNetworkTest : CSTest() {
 
         val uids = setOf(TEST_PACKAGE_UID)
         // Create the policy info object for UIDs with the SMS role.
-        val policy = AppOptInDefaultNetworkPolicy(
-                false /* isSatelliteOptIn */,
-                true /* isSatelliteRoleSms */,
-                false /* isOtt */,
-                uids)
+        val policy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, uids)
         // Call the updated callback method with the list of policy info objects.
         updateAppOptInDefaultNetworkPolicies(listOf(policy))
 
@@ -277,11 +268,7 @@ class CSSatelliteNetworkTest : CSTest() {
         }
 
         // Create the policy info object for myUid with the SMS role.
-        val policy = AppOptInDefaultNetworkPolicy(
-                false /* isSatelliteOptIn */,
-                true /* isSatelliteRoleSms */,
-                false /* isOtt */,
-                setOf(myUid))
+        val policy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, setOf(myUid))
         // Call the updated callback method with the list of policy info objects.
         updateAppOptInDefaultNetworkPolicies(listOf(policy))
         defaultCb.assertNoCallback()
@@ -374,12 +361,7 @@ class CSSatelliteNetworkTest : CSTest() {
 
     private fun assertNrisForAppOptInSmsRoleSatelliteUids(uids: Set<Int>) {
         val policies = listOf(
-                AppOptInDefaultNetworkPolicy(
-                        false /* isSatelliteOptIn */,
-                        true  /* isSatelliteRoleSms */,
-                        false /* isOtt */,
-                        uids
-                )
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, uids)
         )
         val nris = service.createNrisFromAppOptInPolicies(policies)
         val nri = nris.iterator().next()
@@ -493,11 +475,8 @@ class CSSatelliteNetworkTest : CSTest() {
     fun testCreateNrisFromAppOptInPolicies_smsOnly_createsSmsRequest() {
         val uid1 = PRIMARY_USER_HANDLE.getUid(TEST_PACKAGE_UID)
         val uid2 = PRIMARY_USER_HANDLE.getUid(TEST_PACKAGE_UID2)
-        val smsPolicies = listOf(AppOptInDefaultNetworkPolicy(
-                false /* isSatelliteOptIn */,
-                true  /* isSatelliteRoleSms */,
-                false /* isOtt */,
-                setOf(uid1, uid2)))
+        val smsPolicies = listOf(
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, setOf(uid1, uid2)))
 
         val nris = service.createNrisFromAppOptInPolicies(smsPolicies)
 
@@ -511,11 +490,9 @@ class CSSatelliteNetworkTest : CSTest() {
     @Test
     fun testCreateNrisFromAppOptInPolicies_optInOnly_createsOptInRequest() {
         val uid = SECONDARY_USER_HANDLE.getUid(TEST_PACKAGE_UID)
-        val optInPolicies = listOf(AppOptInDefaultNetworkPolicy(
-                true  /* isSatelliteOptIn */,
-                false /* isSatelliteRoleSms */,
-                false /* isOtt */,
-                setOf(uid)))
+        val optInPolicies = listOf(
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN, setOf(uid))
+        )
 
         val nris = service.createNrisFromAppOptInPolicies(optInPolicies)
 
@@ -535,14 +512,12 @@ class CSSatelliteNetworkTest : CSTest() {
         val uidSms = 1001
         val uidOptIn = 1002
         val uidBoth = 1003
+        val policyFlags = POLICY_SATELLITE_OPT_IN or POLICY_SATELLITE_ROLE_SMS
 
         val mixedPolicies = listOf(
-                AppOptInDefaultNetworkPolicy(false  /* isSatelliteOptIn */,
-                        true  /* isSatelliteRoleSms */, false /* isOtt */, setOf(uidSms)),
-                AppOptInDefaultNetworkPolicy(true  /* isSatelliteOptIn */,
-                        false  /* isSatelliteRoleSms */, false /* isOtt */, setOf(uidOptIn)),
-                AppOptInDefaultNetworkPolicy(true /* isSatelliteOptIn */,
-                        true /* isSatelliteRoleSms */, false /* isOtt */, setOf(uidBoth))
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, setOf(uidSms)),
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN, setOf(uidOptIn)),
+                AppOptInDefaultNetworkPolicy(policyFlags, setOf(uidBoth))
         )
 
         val nris = service.createNrisFromAppOptInPolicies(mixedPolicies)
@@ -575,11 +550,7 @@ class CSSatelliteNetworkTest : CSTest() {
     @Test
     fun testCreateAppOptInNrisFromPolicyList_forOnlyOttUids() {
         val ottUid = PRIMARY_USER_HANDLE.getUid(TEST_PACKAGE_UID)
-        val ottPolicy = listOf(AppOptInDefaultNetworkPolicy(
-                false /* isSatelliteOptIn */,
-                false /* isSatelliteRoleSms */,
-                true /* isOtt */,
-                setOf(ottUid)))
+        val ottPolicy = listOf(AppOptInDefaultNetworkPolicy(POLICY_OTT, setOf(ottUid)))
         val nris = service.createNrisFromAppOptInPolicies(ottPolicy)
         assertEquals(1, nris.size)
         val nri = nris.valueAt(0)
@@ -601,23 +572,10 @@ class CSSatelliteNetworkTest : CSTest() {
         val ottUid = 1001
         val smsUid = 1002
         val optInUid = 1003
-
         val mixedPolicyList = listOf(
-                AppOptInDefaultNetworkPolicy(
-                        false /* isSatelliteOptIn */,
-                        false /* isSatelliteRoleSms */,
-                        true /* isOtt */,
-                        setOf(ottUid)),
-                AppOptInDefaultNetworkPolicy(
-                        false /* isSatelliteOptIn */,
-                        true /* isSatelliteRoleSms */,
-                        false /* isOtt */,
-                        setOf(smsUid)),
-                AppOptInDefaultNetworkPolicy(
-                        true /* isSatelliteOptIn */,
-                        false /* isSatelliteRoleSms */,
-                        false /* isOtt */,
-                        setOf(optInUid))
+                AppOptInDefaultNetworkPolicy(POLICY_OTT, setOf(ottUid)),
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, setOf(smsUid)),
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN, setOf(optInUid))
         )
 
         val nris = service.createNrisFromAppOptInPolicies(mixedPolicyList)
@@ -653,11 +611,9 @@ class CSSatelliteNetworkTest : CSTest() {
     @Test
     fun testCreateAppOptInNrisFromPolicyList_forCombinedOttAndSmsPolicy() {
         val commonUid = 1006
-        val combinedPolicy = listOf(AppOptInDefaultNetworkPolicy(
-                false /* isSatelliteOptIn */,
-                true /* isSatelliteRoleSms */,
-                true /* isOtt */,
-                setOf(commonUid)))
+        val combinedPolicyFlags = POLICY_SATELLITE_ROLE_SMS or POLICY_OTT
+        val combinedPolicy = listOf(
+                AppOptInDefaultNetworkPolicy(combinedPolicyFlags, setOf(commonUid)))
 
         val nris = service.createNrisFromAppOptInPolicies(combinedPolicy)
         // A single policy object should result in a single NRI.
@@ -685,11 +641,10 @@ class CSSatelliteNetworkTest : CSTest() {
     @Test
     fun testCreateAppOptInNrisFromPolicyList_forCombinedOttSmsAndOptInPolicy() {
         val commonUid = 1007
-        val combinedPolicy = listOf(AppOptInDefaultNetworkPolicy(
-                true /* isSatelliteOptIn */,
-                true /* isSatelliteRoleSms */,
-                true /* isOtt */,
-                setOf(commonUid)))
+        val combinedPolicyFlags = POLICY_SATELLITE_OPT_IN or POLICY_SATELLITE_ROLE_SMS or POLICY_OTT
+        val combinedPolicy = listOf(
+                AppOptInDefaultNetworkPolicy(combinedPolicyFlags, setOf(commonUid))
+        )
 
         val nris = service.createNrisFromAppOptInPolicies(combinedPolicy)
         // A single policy object results in a single NRI.

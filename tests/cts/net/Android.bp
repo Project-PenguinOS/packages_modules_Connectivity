@@ -61,6 +61,7 @@ java_defaults {
     ],
     jarjar_rules: "jarjar-rules-shared.txt",
     static_libs: [
+        "android.permission.flags-aconfig-java-export",
         "ApfGeneratorLib",
         "bouncycastle-unbundled",
         "FrameworksNetCommonTests",
@@ -115,6 +116,43 @@ android_test {
         "general-tests",
     ],
     resource_zips: [":connectivity-module-version-as-resource-zip"],
+    test_options: {
+        test_runner_options: [
+            {
+                name: "exclude-annotation",
+                value: "com.android.testutils.filters.CtsNetTestCasesLocalNetNoPermissions",
+            },
+        ],
+    },
+}
+
+android_test {
+    name: "CtsNetTestCasesLocalNetNoPermissions", // Must not request local network permission.
+    defaults: ["CtsNetTestCasesDefaults"],
+    test_suites: [
+        "automotive-general-tests",
+        "cts",
+        "general-tests",
+        "mts-tethering",
+        "mcts-tethering",
+    ],
+    target_sdk_version: "36",
+    package_name: "android.net.cts.localnetnopermissions",
+    instrumentation_target_package: "android.net.cts.localnetnopermissions",
+    test_options: {
+        test_runner_options: [
+            {
+                name: "include-annotation",
+                value: "com.android.testutils.filters.CtsNetTestCasesLocalNetNoPermissions",
+            },
+        ],
+        tradefed_options: [
+            {
+                name: "com.android.tradefed.targetprep.suite.SuiteApkInstaller:grant-permissions",
+                value: "false",
+            },
+        ],
+    },
 }
 
 java_defaults {

@@ -36,9 +36,6 @@ import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.ArraySet;
 import android.util.SparseArray;
-
-import androidx.annotation.IntDef;
-
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.net.module.util.CollectionUtils;
@@ -48,13 +45,17 @@ import com.android.net.module.util.SharedLog;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
 import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 import javax.annotation.CheckReturnValue;
+
+import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_NONE;
+import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_ROLE_SMS;
+import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_OPT_IN;
+import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_OTT;
+
 
 /**
  * Tracks the uid of all the default messaging application which are role_sms role and
@@ -106,42 +107,6 @@ public class AppOptInDefaultNetworkController {
      *
      */
     private final Set<Integer> mOttSlicingUids = new ArraySet<>();
-
-    /**
-     * A bitmask of flags representing the network policies that can be applied to a UID.
-     *
-     * <p>These flags are used to create a unique integer key for each combination of
-     * policies, allowing for efficient grouping of UIDs that share the same network
-     * requirements.
-     */
-    @Retention(RetentionPolicy.SOURCE)
-    @IntDef(flag = true, value = {
-            POLICY_NONE,
-            POLICY_SATELLITE_ROLE_SMS,
-            POLICY_SATELLITE_OPT_IN,
-            POLICY_OTT,
-    })
-    public @interface Policy {}
-
-    /** No specific network policy applies. */
-    static final int POLICY_NONE = 0;
-
-    /**
-     * A policy flag indicating that the UID has the SMS role and is eligible for
-     * satellite fallback, including access to restricted networks.
-     */
-    static final int POLICY_SATELLITE_ROLE_SMS = 1 << 0;
-
-    /**
-     * A policy flag indicating that the UID belongs to an application that has
-     * opted-in for satellite network access via its manifest metadata.
-     */
-    static final int POLICY_SATELLITE_OPT_IN = 1 << 1;
-
-    /**
-     * A policy flag indicating that the UID is ott call and is eligible for network slicing
-     */
-    static final int POLICY_OTT = 1 << 2;
 
     /**
      *  Monitor {@link android.app.role.OnRoleHoldersChangedListener#onRoleHoldersChanged(String,
@@ -304,7 +269,7 @@ public class AppOptInDefaultNetworkController {
         }
         mLog.i("SmsRoleUids:" + mergedSatelliteRoleSmsUids
                 + " Opt-InUids:" + mSatelliteDataOptInUids
-                + "ott-uids:" + mOttSlicingUids);
+                + " ott-uids:" + mOttSlicingUids);
 
         // Group UIDs by their unique combination of policies using a bitmask.
         // SparseArray is efficient for integer keys. ArraySet for the UID values.
@@ -337,11 +302,7 @@ public class AppOptInDefaultNetworkController {
         for (int i = 0; i < uidsByPolicyFlags.size(); i++) {
             final int policyFlags = uidsByPolicyFlags.keyAt(i);
             final Set<Integer> uids = uidsByPolicyFlags.valueAt(i);
-            policies.add(new AppOptInDefaultNetworkPolicy(
-                    (policyFlags & POLICY_SATELLITE_OPT_IN) != 0,
-                    (policyFlags & POLICY_SATELLITE_ROLE_SMS) != 0,
-                    (policyFlags & POLICY_OTT) != 0,
-                    uids));
+            policies.add(new AppOptInDefaultNetworkPolicy(policyFlags, uids));
         }
         return policies;
     }

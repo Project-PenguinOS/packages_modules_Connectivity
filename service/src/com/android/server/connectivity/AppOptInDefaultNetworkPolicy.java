@@ -16,8 +16,11 @@
 
 package com.android.server.connectivity;
 
+import android.annotation.IntDef;
 import android.util.ArraySet;
 import androidx.annotation.NonNull;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
@@ -28,30 +31,65 @@ import java.util.Set;
  * that share the same policy.
  */
 public class AppOptInDefaultNetworkPolicy {
-    private final boolean mIsSatelliteOptIn;
-    private final boolean mIsSatelliteRoleSms;
-    private final boolean mIsOtt;
+
+    /**
+     * A bitmask of flags representing the network policies that can be applied to a UID.
+     *
+     * <p>These flags are used to create a unique integer key for each combination of
+     * policies, allowing for efficient grouping of UIDs that share the same network
+     * requirements.
+     */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(flag = true, prefix = { "POLICY_" }, value = {
+            POLICY_NONE,
+            POLICY_SATELLITE_ROLE_SMS,
+            POLICY_SATELLITE_OPT_IN,
+            POLICY_OTT,
+    })
+    public @interface Policy {}
+
+    /** No specific network policy applies. */
+    public static final int POLICY_NONE = 0;
+
+    /**
+     * A policy flag indicating that the UID has the SMS role and is eligible for
+     * satellite fallback, including access to restricted networks.
+     */
+    public static final int POLICY_SATELLITE_ROLE_SMS = 1 << 0;
+
+    /**
+     * A policy flag indicating that the UID belongs to an application that has
+     * opted-in for satellite network access via its manifest metadata.
+     */
+    public static final int POLICY_SATELLITE_OPT_IN = 1 << 1;
+
+    /**
+     * A policy flag indicating that the UID is ott call and is eligible for network slicing
+     */
+    public static final int POLICY_OTT = 1 << 2;
+
+    @Policy
+    private final int mPolicyFlags;
     private final Set<Integer> mUids;
 
-    // TODO (b/449897733): Refactor the constructor to Accept bitmask (policyFlags)
-    public AppOptInDefaultNetworkPolicy(boolean isSatelliteOptIn, boolean isSatelliteRoleSms,
-            boolean isOtt, @NonNull Set<Integer> uids) {
-        mIsSatelliteOptIn = isSatelliteOptIn;
-        mIsSatelliteRoleSms = isSatelliteRoleSms;
-        mIsOtt = isOtt;
+    /**
+     * Constructor accepts an integer bitmask of policy flags.
+     */
+    public AppOptInDefaultNetworkPolicy(@Policy int policyFlags, @NonNull Set<Integer> uids) {
+        mPolicyFlags = policyFlags;
         mUids = Collections.unmodifiableSet(new ArraySet<>(uids));
     }
 
     public boolean isSatelliteOptIn() {
-        return mIsSatelliteOptIn;
+        return (mPolicyFlags & POLICY_SATELLITE_OPT_IN) != 0;
     }
 
     public boolean isSatelliteRoleSms() {
-        return mIsSatelliteRoleSms;
+        return (mPolicyFlags & POLICY_SATELLITE_ROLE_SMS) != 0;
     }
 
     public boolean isOtt() {
-        return mIsOtt;
+        return (mPolicyFlags & POLICY_OTT) != 0;
     }
 
     @NonNull
@@ -64,28 +102,18 @@ public class AppOptInDefaultNetworkPolicy {
         if (this == o) return true;
         if (!(o instanceof AppOptInDefaultNetworkPolicy)) return false;
         AppOptInDefaultNetworkPolicy that = (AppOptInDefaultNetworkPolicy) o;
-        return mIsSatelliteOptIn == that.mIsSatelliteOptIn &&
-                mIsSatelliteRoleSms == that.mIsSatelliteRoleSms &&
-                mIsOtt == that.mIsOtt &&
-                mUids.equals(that.mUids);
+        return mPolicyFlags == that.mPolicyFlags && mUids.equals(that.mUids);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mIsSatelliteOptIn, mIsSatelliteRoleSms, mIsOtt, mUids);
+        return Objects.hash(mPolicyFlags, mUids);
     }
 
     @Override
     public String toString() {
         return "AppOptInDefaultNetworkPolicy{"
-                + "isSatelliteOptIn="
-                + mIsSatelliteOptIn
-                + ", isSatelliteRoleSms="
-                + mIsSatelliteRoleSms
-                + ", isOtt="
-                + mIsOtt
-                + ", uids="
-                + mUids
-                + '}';
+                + "policyFlags=" + mPolicyFlags
+                + ", uids=" + mUids + '}';
     }
 }

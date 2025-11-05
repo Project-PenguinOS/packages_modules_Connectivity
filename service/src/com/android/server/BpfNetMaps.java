@@ -44,7 +44,6 @@ import static android.system.OsConstants.ENODEV;
 import static android.system.OsConstants.ENOENT;
 import static android.system.OsConstants.EOPNOTSUPP;
 
-import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
 import static com.android.server.connectivity.NetworkPermissions.PERMISSION_NONE;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_INTERNET;
@@ -389,7 +388,7 @@ public class BpfNetMaps {
             throw new IllegalStateException("Failed to initialize ingress discard map", e);
         }
 
-        if (isAtLeastB()) {
+        if (isAtLeast25Q2()) {
             if (sLocalNetAccessMap == null) {
                 sLocalNetAccessMap = getLocalNetAccessMap();
             }
@@ -525,9 +524,18 @@ public class BpfNetMaps {
     }
 
     private void throwIfPre25Q2(final String msg) {
-        if (!isAtLeastB()) {
+        if (!isAtLeast25Q2()) {
             throw new UnsupportedOperationException(msg);
         }
+    }
+
+    /*
+     ToDo : Remove this method when SdkLevel.isAtLeastB() is fixed, aosp is at sdk level 36 or use
+     NetworkStackUtils.isAtLeast25Q2 when it is moved to a static lib.
+     */
+    public static boolean isAtLeast25Q2() {
+        return SdkLevel.isAtLeastB()  || (SdkLevel.isAtLeastV()
+                && "Baklava".equals(Build.VERSION.CODENAME));
     }
 
     private void removeRule(final int uid, final long match, final String caller) {

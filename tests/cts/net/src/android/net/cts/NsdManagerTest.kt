@@ -15,10 +15,13 @@
  */
 package android.net.cts
 
+import android.Manifest.permission.ACCESS_LOCAL_NETWORK
 import android.Manifest.permission.MANAGE_TEST_NETWORKS
+import android.Manifest.permission.NEARBY_WIFI_DEVICES
 import android.Manifest.permission.NETWORK_SETTINGS
 import android.Manifest.permission.READ_DEVICE_CONFIG
 import android.app.compat.CompatChanges
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.ConnectivityManager.NetworkCallback
 import android.net.DnsResolver
@@ -49,6 +52,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.platform.test.annotations.AppModeFull
+import android.platform.test.annotations.RequiresFlagsDisabled
+import android.platform.test.annotations.RequiresFlagsEnabled
+import android.platform.test.flag.junit.DeviceFlagsValueProvider
 import android.provider.DeviceConfig.NAMESPACE_TETHERING
 import android.system.OsConstants.ETH_P_IPV6
 import android.system.OsConstants.IPPROTO_IPV6
@@ -78,6 +84,7 @@ import com.android.testutils.NsdDiscoveryRecord.DiscoveryEvent.DiscoveryStarted
 import com.android.testutils.NsdDiscoveryRecord.DiscoveryEvent.DiscoveryStopped
 import com.android.testutils.NsdDiscoveryRecord.DiscoveryEvent.ServiceFound
 import com.android.testutils.NsdDiscoveryRecord.DiscoveryEvent.ServiceLost
+import com.android.testutils.NsdDiscoveryRecord.DiscoveryEvent.StartDiscoveryFailed
 import com.android.testutils.NsdEvent
 import com.android.testutils.NsdRecord
 import com.android.testutils.NsdRegistrationRecord
@@ -86,19 +93,23 @@ import com.android.testutils.NsdRegistrationRecord.RegistrationEvent.ServiceRegi
 import com.android.testutils.NsdRegistrationRecord.RegistrationEvent.ServiceUnregistered
 import com.android.testutils.NsdResolveRecord
 import com.android.testutils.NsdResolveRecord.ResolveEvent.ResolutionStopped
+import com.android.testutils.NsdResolveRecord.ResolveEvent.ResolveFailed
 import com.android.testutils.NsdResolveRecord.ResolveEvent.ServiceResolved
 import com.android.testutils.NsdResolveRecord.ResolveEvent.StopResolutionFailed
 import com.android.testutils.NsdServiceInfoCallbackRecord
+import com.android.testutils.NsdServiceInfoCallbackRecord.ServiceInfoCallbackEvent.RegisterCallbackFailed
 import com.android.testutils.NsdServiceInfoCallbackRecord.ServiceInfoCallbackEvent.ServiceUpdated
 import com.android.testutils.NsdServiceInfoCallbackRecord.ServiceInfoCallbackEvent.ServiceUpdatedLost
 import com.android.testutils.NsdServiceInfoCallbackRecord.ServiceInfoCallbackEvent.UnregisterCallbackSucceeded
 import com.android.testutils.PollPacketReader
-import com.android.testutils.TestableNetworkCallback.Event.CapabilitiesChanged
-import com.android.testutils.TestableNetworkCallback.Event.LinkPropertiesChanged
 import com.android.testutils.TestDnsPacket
 import com.android.testutils.TestableNetworkAgent
 import com.android.testutils.TestableNetworkCallback
+import com.android.testutils.TestableNetworkCallback.Event.CapabilitiesChanged
+import com.android.testutils.TestableNetworkCallback.Event.LinkPropertiesChanged
 import com.android.testutils.assertEmpty
+import com.android.testutils.assertThrows
+import com.android.testutils.filters.CtsNetTestCasesLocalNetNoPermissions
 import com.android.testutils.filters.CtsNetTestCasesMaxTargetSdk30
 import com.android.testutils.filters.CtsNetTestCasesMaxTargetSdk33
 import com.android.testutils.pollForAdvertisement
@@ -152,6 +163,8 @@ private const val MDNS_PORT = 5353.toShort()
 private const val TYPE_KEY = 25
 private const val QCLASS_INTERNET = 0x0001
 private const val NAME_RECORDS_TTL_MILLIS: Long = 120
+private const val FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED =
+    "android.net.connectivity.android.permission.flags.access_local_network_permission_enabled"
 private val multicastIpv6Addr = parseNumericAddress("ff02::fb") as Inet6Address
 private val testSrcAddr = parseNumericAddress("2001:db8::123") as Inet6Address
 
@@ -167,6 +180,9 @@ class NsdManagerTest {
 
     @get:Rule
     val deviceConfigRule = DeviceConfigRule()
+
+    @get:Rule
+    val checkFlagsRule = DeviceFlagsValueProvider.createCheckFlagsRule()!!
 
     private val context by lazy { InstrumentationRegistry.getInstrumentation().context }
     private val nsdManager by lazy {
@@ -242,8 +258,12 @@ class NsdManagerTest {
             TestableNetworkAgent.makeNetworkRequestForInterface(iface.interfaceName),
             cb
         )
-        val agent = TestableNetworkAgent.createOnInterface(context, handlerThread.looper,
-            iface.interfaceName, TIMEOUT_MS)
+        val agent = TestableNetworkAgent.createOnInterface(
+            context,
+            handlerThread.looper,
+            iface.interfaceName,
+            TIMEOUT_MS
+        )
         val network = agent.network ?: fail("Registered agent should have a network")
 
         cb.eventuallyExpect<LinkPropertiesChanged>(TIMEOUT_MS) {
@@ -554,6 +574,46 @@ class NsdManagerTest {
         }
     }
 
+    @Test
+    @CtsNetTestCasesLocalNetNoPermissions
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    fun testDiscoverServices_missingLocalNetPermission_failsPermissionDenied() {
+        val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
+        assertEquals(PackageManager.PERMISSION_DENIED, perm)
+
+        val discoveryRecord = NsdDiscoveryRecord()
+        nsdManager.discoverServices(
+            serviceType,
+            NsdManager.PROTOCOL_DNS_SD,
+            testNetwork1.network,
+            Executor { it.run() },
+            discoveryRecord
+        )
+        val failedCb = discoveryRecord.expectCallback<StartDiscoveryFailed>()
+        assertEquals(NsdManager.FAILURE_PERMISSION_DENIED, failedCb.errorCode)
+    }
+
+    @Test
+    @CtsNetTestCasesLocalNetNoPermissions
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsDisabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    fun testLocalNetworkDevOptIn_permissionCheckFails_returnsInternalError() {
+        val perm = context.checkSelfPermission(NEARBY_WIFI_DEVICES)
+        assertEquals(PackageManager.PERMISSION_DENIED, perm)
+
+        val discoveryRecord = NsdDiscoveryRecord()
+        nsdManager.discoverServices(
+            serviceType,
+            NsdManager.PROTOCOL_DNS_SD,
+            testNetwork1.network,
+            Executor { it.run() },
+            discoveryRecord
+        )
+        val failedCb = discoveryRecord.expectCallback<StartDiscoveryFailed>()
+        assertEquals(NsdManager.FAILURE_INTERNAL_ERROR, failedCb.errorCode)
+    }
+
     private fun checkAddressScopeId(iface: TestNetworkInterface, address: List<InetAddress>) {
         val targetSdkVersion = context.packageManager
             .getTargetSdkVersion(context.applicationInfo.packageName)
@@ -722,6 +782,19 @@ class NsdManagerTest {
             nsdManager.unregisterService(registrationRecord1)
             nsdManager.unregisterService(registrationRecord2)
         }
+    }
+
+    @Test
+    @CtsNetTestCasesLocalNetNoPermissions
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    fun testRegisterService_missingLocalNetworkPermission_throwsSecurityException() {
+        val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
+        assertEquals(PackageManager.PERMISSION_DENIED, perm)
+
+        val si = makeTestServiceInfo()
+        val registrationRecord = NsdRegistrationRecord()
+        assertThrows(SecurityException::class.java, { registerService(registrationRecord, si) })
     }
 
     fun checkOffloadServiceInfo(serviceInfo: OffloadServiceInfo, si: NsdServiceInfo) {
@@ -951,6 +1024,21 @@ class NsdManagerTest {
     }
 
     @Test
+    @CtsNetTestCasesLocalNetNoPermissions
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    fun testResolveService_missingLocalNetworkPermission_failsPermissionDenied() {
+        val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
+        assertEquals(PackageManager.PERMISSION_DENIED, perm)
+
+        val si = makeTestServiceInfo()
+        val resolveRecord = NsdResolveRecord()
+        nsdManager.resolveService(si, { it.run() }, resolveRecord)
+        val failedCb = resolveRecord.expectCallback<ResolveFailed>()
+        assertEquals(NsdManager.FAILURE_PERMISSION_DENIED, failedCb.errorCode)
+    }
+
+    @Test
     fun testRegisterServiceInfoCallback() {
         val lp = cm.getLinkProperties(testNetwork1.network)
         assertNotNull(lp)
@@ -995,6 +1083,21 @@ class NsdManagerTest {
             nsdManager.stopServiceDiscovery(discoveryRecord)
             discoveryRecord.expectCallback<DiscoveryStopped>()
         }
+    }
+
+    @Test
+    @CtsNetTestCasesLocalNetNoPermissions
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    fun testRegisterServiceInfoCallback_missingLocalNetworkPermission_failsPermissionDenied() {
+        val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
+        assertEquals(PackageManager.PERMISSION_DENIED, perm)
+
+        val si = makeTestServiceInfo()
+        val cbRecord = NsdServiceInfoCallbackRecord()
+        nsdManager.registerServiceInfoCallback(si, { it.run() }, cbRecord)
+        val failedCb = cbRecord.expectCallback<RegisterCallbackFailed>()
+        assertEquals(NsdManager.FAILURE_PERMISSION_DENIED, failedCb.errorCode)
     }
 
     @Test

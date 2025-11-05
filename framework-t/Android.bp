@@ -60,6 +60,7 @@ java_defaults {
         "androidx.annotation_annotation",
     ],
     static_libs: [
+        "android.permission.flags-aconfig-java-export",
         // Cannot go to framework-connectivity because mid_sdk checks require 31.
         "modules-utils-binary-xml",
         "com.android.nearby.flags-aconfig-java",
