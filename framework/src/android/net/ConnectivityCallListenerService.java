@@ -30,8 +30,12 @@ import android.telecom.InCallService;
 import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telecom.TelecomManager;
+import android.util.ArrayMap;
 import android.util.Log;
+
 import com.android.tethering.flags.Flags;
+
+import java.util.Map;
 
 /**
  * An {@link InCallService} that monitors the state of calls to influence system-level network
@@ -71,6 +75,9 @@ public class ConnectivityCallListenerService extends InCallService {
     private boolean mSupportOttNetworkSlicing;
     private TelecomManager mTelecomManager;
 
+    // Caches the UID for each individual call
+    private final Map<String, Integer> mCallUidMap = new ArrayMap<>();
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -78,8 +85,8 @@ public class ConnectivityCallListenerService extends InCallService {
         mPackageManager = getPackageManager();
         mConnectivityManager = getSystemService(ConnectivityManager.class);
         mTelecomManager = getSystemService(TelecomManager.class);
-        mSupportOttNetworkSlicing = mConnectivityManager
-                .isFeatureEnabled(ConnectivityManager.FEATURE_OTT_NETWORK_SLICING);
+        mSupportOttNetworkSlicing = mConnectivityManager.isFeatureEnabled(
+                ConnectivityManager.FEATURE_OTT_NETWORK_SLICING);
         if (DBG) Log.d(TAG, "ott network slicing status:" + mSupportOttNetworkSlicing);
     }
 
@@ -92,7 +99,7 @@ public class ConnectivityCallListenerService extends InCallService {
             if (DBG) Log.d(TAG, "ott network slicing feature is disabled");
             return;
         }
-        handleCallUpdate(call, true /* isAdd */);
+        handleOnCallAdded(call);
     }
 
     @Override
@@ -104,9 +111,22 @@ public class ConnectivityCallListenerService extends InCallService {
             if (DBG) Log.d(TAG, "ott network slicing feature is disabled");
             return;
         }
+
         // TODO (b/448566948): Different ott apps sharing same uid with same time call,
         //  call ending scenario to be checked and handled if needed
-        handleCallUpdate(call, false /* isAdd */);
+        if (call == null || call.getDetails() == null) {
+            Log.w(TAG, "onCallRemoved: Ignoring call with null call or details.");
+            return;
+        }
+
+        final String callId = call.getDetails().getId();
+        final Integer uid = mCallUidMap.remove(callId);
+        if (uid == null) {
+            return;
+        }
+        Log.i(TAG, "Processing transactional OTT onCallRemoved state for call ID with uid: "
+                + callId + " : " + uid);
+        mConnectivityManager.onOttCallStateChanged(uid, false /*isAdd*/);
     }
 
     /**
@@ -152,8 +172,8 @@ public class ConnectivityCallListenerService extends InCallService {
     }
 
     /**
-     * Handles call state updates from InCallService, filters for valid, eligible OTT calls,
-     * and notifies the {@link com.android.server.ConnectivityService}.
+     * Handles call state onCallAdded updates from InCallService, filters for valid,
+     * eligible OTT calls, and notifies the {@link com.android.server.ConnectivityService}.
      *
      * <p>This is the primary implementation of this method for OTT network slicing.
      * It listens for transactional OTT calls and notifies the
@@ -161,36 +181,35 @@ public class ConnectivityCallListenerService extends InCallService {
      * {@link NetworkCapabilities#NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS}
      * network slice for the corresponding application UID to ensure a higher Quality of Service.
      */
-    private void handleCallUpdate(@Nullable Call call, boolean isAdd) {
+    private void handleOnCallAdded(@Nullable Call call) {
         if (call == null || call.getDetails() == null) {
-            Log.w(TAG, "handleCallUpdate: Ignoring call with null call or details.");
+            Log.w(TAG, "handleOnCallAdded: Ignoring call with null call or details.");
             return;
         }
         final Call.Details details = call.getDetails();
 
         final PhoneAccountHandle handle = details.getAccountHandle();
         if (handle == null) {
-            Log.w(TAG, "handleCallUpdate: Ignoring call with null PhoneAccountHandle.");
+            Log.w(TAG, "handleOnCallAdded: Ignoring call with null PhoneAccountHandle.");
             return;
         }
 
         if (!isTransactionalOttCall(details, handle)) {
-            if (DBG) Log.d(TAG, "handleCallUpdate: ignoring non transactional ott call");
+            if (DBG) Log.d(TAG, "handleOnCallAdded: ignoring non transactional ott call");
             return;
         }
 
-        // TODO (b/448546376): OTT app uninstalled during calling, this is expected to fail due to
-        //  package info not found scenario. To be handled for active ott slicing request removal
-        //  for the scenario
         final int uid = getUidFromCall(handle);
         if (uid == Process.INVALID_UID) {
-            Log.w(TAG, "handleCallUpdate: Ignoring call with invalid UID.");
+            Log.w(TAG, "handleOnCallAdded: Ignoring call with invalid UID for add.");
             return;
         }
+        final String callId = details.getId();
+        mCallUidMap.put(callId, uid);
 
-        Log.i(TAG, "Processing transactional OTT call state change for UID: " + uid
-                + ", isAdd: " + isAdd);
-        mConnectivityManager.onOttCallStateChanged(uid, isAdd);
+        Log.i(TAG, "Processing transactional OTT onCallAdded state for call ID with uid: "
+                + callId + " : " + uid);
+        mConnectivityManager.onOttCallStateChanged(uid, true /*isAdd*/);
     }
 
     @Override

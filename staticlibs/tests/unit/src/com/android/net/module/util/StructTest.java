@@ -83,6 +83,12 @@ public class StructTest {
     private static final Inet6Address TEST_IPV6_ADDRESS =
             (Inet6Address) InetAddresses.parseNumericAddress("2001:db8:3:4:5:6:7:8");
 
+    // [S64, S64, S64, S64]: [0x7fffffffffffffff, 0x7fffffffffffffff, 0x7fffffffffffffff,
+    // 0x7fffffffffffffff]
+    private static final int TEST_LONG_ARRAY_SIZE = 4;
+    private static final String LONG_ARRAY_DATA = "ffffffffffffff7f"
+            + "ffffffffffffff7f" + "ffffffffffffff7f" + "ffffffffffffff7f";
+
     private <T> T doParsingMessageTest(final String hexString, final Class<T> clazz,
             final ByteOrder order) {
         final ByteBuffer buf = toByteBuffer(hexString);
@@ -1140,5 +1146,56 @@ public class StructTest {
         msg = doParsingMessageTest("20010db80003000400050006", InvalidByteArray.class,
                 ByteOrder.BIG_ENDIAN);
         assertArrayEquals(TEST_PREFIX64, msg.bytes);
+    }
+
+    public static class LongArrayMessage extends Struct {
+        @Field(
+            order = 0,
+            type = Type.S64Array,
+            arraysize = TEST_LONG_ARRAY_SIZE
+        )
+        public final long[] mS64Array;
+
+        LongArrayMessage(final long[] s64Array) {
+            this.mS64Array = s64Array;
+        }
+    }
+
+    @Test
+    public void testLongArrayData() {
+        final LongArrayMessage msg = doParsingMessageTest(
+            LONG_ARRAY_DATA,
+            LongArrayMessage.class,
+            ByteOrder.LITTLE_ENDIAN);
+        final long[] expectedLongArray = new long[TEST_LONG_ARRAY_SIZE];
+        Arrays.fill(expectedLongArray, 9223372036854775807L);
+        assertArrayEquals(expectedLongArray, msg.mS64Array);
+
+        assertEquals(
+            TEST_LONG_ARRAY_SIZE * 8,
+            Struct.getSize(LongArrayMessage.class)
+        );
+        assertArrayEquals(
+            toByteBuffer(LONG_ARRAY_DATA).array(), msg.writeToBytes());
+    }
+
+    public static class LongArrayMessageWithZeroLengthArray extends Struct {
+        @Field(
+            order = 0,
+            type = Type.S64Array,
+            arraysize = 0
+        )
+        public final long[] mS64Array;
+
+        LongArrayMessageWithZeroLengthArray(final long[] s64Array) {
+            this.mS64Array = s64Array;
+        }
+    }
+
+    @Test
+    public void testLongArrayData_ZeroLengthLongArray() {
+        final ByteBuffer buf = toByteBuffer(LONG_ARRAY_DATA);
+        assertThrows(IllegalArgumentException.class,
+                () -> Struct.parse(LongArrayMessageWithZeroLengthArray.class, buf));
     }
 }

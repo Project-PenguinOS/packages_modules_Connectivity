@@ -17,6 +17,7 @@
 package android.net.cts
 
 import android.content.ComponentName
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Process
 import android.telecom.Connection
@@ -31,6 +32,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import org.junit.After
+import org.junit.Assume
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,9 +47,14 @@ class ConnectivityCallListenerServiceTest {
     private val telecomManager = context.getSystemService(TelecomManager::class.java)!!
     private lateinit var phoneAccountHandle: PhoneAccountHandle
     private val myUid = Process.myUid()
+    private val packageManager = context.packageManager
 
     @Before
     fun setUp() {
+        Assume.assumeTrue(
+            "Device does not support FEATURE_TELEPHONY",
+                packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY)
+        )
         // Set up a self-managed PhoneAccount to simulate an OTT calling app.
         phoneAccountHandle = PhoneAccountHandle(
             ComponentName(context, TestConnectionService::class.java),

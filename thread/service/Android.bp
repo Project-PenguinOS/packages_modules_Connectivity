@@ -51,6 +51,9 @@ java_library {
         "ot-daemon-aidl-java",
     ],
     apex_available: ["com.android.tethering"],
+    lint: {
+        baseline_filename: "lint-baseline.xml",
+    },
 }
 
 cc_library_shared {

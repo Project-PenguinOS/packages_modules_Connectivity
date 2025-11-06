@@ -40,6 +40,7 @@ import static android.permission.PermissionManager.PERMISSION_GRANTED;
 import static android.permission.flags.Flags.accessLocalNetworkPermissionEnabled;
 import static android.provider.DeviceConfig.NAMESPACE_TETHERING;
 
+import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.modules.utils.build.SdkLevel.isAtLeastU;
 import static com.android.networkstack.apishim.ConstantsShim.REGISTER_NSD_OFFLOAD_ENGINE;
 import static com.android.server.connectivity.mdns.MdnsAdvertiser.AdvertiserMetrics;
@@ -567,7 +568,7 @@ public class NsdService extends INsdManager.Stub {
     private String getLocalNetworkPermission(int uid) {
         if (SdkLevel.isAtLeastB() && accessLocalNetworkPermissionEnabled()) {
             return Manifest.permission.ACCESS_LOCAL_NETWORK;
-        } else if (BpfNetMaps.isAtLeast25Q2()
+        } else if (isAtLeastB()
                 && com.android.tethering.mainline.beta.Flags.lnpDeveloperOptIn()
                 && CompatChanges.isChangeEnabled(RESTRICT_LOCAL_NETWORK, uid)) {
             return Manifest.permission.NEARBY_WIFI_DEVICES;
@@ -2114,8 +2115,14 @@ public class NsdService extends INsdManager.Stub {
                         mContext, MdnsFeatureFlags.NSD_UNICAST_REPLY_ENABLED))
                 .setIsAggressiveQueryModeEnabled(mDeps.isFeatureEnabled(
                         mContext, MdnsFeatureFlags.NSD_AGGRESSIVE_QUERY_MODE))
-                .setIsQueryWithKnownAnswerEnabled(mDeps.isFeatureEnabled(
-                        mContext, MdnsFeatureFlags.NSD_QUERY_WITH_KNOWN_ANSWER))
+                .setIsQueryWithKnownAnswerEnabled(mDeps.isAconfigFlagEnabled(
+                        com.android.tethering.flags.Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER))
+                // Both accurate_delay_callback and optimized_expired_service_removal features are
+                // tied with query_with_known_answer feature.
+                .setIsAccurateDelayCallbackEnabled(mDeps.isAconfigFlagEnabled(
+                        com.android.tethering.flags.Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER))
+                .setIsOptimizedExpiredServiceRemovalEnabled(mDeps.isAconfigFlagEnabled(
+                        com.android.tethering.flags.Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER))
                 .setAvoidAdvertisingEmptyTxtRecords(mDeps.isTetheringFeatureNotChickenedOut(
                         mContext, MdnsFeatureFlags.NSD_AVOID_ADVERTISING_EMPTY_TXT_RECORDS))
                 .setIsCachedServicesRemovalEnabled(mDeps.isTetheringFeatureNotChickenedOut(
@@ -2218,6 +2225,8 @@ public class NsdService extends INsdManager.Stub {
             return switch (feature) {
                 case Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD ->
                         Flags.nsdSelectiveMdnsResponseOffload();
+                case com.android.tethering.flags.Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER ->
+                        com.android.tethering.flags.Flags.nsdQueryWithKnownAnswer();
                 default -> throw new IllegalStateException("Unknown flag " + feature);
             };
         }
@@ -2574,7 +2583,7 @@ public class NsdService extends INsdManager.Stub {
         // AttributionSource builder method setPid() introduced in U, but check for 25Q2 here to
         // consolidate SDK level checks, since attribution source is only used for permission checks
         // introduced in 25Q2 and later.
-        if (BpfNetMaps.isAtLeast25Q2()) {
+        if (isAtLeastB()) {
             return new AttributionSource.Builder(uid).setPid(pid).build();
         }
         return null;

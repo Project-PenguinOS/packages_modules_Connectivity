@@ -257,9 +257,9 @@ public class NetworkStatsManagerTest {
     private void exerciseRemoteHost(@NonNull Network network, @NonNull URL url) throws Exception {
         NetworkInfo networkInfo = mCm.getNetworkInfo(network);
         if (networkInfo == null) {
-            Log.w(LOG_TAG, "Network info is null");
+            fail("Network info is null for network " + network);
         } else {
-            Log.w(LOG_TAG, "Network: " + networkInfo.toString());
+            Log.w(LOG_TAG, "Network: " + networkInfo);
         }
         BufferedInputStream in = null;
         HttpURLConnection urlc = null;
@@ -275,15 +275,22 @@ public class NetworkStatsManagerTest {
             // not be affected by the small amount of traffic (5-10kB) sent by the test harness.
             urlc.setRequestProperty("Accept-Encoding", "identity");
             urlc.connect();
-            boolean ping = urlc.getResponseCode() == 200;
-            if (ping) {
+            final int responseCode = urlc.getResponseCode();
+            if (responseCode == 200) {
                 in = new BufferedInputStream((InputStream) urlc.getContent());
                 while (in.read() != -1) {
                     // Comments to suppress lint error.
                 }
+            } else {
+                fail("Unexpected response code on " + url
+                        + ". Response code: " + responseCode
+                        + ". Network info: " + networkInfo
+                        + ". Please check website connectivity.");
             }
         } catch (Exception e) {
-            Log.i(LOG_TAG, "Badness during exercising remote server: " + e);
+            fail("Exception while exercising remote host " + url
+                    + ". Network info: " + networkInfo
+                    + ". Please check internet connectivity. Exception: " + e);
         } finally {
             TrafficStats.clearThreadStatsTag();
             if (in != null) {

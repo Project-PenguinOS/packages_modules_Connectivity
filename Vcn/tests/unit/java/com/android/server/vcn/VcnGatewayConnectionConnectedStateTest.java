@@ -79,6 +79,7 @@ import com.android.server.vcn.VcnGatewayConnection.VcnChildSessionCallback;
 import com.android.server.vcn.VcnGatewayConnection.VcnChildSessionConfiguration;
 import com.android.server.vcn.VcnGatewayConnection.VcnIkeSession;
 import com.android.server.vcn.VcnGatewayConnection.VcnNetworkAgent;
+import com.android.server.vcn.metrics.VcnMetrics;
 import com.android.server.vcn.routeselection.UnderlyingNetworkRecord;
 
 import org.junit.Before;
@@ -173,6 +174,11 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
         assertEquals(mGatewayConnection.mConnectedState, mGatewayConnection.getCurrentState());
         verify(mIkeSession, never()).close();
         verify(mIkeSession).setNetwork(TEST_UNDERLYING_NETWORK_RECORD_2.network);
+        verify(mVcnMetrics)
+                .logUnderlyingNetworkSwitched(
+                        anyInt(),
+                        eq(VcnMetrics.TRANSPORT_MASK_CELLULAR),
+                        eq(VcnMetrics.TRANSPORT_MASK_WIFI));
     }
 
     @Test
@@ -183,6 +189,8 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
         mTestLooper.dispatchAll();
 
         assertEquals(mGatewayConnection.mConnectedState, mGatewayConnection.getCurrentState());
+        verify(mIkeSession, never()).setNetwork(any());
+        verify(mVcnMetrics, never()).logUnderlyingNetworkSwitched(anyInt(), anyInt(), anyInt());
     }
 
     private void verifyDataStallTriggersMigration(

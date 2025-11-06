@@ -212,7 +212,6 @@ import android.net.ConnectivityManager;
 import android.net.ConnectivityManager.BlockedReason;
 import android.net.ConnectivityManager.NetworkCallback;
 import android.net.ConnectivityManager.RestrictBackgroundStatus;
-import android.net.NetworkCapabilities.RedactionHelper;
 import android.net.ConnectivitySettingsManager;
 import android.net.DataStallReportParcelable;
 import android.net.DnsResolverServiceManager;
@@ -248,6 +247,7 @@ import android.net.NetworkAgent;
 import android.net.NetworkAgentConfig;
 import android.net.NetworkAndAgentRegistryParcelable;
 import android.net.NetworkCapabilities;
+import android.net.NetworkCapabilities.RedactionHelper;
 import android.net.NetworkInfo;
 import android.net.NetworkInfo.DetailedState;
 import android.net.NetworkMonitorManager;
@@ -362,6 +362,7 @@ import com.android.net.module.util.BinderUtils;
 import com.android.net.module.util.BitUtils;
 import com.android.net.module.util.BpfUtils;
 import com.android.net.module.util.CollectionUtils;
+import com.android.net.module.util.ConnectivityUtils;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.HandlerUtils;
 import com.android.net.module.util.InterfaceParams;
@@ -386,6 +387,7 @@ import com.android.networkstack.apishim.BroadcastOptionsShimImpl;
 import com.android.networkstack.apishim.ConstantsShim;
 import com.android.networkstack.apishim.common.BroadcastOptionsShim;
 import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
+import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy;
 import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabilities;
 import com.android.server.connectivity.AutodestructReference;
@@ -422,7 +424,6 @@ import com.android.server.connectivity.ProfileNetworkPreferenceInfo;
 import com.android.server.connectivity.ProxyTracker;
 import com.android.server.connectivity.QosCallbackTracker;
 import com.android.server.connectivity.QuicConnectionCloser;
-import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.UidRangeUtils;
 import com.android.server.connectivity.VpnNetworkPreferenceInfo;
 import com.android.server.connectivity.wear.CompanionDeviceManagerProxyService;
@@ -2119,6 +2120,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
             return com.android.tethering.mainline.beta.Flags
                     .queueNetworkAgentEventsInSystemServer();
         }
+
+        /**
+         * @see com.android.tethering.mainline.beta.Flags#lnpDeveloperOptIn()
+         */
+        public boolean isLnpDeveloperOptInEnabled() {
+            return com.android.tethering.mainline.beta.Flags.lnpDeveloperOptIn();
+        }
     }
 
     public ConnectivityService(Context context) {
@@ -2243,8 +2251,6 @@ public class ConnectivityService extends IConnectivityManager.Stub
         mCarrierPrivilegeAuthenticator = mDeps.makeCarrierPrivilegeAuthenticator(
                 mContext, mTelephonyManager, mRequestRestrictedWifiEnabled,
                 this::handleUidCarrierPrivilegesLost, mHandler);
-        mIsOttNetworkSlicingEnabled =  mDeps.isFeatureNotChickenedOut(context,
-                ConnectivityFlags.OTT_NETWORK_SLICING);
 
         if (mDeps.isAtLeastU()
                 && mDeps.isFeatureNotChickenedOut(mContext, ALLOW_SATALLITE_NETWORK_FALLBACK)) {
@@ -2253,6 +2259,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
         } else {
             mAppOptInDefaultNetworkController = null;
         }
+        mIsOttNetworkSlicingEnabled = (mAppOptInDefaultNetworkController != null)
+                && mDeps.isFeatureNotChickenedOut(context, ConnectivityFlags.OTT_NETWORK_SLICING);
         mConstrainedDataSatelliteMetrics = (mAppOptInDefaultNetworkController != null)
                 && mDeps.isFeatureNotChickenedOut(mContext, CONSTRAINED_DATA_SATELLITE_METRICS);
         if (mConstrainedDataSatelliteMetrics) {
@@ -10707,7 +10715,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             @NonNull final LinkProperties oldLp) {
 
         // The maps are available only after 25Q2 release
-        if (!BpfNetMaps.isAtLeast25Q2()) {
+        if (!mDeps.isAtLeastB()) {
             return;
         }
 
@@ -10742,41 +10750,142 @@ public class ConnectivityService extends IConnectivityManager.Stub
         final CompareResult<LinkProperties> linkPropertiesDiff = new CompareResult<>(
                 oldLinkProperties, newLinkProperties);
 
-        for (LinkProperties linkProperty : linkPropertiesDiff.added) {
-            final List<IpPrefix> unicastLocalPrefixesToBeAdded = new ArrayList<>();
-            for (LinkAddress linkAddress : linkProperty.getLinkAddresses()) {
-                unicastLocalPrefixesToBeAdded.addAll(getLocalNetworkPrefixesForAddress(
-                        linkAddress.getAddress(), linkAddress.getPrefixLength()));
-            }
-            addLocalAddressesToBpfMap(linkProperty.getInterfaceName(),
-                    unicastLocalPrefixesToBeAdded, linkProperty);
+        for (LinkProperties lp : linkPropertiesDiff.added) {
+            final List<IpPrefix> unicastLocalPrefixesToBeAdded =
+                    getEffectiveLocalPrefixes(lp);
+            addLocalAddressesToBpfMap(lp.getInterfaceName(),
+                    unicastLocalPrefixesToBeAdded, lp);
 
             // populating interface name -> ip prefixes which were added to local_net_access map.
-            if (!prefixesAddedForInterface.containsKey(linkProperty.getInterfaceName())) {
-                prefixesAddedForInterface.put(linkProperty.getInterfaceName(), new ArrayList<>());
+            if (!prefixesAddedForInterface.containsKey(lp.getInterfaceName())) {
+                prefixesAddedForInterface.put(lp.getInterfaceName(), new ArrayList<>());
             }
-            prefixesAddedForInterface.get(linkProperty.getInterfaceName())
+            prefixesAddedForInterface.get(lp.getInterfaceName())
                     .addAll(unicastLocalPrefixesToBeAdded);
         }
 
-        for (LinkProperties linkProperty : linkPropertiesDiff.removed) {
-            final List<IpPrefix> unicastLocalPrefixesToBeRemoved = new ArrayList<>();
-            final List<IpPrefix> unicastLocalPrefixesAdded = prefixesAddedForInterface.getOrDefault(
-                    linkProperty.getInterfaceName(), Collections.emptyList());
 
-            for (LinkAddress linkAddress : linkProperty.getLinkAddresses()) {
-                unicastLocalPrefixesToBeRemoved.addAll(getLocalNetworkPrefixesForAddress(
-                        linkAddress.getAddress(), linkAddress.getPrefixLength()));
-            }
+        for (LinkProperties lp : linkPropertiesDiff.removed) {
+            final List<IpPrefix> unicastLocalPrefixesToBeRemoved =
+                    getEffectiveLocalPrefixes(lp);
+            final List<IpPrefix> unicastLocalPrefixesAdded = prefixesAddedForInterface.getOrDefault(
+                    lp.getInterfaceName(), Collections.emptyList());
 
             // This is to ensure if 10.0.10.0/24 was added and 10.0.11.0/24 was removed both will
             // still populate the same prefix of 10.0.0.0/8, which mean 10.0.0.0/8 should not be
             // removed due to removal of 10.0.11.0/24
             unicastLocalPrefixesToBeRemoved.removeAll(unicastLocalPrefixesAdded);
 
-            removeLocalAddressesFromBpfMap(linkProperty.getInterfaceName(),
-                    new ArrayList<>(unicastLocalPrefixesToBeRemoved), linkProperty);
+            removeLocalAddressesFromBpfMap(lp.getInterfaceName(),
+                    new ArrayList<>(unicastLocalPrefixesToBeRemoved), lp);
         }
+    }
+
+    /**
+     * Calculates the effective set of local network prefixes for a given link.
+     *
+     * <p>This method determines the complete list of IP prefixes that should be considered local to
+     * the device on a specific network interface. It starts by identifying all on-link prefixes
+     * derived from the link's assigned IP addresses.
+     *
+     * <p>It then checks for the presence of "local-only" routes (e.g. on a Thread mesh network)
+     * using {@link #getLocalNetworkPrefixes(LinkProperties)}. If such routes exist, they are
+     * prioritized. Any on-link prefix that is already encompassed by a local-only route is filtered
+     * out to prevent redundant entries in network control maps.
+     *
+     * <p>The final list consists of the identified local-only routes plus any on-link prefixes that
+     * were not covered by those routes.
+     *
+     * @param lp The {@link LinkProperties} of the network link.
+     * @return A {@code List<IpPrefix>} containing the consolidated set of local prefixes to be
+     * managed (e.g., added to a BPF map).
+     */
+    private List<IpPrefix> getEffectiveLocalPrefixes(LinkProperties lp) {
+        // Get the on-link prefixes for all addresses on the link.
+        final Set<IpPrefix> prefixes = new ArraySet<>();
+        for (LinkAddress linkAddress : lp.getLinkAddresses()) {
+            prefixes.addAll(getLocalNetworkPrefixesForAddress(linkAddress.getAddress(),
+                    linkAddress.getPrefixLength()));
+        }
+
+        // Add the local network routes.
+        prefixes.addAll(getLocalNetworkPrefixes(lp));
+
+        // Filter out any prefixes that are contained within another, more general,
+        // prefix in the set. This avoids redundant entries in network control maps.
+        final List<IpPrefix> effectivePrefixes = new ArrayList<>(prefixes);
+        effectivePrefixes.removeIf(p1 -> {
+            for (IpPrefix p2 : prefixes) {
+                if (!p1.equals(p2) && p2.containsPrefix(p1)) {
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        return effectivePrefixes;
+    }
+
+    /**
+     * Identifies and retrieves all prefixes for network links that provide access to a
+     * local network.
+     *
+     * <p>This method's primary purpose is to reliably distinguish a local Thread network.
+     * <p>A destination is defined as "local" based on the two specific rules:
+     * <ul>
+     * <li><b>ULA with a Non-Default Gateway:</b> Any Unique Local Address (ULA) route whose
+     * next-hop is not a default router is considered local. This is the primary rule that correctly
+     * identifies a Thread network connected via a local Border Router.</li>
+     * <li><b>Route Covers Own Address:</b> Any route that covers one of the device's own IP
+     * addresses on the same link is considered local. This rule ensures the network the phone is
+     * directly connected to (e.g., the Wi-Fi network) is correctly identified as part of the
+     * "whole home network".</li>
+     * </ul>
+     *
+     * <p>This method returns a list of <strong>local</strong> prefixes available on the link.
+     *
+     * @param lp The {@link LinkProperties} of the network link to examine.
+     * @return A new {@code List<IpPrefix>} containing local route destinations or an empty list
+     * otherwise.
+     */
+    private List<IpPrefix> getLocalNetworkPrefixes(final LinkProperties lp) {
+        if (lp == null || !mDeps.isLnpDeveloperOptInEnabled()) {
+            return new ArrayList<>();
+        }
+
+        final List<RouteInfo> routes = lp.getRoutes();
+        final List<IpPrefix> localPrefixes = new ArrayList<>();
+
+        // Rule 1: Check for a ULA route with a nexthop that is not a default router.
+        // First find all default routers (i.e gateways for the ::/0 route).
+        final Set<InetAddress> defaultRouters = new HashSet<>();
+        for (final RouteInfo route : routes) {
+            if (route.isDefaultRoute() && route.getGateway() instanceof Inet6Address) {
+                defaultRouters.add(route.getGateway());
+            }
+        }
+
+        // Now, check for a ULA route going through a non-default router.
+        for (final RouteInfo route : routes) {
+            // isIPv6ULA is a utility method to be implemented as per project standards.
+            if (ConnectivityUtils.isIPv6ULA(route.getDestination().getAddress())) {
+                // A ULA route is local if its gateway exists and is NOT a default router.
+                if (!defaultRouters.contains(route.getGateway())) {
+                    localPrefixes.add(route.getDestination());
+                }
+            }
+        }
+
+        // Rule 2: Check if any route covers a device's own address.
+        for (final RouteInfo route : routes) {
+            for (LinkAddress linkAddress : lp.getLinkAddresses()) {
+                if (route.matches(linkAddress.getAddress())) {
+                    localPrefixes.add(route.getDestination());
+                }
+            }
+        }
+
+        return localPrefixes;
     }
 
     /**
@@ -10814,7 +10923,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
      */
     private void addLocalAddressesToBpfMap(final String iface, final List<IpPrefix> prefixes,
                                            @Nullable final LinkProperties lp) {
-        if (!BpfNetMaps.isAtLeast25Q2()) return;
+        if (!mDeps.isAtLeastB()) return;
 
         for (IpPrefix prefix : prefixes) {
             // Add local dnses allow rule To BpfMap before adding the block rule for prefix
@@ -10844,7 +10953,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
      */
     private void removeLocalAddressesFromBpfMap(final String iface, final List<IpPrefix> prefixes,
                                                 @Nullable final LinkProperties lp) {
-        if (!BpfNetMaps.isAtLeast25Q2()) return;
+        if (!mDeps.isAtLeastB()) return;
 
         for (IpPrefix prefix : prefixes) {
             // The reasoning for prefix length is explained in addLocalAddressesToBpfMap()
@@ -10866,7 +10975,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
      */
     private void addLocalDnsesToBpfMap(final String iface, IpPrefix prefix,
             @Nullable final LinkProperties lp) {
-        if (!BpfNetMaps.isAtLeast25Q2() || lp == null) return;
+        if (!mDeps.isAtLeastB() || lp == null) return;
 
         for (InetAddress dnsServer : lp.getDnsServers()) {
             // Adds dns allow rule to LocalNetAccessMap for both TCP and UDP protocol at port 53,
@@ -10890,7 +10999,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
      */
     private void removeLocalDnsesFromBpfMap(final String iface, IpPrefix prefix,
             @Nullable final LinkProperties lp) {
-        if (!BpfNetMaps.isAtLeast25Q2() || lp == null) return;
+        if (!mDeps.isAtLeastB() || lp == null) return;
 
         for (InetAddress dnsServer : lp.getDnsServers()) {
             // Removes dns allow rule from LocalNetAccessMap for both TCP and UDP protocol
