@@ -109,29 +109,6 @@ java_library {
     ],
 }
 
-java_library {
-    name: "net-utils-dnspacket-common",
-    srcs: [
-        "framework/**/DnsPacket.java",
-        "framework/**/DnsPacketUtils.java",
-        "framework/**/DnsSvcbPacket.java",
-        "framework/**/DnsSvcbRecord.java",
-        "framework/**/HexDump.java",
-        "framework/**/NetworkStackConstants.java",
-        "framework/**/SvcParam.java",
-        "framework/**/SvcParamUtils.java",
-    ],
-    sdk_version: "module_current",
-    visibility: [
-        "//packages/services/Iwlan:__subpackages__",
-    ],
-    libs: [
-        "androidx.annotation_annotation",
-        "framework-annotations-lib",
-        "framework-connectivity.stubs.module_lib",
-    ],
-}
-
 filegroup {
     name: "net-utils-framework-common-srcs",
     srcs: ["framework/**/*.java"],

@@ -79,6 +79,8 @@ import com.android.net.module.util.ArrayTrackRecord
 import com.android.net.module.util.SharedLog
 import com.android.net.module.util.netlink.NetlinkMessage
 import com.android.networkstack.apishim.common.UnsupportedApiLevelException
+import com.android.server.connectivity.AppOptInDefaultNetworkController
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator
 import com.android.server.connectivity.ClatCoordinator
@@ -92,8 +94,6 @@ import com.android.server.connectivity.NetworkRequestStateStatsMetrics
 import com.android.server.connectivity.PermissionMonitor
 import com.android.server.connectivity.ProxyTracker
 import com.android.server.connectivity.QuicConnectionCloser
-import com.android.server.connectivity.AppOptInDefaultNetworkController
-import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.testutils.ContentResolverWithFakeSettingsProvider
 import com.android.testutils.visibleOnHandlerThread
 import com.android.testutils.waitForIdle
@@ -626,6 +626,7 @@ open class CSTest {
         fun expectNoRtmQdiscClsactRequest(timeoutMs: Long = HANDLER_SHORT_TIMEOUT_MS) {
             assertNull(orderedRtmQdiscClsactHistory.poll(timeoutMs))
         }
+        override fun isLnpDeveloperOptInEnabled() = true
     }
 
     inner class PermDeps : PermissionMonitor.Dependencies() {

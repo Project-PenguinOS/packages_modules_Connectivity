@@ -400,11 +400,11 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
 
     static String getVendorSwVersion(Resources resources,
             MockableSystemProperties systemProperties) {
-        final String PROP_SW_VERSION = "ro.build.id";
+        final String PROP_SW_VERSION = "ro.build.version.incremental";
         String vendorSwVersion = resources.getString(R.string.config_thread_vendor_sw_version);
         if (vendorSwVersion.equalsIgnoreCase(PROP_SW_VERSION)) {
             vendorSwVersion = systemProperties.get(PROP_SW_VERSION);
-            // Assume it's always ASCII chars in ro.build.id
+            // Assume it's always ASCII chars in ro.build.version.incremental
             if (vendorSwVersion.length() > MAX_VENDOR_SW_VERSION_UTF8_BYTES) {
                 vendorSwVersion = vendorSwVersion.substring(0, MAX_VENDOR_SW_VERSION_UTF8_BYTES);
             }

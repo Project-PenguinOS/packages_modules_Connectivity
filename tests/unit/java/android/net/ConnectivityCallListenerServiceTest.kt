@@ -20,18 +20,22 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.UserHandle
 import android.telecom.Call
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
+import com.android.testutils.DevSdkIgnoreRule
+import com.android.testutils.DevSdkIgnoreRunner
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-import org.mockito.Mock
+import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.eq
+import org.mockito.Mock
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.never
@@ -48,7 +52,8 @@ private val TEST_SECONDARY_USER_ID = 10
 private val TEST_SECONDARY_UID = 1012345
 private val TEST_SECONDARY_USER_HANDLE: UserHandle = UserHandle.of(TEST_SECONDARY_USER_ID)
 
-
+@RunWith(DevSdkIgnoreRunner::class)
+@DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 class ConnectivityCallListenerServiceTest {
     @get:Rule val mockito: MockitoRule = MockitoJUnit.rule()
 
@@ -87,6 +92,8 @@ class ConnectivityCallListenerServiceTest {
 
         doReturn(mockCallDetails).`when`(mockCall).details
         doReturn(realPhoneAccountHandle).`when`(mockCallDetails).accountHandle
+        val callId = "test_call_id_123"
+        doReturn(callId).`when`(mockCallDetails).id
 
         val appInfo = ApplicationInfo().apply { uid = TEST_UID }
         doReturn(appInfo).`when`(mockPackageManager)
@@ -164,6 +171,7 @@ class ConnectivityCallListenerServiceTest {
     fun onCallRemoved_notTransactional_isIgnored() {
         mockCallProperties(isTransactional = false, hasSelfManagedProp = true,
                 hasSelfManagedCap = true)
+        service.onCallAdded(mockCall)
         service.onCallRemoved(mockCall)
         verify(mockConnectivityManager, never()).onOttCallStateChanged(anyInt(), anyBoolean())
     }
@@ -172,14 +180,17 @@ class ConnectivityCallListenerServiceTest {
     fun onCallRemoved_notSelfManaged_isIgnored() {
         mockCallProperties(isTransactional = true, hasSelfManagedProp = false,
                 hasSelfManagedCap = false)
+        service.onCallAdded(mockCall)
         service.onCallRemoved(mockCall)
         verify(mockConnectivityManager, never()).onOttCallStateChanged(anyInt(), anyBoolean())
     }
 
     @Test
-    fun onCallRemoved_validOttCall_notifiesCM() {
+    fun onCallRemoved_validOttCall_usesCachedUid_notifiesCM() {
         mockCallProperties(isTransactional = true, hasSelfManagedProp = true,
                 hasSelfManagedCap = true)
+        service.onCallAdded(mockCall)
+        verify(mockConnectivityManager).onOttCallStateChanged(TEST_UID, true /* isAdd */)
         service.onCallRemoved(mockCall)
         verify(mockConnectivityManager).onOttCallStateChanged(TEST_UID, false /* isAdd */)
     }
@@ -220,5 +231,14 @@ class ConnectivityCallListenerServiceTest {
         service.onCallAdded(mockCall)
         verify(mockConnectivityManager)
                 .onOttCallStateChanged(TEST_SECONDARY_UID, true /* isAdd */)
+    }
+
+    @Test
+    fun onCallRemoved_notInCache_isIgnored() {
+        mockCallProperties(isTransactional = true, hasSelfManagedProp = true,
+                hasSelfManagedCap = true)
+
+        service.onCallRemoved(mockCall)
+        verify(mockConnectivityManager, never()).onOttCallStateChanged(anyInt(), anyBoolean())
     }
 }

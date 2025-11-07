@@ -18,8 +18,6 @@ package com.android.server.vcn;
 
 import android.annotation.NonNull;
 import android.content.Context;
-import android.net.vcn.FeatureFlags;
-import android.net.vcn.FeatureFlagsImpl;
 import android.os.Looper;
 
 import java.util.Objects;
@@ -33,7 +31,6 @@ public class VcnContext {
     @NonNull private final Context mContext;
     @NonNull private final Looper mLooper;
     @NonNull private final VcnNetworkProvider mVcnNetworkProvider;
-    @NonNull private final FeatureFlags mFeatureFlags;
     private final boolean mIsInTestMode;
 
     public VcnContext(
@@ -45,9 +42,6 @@ public class VcnContext {
         mLooper = Objects.requireNonNull(looper, "Missing looper");
         mVcnNetworkProvider = Objects.requireNonNull(vcnNetworkProvider, "Missing networkProvider");
         mIsInTestMode = isInTestMode;
-
-        // Auto-generated class
-        mFeatureFlags = new FeatureFlagsImpl();
     }
 
     @NonNull
@@ -67,11 +61,6 @@ public class VcnContext {
 
     public boolean isInTestMode() {
         return mIsInTestMode;
-    }
-
-    @NonNull
-    public FeatureFlags getFeatureFlags() {
-        return mFeatureFlags;
     }
 
     /**

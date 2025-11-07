@@ -17,6 +17,7 @@
 package com.android.server.vcn;
 
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
+import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 
 import static com.android.server.vcn.VcnGatewayConnection.VcnIkeSession;
 import static com.android.server.vcn.VcnGatewayConnection.VcnNetworkAgent;
@@ -54,7 +55,6 @@ import android.net.ipsec.ike.ChildSessionCallback;
 import android.net.ipsec.ike.IkeSessionCallback;
 import android.net.ipsec.ike.IkeSessionConfiguration;
 import android.net.ipsec.ike.IkeSessionConnectionInfo;
-import android.net.vcn.FeatureFlags;
 import android.net.vcn.VcnGatewayConnectionConfig;
 import android.net.vcn.VcnGatewayConnectionConfigTest;
 import android.os.ParcelUuid;
@@ -145,7 +145,7 @@ public class VcnGatewayConnectionTestBase {
     protected static final UnderlyingNetworkRecord TEST_UNDERLYING_NETWORK_RECORD_2 =
             getTestNetworkRecord(
                     mock(Network.class, CALLS_REAL_METHODS),
-                    new NetworkCapabilities(),
+                    new NetworkCapabilities.Builder().addTransportType(TRANSPORT_WIFI).build(),
                     new LinkProperties(),
                     false /* blocked */);
 
@@ -164,7 +164,6 @@ public class VcnGatewayConnectionTestBase {
     @NonNull protected final Context mContext;
     @NonNull protected final TestLooper mTestLooper;
     @NonNull protected final VcnNetworkProvider mVcnNetworkProvider;
-    @NonNull protected final FeatureFlags mFeatureFlags;
     @NonNull protected final VcnContext mVcnContext;
     @NonNull protected final VcnGatewayConnectionConfig mConfig;
     @NonNull protected final VcnGatewayStatusCallback mGatewayStatusCallback;
@@ -191,7 +190,6 @@ public class VcnGatewayConnectionTestBase {
         mContext = mock(Context.class);
         mTestLooper = new TestLooper();
         mVcnNetworkProvider = mock(VcnNetworkProvider.class);
-        mFeatureFlags = mock(FeatureFlags.class);
         mVcnContext = mock(VcnContext.class);
         mConfig = VcnGatewayConnectionConfigTest.buildTestConfig();
         mGatewayStatusCallback = mock(VcnGatewayStatusCallback.class);
@@ -225,7 +223,6 @@ public class VcnGatewayConnectionTestBase {
         doReturn(mContext).when(mVcnContext).getContext();
         doReturn(mTestLooper.getLooper()).when(mVcnContext).getLooper();
         doReturn(mVcnNetworkProvider).when(mVcnContext).getVcnNetworkProvider();
-        doReturn(mFeatureFlags).when(mVcnContext).getFeatureFlags();
 
         doReturn(mUnderlyingNetworkController)
                 .when(mDeps)

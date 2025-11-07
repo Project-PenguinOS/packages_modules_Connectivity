@@ -30,6 +30,7 @@ import static android.net.connectivity.ConnectivityCompatChanges.RESTRICT_LOCAL_
 import static android.os.Process.INVALID_UID;
 import static android.os.Process.SYSTEM_UID;
 
+import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.net.module.util.CollectionUtils.toIntArray;
 import static com.android.server.ConnectivityStatsLog.CONNECTIVITY_PERMISSION_CHANGE_LISTENER_LATENCY_REPORTED;
 import static com.android.server.connectivity.ConnectivityFlags.USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR;
@@ -259,8 +260,8 @@ public class PermissionMonitor {
 
         public boolean shouldEnforceLocalNetRestrictions(int uid) {
             // TODO(b/394567896): Update compat change checks for enforcement
-            return BpfNetMaps.isAtLeast25Q2() &&
-                    CompatChanges.isChangeEnabled(RESTRICT_LOCAL_NETWORK, uid);
+            return isAtLeastB()
+                    && CompatChanges.isChangeEnabled(RESTRICT_LOCAL_NETWORK, uid);
         }
 
         /**
@@ -338,7 +339,7 @@ public class PermissionMonitor {
         mContext = context;
         mBpfNetMaps = bpfNetMaps;
         mThread = thread;
-        if (BpfNetMaps.isAtLeast25Q2()) {
+        if (isAtLeastB()) {
             // Local net restrictions is supported as a developer opt-in starting in Android B.
             // This listener should finish registration by the time the system has completed
             // boot setup such that any changes to runtime permissions for local network
@@ -1091,7 +1092,7 @@ public class PermissionMonitor {
             sendPackagePermissionsForAppId(appId, trafficPermission);
         }
 
-        if (BpfNetMaps.isAtLeast25Q2()) {
+        if (isAtLeastB()) {
             mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
             if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
                     sProcessShim.toSdkSandboxUid(uid));
@@ -1587,7 +1588,7 @@ public class PermissionMonitor {
                 //and higher. The surrounding logic in logPermissionChangeListenerLatency
                 //ensures this code path is only executed on compatible platform versions, this
                 //explicit SDK version check is necessary to suppress the NewApi lint warning.
-                if (mDeps.isLnpDeveloperOptInEnabled() && SdkLevel.isAtLeastB()) {
+                if (mDeps.isLnpDeveloperOptInEnabled() && isAtLeastB()) {
                     mDeps.logPermissionChangeListenerLatency(durationMicros);
                 }
             }

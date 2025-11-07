@@ -598,6 +598,7 @@ class NsdManagerTest {
     @CtsNetTestCasesLocalNetNoPermissions
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @RequiresFlagsDisabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    @RequiresFlagsEnabled(Flags.FLAG_LNP_DEVELOPER_OPT_IN)
     fun testLocalNetworkDevOptIn_permissionCheckFails_returnsInternalError() {
         val perm = context.checkSelfPermission(NEARBY_WIFI_DEVICES)
         assertEquals(PackageManager.PERMISSION_DENIED, perm)

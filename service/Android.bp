@@ -214,7 +214,6 @@ java_library {
         "android.net.platform.flags-aconfig-java-export",
         "android.permission.flags-aconfig-java-export",
         "androidx.annotation_annotation",
-        "com.android.tethering.flags-aconfig-java",
         "com.android.tethering.mainline.beta.flags-aconfig-java-deprecated",
         "connectivity-net-module-utils-bpf",
         "connectivity_native_aidl_interface-lateststable-java",

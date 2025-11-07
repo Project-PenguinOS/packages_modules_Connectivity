@@ -32,7 +32,6 @@ import android.net.LinkProperties;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.TelephonyNetworkSpecifier;
-import android.net.vcn.FeatureFlags;
 import android.os.Handler;
 import android.os.IPowerManager;
 import android.os.IThermalService;
@@ -100,7 +99,6 @@ public abstract class NetworkEvaluationTestBase {
 
     @Mock protected Context mContext;
     @Mock protected Network mNetwork;
-    @Mock protected FeatureFlags mFeatureFlags;
     @Mock protected TelephonySubscriptionSnapshot mSubscriptionSnapshot;
     @Mock protected ConnectivityManager mConnectivityManager;
     @Mock protected TelephonyManager mTelephonyManager;

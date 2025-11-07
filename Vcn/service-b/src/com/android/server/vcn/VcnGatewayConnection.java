@@ -2176,6 +2176,8 @@ public class VcnGatewayConnection extends StateMachine {
             // If network changed, migrate. Otherwise, update any existing networkAgent.
             if (oldUnderlying == null || !oldUnderlying.network.equals(mUnderlying.network)) {
                 logInfo("Migrating to new network: " + mUnderlying.network);
+                mVcnMetrics.logUnderlyingNetworkSwitched(
+                        mId, getTransportMask(oldUnderlying), getTransportMask(mUnderlying));
                 mIkeSession.setNetwork(mUnderlying.network);
             } else {
                 // oldUnderlying is non-null & underlying network itself has not changed
@@ -2188,6 +2190,18 @@ public class VcnGatewayConnection extends StateMachine {
                             mTunnelIface, mNetworkAgent, mChildConfig, mIkeConnectionInfo);
                 }
             }
+        }
+
+        @VcnMetrics.TransportMask
+        private int getTransportMask(UnderlyingNetworkRecord network) {
+            if (network == null) {
+                return VcnMetrics.TRANSPORT_MASK_NONE;
+            }
+            int transportMask = 0;
+            for (int transport : network.networkCapabilities.getTransportTypes()) {
+                transportMask |= 1 << transport;
+            }
+            return transportMask;
         }
 
         private void handleDataStallSuspected(Network networkWithDataStall) {

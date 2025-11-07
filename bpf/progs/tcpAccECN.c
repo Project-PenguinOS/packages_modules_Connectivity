@@ -40,6 +40,7 @@
 DEFINE_BPF_MAP(l4s_accecn_ce_map, LRU_HASH, uint32_t, uint32_t, L4S_ACCECN_MAP_SIZE)
 DEFINE_BPF_MAP(l4s_accecn_byte_map, LRU_HASH, uint32_t, EcnByteCounters, L4S_ACCECN_MAP_SIZE)
 DEFINE_BPF_MAP(l4s_accecn_mss_map, LRU_HASH, uint32_t, uint16_t, L4S_ACCECN_MAP_SIZE)
+DEFINE_BPF_MAP_NO_NETD(l4s_accecn_enabled_map, ARRAY, uint32_t, bool, 1)
 
 static long (*bpf_sock_ops_cb_flags_set)(struct bpf_sock_ops *skops, int flags) = (void *) BPF_FUNC_sock_ops_cb_flags_set;
 static long (*bpf_reserve_hdr_opt)(struct bpf_sock_ops *skops, int space, long flags) = (void *) BPF_FUNC_reserve_hdr_opt;
@@ -121,6 +122,13 @@ parse_tcp_mss_option(struct __sk_buff *skb, uint8_t offset) {
     return -1;
 }
 
+static inline __attribute__((always_inline)) int
+is_l4s_enabled() {
+    uint32_t status_key = 0;
+    bool *l4s_status_ptr = bpf_l4s_accecn_enabled_map_lookup_elem(&status_key);
+    return l4s_status_ptr && *l4s_status_ptr;
+}
+
 static const struct {
     __u8 kind;
     __u8 length;
@@ -133,6 +141,8 @@ static const struct {
 
 DEFINE_BPF_PROG_KVER(sockops, accecn_option, , AID_SYSTEM, 6_1)
 (struct bpf_sock_ops *skops) {
+    if (!is_l4s_enabled()) return 1;
+
     switch (skops->op) {
         case BPF_SOCK_OPS_TCP_CONNECT_CB:
         case BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB:
@@ -184,6 +194,8 @@ static const EcnByteCounters new_cnt = {
 
 DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_eth, , AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
+    if (!is_l4s_enabled()) return TC_ACT_PIPE;
+
     void* data = (void*)(long)skb->data;
     void* data_end = (void*)(long)skb->data_end;
 
@@ -313,6 +325,8 @@ DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_eth, , AID_SYSTEM, 6_1)
 
 DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, , AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
+    if (!is_l4s_enabled()) return TC_ACT_PIPE;
+
     void* data = (void*)(long)skb->data;
     void* data_end = (void*)(long)skb->data_end;
 
@@ -431,6 +445,8 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, , AID_SYSTEM, 6_1)
 
 DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_rawip, , AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
+    if (!is_l4s_enabled()) return TC_ACT_PIPE;
+
     void* data = (void*)(long)skb->data;
     void* data_end = (void*)(long)skb->data_end;
 
@@ -560,6 +576,8 @@ DEFINE_BPF_PROG_KVER(schedcls, ingress_accecn_rawip, , AID_SYSTEM, 6_1)
 
 DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, , AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
+    if (!is_l4s_enabled()) return TC_ACT_PIPE;
+
     void* data = (void*)(long)skb->data;
     void* data_end = (void*)(long)skb->data_end;
 
