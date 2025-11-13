@@ -32,6 +32,7 @@ import com.android.server.connectivity.mdns.MdnsResponse
 import com.android.server.connectivity.mdns.MdnsServiceInfo
 import com.android.server.connectivity.mdns.MdnsServiceRecord
 import com.android.server.connectivity.mdns.MdnsTextRecord
+import com.android.server.connectivity.mdns.SocketKey
 import com.android.server.connectivity.mdns.util.MdnsUtils.createQueryDatagramPackets
 import com.android.server.connectivity.mdns.util.MdnsUtils.responseMatchesInstanceNameAndSubtypes
 import com.android.server.connectivity.mdns.util.MdnsUtils.truncateServiceName
@@ -40,6 +41,8 @@ import com.android.testutils.DevSdkIgnoreRunner
 import java.net.DatagramPacket
 import kotlin.test.assertContentEquals
 import org.junit.Assert.assertArrayEquals
+import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -178,6 +181,8 @@ class MdnsUtilsTest {
         val v4Address = "192.0.2.1"
         val v6Address = "2001:db8::1"
         val interfaceIndex = 99
+        val socketKey = mock(SocketKey::class.java)
+        doReturn(1234567890L).`when`(socketKey).getCreationCapabilitiesBits()
         val response = MdnsResponse(0 /* now */, serviceName, interfaceIndex, null /* network */)
         // Set PTR record
         response.addPointerRecord(MdnsPointerRecord(
@@ -215,7 +220,8 @@ class MdnsUtilsTest {
         val serviceInfo = MdnsUtils.buildMdnsServiceInfoFromResponse(
                 response,
                 serviceType.split(".").toTypedArray(),
-                testElapsedRealtime
+                testElapsedRealtime,
+                socketKey
         )
 
         assertEquals(serviceInstanceName, serviceInfo.serviceInstanceName)
@@ -229,6 +235,7 @@ class MdnsUtilsTest {
         assertEquals(interfaceIndex, serviceInfo.interfaceIndex)
         assertEquals(null, serviceInfo.network)
         assertEquals(mapOf("somedifferent" to "entry"), serviceInfo.attributes)
+        assertEquals(1234567890L, serviceInfo.creationCapabilitiesBits)
     }
 
     private fun createResponse(

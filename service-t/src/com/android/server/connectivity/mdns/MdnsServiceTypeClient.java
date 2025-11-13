@@ -587,7 +587,7 @@ public class MdnsServiceTypeClient {
                     continue;
                 }
                 final MdnsServiceInfo info = buildMdnsServiceInfoFromResponse(
-                        existingResponse, serviceTypeLabels, clock.elapsedRealtime());
+                        existingResponse, serviceTypeLabels, clock.elapsedRealtime(), socketKey);
                 listener.onServiceNameDiscovered(info, true /* isServiceFromCache */);
                 listenerInfo.setServiceDiscovered(info.getServiceInstanceName());
                 if (existingResponse.isComplete()) {
@@ -807,7 +807,7 @@ public class MdnsServiceTypeClient {
 
             final MdnsServiceBrowserListener listener = listeners.keyAt(i);
             final MdnsServiceInfo serviceInfo = buildMdnsServiceInfoFromResponse(
-                    response, serviceTypeLabels, clock.elapsedRealtime());
+                    response, serviceTypeLabels, clock.elapsedRealtime(), socketKey);
 
             if (response.isComplete()) {
                 sharedLog.log(message + ". onServiceRemoved: " + serviceInfo);
@@ -851,7 +851,7 @@ public class MdnsServiceTypeClient {
                 serviceInstanceName, newInCache, serviceBecomesComplete,
                 response.isComplete()));
         final MdnsServiceInfo serviceInfo = buildMdnsServiceInfoFromResponse(
-                response, serviceTypeLabels, clock.elapsedRealtime());
+                response, serviceTypeLabels, clock.elapsedRealtime(), socketKey);
 
         for (int i = 0; i < listeners.size(); i++) {
             // If a service stops matching the options (currently can only happen if it loses a

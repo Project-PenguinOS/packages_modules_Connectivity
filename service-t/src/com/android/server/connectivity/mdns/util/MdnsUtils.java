@@ -42,6 +42,7 @@ import com.android.server.connectivity.mdns.MdnsRecord;
 import com.android.server.connectivity.mdns.MdnsResponse;
 import com.android.server.connectivity.mdns.MdnsServiceInfo;
 import com.android.server.connectivity.mdns.MdnsServiceTypeClient;
+import com.android.server.connectivity.mdns.SocketKey;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -320,9 +321,11 @@ public class MdnsUtils {
      * @param response target service response
      * @param serviceTypeLabels service type labels
      * @param elapsedRealtimeMillis current time.
+     * @param socketKey The socket key for the service.
      */
     public static MdnsServiceInfo buildMdnsServiceInfoFromResponse(@NonNull MdnsResponse response,
-            @NonNull String[] serviceTypeLabels, long elapsedRealtimeMillis) {
+            @NonNull String[] serviceTypeLabels, long elapsedRealtimeMillis,
+            @NonNull SocketKey socketKey) {
         String[] hostName = null;
         int port = 0;
         if (response.hasServiceRecord()) {
@@ -366,7 +369,8 @@ public class MdnsUtils {
                 textEntries,
                 response.getInterfaceIndex(),
                 response.getNetwork(),
-                now.plusMillis(response.getMinRemainingTtl(elapsedRealtimeMillis)));
+                now.plusMillis(response.getMinRemainingTtl(elapsedRealtimeMillis)),
+                socketKey.getCreationCapabilitiesBits());
     }
 
     /**

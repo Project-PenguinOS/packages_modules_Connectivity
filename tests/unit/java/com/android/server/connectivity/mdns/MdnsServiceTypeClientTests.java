@@ -810,6 +810,8 @@ public class MdnsServiceTypeClientTests {
         }
         assertEquals(socketKey.getInterfaceIndex(), serviceInfo.getInterfaceIndex());
         assertEquals(socketKey.getNetwork(), serviceInfo.getNetwork());
+        assertEquals(socketKey.getCreationCapabilitiesBits(),
+                serviceInfo.getCreationCapabilitiesBits());
     }
 
     @Test

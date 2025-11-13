@@ -19,6 +19,7 @@ package com.android.server.connectivity.mdns;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.text.TextUtils;
@@ -60,7 +61,8 @@ public class MdnsServiceInfo implements Parcelable {
                             source.createTypedArrayList(TextEntry.CREATOR),
                             source.readInt(),
                             source.readParcelable(Network.class.getClassLoader()),
-                            Instant.ofEpochSecond(source.readLong()));
+                            Instant.ofEpochSecond(source.readLong()),
+                            source.readLong());
                 }
 
                 @Override
@@ -89,6 +91,8 @@ public class MdnsServiceInfo implements Parcelable {
     @NonNull
     private final Instant expirationTime;
 
+    private final long mCreationCapabilitiesBits;
+
     /**
      * Constructs a {@link MdnsServiceInfo} object with default values.
      *
@@ -115,7 +119,8 @@ public class MdnsServiceInfo implements Parcelable {
                 textEntries,
                 interfaceIndex,
                 /* network= */ null,
-                /* expirationTime= */ Instant.MAX);
+                /* expirationTime= */ Instant.MAX,
+                0L /* cachedCapabilitiesBits */);
     }
 
     /**
@@ -134,7 +139,8 @@ public class MdnsServiceInfo implements Parcelable {
             @Nullable List<TextEntry> textEntries,
             int interfaceIndex,
             @Nullable Network network,
-            @NonNull Instant expirationTime) {
+            @NonNull Instant expirationTime,
+            long creationCapabilitiesBits) {
         this.serviceInstanceName = serviceInstanceName;
         this.serviceType = serviceType;
         this.subtypes = new ArrayList<>();
@@ -162,6 +168,7 @@ public class MdnsServiceInfo implements Parcelable {
         this.interfaceIndex = interfaceIndex;
         this.network = network;
         this.expirationTime = Instant.ofEpochSecond(expirationTime.getEpochSecond());
+        this.mCreationCapabilitiesBits = creationCapabilitiesBits;
     }
 
     /** Returns the name of this service instance. */
@@ -259,6 +266,16 @@ public class MdnsServiceInfo implements Parcelable {
     }
 
     /**
+     * Returns a snapshot of the NetworkCapabilities bits at creation time. This value is not
+     * updated, so mutable capabilities (e.g., VALIDATED) may become stale.
+     *
+     * @see NetworkCapabilities
+     */
+    public long getCreationCapabilitiesBits() {
+        return mCreationCapabilitiesBits;
+    }
+
+    /**
      * Returns attribute value for {@code key} as a UTF-8 string. It's the caller who must make sure
      * that the value of {@code key} is indeed a UTF-8 string. {@code null} will be returned if no
      * attribute value exists for {@code key}.
@@ -309,6 +326,7 @@ public class MdnsServiceInfo implements Parcelable {
         out.writeInt(interfaceIndex);
         out.writeParcelable(network, 0);
         out.writeLong(expirationTime.getEpochSecond());
+        out.writeLong(mCreationCapabilitiesBits);
     }
 
     @Override
@@ -322,7 +340,8 @@ public class MdnsServiceInfo implements Parcelable {
                 + ", interfaceIndex: " + interfaceIndex
                 + ", network: " + network
                 + ", textEntries: " + textEntries
-                + ", expirationTime: " + expirationTime;
+                + ", expirationTime: " + expirationTime
+                + ", capabilities: " + mCreationCapabilitiesBits;
     }
 
 
