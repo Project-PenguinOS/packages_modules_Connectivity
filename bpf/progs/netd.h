@@ -256,6 +256,7 @@ typedef struct {
 } LocalNetAccessKey;
 STRUCT_SIZE(LocalNetAccessKey, 4 + 4 + 16 + 2 + 2);  // 28
 
+// LINT.IfChange(uid_permission_chunk_type)
 // Each UID costs 3 bits (3 permissions ACCESS_LOCAL_NETWORK / INTERNET /
 // UPDATE_DEVICE_STATS)
 // One int64 can store up to 21 UIDs (3 * 21 = 63 bits per int64)
@@ -265,6 +266,7 @@ STRUCT_SIZE(LocalNetAccessKey, 4 + 4 + 16 + 2 + 2);  // 28
 // One chunk can store 128 * 21 = 2688 UIDs using 128 int64
 #define CHUNK_UID_COUNT 2688
 #define UID_PERMISSION_MASK 7
+// LINT.ThenChange(../../common/src/com/android/net/module/util/bpf/UidPermissionChunk.java)
 
 typedef struct {
     uint64_t block[CHUNK_INT64_COUNT];

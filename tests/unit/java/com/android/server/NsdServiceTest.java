@@ -65,6 +65,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -275,7 +276,8 @@ public class NsdServiceTest {
             return mDiscoveryManager;
         }).when(mDeps).makeMdnsDiscoveryManager(any(), any(), any(), any(), any());
         doReturn(mMulticastLock).when(mWifiManager).createMulticastLock(any());
-        doReturn(mSocketProvider).when(mDeps).makeMdnsSocketProvider(any(), any(), any(), any());
+        doReturn(mSocketProvider).when(mDeps).makeMdnsSocketProvider(
+                any(), any(), any(), any(), any());
         doReturn(DEFAULT_RUNNING_APP_ACTIVE_IMPORTANCE_CUTOFF).when(mDeps).getDeviceConfigInt(
                 eq(NsdService.MDNS_CONFIG_RUNNING_APP_ACTIVE_IMPORTANCE_CUTOFF), anyInt());
         doAnswer(inv -> {
@@ -288,7 +290,8 @@ public class NsdServiceTest {
         mService = makeService();
         final ArgumentCaptor<SocketRequestMonitor> cbMonitorCaptor =
                 ArgumentCaptor.forClass(SocketRequestMonitor.class);
-        verify(mDeps).makeMdnsSocketProvider(any(), any(), any(), cbMonitorCaptor.capture());
+        verify(mDeps).makeMdnsSocketProvider(
+                any(), any(), any(), cbMonitorCaptor.capture(), any());
         mSocketRequestMonitor = cbMonitorCaptor.getValue();
 
         final ArgumentCaptor<OnUidImportanceListener> uidListenerCaptor =

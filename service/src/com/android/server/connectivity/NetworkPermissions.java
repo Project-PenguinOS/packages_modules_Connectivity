@@ -57,6 +57,12 @@ public class NetworkPermissions {
     public static final int TRAFFIC_PERMISSION_UNINSTALLED = -1;
 
     /**
+     * PERMISSION_ACCESS_LOCAL_NETWORK indicates that the app can discover or connect to local
+     * network devices.
+     */
+    public static final int TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK = 1;
+
+    /**
      * PERMISSION_INTERNET indicates that the app can create AF_INET and AF_INET6 sockets.
      */
     public static final int TRAFFIC_PERMISSION_INTERNET = 4;

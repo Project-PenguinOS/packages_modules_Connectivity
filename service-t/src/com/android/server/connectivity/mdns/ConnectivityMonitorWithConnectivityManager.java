@@ -16,6 +16,8 @@
 
 package com.android.server.connectivity.mdns;
 
+import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
+
 import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -219,7 +221,9 @@ public class ConnectivityMonitorWithConnectivityManager implements ConnectivityM
         if (netIf == null) {
             return null;
         }
-        return new SocketKey(match.first, netIf.getIndex(), netIf.getName());
+        // This class is only used by gmscore, network capabilities is not used and supported.
+        return new SocketKey(match.first, netIf.getIndex(), netIf.getName(),
+                EMPTY_NETWORK_CAPABILITIES);
     }
 
     @Nullable
@@ -229,7 +233,9 @@ public class ConnectivityMonitorWithConnectivityManager implements ConnectivityM
         }
         final Pair<Network, LinkProperties> match = findMatchingNetwork(
                 lp -> iface.getName().equals(lp.getInterfaceName()));
-        return match == null ? null : new SocketKey(match.first, iface.getIndex(), iface.getName());
+        // This class is only used by gmscore, network capabilities is not used and supported.
+        return match == null ? null : new SocketKey(match.first, iface.getIndex(),
+                iface.getName(), EMPTY_NETWORK_CAPABILITIES);
     }
 
     private Pair<Network, LinkProperties> findMatchingNetwork(

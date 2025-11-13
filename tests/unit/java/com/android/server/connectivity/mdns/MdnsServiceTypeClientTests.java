@@ -16,6 +16,7 @@
 
 package com.android.server.connectivity.mdns;
 
+import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
 import static com.android.server.connectivity.mdns.MdnsQueryScheduler.INITIAL_AGGRESSIVE_TIME_BETWEEN_BURSTS_MS;
 import static com.android.server.connectivity.mdns.MdnsQueryScheduler.MAX_TIME_BETWEEN_AGGRESSIVE_BURSTS_MS;
 import static com.android.server.connectivity.mdns.MdnsQueryScheduler.TIME_BETWEEN_RETRANSMISSION_QUERIES_IN_BURST_MS;
@@ -170,7 +171,8 @@ public class MdnsServiceTypeClientTests {
 
         expectedIPv4Packets = new DatagramPacket[24];
         expectedIPv6Packets = new DatagramPacket[24];
-        socketKey = new SocketKey(mockNetwork, INTERFACE_INDEX, "interface");
+        socketKey = new SocketKey(mockNetwork, INTERFACE_INDEX, "interface",
+                EMPTY_NETWORK_CAPABILITIES);
 
         for (int i = 0; i < expectedIPv4Packets.length; ++i) {
             expectedIPv4Packets[i] = new DatagramPacket(buf, 0 /* offset */, 5 /* length */,

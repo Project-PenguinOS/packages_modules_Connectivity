@@ -31,6 +31,7 @@ import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
 import static android.net.BpfNetMapsConstants.UID_MIGRATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_OWNER_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_PERMISSION_MAP_PATH;
+import static android.net.BpfNetMapsConstants.UID_PERMISSION_CHUNK_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_RULES_CONFIGURATION_KEY;
 import static android.net.BpfNetMapsUtils.getMatchByFirewallChain;
 import static android.net.BpfNetMapsUtils.isFirewallAllowList;
@@ -47,6 +48,7 @@ import static android.system.OsConstants.EOPNOTSUPP;
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
 import static com.android.server.connectivity.NetworkPermissions.PERMISSION_NONE;
+import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_INTERNET;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UNINSTALLED;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
@@ -90,6 +92,7 @@ import com.android.net.module.util.bpf.CookieTagMapValue;
 import com.android.net.module.util.bpf.IngressDiscardKey;
 import com.android.net.module.util.bpf.IngressDiscardValue;
 import com.android.net.module.util.bpf.LocalNetAccessKey;
+import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 
 import java.io.FileDescriptor;
@@ -137,6 +140,7 @@ public class BpfNetMaps {
     // BpfMap for UID_OWNER_MAP_PATH. This map is not accessed by others.
     private static IBpfMap<S32, UidOwnerValue> sUidOwnerMap = null;
     private static IBpfMap<S32, U8> sUidPermissionMap = null;
+    private static IBpfMap<S32, UidPermissionChunk> sUidPermissionChunkMap = null;
     private static IBpfMap<S64, CookieTagMapValue> sCookieTagMap = null;
     // TODO: Add BOOL class and replace U8?
     private static IBpfMap<S32, U8> sDataSaverEnabledMap = null;
@@ -148,7 +152,8 @@ public class BpfNetMaps {
 
     private static final List<Pair<Integer, String>> PERMISSION_LIST = Arrays.asList(
             Pair.create(TRAFFIC_PERMISSION_INTERNET, "PERMISSION_INTERNET"),
-            Pair.create(TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS, "PERMISSION_UPDATE_DEVICE_STATS")
+            Pair.create(TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS, "PERMISSION_UPDATE_DEVICE_STATS"),
+            Pair.create(TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK, "PERMISSION_ACCESS_LOCAL_NETWORK")
     );
     private final InterfaceTracker mInterfaceTracker;
     private static boolean sPermissionMapUidMigrationEnabled = false;
@@ -183,6 +188,15 @@ public class BpfNetMaps {
     @VisibleForTesting
     public static void setUidPermissionMapForTest(IBpfMap<S32, U8> uidPermissionMap) {
         sUidPermissionMap = uidPermissionMap;
+    }
+
+    /**
+     * Set uidPermissionChunkMap for test.
+     */
+    @VisibleForTesting
+    public static void setUidPermissionChunkMapForTest(
+        IBpfMap<S32, UidPermissionChunk> uidPermissionChunkMap) {
+        sUidPermissionChunkMap = uidPermissionChunkMap;
     }
 
     /**
@@ -273,6 +287,16 @@ public class BpfNetMaps {
                     UID_PERMISSION_MAP_PATH, S32.class, U8.class);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Cannot open uid permission map", e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private static IBpfMap<S32, UidPermissionChunk> getUidPermissionChunkMap() {
+        try {
+            return SingleWriterBpfMap.getSingleton(
+                    UID_PERMISSION_CHUNK_MAP_PATH, S32.class, UidPermissionChunk.class);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open uid permission chunk map", e);
         }
     }
 
@@ -419,6 +443,15 @@ public class BpfNetMaps {
             sUidMigrationEnabledBpfBoolean.set(sPermissionMapUidMigrationEnabled);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Failed to set uid migration enabled map", e);
+        }
+
+        if (sUidPermissionChunkMap == null) {
+            sUidPermissionChunkMap = getUidPermissionChunkMap();
+        }
+        try {
+            sUidPermissionChunkMap.clear();
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot clear uid permission chunk map", e);
         }
     }
 

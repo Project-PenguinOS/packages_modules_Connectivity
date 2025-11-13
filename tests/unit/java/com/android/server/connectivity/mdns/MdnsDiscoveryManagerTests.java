@@ -16,6 +16,8 @@
 
 package com.android.server.connectivity.mdns;
 
+import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -74,9 +76,11 @@ public class MdnsDiscoveryManagerTests {
     private static final SocketKey SOCKET_KEY_NULL_NETWORK =
             new SocketKey(INTERFACE_INDEX_NULL_NETWORK, "interface");
     private static final SocketKey SOCKET_KEY_NETWORK_1 =
-            new SocketKey(NETWORK_1, 998 /* interfaceIndex */, "interface1");
+            new SocketKey(NETWORK_1, 998 /* interfaceIndex */, "interface1",
+            EMPTY_NETWORK_CAPABILITIES);
     private static final SocketKey SOCKET_KEY_NETWORK_2 =
-            new SocketKey(NETWORK_2, 997 /* interfaceIndex */, "interface2");
+            new SocketKey(NETWORK_2, 997 /* interfaceIndex */, "interface2",
+            EMPTY_NETWORK_CAPABILITIES);
     private static final Pair<String, SocketKey> PER_SOCKET_SERVICE_TYPE_1_NULL_NETWORK =
             Pair.create(SERVICE_TYPE_1, SOCKET_KEY_NULL_NETWORK);
     private static final Pair<String, SocketKey> PER_SOCKET_SERVICE_TYPE_2_NULL_NETWORK =
@@ -410,9 +414,11 @@ public class MdnsDiscoveryManagerTests {
         final SocketCreationCallback callback = expectSocketCreationCallback(
                 SERVICE_TYPE_1, mockListenerOne, searchOptions);
         final SocketKey unusedIfaceKey = new SocketKey(
-                INTERFACE_INDEX_NULL_NETWORK + 1,  "interfaceOther");
+                null, INTERFACE_INDEX_NULL_NETWORK + 1,  "interfaceOther",
+                EMPTY_NETWORK_CAPABILITIES);
         final SocketKey matchingIfaceWithNetworkKey = new SocketKey(
-                Mockito.mock(Network.class), INTERFACE_INDEX_NULL_NETWORK, "interface");
+                Mockito.mock(Network.class), INTERFACE_INDEX_NULL_NETWORK, "interface",
+                EMPTY_NETWORK_CAPABILITIES);
         runOnHandler(() -> {
             callback.onSocketCreated(unusedIfaceKey);
             callback.onSocketCreated(matchingIfaceWithNetworkKey);

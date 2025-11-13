@@ -125,7 +125,7 @@ import com.android.server.connectivity.mdns.MdnsServiceTypeClient.FilterRepliesI
 import com.android.server.connectivity.mdns.MdnsSocketProvider;
 import com.android.server.connectivity.mdns.OffloadCallback;
 import com.android.server.connectivity.mdns.util.MdnsUtils;
-import com.android.tethering.mainline.beta.Flags;
+import com.android.tethering.flags.Flags;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -2082,15 +2082,6 @@ public class NsdService extends INsdManager.Stub {
         mMDnsEventCallback = new MDnsEventCallback(mHandler);
         mDeps = deps;
 
-        mMdnsSocketProvider = deps.makeMdnsSocketProvider(ctx, looper,
-                LOGGER.forSubComponent("MdnsSocketProvider"), new SocketRequestMonitor());
-        // Netlink monitor starts on boot, and intentionally never stopped, to ensure that all
-        // address events are received. When the netlink monitor starts, any IP addresses already
-        // on the interfaces will not be seen. In practice, the network will not connect at boot
-        // time As a result, all the netlink message should be observed if the netlink monitor
-        // starts here.
-        mHandler.post(mMdnsSocketProvider::startNetLinkMonitor);
-
         // NsdService is started after ActivityManager (startOtherServices in SystemServer, vs.
         // startBootstrapServices).
         mRunningAppActiveImportanceCutoff = mDeps.getDeviceConfigInt(
@@ -2137,7 +2128,10 @@ public class NsdService extends INsdManager.Stub {
                 .setIsIgnoreTemporaryIPv6AddressesEnabled(mDeps.isTetheringFeatureNotChickenedOut(
                         mContext, MdnsFeatureFlags.NSD_IGNORE_TEMPORARY_IPV6_ADDRESSES))
                 .setIsSelectiveMdnsResponseOffloadEnabled(mDeps.isAconfigFlagEnabled(
-                        Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD))
+                        com.android.tethering.mainline.beta
+                                .Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD))
+                .setUseNetworkCallbackForLocalNetworksEnabled(mDeps.isAconfigFlagEnabled(
+                        Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS))
                 .setOverrideProvider(new MdnsFeatureFlags.FlagOverrideProvider() {
                     @Override
                     public boolean isForceEnabledForTest(@NonNull String flag) {
@@ -2153,6 +2147,15 @@ public class NsdService extends INsdManager.Stub {
                     }
                 })
                 .build();
+        mMdnsSocketProvider = deps.makeMdnsSocketProvider(ctx, looper,
+                LOGGER.forSubComponent("MdnsSocketProvider"), new SocketRequestMonitor(),
+                mMdnsFeatureFlags);
+        // Netlink monitor starts on boot, and intentionally never stopped, to ensure that all
+        // address events are received. When the netlink monitor starts, any IP addresses already
+        // on the interfaces will not be seen. In practice, the network will not connect at boot
+        // time As a result, all the netlink message should be observed if the netlink monitor
+        // starts here.
+        mHandler.post(mMdnsSocketProvider::startNetLinkMonitor);
         final MdnsOffloadCallback offloadCallback = new MdnsOffloadCallback();
         mMdnsSocketClient =
                 new MdnsMultinetworkSocketClient(looper, mMdnsSocketProvider,
@@ -2223,10 +2226,13 @@ public class NsdService extends INsdManager.Stub {
         /** Get whether a feature config is enabled. */
         public boolean isAconfigFlagEnabled(String feature) {
             return switch (feature) {
-                case Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD ->
-                        Flags.nsdSelectiveMdnsResponseOffload();
-                case com.android.tethering.flags.Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER ->
+                case com.android.tethering.mainline.beta
+                        .Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD ->
+                        com.android.tethering.mainline.beta.Flags.nsdSelectiveMdnsResponseOffload();
+                case Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER ->
                         com.android.tethering.flags.Flags.nsdQueryWithKnownAnswer();
+                case Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS ->
+                        Flags.nsdUseNetworkCallbackForLocalNetworks();
                 default -> throw new IllegalStateException("Unknown flag " + feature);
             };
         }
@@ -2267,8 +2273,10 @@ public class NsdService extends INsdManager.Stub {
          */
         public MdnsSocketProvider makeMdnsSocketProvider(@NonNull Context context,
                 @NonNull Looper looper, @NonNull SharedLog sharedLog,
-                @NonNull MdnsSocketProvider.SocketRequestMonitor socketCreationCallback) {
-            return new MdnsSocketProvider(context, looper, sharedLog, socketCreationCallback);
+                @NonNull MdnsSocketProvider.SocketRequestMonitor socketCreationCallback,
+                @NonNull MdnsFeatureFlags featureFlags) {
+            return new MdnsSocketProvider(context, looper, sharedLog, socketCreationCallback,
+                    featureFlags);
         }
 
         /**

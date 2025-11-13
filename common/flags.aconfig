@@ -42,3 +42,10 @@ flag {
     description: "Enable new ECH-related DNS resolver changes"
     bug: "419020719"
 }
+
+flag {
+    name: "nsd_use_network_callback_for_local_networks"
+    namespace: "com_android_tethering"
+    description: "Use NetworkCallback to monitor local network changes for NSD."
+    bug: "452297472"
+}

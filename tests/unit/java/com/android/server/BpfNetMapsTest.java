@@ -112,6 +112,7 @@ import com.android.net.module.util.bpf.CookieTagMapValue;
 import com.android.net.module.util.bpf.IngressDiscardKey;
 import com.android.net.module.util.bpf.IngressDiscardValue;
 import com.android.net.module.util.bpf.LocalNetAccessKey;
+import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreAfter;
@@ -202,6 +203,8 @@ public final class BpfNetMapsTest {
     private final IBpfMap<S32, U8> mDataSaverEnabledMap = new TestBpfMap<>(S32.class, U8.class);
     private final IBpfMap<IngressDiscardKey, IngressDiscardValue> mIngressDiscardMap =
             new TestBpfMap<>(IngressDiscardKey.class, IngressDiscardValue.class);
+    private final IBpfMap<S32, UidPermissionChunk> mUidPermissionChunkMap =
+            new TestBpfMap<>(S32.class, UidPermissionChunk.class);
     private final BpfBoolean mUidMigrationEnabledBpfBoolean =
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
 
@@ -227,6 +230,7 @@ public final class BpfNetMapsTest {
         mDataSaverEnabledMap.updateEntry(DATA_SAVER_ENABLED_KEY, new U8(DATA_SAVER_DISABLED));
         BpfNetMaps.setIngressDiscardMapForTest(mIngressDiscardMap);
         BpfNetMaps.setUidMigrationEnabledBpfBooleanForTest(mUidMigrationEnabledBpfBoolean);
+        BpfNetMaps.setUidPermissionChunkMapForTest(mUidPermissionChunkMap);
         BpfNetMaps.setInitializedForTest(false);
         mBpfNetMaps = new BpfNetMaps(mContext, mNetd, mDeps, mInterfaceTracker);
     }

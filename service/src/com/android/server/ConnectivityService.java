@@ -6236,6 +6236,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
         } catch (RemoteException | ServiceSpecificException e) {
             loge("Exception destroying network(networkDestroy): " + e);
         }
+
+        for (final String iface: nai.linkProperties.getAllInterfaceNames()) {
+            maybeModifyQdiscClsact(iface, nai, false /* add */);
+        }
+
         updateIpAddressesAndDestroySockets(nai, nai.linkProperties, null);
         try {
             mDnsResolver.destroyNetworkCache(nai.network.getNetId());
