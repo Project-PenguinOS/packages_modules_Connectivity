@@ -67,6 +67,12 @@ public interface MdnsSocketClientBase {
     /** Returns whether the socket client support requesting per network */
     boolean supportsRequestingSpecificNetworks();
 
+    /*** Notifies the Mdns Socket Client that offload callback is registered */
+    default void notifyOffloadStart(String interfaceName) {}
+
+    /*** Notifies the Mdns Socket Client that offload callback is unregistered */
+    default void notifyOffloadStop(String interfaceName) {}
+
     /*** Callback for mdns response  */
     interface Callback {
         /*** Receive a mdns response */

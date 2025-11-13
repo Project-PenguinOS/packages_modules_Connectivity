@@ -362,6 +362,64 @@ public class MdnsMultinetworkSocketClientTest {
     }
 
     @Test
+    public void testOnNoSocketCreated_InvokedWhenOffloadCallbackIsRegisteredAfterNotifyOffload() {
+        mSocketClient.notifyOffloadStart(mSocketKey.getInterfaceName());
+        final SocketCallback callback = expectSocketCallback(mListener, null /* network */);
+        callback.onNoSocketCreated(mSocketKey);
+
+        verify(mSocketCreationCallback).onNoSocketCreated(mSocketKey);
+    }
+
+    @Test
+    public void testOnNoSocketCreated_InvokedWhenOffloadCallbackIsRegisteredBeforeNotifyOffload() {
+        final SocketCallback callback = expectSocketCallback(mListener, null /* network */);
+        callback.onNoSocketCreated(mSocketKey);
+        mSocketClient.notifyOffloadStart(mSocketKey.getInterfaceName());
+
+        verify(mSocketCreationCallback).onNoSocketCreated(mSocketKey);
+    }
+
+    @Test
+    public void testOnNoSocketCreated_NotInvokedWhenOffloadCallbackIsUnregistered() {
+        mSocketClient.notifyOffloadStart(mSocketKey.getInterfaceName());
+        mSocketClient.notifyOffloadStop(mSocketKey.getInterfaceName());
+        final SocketCallback callback = expectSocketCallback(mListener, null /* network */);
+        callback.onNoSocketCreated(mSocketKey);
+
+        verify(mSocketCreationCallback, never()).onNoSocketCreated(mSocketKey);
+    }
+
+    @Test
+    public void testOnNoSocketCreated_NotInvokedWhenOffloadCallbackIsNotRegistered() {
+        final SocketCallback callback = expectSocketCallback(mListener, null /* network */);
+        callback.onNoSocketCreated(mSocketKey);
+
+        verify(mSocketCreationCallback, never()).onNoSocketCreated(mSocketKey);
+    }
+
+    @Test
+    public void testOnNetworkWithNoSocketDestroyed_onSocketDestroyedIsInvoked() {
+        mSocketClient.notifyOffloadStart(mSocketKey.getInterfaceName());
+        final SocketCallback callback = expectSocketCallback(mListener, null /* network */);
+        callback.onNoSocketCreated(mSocketKey);
+
+        callback.onNetworkWithNoSocketDestroyed(mSocketKey);
+
+        verify(mSocketCreationCallback).onSocketDestroyed(mSocketKey);
+    }
+
+    @Test
+    public void testOnSocketDestroyedInvoked_whenNotifyOffloadStopIsInvoked() {
+        mSocketClient.notifyOffloadStart(mSocketKey.getInterfaceName());
+        final SocketCallback callback = expectSocketCallback(mListener, null /* network */);
+        callback.onNoSocketCreated(mSocketKey);
+
+        mSocketClient.notifyOffloadStop(mSocketKey.getInterfaceName());
+
+        verify(mSocketCreationCallback).onSocketDestroyed(mSocketKey);
+    }
+
+    @Test
     public void testSocketCreatedAndDestroyed_NullNetwork() throws IOException {
         final MdnsInterfaceSocket otherSocket = mock(MdnsInterfaceSocket.class);
         final SocketKey otherSocketKey = new SocketKey(1001 /* interfaceIndex */, "interface1");

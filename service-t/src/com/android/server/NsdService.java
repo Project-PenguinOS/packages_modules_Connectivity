@@ -1444,7 +1444,21 @@ public class NsdService extends INsdManager.Stub {
     }
 
     private void handleUnregisterOffloadEngine(IOffloadEngine offloadEngine) {
-        mOffloadEngines.unregister(offloadEngine);
+        final int count = mOffloadEngines.beginBroadcast();
+        try {
+            for (int i = 0; i < count; i++) {
+                final OffloadEngineInfo engineInfo =
+                        (OffloadEngineInfo) mOffloadEngines.getBroadcastCookie(i);
+                if (offloadEngine.asBinder() == engineInfo.mOffloadEngine.asBinder()) {
+                    String interfaceName = engineInfo.mInterfaceName;
+                    mOffloadEngines.unregister(offloadEngine);
+                    mMdnsDiscoveryManager.notifyOffloadStop(interfaceName);
+                    break;
+                }
+            }
+        } finally {
+            mOffloadEngines.finishBroadcast();
+        }
     }
 
     private void handleRegisterClient(int clientRequestId, ConnectorArgs arg) {
@@ -2081,16 +2095,6 @@ public class NsdService extends INsdManager.Stub {
         mMDnsManager = SdkLevel.isAtLeastV() ? null : ctx.getSystemService(MDnsManager.class);
         mMDnsEventCallback = new MDnsEventCallback(mHandler);
         mDeps = deps;
-
-        // NsdService is started after ActivityManager (startOtherServices in SystemServer, vs.
-        // startBootstrapServices).
-        mRunningAppActiveImportanceCutoff = mDeps.getDeviceConfigInt(
-                MDNS_CONFIG_RUNNING_APP_ACTIVE_IMPORTANCE_CUTOFF,
-                DEFAULT_RUNNING_APP_ACTIVE_IMPORTANCE_CUTOFF);
-        final ActivityManager am = ctx.getSystemService(ActivityManager.class);
-        am.addOnUidImportanceListener(new UidImportanceListener(mHandler),
-                mRunningAppActiveImportanceCutoff);
-
         mMdnsFeatureFlags = new MdnsFeatureFlags.Builder()
                 .setIsMdnsOffloadFeatureEnabled(mDeps.isTetheringFeatureNotChickenedOut(
                         mContext, MdnsFeatureFlags.NSD_FORCE_DISABLE_MDNS_OFFLOAD))
@@ -2132,6 +2136,8 @@ public class NsdService extends INsdManager.Stub {
                                 .Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD))
                 .setUseNetworkCallbackForLocalNetworksEnabled(mDeps.isAconfigFlagEnabled(
                         Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS))
+                .setIsMdnsScanOffloadEnabled(mDeps.isAconfigFlagEnabled(
+                        com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD))
                 .setOverrideProvider(new MdnsFeatureFlags.FlagOverrideProvider() {
                     @Override
                     public boolean isForceEnabledForTest(@NonNull String flag) {
@@ -2147,6 +2153,7 @@ public class NsdService extends INsdManager.Stub {
                     }
                 })
                 .build();
+
         mMdnsSocketProvider = deps.makeMdnsSocketProvider(ctx, looper,
                 LOGGER.forSubComponent("MdnsSocketProvider"), new SocketRequestMonitor(),
                 mMdnsFeatureFlags);
@@ -2156,6 +2163,16 @@ public class NsdService extends INsdManager.Stub {
         // time As a result, all the netlink message should be observed if the netlink monitor
         // starts here.
         mHandler.post(mMdnsSocketProvider::startNetLinkMonitor);
+
+        // NsdService is started after ActivityManager (startOtherServices in SystemServer, vs.
+        // startBootstrapServices).
+        mRunningAppActiveImportanceCutoff = mDeps.getDeviceConfigInt(
+                MDNS_CONFIG_RUNNING_APP_ACTIVE_IMPORTANCE_CUTOFF,
+                DEFAULT_RUNNING_APP_ACTIVE_IMPORTANCE_CUTOFF);
+        final ActivityManager am = ctx.getSystemService(ActivityManager.class);
+        am.addOnUidImportanceListener(new UidImportanceListener(mHandler),
+                mRunningAppActiveImportanceCutoff);
+
         final MdnsOffloadCallback offloadCallback = new MdnsOffloadCallback();
         mMdnsSocketClient =
                 new MdnsMultinetworkSocketClient(looper, mMdnsSocketProvider,
@@ -2233,6 +2250,8 @@ public class NsdService extends INsdManager.Stub {
                         com.android.tethering.flags.Flags.nsdQueryWithKnownAnswer();
                 case Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS ->
                         Flags.nsdUseNetworkCallbackForLocalNetworks();
+                case com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD ->
+                        com.android.tethering.flags.Flags.nsdMdnsScanOffload();
                 default -> throw new IllegalStateException("Unknown flag " + feature);
             };
         }

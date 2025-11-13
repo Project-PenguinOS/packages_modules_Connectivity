@@ -277,13 +277,16 @@ public class MdnsServiceTypeClientTests {
             return null;
         }).when(mockScheduler).sendDelayedMessage(anyInt(), anyInt(), anyInt(), any(), anyLong());
 
-        client = makeMdnsServiceTypeClient(featureFlags);
+        client = makeMdnsServiceTypeClient(featureFlags, false);
     }
 
-    private MdnsServiceTypeClient makeMdnsServiceTypeClient(MdnsFeatureFlags featureFlags) {
+    private MdnsServiceTypeClient makeMdnsServiceTypeClient(
+            MdnsFeatureFlags featureFlags,
+            boolean isReceiveOnly
+    ) {
         return new MdnsServiceTypeClient(SERVICE_TYPE, mockSocketClient, currentThreadExecutor,
                 mockDecoderClock, socketKey, mockSharedLog, thread.getLooper(), mockDeps,
-                serviceCache, featureFlags, mockCallback);
+                serviceCache, featureFlags, mockCallback, isReceiveOnly);
     }
 
     @After
@@ -1967,7 +1970,9 @@ public class MdnsServiceTypeClientTests {
     @Test
     public void testSendQueryWithKnownAnswers() throws Exception {
         client = makeMdnsServiceTypeClient(
-                MdnsFeatureFlags.newBuilder().setIsQueryWithKnownAnswerEnabled(true).build());
+                MdnsFeatureFlags.newBuilder().setIsQueryWithKnownAnswerEnabled(true).build(),
+                false
+        );
 
         doCallRealMethod().when(mockDeps).getDatagramPacketsFromMdnsPacket(
                 any(), any(MdnsPacket.class), any(InetSocketAddress.class), anyBoolean());
@@ -2029,7 +2034,9 @@ public class MdnsServiceTypeClientTests {
     @Test
     public void testSendQueryWithSubTypeWithKnownAnswers() throws Exception {
         client = makeMdnsServiceTypeClient(
-                MdnsFeatureFlags.newBuilder().setIsQueryWithKnownAnswerEnabled(true).build());
+                MdnsFeatureFlags.newBuilder().setIsQueryWithKnownAnswerEnabled(true).build(),
+                false
+        );
 
         doCallRealMethod().when(mockDeps).getDatagramPacketsFromMdnsPacket(
                 any(), any(MdnsPacket.class), any(InetSocketAddress.class), anyBoolean());
@@ -2153,7 +2160,9 @@ public class MdnsServiceTypeClientTests {
     @Test
     public void sendQueries_AccurateDelayCallback() {
         client = makeMdnsServiceTypeClient(
-                MdnsFeatureFlags.newBuilder().setIsAccurateDelayCallbackEnabled(true).build());
+                MdnsFeatureFlags.newBuilder().setIsAccurateDelayCallbackEnabled(true).build(),
+                false
+        );
 
         final int numOfQueriesBeforeBackoff = 2;
         final MdnsSearchOptions searchOptions = MdnsSearchOptions.newBuilder()
@@ -2205,7 +2214,9 @@ public class MdnsServiceTypeClientTests {
     @Test
     public void testTimerFdCloseProperly() {
         client = makeMdnsServiceTypeClient(
-                MdnsFeatureFlags.newBuilder().setIsAccurateDelayCallbackEnabled(true).build());
+                MdnsFeatureFlags.newBuilder().setIsAccurateDelayCallbackEnabled(true).build(),
+                false
+        );
 
         // Start query
         startSendAndReceive(mockListenerOne, MdnsSearchOptions.newBuilder().build());
@@ -2237,7 +2248,7 @@ public class MdnsServiceTypeClientTests {
                 .setIsAccurateDelayCallbackEnabled(true)
                 .build();
         serviceCache = new MdnsServiceCache(thread.getLooper(), flags, mockDecoderClock);
-        client = makeMdnsServiceTypeClient(flags);
+        client = makeMdnsServiceTypeClient(flags, false);
         startSendAndReceive(mockListenerOne,
                 MdnsSearchOptions.newBuilder().setQueryMode(AGGRESSIVE_QUERY_MODE).build());
 
@@ -2289,7 +2300,7 @@ public class MdnsServiceTypeClientTests {
                 .build();
         long currentTime = TEST_ELAPSED_REALTIME;
         serviceCache = new MdnsServiceCache(thread.getLooper(), flags, mockDecoderClock);
-        client = makeMdnsServiceTypeClient(flags);
+        client = makeMdnsServiceTypeClient(flags, false);
         doReturn(currentTime).when(mockDecoderClock).elapsedRealtime();
         startSendAndReceive(mockListenerOne,
                 MdnsSearchOptions.newBuilder().setQueryMode(AGGRESSIVE_QUERY_MODE).build());
@@ -2345,7 +2356,7 @@ public class MdnsServiceTypeClientTests {
     public void testGetFilterRepliesInfo() throws Exception {
         final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
                 .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
-        client = makeMdnsServiceTypeClient(flags);
+        client = makeMdnsServiceTypeClient(flags, false);
 
         final String instanceName = "instance1";
         final String subtype = "subtype";
@@ -2410,7 +2421,7 @@ public class MdnsServiceTypeClientTests {
     public void testGetFilterRepliesInfo_twoDiscoveryRequests() throws Exception {
         final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
                 .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
-        client = makeMdnsServiceTypeClient(flags);
+        client = makeMdnsServiceTypeClient(flags, false);
 
         final String subtype = "subtype";
         final MdnsSearchOptions discoverOptions1 = MdnsSearchOptions.newBuilder().build();
@@ -2440,7 +2451,7 @@ public class MdnsServiceTypeClientTests {
     public void testGetFilterRepliesInfo_combineSubtypes() throws Exception {
         final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
                 .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
-        client = makeMdnsServiceTypeClient(flags);
+        client = makeMdnsServiceTypeClient(flags, false);
 
         final String subtype1 = "subtype1";
         final String subtype2 = "subtype2";
@@ -2469,10 +2480,49 @@ public class MdnsServiceTypeClientTests {
     }
 
     @Test
+    public void sendAndReceive_forReceiveOnlyServiceTypeClient_DoesNotSchedule() {
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+                .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
+        client = makeMdnsServiceTypeClient(flags, true);
+        final String subtype = "subtype";
+        final MdnsSearchOptions discoverOptions = MdnsSearchOptions.newBuilder()
+                .addSubtype(subtype).build();
+
+        startSendAndReceive(mockListenerOne, discoverOptions);
+
+        assertNull(currentThreadExecutor.getAndClearSubmittedRunnable());
+    }
+
+    @Test
+    public void sendAndReceive_onOffloadStartOrUpdateIsInvoked_forReceiveOnlyServiceTypeClient() {
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+                .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
+        client = makeMdnsServiceTypeClient(flags, true);
+        final String instanceName = "instance1";
+        final String subtype = "subtype";
+        final MdnsSearchOptions resolveOptions = MdnsSearchOptions.newBuilder()
+                .setResolveInstanceName(instanceName).build();
+        final MdnsSearchOptions discoverOptions = MdnsSearchOptions.newBuilder()
+                .addSubtype(subtype).build();
+        // Register two listener, one is for service resolution and one is for service discovery.
+        startSendAndReceive(mockListenerOne, resolveOptions);
+        startSendAndReceive(mockListenerTwo, discoverOptions);
+
+        final OffloadServiceInfo resolveInfo1 = createOffloadServiceInfoFromFilterReplies(
+                new FilterRepliesInfo(
+                        instanceName, SERVICE_TYPE, List.of(), NO_HOSTNAME));
+        verify(mockCallback).onOffloadStartOrUpdate(socketKey.getInterfaceName(), resolveInfo1);
+        final OffloadServiceInfo discoverInfo = createOffloadServiceInfoFromFilterReplies(
+                new FilterRepliesInfo(
+                        SERVICE_NAME_DISCOVERY, SERVICE_TYPE, List.of(subtype), NO_HOSTNAME));
+        verify(mockCallback).onOffloadStartOrUpdate(socketKey.getInterfaceName(), discoverInfo);
+    }
+
+    @Test
     public void testOffloadServiceInfoUpdate() {
         final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
                 .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
-        client = makeMdnsServiceTypeClient(flags);
+        client = makeMdnsServiceTypeClient(flags, false);
         final String instanceName = "instance1";
         final String subtype = "subtype";
         final MdnsSearchOptions resolveOptions = MdnsSearchOptions.newBuilder()

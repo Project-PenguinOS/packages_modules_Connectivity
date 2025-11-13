@@ -385,7 +385,7 @@ public class VcnGatewayConnectionTest extends VcnGatewayConnectionTestBase {
         final PersistableBundleWrapper carrierConfig = mock(PersistableBundleWrapper.class);
         doReturn(carrierConfigTimeoutSeconds)
                 .when(carrierConfig)
-                .getInt(eq(VcnManager.VCN_SAFE_MODE_TIMEOUT_SECONDS_KEY), anyInt());
+                .getInt(eq(VcnManager.KEY_SAFE_MODE_TIMEOUT_SEC_INT), anyInt());
 
         verifyGetSafeModeTimeoutMs(
                 false /* isInTestMode */,
@@ -407,7 +407,7 @@ public class VcnGatewayConnectionTest extends VcnGatewayConnectionTestBase {
         final PersistableBundleWrapper carrierConfig = mock(PersistableBundleWrapper.class);
         doReturn(carrierConfigTimeoutSeconds)
                 .when(carrierConfig)
-                .getInt(eq(VcnManager.VCN_SAFE_MODE_TIMEOUT_SECONDS_KEY), anyInt());
+                .getInt(eq(VcnManager.KEY_SAFE_MODE_TIMEOUT_SEC_INT), anyInt());
 
         verifyGetSafeModeTimeoutMs(
                 true /* isInTestMode */,

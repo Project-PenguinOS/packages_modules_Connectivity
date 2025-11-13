@@ -31,9 +31,16 @@ import java.util.List;
 import java.util.StringJoiner;
 
 /**
- * The base class for all SvcParam.
+ * The base class for all SvcParam, which consist of key-value pairs of SvcParamKey=SvcParamValue.
  *
- * <p>See RFC 9460 for more details.
+ * <p>A SvcParam is roughly structured as follows:
+ * <ul>
+ *   <li>SvcParamKey (2 octets): in strict increasing numeric order
+ *   <li>SvcParamValue length (2 octets)
+ *   <li>SvcParamValue (variable length)
+ * </ul>
+ *
+ * <p>See RFC 9460 for more details, especially on the format of the different SvcParamValues.
  *
  * @hide
  */
@@ -247,6 +254,12 @@ public abstract class SvcParam<T> {
         SvcParamEch(@NonNull ByteBuffer buf) throws BufferUnderflowException, ParseException {
             super(KEY_ECH, buf);
         }
+
+        @Override
+        byte[] getValue() {
+            // Note: this is only used for HTTPS records, and not yet exposed for SVCB
+            return mValue;
+        }
     }
 
     /**
@@ -279,7 +292,7 @@ public abstract class SvcParam<T> {
 
     // For other unrecognized and unimplemented SvcParams, they are stored as SvcParamGeneric.
     static class SvcParamGeneric extends SvcParam<byte[]> {
-        private final byte[] mValue;
+        final byte[] mValue;
 
         SvcParamGeneric(int key, @NonNull ByteBuffer buf)
                 throws BufferUnderflowException, ParseException {

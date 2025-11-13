@@ -24,21 +24,22 @@ import static com.android.net.module.util.DnsPacket.TYPE_SVCB;
 import static com.android.net.module.util.DnsSvcbTestUtils.getRemainingByteArray;
 import static com.android.net.module.util.DnsSvcbTestUtils.makeDnsResponseHeaderAsByteArray;
 import static com.android.net.module.util.DnsSvcbTestUtils.makeDnsSvcbRecordFromByteArray;
-// import static com.android.net.module.util.DnsSvcbTestUtils.makeDnsSvcbRecordWithSingleSvcParam;
 import static com.android.net.module.util.DnsSvcbTestUtils.shortToByteArray;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_DNS_SVCB_QUESTION_SECTION;
+import static com.android.net.module.util.DnsSvcbTestUtils.TEST_ECH_CONFIG_LIST;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_DOQ;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_HTTPS;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_DOHPATH;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_ECH;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_GENERIC_WITHOUT_VALUE;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_GENERIC_WITH_VALUE;
-import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_IPV4HINT_1;
-import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_IPV4HINT_2;
-import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_IPV6HINT;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_MANDATORY;
+import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_MULTIPLE_IPV4HINT;
+import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_MULTIPLE_IPV6HINT;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_NO_DEFAULT_ALPN;
 import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_PORT;
+import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_SINGLE_IPV4HINT;
+import static com.android.net.module.util.DnsSvcbTestUtils.TEST_SVC_PARAM_SINGLE_IPV6HINT;
 import static com.android.testutils.MiscAsserts.assertThrows;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -198,7 +199,8 @@ public class DnsSvcbPacketTest {
 
     @Test
     public void testDnsSvcbRecord_svcParamIpv4Hint() throws Exception {
-        final DnsSvcbRecord record = makeDnsSvcbRecordWithSingleSvcParam(TEST_SVC_PARAM_IPV4HINT_2);
+        final DnsSvcbRecord record =
+                makeDnsSvcbRecordWithSingleSvcParam(TEST_SVC_PARAM_SINGLE_IPV4HINT);
         assertEquals(Arrays.asList(InetAddresses.parseNumericAddress("4.3.2.1")),
                 record.getAddresses());
     }
@@ -208,14 +210,25 @@ public class DnsSvcbPacketTest {
         final DnsSvcbRecord record = makeDnsSvcbRecordWithSingleSvcParam(TEST_SVC_PARAM_ECH);
         // Check the content returned from toString() for now because the getter function for
         // this SvcParam hasn't been implemented.
-        // TODO(b/240259333): Consider adding DnsSvcbRecord.getEch() when needed.
-        assertTrue(record.toString().contains("ech=6142634465"));
+        assertTrue(record.toString().contains("ech=" + HexDump.toHexString(TEST_ECH_CONFIG_LIST)));
     }
 
     @Test
     public void testDnsSvcbRecord_svcParamIpv6Hint() throws Exception {
-        final DnsSvcbRecord record = makeDnsSvcbRecordWithSingleSvcParam(TEST_SVC_PARAM_IPV6HINT);
+        final DnsSvcbRecord record =
+                makeDnsSvcbRecordWithSingleSvcParam(TEST_SVC_PARAM_SINGLE_IPV6HINT);
         assertEquals(Arrays.asList(InetAddresses.parseNumericAddress("2001:db8::1")),
+                record.getAddresses());
+    }
+
+    @Test
+    public void testDnsSvcbRecord_whenMultipleIpv6Hint_returnsMultipleAddresses() throws Exception {
+        final DnsSvcbRecord record =
+                makeDnsSvcbRecordWithSingleSvcParam(TEST_SVC_PARAM_MULTIPLE_IPV6HINT);
+
+        assertEquals(Arrays.asList(
+                InetAddresses.parseNumericAddress("2606:4700::6812:a76"),
+                InetAddresses.parseNumericAddress("2606:4700::6812:b76")),
                 record.getAddresses());
     }
 
@@ -254,8 +267,8 @@ public class DnsSvcbPacketTest {
                 .setRRType(TYPE_SVCB)
                 .setTargetName("doh.dns.com")
                 .addRdata(TEST_SVC_PARAM_ALPN_HTTPS)
-                .addRdata(TEST_SVC_PARAM_IPV4HINT_1)
-                .addRdata(TEST_SVC_PARAM_IPV6HINT)
+                .addRdata(TEST_SVC_PARAM_MULTIPLE_IPV4HINT)
+                .addRdata(TEST_SVC_PARAM_SINGLE_IPV6HINT)
                 .addRdata(TEST_SVC_PARAM_PORT)
                 .addRdata(TEST_SVC_PARAM_DOHPATH)
                 .build());
@@ -411,8 +424,8 @@ public class DnsSvcbPacketTest {
                 .setRRType(TYPE_SVCB)
                 .setTargetName(dohTargetName)
                 .addRdata(TEST_SVC_PARAM_ALPN_HTTPS)
-                .addRdata(TEST_SVC_PARAM_IPV4HINT_1)
-                .addRdata(TEST_SVC_PARAM_IPV6HINT)
+                .addRdata(TEST_SVC_PARAM_MULTIPLE_IPV4HINT)
+                .addRdata(TEST_SVC_PARAM_SINGLE_IPV6HINT)
                 .addRdata(TEST_SVC_PARAM_PORT)
                 .addRdata(TEST_SVC_PARAM_DOHPATH)
                 .build());
@@ -423,7 +436,7 @@ public class DnsSvcbPacketTest {
                 .setTargetName(doqTargetName)
                 .setSvcPriority(2)
                 .addRdata(TEST_SVC_PARAM_ALPN_DOQ)
-                .addRdata(TEST_SVC_PARAM_IPV4HINT_2)
+                .addRdata(TEST_SVC_PARAM_SINGLE_IPV4HINT)
                 .build());
         final DnsSvcbPacket pkt = DnsSvcbPacket.fromResponse(os.toByteArray());
 
@@ -503,8 +516,8 @@ public class DnsSvcbPacketTest {
                 .setRRType(TYPE_SVCB)
                 .setTargetName("doq.dns.com")
                 .addRdata(TEST_SVC_PARAM_ALPN_DOQ)
-                .addRdata(TEST_SVC_PARAM_IPV4HINT_2)
-                .addRdata(TEST_SVC_PARAM_IPV6HINT)
+                .addRdata(TEST_SVC_PARAM_SINGLE_IPV4HINT)
+                .addRdata(TEST_SVC_PARAM_SINGLE_IPV6HINT)
                 .build());
         // Add A/AAAA records in the Additional section.
         os.write(new TestDnsRecordByteArrayBuilder()

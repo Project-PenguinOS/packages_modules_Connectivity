@@ -205,6 +205,11 @@ public class MdnsSocketProviderTest {
         }
     }
 
+    private MdnsSocketProvider makeMdnsSocketProvider(MdnsFeatureFlags featureFlags) {
+        return new MdnsSocketProvider(mContext, mHandlerThread.getLooper(), mDeps, mLog,
+                mSocketRequestMonitor, featureFlags);
+    }
+
     private void runOnHandler(Runnable r) {
         mHandler.post(r);
         HandlerUtils.waitForIdle(mHandler, DEFAULT_TIMEOUT);
@@ -344,6 +349,19 @@ public class MdnsSocketProviderTest {
                 expectedCapBits = 0L;
             }
             assertEquals(expectedCapBits, event.mSocketKey.getCreationCapabilitiesBits());
+        }
+
+        private void expectedNoSocketNetworkDestroyedEvent(String interfaceName) {
+            final SocketEvent event = mHistory.poll(0L /* timeoutMs */, c -> true);
+            assertNotNull(event);
+            assertTrue(event instanceof NetworkWithNoSocketDestroyedEvent);
+            assertEquals(interfaceName, event.mSocketKey.getInterfaceName());
+        }
+        private void expectedNoSocketCreatedEvent(String interfaceName) {
+            final SocketEvent event = mHistory.poll(0L /* timeoutMs */, c -> true);
+            assertNotNull(event);
+            assertTrue(event instanceof NoSocketCreatedEvent);
+            assertEquals(interfaceName, event.mSocketKey.getInterfaceName());
         }
 
         public void expectedInterfaceDestroyedForNetwork(Network network) {
@@ -683,32 +701,11 @@ public class MdnsSocketProviderTest {
     }
 
     @Test
-    public void testNoSocketCreatedForNonMulticastInterface() throws Exception {
-        doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
-        startMonitoringSockets();
-
-        final TestSocketCallback testCallback = new TestSocketCallback();
-        runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
-
-        postNetworkAvailable(TRANSPORT_BLUETOOTH);
-        testCallback.expectedNoCallback();
-    }
-
-    @Test
-    public void testNoSocketCreatedCallbackIsNotInvokedForNonMulticastInterface() throws Exception {
-        doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
-        startMonitoringSockets();
-
-        final TestSocketCallback testCallback = new TestSocketCallback();
-        runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
-
-        postNetworkAvailable(TRANSPORT_BLUETOOTH);
-        testCallback.expectedNoCallback();
-    }
-
-    @Test
-    public void testNotifyNetworkWithNoSocketDestroyedIsNotInvokedForNonMulticastInterface()
+    public void testNoSocketNetworkDestroyedEvent_FlaggedOff_NotInvoked()
             throws Exception {
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+                .setIsMdnsScanOffloadEnabled(false).build();
+        mSocketProvider = makeMdnsSocketProvider(flags);
         doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
         startMonitoringSockets();
 
@@ -723,9 +720,36 @@ public class MdnsSocketProviderTest {
     }
 
     @Test
-    public void testNoSocketCreatedCallbackIsNotInvokedWhenLinkPropertiesChanged()
+    public void testNoSocketNetworkDestroyedEvent_FlaggedOn_Invoked()
             throws Exception {
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+                .setIsMdnsScanOffloadEnabled(true).build();
+        mSocketProvider = makeMdnsSocketProvider(flags);
+        doReturn(mTestNetworkIfaceWrapper).when(mDeps).getNetworkInterfaceByName(TEST_IFACE_NAME);
         doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
+        doReturn(TEST_IFACE_NAME).when(mTestNetworkIfaceWrapper).getName();
+        startMonitoringSockets();
+
+        final TestSocketCallback testCallback = new TestSocketCallback();
+        runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
+        testCallback.expectedNoCallback();
+
+        postNetworkAvailable(TRANSPORT_BLUETOOTH);
+        testCallback.expectedNoSocketCreatedEvent(TEST_IFACE_NAME);
+
+        runOnHandler(() -> mNetworkCallback.onLost(TEST_NETWORK));
+        testCallback.expectedNoSocketNetworkDestroyedEvent(TEST_IFACE_NAME);
+    }
+
+    @Test
+    public void testNoSocketCreatedEvent_FlaggedOff_NotInvoked()
+            throws Exception {
+
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+                .setIsMdnsScanOffloadEnabled(false).build();
+        mSocketProvider = makeMdnsSocketProvider(flags);
+        doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
+        doReturn(TEST_IFACE_NAME).when(mTestNetworkIfaceWrapper).getName();
         startMonitoringSockets();
 
         final TestSocketCallback testCallback = new TestSocketCallback();
@@ -733,12 +757,24 @@ public class MdnsSocketProviderTest {
 
         postNetworkAvailable(TRANSPORT_BLUETOOTH);
         testCallback.expectedNoCallback();
+    }
 
-        final LinkProperties newTestLp = new LinkProperties();
-        newTestLp.setInterfaceName(TEST_IFACE_NAME);
-        newTestLp.setLinkAddresses(List.of(LINKADDRV4));
-        runOnHandler(() -> mNetworkCallback.onLinkPropertiesChanged(TEST_NETWORK, newTestLp));
-        testCallback.expectedNoCallback();
+    @Test
+    public void testNoSocketCreatedEvent_FlaggedOn_Invoked()
+            throws Exception {
+
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+                .setIsMdnsScanOffloadEnabled(true).build();
+        mSocketProvider = makeMdnsSocketProvider(flags);
+        doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
+        doReturn(TEST_IFACE_NAME).when(mTestNetworkIfaceWrapper).getName();
+        startMonitoringSockets();
+
+        final TestSocketCallback testCallback = new TestSocketCallback();
+        runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
+
+        postNetworkAvailable(TRANSPORT_BLUETOOTH);
+        testCallback.expectedNoSocketCreatedEvent(TEST_IFACE_NAME);
     }
 
     @Test

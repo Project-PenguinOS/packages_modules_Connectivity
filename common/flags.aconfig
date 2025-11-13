@@ -49,3 +49,10 @@ flag {
     description: "Use NetworkCallback to monitor local network changes for NSD."
     bug: "452297472"
 }
+
+flag {
+    name: "nsd_mdns_scan_offload"
+    namespace: "com_android_tethering"
+    description: "A flag to control whether offload callbacks should be sent for interfaces that do not otherwise support mDNS."
+    bug: "395515556"
+}

@@ -284,6 +284,9 @@ java_library {
     },
 }
 
+// DO NOT try to add any static_libs to the below target, as it is used widely,
+// would require extensive jarjar'ing, and result in places like telephony
+// having duplicate copies of the included static_libs classes.
 java_library {
     name: "net-utils-framework-common",
     srcs: [

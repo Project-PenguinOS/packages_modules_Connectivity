@@ -191,6 +191,9 @@ public class MdnsFeatureFlags {
     // Flag to use NetworkCallback instead of TetheringEventCallback for local networks
     public final boolean mUseNetworkCallbackForLocalNetworks;
 
+    // Flag for offloading mdns scan request if network does not support multicast DNS
+    public final boolean mIsMdnsScanOffloadEnabled;
+
     // Thread stats tag for MdnsSocketClient
     public final int mMdnsSocketThreadStatsTag;
 
@@ -332,6 +335,7 @@ public class MdnsFeatureFlags {
             boolean isIgnoreTemporaryIPv6AddressesEnabled,
             boolean isSelectiveMdnsResponseOffloadEnabled,
             boolean useNetworkCallbackForLocalNetworks,
+            boolean isMdnsScanOffloadEnabled,
             int mdnsSocketThreadStatsTag,
             @Nullable FlagOverrideProvider overrideProvider) {
         mIsMdnsOffloadFeatureEnabled = isOffloadFeatureEnabled;
@@ -354,6 +358,7 @@ public class MdnsFeatureFlags {
         mIsIgnoreTemporaryIPv6AddressesEnabled = isIgnoreTemporaryIPv6AddressesEnabled;
         mIsSelectiveMdnsResponseOffloadEnabled = isSelectiveMdnsResponseOffloadEnabled;
         mUseNetworkCallbackForLocalNetworks = useNetworkCallbackForLocalNetworks;
+        mIsMdnsScanOffloadEnabled = isMdnsScanOffloadEnabled;
         mOverrideProvider = overrideProvider;
     }
 
@@ -385,6 +390,7 @@ public class MdnsFeatureFlags {
         private boolean mIsIgnoreTemporaryIPv6AddressesEnabled;
         private boolean mIsSelectiveMdnsResponseOffloadEnabled;
         private boolean mUseNetworkCallbackForLocalNetworks;
+        private boolean mIsMdnsScanOffloadEnabled;
         private int mMdnsSocketThreadStatsTag;
         private FlagOverrideProvider mOverrideProvider;
 
@@ -411,6 +417,7 @@ public class MdnsFeatureFlags {
             mIsIgnoreTemporaryIPv6AddressesEnabled = true; // Default enabled.
             mIsSelectiveMdnsResponseOffloadEnabled = false;
             mUseNetworkCallbackForLocalNetworks = false;
+            mIsMdnsScanOffloadEnabled = false;
             mMdnsSocketThreadStatsTag = MDNS_SOCKET_THREAD_STATS_TAG_NONE;
             mOverrideProvider = null;
         }
@@ -628,6 +635,16 @@ public class MdnsFeatureFlags {
         }
 
         /**
+         * Set whether the offloading mdns scan is enabled
+         *
+         * @see #NSD_MDNS_SCAN_OFFLOAD
+         */
+        public Builder setIsMdnsScanOffloadEnabled(boolean isMdnsScanOffloadEnabled) {
+            mIsMdnsScanOffloadEnabled = isMdnsScanOffloadEnabled;
+            return this;
+        }
+
+        /**
          * Builds a {@link MdnsFeatureFlags} with the arguments supplied to this builder.
          */
         public MdnsFeatureFlags build() {
@@ -650,6 +667,7 @@ public class MdnsFeatureFlags {
                     mIsIgnoreTemporaryIPv6AddressesEnabled,
                     mIsSelectiveMdnsResponseOffloadEnabled,
                     mUseNetworkCallbackForLocalNetworks,
+                    mIsMdnsScanOffloadEnabled,
                     mMdnsSocketThreadStatsTag,
                     mOverrideProvider);
         }

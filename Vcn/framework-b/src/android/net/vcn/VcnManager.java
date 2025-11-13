@@ -85,17 +85,21 @@ public class VcnManager {
     /** @hide */
     public static final String VCN_MANAGEMENT_SERVICE_STRING = "vcn_management";
 
+    private static final String CC_KEY_PREFIX = "android.net.vcn";
+
     /**
      * Key for WiFi entry RSSI thresholds
      *
      * <p>The VCN will only migrate to a Carrier WiFi network that has a signal strength greater
      * than, or equal to this threshold.
      *
+     * <p>Defaults to -70, unless overridden by carrier config
+     *
      * @hide
      */
     @NonNull
-    public static final String VCN_NETWORK_SELECTION_WIFI_ENTRY_RSSI_THRESHOLD_KEY =
-            "vcn_network_selection_wifi_entry_rssi_threshold";
+    public static final String KEY_NETWORK_SELECTION_WIFI_ENTRY_RSSI_INT =
+            CC_KEY_PREFIX + "key_network_selection_wifi_entry_rssi_int";
 
     /**
      * Key for WiFi entry RSSI thresholds
@@ -103,29 +107,38 @@ public class VcnManager {
      * <p>If the VCN's selected Carrier WiFi network has a signal strength less than this threshold,
      * the VCN will attempt to migrate away from the Carrier WiFi network.
      *
+     * <p>Defaults to -74, unless overridden by carrier config
+     *
      * @hide
      */
     @NonNull
-    public static final String VCN_NETWORK_SELECTION_WIFI_EXIT_RSSI_THRESHOLD_KEY =
-            "vcn_network_selection_wifi_exit_rssi_threshold";
+    public static final String KEY_NETWORK_SELECTION_WIFI_EXIT_RSSI_INT =
+            CC_KEY_PREFIX + "key_network_selection_wifi_exit_rssi_int";
 
     /**
      * Key for the interval to poll IpSecTransformState for packet loss monitoring
      *
-     * @hide
-     */
-    @NonNull
-    public static final String VCN_NETWORK_SELECTION_POLL_IPSEC_STATE_INTERVAL_SECONDS_KEY =
-            "vcn_network_selection_poll_ipsec_state_interval_seconds";
-
-    /**
-     * Key for the threshold of IPSec packet loss rate
+     * <p>If the reported packet loss rate is equal to or larger than this threshold, VCN will
+     * switch away to use a different underlying network.
+     *
+     * <p>Defaults to 20, unless overridden by carrier config
      *
      * @hide
      */
     @NonNull
-    public static final String VCN_NETWORK_SELECTION_IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_KEY =
-            "vcn_network_selection_ipsec_packet_loss_percent_threshold";
+    public static final String KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_POLL_INTERVAL_SEC_INT =
+            CC_KEY_PREFIX + "key_network_selection_ipsec_loss_detect_poll_interval_sec_int";
+
+    /**
+     * Key for the threshold of IPSec packet loss rate
+     *
+     * <p>Defaults to 12, unless overridden by carrier config
+     *
+     * @hide
+     */
+    @NonNull
+    public static final String KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT =
+            CC_KEY_PREFIX + "key_network_selection_ipsec_loss_detect_percent_thd_int";
 
     /**
      * Key for detecting unusually large increases in IPsec packet sequence numbers.
@@ -140,29 +153,31 @@ public class VcnManager {
      * @hide
      */
     @NonNull
-    public static final String VCN_NETWORK_SELECTION_MAX_SEQ_NUM_INCREASE_PER_SECOND_KEY =
-            "vcn_network_selection_max_seq_num_increase_per_second";
+    public static final String KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT =
+            CC_KEY_PREFIX + "key_network_selection_ipsec_loss_detect_max_seq_inc_per_sec_int";
 
     /**
      * Key for the list of timeouts in minute to stop penalizing an underlying network candidate
      *
+     * <p>Defaults to [5], unless overridden by carrier config
+     *
      * @hide
      */
     @NonNull
-    public static final String VCN_NETWORK_SELECTION_PENALTY_TIMEOUT_MINUTES_LIST_KEY =
-            "vcn_network_selection_penalty_timeout_minutes_list";
+    public static final String KEY_NETWORK_SELECTION_PENALTY_TIMEOUT_MIN_INT_ARRAY =
+            CC_KEY_PREFIX + "key_network_selection_penalty_timeout_min_int_array";
 
     // TODO: Add separate signal strength thresholds for 2.4 GHz and 5GHz
 
     /**
      * Key for transports that need to be marked as restricted by the VCN
      *
-     * <p>Defaults to TRANSPORT_WIFI if the config does not exist
+     * <p>Defaults to [TRANSPORT_WIFI] if the config does not exist
      *
      * @hide
      */
-    public static final String VCN_RESTRICTED_TRANSPORTS_INT_ARRAY_KEY =
-            "vcn_restricted_transports";
+    public static final String KEY_RESTRICTED_TRANSPORTS_INT_ARRAY =
+            CC_KEY_PREFIX + "key_restricted_transports_int_array";
 
     /**
      * Key for number of seconds to wait before entering safe mode
@@ -175,8 +190,8 @@ public class VcnManager {
      * @hide
      */
     @NonNull
-    public static final String VCN_SAFE_MODE_TIMEOUT_SECONDS_KEY =
-            "vcn_safe_mode_timeout_seconds_key";
+    public static final String KEY_SAFE_MODE_TIMEOUT_SEC_INT =
+            CC_KEY_PREFIX + "key_safe_mode_timeout_sec_int";
 
     /**
      * Key for maximum number of parallel SAs for tunnel aggregation
@@ -189,25 +204,26 @@ public class VcnManager {
      * @hide
      */
     @NonNull
-    public static final String VCN_TUNNEL_AGGREGATION_SA_COUNT_MAX_KEY =
-            "vcn_tunnel_aggregation_sa_count_max";
+    public static final String KEY_TUNNEL_AGGREGATION_SA_COUNT_MAX_INT =
+            CC_KEY_PREFIX + "key_tunnel_aggregation_sa_count_max_int";
 
     /**
      * List of Carrier Config options to extract from Carrier Config bundles.
+     *
      * @hide
      */
     @NonNull
     public static final String[] VCN_RELATED_CARRIER_CONFIG_KEYS =
             new String[] {
-                VCN_NETWORK_SELECTION_WIFI_ENTRY_RSSI_THRESHOLD_KEY,
-                VCN_NETWORK_SELECTION_WIFI_EXIT_RSSI_THRESHOLD_KEY,
-                VCN_NETWORK_SELECTION_POLL_IPSEC_STATE_INTERVAL_SECONDS_KEY,
-                VCN_NETWORK_SELECTION_IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_KEY,
-                VCN_NETWORK_SELECTION_MAX_SEQ_NUM_INCREASE_PER_SECOND_KEY,
-                VCN_NETWORK_SELECTION_PENALTY_TIMEOUT_MINUTES_LIST_KEY,
-                VCN_RESTRICTED_TRANSPORTS_INT_ARRAY_KEY,
-                VCN_SAFE_MODE_TIMEOUT_SECONDS_KEY,
-                VCN_TUNNEL_AGGREGATION_SA_COUNT_MAX_KEY,
+                KEY_NETWORK_SELECTION_WIFI_ENTRY_RSSI_INT,
+                KEY_NETWORK_SELECTION_WIFI_EXIT_RSSI_INT,
+                KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_POLL_INTERVAL_SEC_INT,
+                KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT,
+                KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT,
+                KEY_NETWORK_SELECTION_PENALTY_TIMEOUT_MIN_INT_ARRAY,
+                KEY_RESTRICTED_TRANSPORTS_INT_ARRAY,
+                KEY_SAFE_MODE_TIMEOUT_SEC_INT,
+                KEY_TUNNEL_AGGREGATION_SA_COUNT_MAX_INT,
             };
 
     private static final Map<

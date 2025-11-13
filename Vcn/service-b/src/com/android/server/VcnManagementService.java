@@ -22,7 +22,7 @@ import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_TEST;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 import static android.net.vcn.VcnGatewayConnectionConfig.ALLOWED_CAPABILITIES;
-import static android.net.vcn.VcnManager.VCN_RESTRICTED_TRANSPORTS_INT_ARRAY_KEY;
+import static android.net.vcn.VcnManager.KEY_RESTRICTED_TRANSPORTS_INT_ARRAY;
 import static android.net.vcn.VcnManager.VCN_STATUS_CODE_ACTIVE;
 import static android.net.vcn.VcnManager.VCN_STATUS_CODE_INACTIVE;
 import static android.net.vcn.VcnManager.VCN_STATUS_CODE_NOT_CONFIGURED;
@@ -403,9 +403,7 @@ public class VcnManagementService extends IVcnManagementService.Stub {
             final int[] defaultValue =
                     RESTRICTED_TRANSPORTS_DEFAULT.stream().mapToInt(i -> i).toArray();
             final int[] restrictedTransportsArray =
-                    carrierConfig.getIntArray(
-                            VCN_RESTRICTED_TRANSPORTS_INT_ARRAY_KEY,
-                            defaultValue);
+                    carrierConfig.getIntArray(KEY_RESTRICTED_TRANSPORTS_INT_ARRAY, defaultValue);
 
             // Convert to a boxed set
             final Set<Integer> restrictedTransports = new ArraySet<>();

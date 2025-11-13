@@ -112,8 +112,7 @@ public class MdnsSocketProvider {
     private boolean mMonitoringSockets = false;
     private boolean mRequestStop = false;
     private String mWifiP2pTetherInterface = null;
-    // Below flag will be replaced with Aflag
-    private boolean mIsMdnsScanOffloadEnabled = false;
+    @NonNull private final MdnsFeatureFlags mMdnsFeatureFlags;
 
     private final BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
         @Override
@@ -187,6 +186,7 @@ public class MdnsSocketProvider {
         mSharedLog = sharedLog;
         mSocketRequestMonitor = socketRequestMonitor;
         mUseNetworkCallbackForLocalNetworks = featureFlags.mUseNetworkCallbackForLocalNetworks;
+        mMdnsFeatureFlags = featureFlags;
         mNetworkCallback = new NetworkCallback() {
             @Override
             public void onLost(Network network) {
@@ -564,7 +564,7 @@ public class MdnsSocketProvider {
                     network, networkInterface.getIndex(), networkInterface.getName(),
                     capabilitiesBits);
             if (!isMdnsCapableInterface(networkInterface, transports)) {
-                if (mIsMdnsScanOffloadEnabled) {
+                if (mMdnsFeatureFlags.mIsMdnsScanOffloadEnabled) {
                     mNoSocketNetworks.put(network, socketKey);
                     notifyNoSocketCreated(socketKey);
                 }
@@ -626,7 +626,7 @@ public class MdnsSocketProvider {
     }
 
     private void removeNetworkSocket(Network network) {
-        if (mIsMdnsScanOffloadEnabled) {
+        if (mMdnsFeatureFlags.mIsMdnsScanOffloadEnabled) {
             final SocketKey socketKey = mNoSocketNetworks.remove(network);
             if (socketKey != null) {
                 mSharedLog.log("Notifying socket clients about network = " + network

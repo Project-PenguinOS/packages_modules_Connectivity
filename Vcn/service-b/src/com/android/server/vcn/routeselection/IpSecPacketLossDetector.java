@@ -16,6 +16,7 @@
 
 package com.android.server.vcn.routeselection;
 
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT;
 import static android.net.vcn.util.PersistableBundleUtils.PersistableBundleWrapper;
 
 import static com.android.internal.annotations.VisibleForTesting.Visibility;
@@ -220,7 +221,8 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
         if (carrierConfig != null) {
             seconds =
                     carrierConfig.getInt(
-                            VcnManager.VCN_NETWORK_SELECTION_POLL_IPSEC_STATE_INTERVAL_SECONDS_KEY,
+                            VcnManager
+                                    .KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_POLL_INTERVAL_SEC_INT,
                             POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT);
         } else {
             seconds = POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT;
@@ -233,7 +235,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
             @Nullable PersistableBundleWrapper carrierConfig) {
         if (carrierConfig != null) {
             return carrierConfig.getInt(
-                    VcnManager.VCN_NETWORK_SELECTION_IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_KEY,
+                    VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT,
                     IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DEFAULT);
         }
         return IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DEFAULT;
@@ -245,7 +247,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
         if (carrierConfig != null) {
             maxSeqNumIncrease =
                     carrierConfig.getInt(
-                            VcnManager.VCN_NETWORK_SELECTION_MAX_SEQ_NUM_INCREASE_PER_SECOND_KEY,
+                            KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT,
                             MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED);
         }
 

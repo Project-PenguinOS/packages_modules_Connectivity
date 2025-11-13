@@ -223,7 +223,7 @@ public class UnderlyingNetworkEvaluator {
         if (carrierConfig != null) {
             timeoutMinuteList =
                     carrierConfig.getIntArray(
-                            VcnManager.VCN_NETWORK_SELECTION_PENALTY_TIMEOUT_MINUTES_LIST_KEY,
+                            VcnManager.KEY_NETWORK_SELECTION_PENALTY_TIMEOUT_MIN_INT_ARRAY,
                             PENALTY_TIMEOUT_MINUTES_DEFAULT);
         } else {
             timeoutMinuteList = PENALTY_TIMEOUT_MINUTES_DEFAULT;

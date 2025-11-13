@@ -16,9 +16,9 @@
 
 package com.android.server.vcn.routeselection;
 
-import static android.net.vcn.VcnManager.VCN_NETWORK_SELECTION_IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_KEY;
-import static android.net.vcn.VcnManager.VCN_NETWORK_SELECTION_MAX_SEQ_NUM_INCREASE_PER_SECOND_KEY;
-import static android.net.vcn.VcnManager.VCN_NETWORK_SELECTION_POLL_IPSEC_STATE_INTERVAL_SECONDS_KEY;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_POLL_INTERVAL_SEC_INT;
 import static android.net.vcn.util.PersistableBundleUtils.PersistableBundleWrapper;
 
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DISABLE_DETECTOR;
@@ -103,14 +103,15 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
         mTransformStateInitial = newTransformState(0, 0, newReplayBitmap(0));
 
         when(mCarrierConfig.getInt(
-                        eq(VCN_NETWORK_SELECTION_POLL_IPSEC_STATE_INTERVAL_SECONDS_KEY), anyInt()))
+                        eq(KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_POLL_INTERVAL_SEC_INT),
+                        anyInt()))
                 .thenReturn((int) TimeUnit.MILLISECONDS.toSeconds(POLL_IPSEC_STATE_INTERVAL_MS));
         when(mCarrierConfig.getInt(
-                        eq(VCN_NETWORK_SELECTION_IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_KEY),
-                        anyInt()))
+                        eq(KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT), anyInt()))
                 .thenReturn(IPSEC_PACKET_LOSS_PERCENT_THRESHOLD);
         when(mCarrierConfig.getInt(
-                        eq(VCN_NETWORK_SELECTION_MAX_SEQ_NUM_INCREASE_PER_SECOND_KEY), anyInt()))
+                        eq(KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT),
+                        anyInt()))
                 .thenReturn(MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED);
 
         when(mDependencies.getPacketLossCalculator()).thenReturn(mPacketLossCalculator);
@@ -255,7 +256,8 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
 
         final int additionalPollIntervalMs = (int) TimeUnit.SECONDS.toMillis(10L);
         when(mCarrierConfig.getInt(
-                        eq(VCN_NETWORK_SELECTION_POLL_IPSEC_STATE_INTERVAL_SECONDS_KEY), anyInt()))
+                        eq(KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_POLL_INTERVAL_SEC_INT),
+                        anyInt()))
                 .thenReturn(
                         (int)
                                 TimeUnit.MILLISECONDS.toSeconds(
@@ -590,7 +592,8 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     public void testGetMaxSeqNumIncreasePerSecond() throws Exception {
         final int seqNumLeapNegative = 500_000;
         when(mCarrierConfig.getInt(
-                        eq(VCN_NETWORK_SELECTION_MAX_SEQ_NUM_INCREASE_PER_SECOND_KEY), anyInt()))
+                        eq(KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT),
+                        anyInt()))
                 .thenReturn(seqNumLeapNegative);
         assertEquals(seqNumLeapNegative, getMaxSeqNumIncreasePerSecond(mCarrierConfig));
     }
@@ -599,7 +602,8 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     public void testGetMaxSeqNumIncreasePerSecond_negativeValue() throws Exception {
         final int seqNumLeapNegative = -10;
         when(mCarrierConfig.getInt(
-                        eq(VCN_NETWORK_SELECTION_MAX_SEQ_NUM_INCREASE_PER_SECOND_KEY), anyInt()))
+                        eq(KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT),
+                        anyInt()))
                 .thenReturn(seqNumLeapNegative);
         assertEquals(
                 MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED,
@@ -608,8 +612,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
 
     private IpSecPacketLossDetector newDetectorAndSetTransform(int threshold) throws Exception {
         when(mCarrierConfig.getInt(
-                        eq(VCN_NETWORK_SELECTION_IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_KEY),
-                        anyInt()))
+                        eq(KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT), anyInt()))
                 .thenReturn(threshold);
 
         final IpSecPacketLossDetector detector =
@@ -634,8 +637,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
         assertFalse(detector.isStarted());
 
         when(mCarrierConfig.getInt(
-                        eq(VCN_NETWORK_SELECTION_IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_KEY),
-                        anyInt()))
+                        eq(KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT), anyInt()))
                 .thenReturn(IPSEC_PACKET_LOSS_PERCENT_THRESHOLD);
         detector.setCarrierConfig(mCarrierConfig);
 
@@ -650,8 +652,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
         assertTrue(detector.isStarted());
 
         when(mCarrierConfig.getInt(
-                        eq(VCN_NETWORK_SELECTION_IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_KEY),
-                        anyInt()))
+                        eq(KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT), anyInt()))
                 .thenReturn(IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DISABLE_DETECTOR);
         detector.setCarrierConfig(mCarrierConfig);
 
