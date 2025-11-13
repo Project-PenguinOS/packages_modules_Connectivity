@@ -42,6 +42,12 @@ public class UidPermissionChunk extends Struct {
     public final static long UID_PERMISSION_MASK = 7L; // mask for 3 permission bits
     // LINT.ThenChange(../../../../../../../../bpf/progs/netd.h)
 
+    // The following bits is supported in permission chunk bpf map:
+    public final static int PERMISSION_BIT_NONE = 0;
+    public final static int PERMISSION_BIT_ACCESS_LOCAL_NETWORK = 1;
+    public final static int PERMISSION_BIT_UPDATE_DEVICE_STATS = 2;
+    public final static int PERMISSION_BIT_INTERNET = 4;
+
     @Struct.Field(order = 0, type = Struct.Type.S64Array,
             arraysize = CHUNK_INT64_COUNT)
     public final long[] val;

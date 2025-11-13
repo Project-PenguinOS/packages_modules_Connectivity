@@ -23,11 +23,13 @@ import static com.android.server.connectivity.mdns.MdnsServiceCache.findMatchedR
 import static com.android.server.connectivity.mdns.MdnsQueryScheduler.ScheduledQueryTaskArgs;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.Clock;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.buildMdnsServiceInfoFromResponse;
+import static com.android.server.connectivity.mdns.util.MdnsUtils.convertNsdServiceInfoToMdnsResponse;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.createOffloadServiceInfoFromFilterReplies;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.responseMatchesInstanceNameAndSubtypes;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.net.nsd.NsdServiceInfo;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -724,6 +726,29 @@ public class MdnsServiceTypeClient {
             shutDown();
         }
         return listeners.isEmpty();
+    }
+
+    /**
+     * Process an incoming response from the proxy offload engine
+     * @param serviceInfo The {@link NsdServiceInfo} information for network service discovery
+     * @param isServiceLost If true, this indicates that service is no longer valid and
+     * should be removed
+     */
+    public void processProxyOffloadEngineResponse(
+            @NonNull NsdServiceInfo serviceInfo, boolean isServiceLost) {
+        ensureRunningOnHandlerThread(handler);
+        long responseReceiveTime = clock.elapsedRealtime();
+        MdnsResponse response = convertNsdServiceInfoToMdnsResponse(serviceInfo, isServiceLost,
+                socketKey, responseReceiveTime, featureFlags);
+
+        if (response == null) {
+            return;
+        }
+        if (response.isGoodbye()) {
+            onGoodbyeReceived(response.getServiceInstanceName());
+        } else {
+            onResponseModified(response);
+        }
     }
 
     /**

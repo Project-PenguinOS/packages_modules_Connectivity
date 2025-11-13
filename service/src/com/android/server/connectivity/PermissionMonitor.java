@@ -1367,7 +1367,14 @@ public class PermissionMonitor {
      */
     @VisibleForTesting
     void sendPackagePermissionsForUid(int uid, int permissions) {
-        // TODO(436242702) implement sending uids to bpf map
+        ensureRunningOnHandlerThread();
+        final SparseIntArray permissionsUids = new SparseIntArray();
+        permissionsUids.put(uid, permissions);
+        if (hasSdkSandbox(uid)) {
+            int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+            permissionsUids.put(sdkSandboxUid, permissions);
+        }
+        sendUidsTrafficPermission(permissionsUids);
     }
 
     /**
@@ -1396,7 +1403,12 @@ public class PermissionMonitor {
      */
     @VisibleForTesting
     void sendUidsTrafficPermission(SparseIntArray allUserTrafficPermissions) {
-        // TODO(436242702) implement sending uids to bpf map
+        ensureRunningOnHandlerThread();
+        try {
+            mBpfNetMaps.setPermListForUids(allUserTrafficPermissions);
+        } catch (RemoteException | ServiceSpecificException e) {
+            Log.e(TAG, "Send uid traffic permission failed." + e);
+        }
     }
 
     /**

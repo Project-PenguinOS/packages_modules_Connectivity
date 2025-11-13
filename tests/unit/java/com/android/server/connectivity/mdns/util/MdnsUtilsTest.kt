@@ -17,12 +17,15 @@
 package com.android.server.connectivity.mdns.util
 
 import android.net.InetAddresses
+import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import com.android.net.module.util.CollectionUtils
 import com.android.server.connectivity.mdns.MdnsConstants
+import com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES
 import com.android.server.connectivity.mdns.MdnsConstants.FLAG_TRUNCATED
 import com.android.server.connectivity.mdns.MdnsConstants.IPV4_SOCKET_ADDR
 import com.android.server.connectivity.mdns.MdnsConstants.IPV6_SOCKET_ADDR
+import com.android.server.connectivity.mdns.MdnsFeatureFlags
 import com.android.server.connectivity.mdns.MdnsInetAddressRecord
 import com.android.server.connectivity.mdns.MdnsPacket
 import com.android.server.connectivity.mdns.MdnsPacketReader
@@ -38,20 +41,33 @@ import com.android.server.connectivity.mdns.util.MdnsUtils.responseMatchesInstan
 import com.android.server.connectivity.mdns.util.MdnsUtils.truncateServiceName
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRunner
+import com.android.testutils.assertEmpty
+import com.android.testutils.assertSameElements
 import java.net.DatagramPacket
+import java.net.Inet4Address
 import kotlin.test.assertContentEquals
+import kotlin.test.assertNotNull
 import org.junit.Assert.assertArrayEquals
-import org.mockito.Mockito.doReturn
-import org.mockito.Mockito.mock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.mock
 
 @RunWith(DevSdkIgnoreRunner::class)
 @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.S_V2)
 class MdnsUtilsTest {
+    companion object {
+        private const val SERVICE_TYPE = "_googlecast._tcp.local"
+        private val SERVICE_TYPE_LABELS: Array<String> =
+            SERVICE_TYPE.split('.').toTypedArray()
+
+        // Use a fixed value for testing purposes
+        const val FAKE_RESPONSE_RECEIVE_TIME = 1000L
+    }
 
     @Test
     fun testTruncateServiceName() {
@@ -167,6 +183,209 @@ class MdnsUtilsTest {
         assertTrue(MdnsUtils.checkAllPacketsWithSameAddress(listOf(v6Packet, v6Packet)))
         assertFalse(MdnsUtils.checkAllPacketsWithSameAddress(listOf(v6Packet, otherV6Packet)))
         assertFalse(MdnsUtils.checkAllPacketsWithSameAddress(listOf(v4Packet, v6Packet)))
+    }
+
+    @Test
+    fun testConvertNsdServiceInfoToMdnsResponseWhenServiceIsNull() {
+        val nsdServiceInfo = NsdServiceInfo(null, null)
+        assertNull(MdnsUtils.convertNsdServiceInfoToMdnsResponse(
+            nsdServiceInfo,
+            false,
+            null,
+            FAKE_RESPONSE_RECEIVE_TIME,
+            null
+        ))
+    }
+
+    @Test
+    fun testConvertNsdServiceInfoToMdnsResponseWhenServiceIsEmpty() {
+        val nsdServiceInfo = NsdServiceInfo("", "")
+        assertNull(MdnsUtils.convertNsdServiceInfoToMdnsResponse(
+            nsdServiceInfo,
+            false,
+            null,
+            FAKE_RESPONSE_RECEIVE_TIME,
+            null
+        ))
+    }
+
+    @Test
+    fun testConvertIncompleteNsdServiceInfoToMdnsResponse() {
+        val featureFlags =
+            MdnsFeatureFlags.newBuilder().setAvoidAdvertisingEmptyTxtRecords(true).build()
+        val nsdServiceInfo = NsdServiceInfo("MyService", SERVICE_TYPE).also { it ->
+            it.subtypes = setOf("subtype0", "subtype1")
+        }
+        val responseReceiveTime = FAKE_RESPONSE_RECEIVE_TIME
+        val isServiceLost = false
+        val expectedPointerRecords = listOf(
+            MdnsPointerRecord(
+                arrayOf(*SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD),
+                responseReceiveTime,
+                true,
+                MdnsRecord.EXPIRATION_MAX,
+                arrayOf("MyService", *SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD)
+            ),
+            MdnsPointerRecord(
+                arrayOf(
+                    "subtype0",
+                    MdnsConstants.SUBTYPE_LABEL,
+                    *SERVICE_TYPE_LABELS,
+                    MdnsUtils.LOCAL_TLD
+                ),
+                responseReceiveTime,
+                true,
+                MdnsRecord.EXPIRATION_MAX,
+                arrayOf("MyService", *SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD)
+            ),
+            MdnsPointerRecord(
+                arrayOf(
+                    "subtype1",
+                    MdnsConstants.SUBTYPE_LABEL,
+                    *SERVICE_TYPE_LABELS,
+                    MdnsUtils.LOCAL_TLD
+                ),
+                responseReceiveTime,
+                true,
+                MdnsRecord.EXPIRATION_MAX,
+                arrayOf("MyService", *SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD)
+            ),
+        )
+
+        val mdnsResponse = MdnsUtils.convertNsdServiceInfoToMdnsResponse(
+            nsdServiceInfo,
+            isServiceLost,
+            SocketKey(
+                null,
+                1,
+                "lo",
+                EMPTY_NETWORK_CAPABILITIES
+            ),
+            responseReceiveTime,
+            featureFlags
+        )
+
+        assertEquals(3, mdnsResponse.pointerRecords.size)
+        assertSameElements(expectedPointerRecords, mdnsResponse.pointerRecords)
+        assertNull(mdnsResponse.serviceRecord)
+        assertNull(mdnsResponse.textRecord)
+        assertEmpty(mdnsResponse.inet4AddressRecords)
+        assertEmpty(mdnsResponse.inet6AddressRecords)
+    }
+
+    @Test
+    fun testConvertCompleteNsdServiceInfoToMdnsResponse() {
+        val nsdServiceInfo = NsdServiceInfo("MyService", SERVICE_TYPE).also { it ->
+            it.hostname = "My.TestHost"
+            it.port = 5353
+            it.subtypes = setOf("subtype0", "subtype1")
+            it.setAttribute("attr1", "attr1Value".toByteArray())
+            it.setAttribute("attr2", "attr2Value".toByteArray())
+            it.hostAddresses = listOf(
+                InetAddresses.parseNumericAddress("192.0.2.123"),
+                InetAddresses.parseNumericAddress("2001:db8::123")
+            )
+        }
+        val responseReceiveTime = FAKE_RESPONSE_RECEIVE_TIME
+        val isServiceLost = false
+        val featureFlags =
+            MdnsFeatureFlags.newBuilder().setAvoidAdvertisingEmptyTxtRecords(true).build()
+        val expectedSrvRecord = MdnsServiceRecord (
+            arrayOf("MyService", *SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD),
+            responseReceiveTime,
+            true,
+            MdnsRecord.EXPIRATION_MAX,
+            0,
+            0,
+            5353,
+            arrayOf("My", "TestHost")
+        )
+        val expectedTextRecord = MdnsTextRecord (
+            arrayOf("MyService", *SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD),
+            responseReceiveTime,
+            true,
+            MdnsRecord.EXPIRATION_MAX,
+            listOf(
+                MdnsServiceInfo.TextEntry("attr1", "attr1Value".toByteArray()),
+                MdnsServiceInfo.TextEntry("attr2", "attr2Value".toByteArray())
+            )
+        )
+        val expectedPointerRecords = listOf(
+            MdnsPointerRecord(
+                arrayOf(*SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD),
+                responseReceiveTime,
+                true,
+                MdnsRecord.EXPIRATION_MAX,
+                arrayOf("MyService", *SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD)
+            ),
+            MdnsPointerRecord(
+                arrayOf(
+                    "subtype0",
+                    MdnsConstants.SUBTYPE_LABEL,
+                    *SERVICE_TYPE_LABELS,
+                    MdnsUtils.LOCAL_TLD
+                ),
+                responseReceiveTime,
+                true,
+                MdnsRecord.EXPIRATION_MAX,
+                arrayOf("MyService", *SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD)
+            ),
+            MdnsPointerRecord(
+                arrayOf(
+                    "subtype1",
+                    MdnsConstants.SUBTYPE_LABEL,
+                    *SERVICE_TYPE_LABELS,
+                    MdnsUtils.LOCAL_TLD
+                ),
+                responseReceiveTime,
+                true,
+                MdnsRecord.EXPIRATION_MAX,
+                arrayOf("MyService", *SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD)
+            ),
+        )
+        val (ipv4, ipv6) = nsdServiceInfo.hostAddresses.partition { it is Inet4Address }
+        val expectedInet4AddressRecordList = ipv4.map {
+            MdnsInetAddressRecord(
+                arrayOf(nsdServiceInfo.hostname, MdnsUtils.LOCAL_TLD),
+                responseReceiveTime,
+                true,
+                MdnsRecord.EXPIRATION_MAX,
+                it
+            )
+        }
+        val expectedInet6AddressRecordList = ipv6.map {
+            MdnsInetAddressRecord(
+                arrayOf(nsdServiceInfo.hostname, MdnsUtils.LOCAL_TLD),
+                responseReceiveTime,
+                true,
+                MdnsRecord.EXPIRATION_MAX,
+                it
+            )
+        }
+
+        val mdnsResponse = MdnsUtils.convertNsdServiceInfoToMdnsResponse(
+            nsdServiceInfo,
+            isServiceLost,
+            SocketKey(
+                null,
+                1,
+                "lo",
+                EMPTY_NETWORK_CAPABILITIES
+            ),
+            responseReceiveTime,
+            featureFlags
+        )
+
+        assertNotNull(mdnsResponse.serviceRecord)
+        assertEquals(expectedSrvRecord, mdnsResponse.serviceRecord)
+        assertEquals(MdnsRecord.EXPIRATION_MAX, mdnsResponse.serviceRecord.ttl)
+        assertNotNull(mdnsResponse.textRecord)
+        assertEquals(expectedTextRecord, mdnsResponse.textRecord)
+        assertEquals(3, mdnsResponse.pointerRecords.size)
+        assertSameElements(expectedPointerRecords, mdnsResponse.pointerRecords)
+        assertEquals(nsdServiceInfo.hostAddresses.size, ipv4.size + ipv6.size)
+        assertSameElements(expectedInet4AddressRecordList, mdnsResponse.inet4AddressRecords)
+        assertSameElements(expectedInet6AddressRecordList, mdnsResponse.inet6AddressRecords)
     }
 
     @Test

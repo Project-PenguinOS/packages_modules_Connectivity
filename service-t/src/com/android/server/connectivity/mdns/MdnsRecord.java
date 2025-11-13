@@ -58,6 +58,8 @@ public abstract class MdnsRecord {
     public static final int STATUS_EXPIRED = 1;
     /** Status indicating that the record should be refreshed (Less than half of TTL remains.) */
     public static final int STATUS_NEEDS_REFRESH = 2;
+    /** Represents very large expiry time */
+    public static final long EXPIRATION_MAX = 0xFFFFFFFFL;
 
     protected final String[] name;
     private final int type;

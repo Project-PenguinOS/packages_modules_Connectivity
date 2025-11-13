@@ -84,12 +84,9 @@ public class MdnsRecordRepository {
     // TTL for other records
     private static final long DEFAULT_NON_NAME_RECORDS_TTL_MILLIS = TimeUnit.MINUTES.toMillis(75);
 
-    // Top-level domain for link-local queries, as per RFC6762 3.
-    private static final String LOCAL_TLD = "local";
-
     // Service type for service enumeration (RFC6763 9.)
     private static final String[] DNS_SD_SERVICE_TYPE =
-            new String[] { "_services", "_dns-sd", "_udp", LOCAL_TLD };
+            new String[] { "_services", "_dns-sd", "_udp", MdnsUtils.LOCAL_TLD };
 
     private enum RecordConflictType {
         NO_CONFLICT,
@@ -285,14 +282,15 @@ public class MdnsRecordRepository {
             final boolean hasCustomHost = !TextUtils.isEmpty(serviceInfo.getHostname());
             final String[] hostname =
                     hasCustomHost
-                            ? new String[] {serviceInfo.getHostname(), LOCAL_TLD}
+                            ? new String[] {serviceInfo.getHostname(), MdnsUtils.LOCAL_TLD}
                             : deviceHostname;
             final ArrayList<RecordInfo<?>> allRecords = new ArrayList<>(5);
 
             final boolean hasService = !TextUtils.isEmpty(serviceInfo.getServiceType());
-            final String[] serviceType = hasService ? splitServiceType(serviceInfo) : null;
+            final String[] serviceType =
+                    hasService ? MdnsUtils.splitServiceType(serviceInfo) : null;
             final String[] serviceName =
-                    hasService ? splitFullyQualifiedName(serviceInfo, serviceType) : null;
+                    hasService ? MdnsUtils.splitFullyQualifiedName(serviceInfo, serviceType) : null;
             if (hasService && hasSrvRecord(serviceInfo)) {
                 // Service PTR records
                 ptrRecords = new ArrayList<>(serviceInfo.getSubtypes().size() + 1);
@@ -335,7 +333,7 @@ public class MdnsRecordRepository {
                                 // Service name is verified unique after probing
                                 true /* cacheFlush */,
                                 nonNameRecordsTtlMillis,
-                                attrsToTextEntries(
+                                MdnsUtils.attrsToTextEntries(
                                         serviceInfo.getAttributes(), featureFlags)),
                         false /* sharedName */);
 
@@ -584,23 +582,6 @@ public class MdnsRecordRepository {
                             keyRecord.getRData()));
         }
         return new MdnsProber.ProbingInfo(serviceId, probingRecords);
-    }
-
-    private static List<MdnsServiceInfo.TextEntry> attrsToTextEntries(
-            @NonNull Map<String, byte[]> attrs, @NonNull MdnsFeatureFlags featureFlags) {
-        final List<MdnsServiceInfo.TextEntry> out = new ArrayList<>(
-                attrs.size() == 0 ? 1 : attrs.size());
-        if (featureFlags.avoidAdvertisingEmptyTxtRecords() && attrs.size() == 0) {
-            // As per RFC6763 6.1, empty TXT records are not allowed, but records containing a
-            // single empty String must be treated as equivalent.
-            out.add(new MdnsServiceInfo.TextEntry("", MdnsServiceInfo.TextEntry.VALUE_NONE));
-            return out;
-        }
-
-        for (Map.Entry<String, byte[]> attr : attrs.entrySet()) {
-            out.add(new MdnsServiceInfo.TextEntry(attr.getKey(), attr.getValue()));
-        }
-        return out;
     }
 
     /**
@@ -1329,7 +1310,7 @@ public class MdnsRecordRepository {
         }
 
         // The record's name cannot be registered by NsdManager so it's not a conflict.
-        if (record.getName().length != 2 || !record.getName()[1].equals(LOCAL_TLD)) {
+        if (record.getName().length != 2 || !record.getName()[1].equals(MdnsUtils.LOCAL_TLD)) {
             return RecordConflictType.NO_CONFLICT;
         }
 
@@ -1527,18 +1508,6 @@ public class MdnsRecordRepository {
         out.add("arpa");
 
         return out.toArray(new String[0]);
-    }
-
-    private static String[] splitFullyQualifiedName(
-            @NonNull NsdServiceInfo info, @NonNull String[] serviceType) {
-        return CollectionUtils.prependArray(String.class, serviceType, info.getServiceName());
-    }
-
-    private static String[] splitServiceType(@NonNull NsdServiceInfo info) {
-        // String.split(pattern, 0) removes trailing empty strings, which would appear when
-        // splitting "domain.name." (with a dot a the end), so this is what is needed here.
-        final String[] split = info.getServiceType().split("\\.", 0);
-        return CollectionUtils.appendArray(String.class, split, LOCAL_TLD);
     }
 
     /** Returns whether there will be an SRV record when registering the {@code info}. */

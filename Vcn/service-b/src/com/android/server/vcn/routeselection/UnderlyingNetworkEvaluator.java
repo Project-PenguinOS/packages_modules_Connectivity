@@ -38,6 +38,7 @@ import android.util.Slog;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.annotations.VisibleForTesting.Visibility;
 import com.android.server.vcn.TelephonySubscriptionTracker.TelephonySubscriptionSnapshot;
+import com.android.server.vcn.VcnCarrierConfig;
 import com.android.server.vcn.VcnContext;
 
 import java.util.ArrayList;
@@ -111,7 +112,7 @@ public class UnderlyingNetworkEvaluator {
                     mDependencies.newIpSecPacketLossDetector(
                             mVcnContext,
                             mNetworkRecordBuilder.getNetwork(),
-                            carrierConfig,
+                            new VcnCarrierConfig(carrierConfig),
                             new MetricMonitorCallbackImpl()));
         } catch (IllegalAccessException e) {
             // No action. Do not add anything to mMetricMonitors
@@ -143,7 +144,7 @@ public class UnderlyingNetworkEvaluator {
         public IpSecPacketLossDetector newIpSecPacketLossDetector(
                 @NonNull VcnContext vcnContext,
                 @NonNull Network network,
-                @Nullable PersistableBundleWrapper carrierConfig,
+                @NonNull VcnCarrierConfig carrierConfig,
                 @NonNull NetworkMetricMonitor.NetworkMetricMonitorCallback callback)
                 throws IllegalAccessException {
             return new IpSecPacketLossDetector(vcnContext, network, carrierConfig, callback);
@@ -355,7 +356,7 @@ public class UnderlyingNetworkEvaluator {
         mPenalizedTimeoutMs = getPenaltyTimeoutMs(carrierConfig);
 
         for (NetworkMetricMonitor monitor : mMetricMonitors) {
-            monitor.setCarrierConfig(carrierConfig);
+            monitor.setCarrierConfig(new VcnCarrierConfig(carrierConfig));
         }
     }
 

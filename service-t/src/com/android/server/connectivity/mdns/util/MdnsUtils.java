@@ -23,10 +23,12 @@ import static com.android.server.connectivity.mdns.MdnsConstants.FLAG_TRUNCATED;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.Network;
+import android.net.nsd.NsdServiceInfo;
 import android.net.nsd.OffloadEngine;
 import android.net.nsd.OffloadServiceInfo;
 import android.os.Build;
 import android.os.SystemClock;
+import android.text.TextUtils;
 import android.util.ArraySet;
 import android.util.Pair;
 
@@ -35,13 +37,17 @@ import androidx.annotation.RequiresApi;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.DnsUtils;
 import com.android.server.connectivity.mdns.MdnsConstants;
+import com.android.server.connectivity.mdns.MdnsFeatureFlags;
 import com.android.server.connectivity.mdns.MdnsInetAddressRecord;
 import com.android.server.connectivity.mdns.MdnsPacket;
 import com.android.server.connectivity.mdns.MdnsPacketWriter;
+import com.android.server.connectivity.mdns.MdnsPointerRecord;
 import com.android.server.connectivity.mdns.MdnsRecord;
 import com.android.server.connectivity.mdns.MdnsResponse;
 import com.android.server.connectivity.mdns.MdnsServiceInfo;
+import com.android.server.connectivity.mdns.MdnsServiceRecord;
 import com.android.server.connectivity.mdns.MdnsServiceTypeClient;
+import com.android.server.connectivity.mdns.MdnsTextRecord;
 import com.android.server.connectivity.mdns.SocketKey;
 
 import java.io.IOException;
@@ -62,6 +68,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -70,6 +77,9 @@ import java.util.Set;
 public class MdnsUtils {
 
     private MdnsUtils() { }
+
+    // Top-level domain for link-local queries, as per RFC6762 3.
+    public static final String LOCAL_TLD = "local";
 
     /**
      * Compare labels a equals b or a is suffix of b.
@@ -428,5 +438,153 @@ public class MdnsUtils {
                 // offloaded services, so there is no point in setting priorities.
                 0 /* priority */,
                 OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES);
+    }
+
+    /**
+     * Utility method to convert given NsdServiceInfo to MdnsResponse
+     * @param serviceInfo The given NsdServiceInfo object to convert
+     * @param isServiceLost Indicates that the NsdServiceInfo corresponds to lost service or not
+     * @param socketKey The network interface to which this response belongs
+     * @param responseReceiveTime The time in millis when the response is received
+     * @return MdnsResponse object corresponding to the given NsdServiceInfo object
+     */
+    public static MdnsResponse convertNsdServiceInfoToMdnsResponse(
+            NsdServiceInfo serviceInfo,
+            boolean isServiceLost,
+            SocketKey socketKey,
+            long responseReceiveTime,
+            MdnsFeatureFlags mdnsFeatureFlags
+    ) {
+        final boolean hasService = !TextUtils.isEmpty(serviceInfo.getServiceType())
+                && !TextUtils.isEmpty(serviceInfo.getServiceName());
+        if (!hasService) {
+            return null;
+        }
+
+        // This assumes that the caller has taken care of not setting the hostname containing dots
+        // while building NsdServiceInfo object.
+        String[] hostnameLabels = null;
+        if (serviceInfo.getHostname() != null) {
+            hostnameLabels = serviceInfo.getHostname().split("\\.");
+        }
+
+        final String[] serviceType = splitServiceType(serviceInfo);
+        final String[] serviceName =
+                splitFullyQualifiedName(serviceInfo, serviceType);
+
+        MdnsResponse response = new MdnsResponse(responseReceiveTime, serviceName,
+                socketKey.getInterfaceIndex(), socketKey.getNetwork());
+
+        // We have to set the very large expiration time because there is no callback which gets
+        // invoked which can be used to inform the client of the update in expiration time.
+        // The entries in the cache will be cleared when we get notified that service is lost.
+        long ttlMillis = isServiceLost ? 0 : MdnsRecord.EXPIRATION_MAX;
+
+        // add ptr records
+        response.addPointerRecord(new MdnsPointerRecord(
+                serviceType,
+                responseReceiveTime /* receiptTimeMillis */,
+                true /* cacheFlush */,
+                ttlMillis,
+                serviceName));
+
+        for (String subtype : serviceInfo.getSubtypes()) {
+            response.addPointerRecord(new MdnsPointerRecord(
+                    MdnsUtils.constructFullSubtype(serviceType, subtype),
+                    responseReceiveTime /* receiptTimeMillis */,
+                    true /* cacheFlush */,
+                    ttlMillis,
+                    serviceName));
+        }
+
+        final boolean hasCustomHost = !TextUtils.isEmpty(serviceInfo.getHostname());
+        final String[] hostname =
+                hasCustomHost
+                        ? new String[] {serviceInfo.getHostname(), LOCAL_TLD}
+                        : new String[] {};
+
+        if (hostname.length > 0) {
+            MdnsServiceRecord srvRecord = new MdnsServiceRecord(serviceName,
+                    responseReceiveTime /* receiptTimeMillis */,
+                    true /* cacheFlush */,
+                    ttlMillis,
+                    0 /* servicePriority */, 0 /* serviceWeight */,
+                    serviceInfo.getPort(),
+                    hostnameLabels);
+            response.setServiceRecord(srvRecord);
+
+            MdnsTextRecord txtRecord = new MdnsTextRecord(serviceName,
+                    responseReceiveTime /* receiptTimeMillis */,
+                    true /* cacheFlush */,
+                    ttlMillis,
+                    attrsToTextEntries(
+                            serviceInfo.getAttributes(), mdnsFeatureFlags));
+            response.setTextRecord(txtRecord);
+
+            for (InetAddress addr : serviceInfo.getHostAddresses()) {
+                MdnsInetAddressRecord mdnsAddr = new MdnsInetAddressRecord(hostname,
+                        responseReceiveTime /* receiptTimeMillis */,
+                        true /* cacheFlush */,
+                        ttlMillis,
+                        addr);
+                if (addr instanceof Inet6Address) {
+                    response.addInet6AddressRecord(mdnsAddr);
+                } else {
+                    response.addInet4AddressRecord(mdnsAddr);
+                }
+            }
+        }
+
+        return response;
+    }
+
+    /**
+     * Utility method to get Service Type from NsdServiceInfo
+     * @param serviceInfo The given NsdServiceInfo object to convert
+     * @return Service type split by "." object corresponding to the service type present in
+     * given NsdServiceInfo object
+     */
+    public static String[] splitServiceType(@NonNull NsdServiceInfo serviceInfo) {
+        // String.split(pattern, 0) removes trailing empty strings, which would appear when
+        // splitting "domain.name." (with a dot a the end), so this is what is needed here.
+        final String[] split = serviceInfo.getServiceType().split("\\.", 0);
+        return CollectionUtils.appendArray(String.class, split, LOCAL_TLD);
+    }
+
+    /**
+     * Utility method to get fully qualified name from given service name from NsdServiceInfo and
+     * service type
+     * @param serviceInfo The given NsdServiceInfo object to convert
+     * @param serviceType The given service type array to which serviceName from serviceInfo is
+     *                    prepended
+     * @return Fully qualified service name
+     */
+    public static String[] splitFullyQualifiedName(
+            @NonNull NsdServiceInfo serviceInfo, @NonNull String[] serviceType) {
+        return CollectionUtils.prependArray(String.class, serviceType,
+                serviceInfo.getServiceName());
+    }
+
+    /**
+     * Utility method to convert attributes in NsdServiceInfo to list of TextEntry
+     * @param attrs Given attributes to convert to TextEntry
+     * @param featureFlags FeatureFlags to decide whether to add empty text record or not
+     * @return List of TextEntry
+     */
+    public static List<MdnsServiceInfo.TextEntry> attrsToTextEntries(
+            @NonNull Map<String, byte[]> attrs, @NonNull MdnsFeatureFlags featureFlags) {
+        final List<MdnsServiceInfo.TextEntry> out = new ArrayList<>(
+                attrs.size() == 0 ? 1 : attrs.size());
+        if (featureFlags.avoidAdvertisingEmptyTxtRecords() && attrs.size() == 0) {
+            // As per RFC6763 6.1, empty TXT records are not allowed, but records containing a
+            // single empty String must be treated as equivalent.
+            out.add(new MdnsServiceInfo.TextEntry("", MdnsServiceInfo.TextEntry.VALUE_NONE));
+            return out;
+        }
+
+        for (Map.Entry<String, byte[]> attr : attrs.entrySet()) {
+            out.add(new MdnsServiceInfo.TextEntry(attr.getKey(), attr.getValue()));
+        }
+        return out;
     }
 }

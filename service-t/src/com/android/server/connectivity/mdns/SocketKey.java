@@ -22,6 +22,8 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.Network;
 
+import com.android.internal.annotations.VisibleForTesting;
+
 import java.util.Objects;
 
 /**
@@ -51,7 +53,8 @@ public class SocketKey {
         this(null /* network */, interfaceIndex, interfaceName, EMPTY_NETWORK_CAPABILITIES);
     }
 
-    SocketKey(@Nullable Network network, int interfaceIndex, @NonNull String interfaceName,
+    @VisibleForTesting
+    public SocketKey(@Nullable Network network, int interfaceIndex, @NonNull String interfaceName,
             long creationCapabilitiesBits) {
         mNetwork = network;
         mInterfaceIndex = interfaceIndex;
