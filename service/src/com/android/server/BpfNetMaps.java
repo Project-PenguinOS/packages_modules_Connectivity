@@ -25,6 +25,7 @@ import static android.net.BpfNetMapsConstants.DATA_SAVER_ENABLED_KEY;
 import static android.net.BpfNetMapsConstants.DATA_SAVER_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.IIF_MATCH;
 import static android.net.BpfNetMapsConstants.INGRESS_DISCARD_MAP_PATH;
+import static android.net.BpfNetMapsConstants.L4S_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
@@ -95,6 +96,7 @@ import com.android.net.module.util.bpf.LocalNetAccessKey;
 import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 
+import java.io.File;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -149,6 +151,7 @@ public class BpfNetMaps {
 
     private static IBpfMap<LocalNetAccessKey, Bool> sLocalNetAccessMap = null;
     private static IBpfMap<U32, Bool> sLocalNetBlockedUidMap = null;
+    private static BpfBoolean sL4sEnabledMap = null;
 
     private static final List<Pair<Integer, String>> PERMISSION_LIST = Arrays.asList(
             Pair.create(TRAFFIC_PERMISSION_INTERNET, "PERMISSION_INTERNET"),
@@ -250,6 +253,15 @@ public class BpfNetMaps {
     public static void setLocalNetBlockedUidMapForTest(
             IBpfMap<U32, Bool> localNetBlockedUidMap) {
         sLocalNetBlockedUidMap = localNetBlockedUidMap;
+    }
+
+    /**
+     * Set l4sEnabledMap for test.
+     */
+    @VisibleForTesting
+    public static void setL4sEnabledMapForTest(
+            BpfBoolean l4sEnabledMap) {
+        sL4sEnabledMap = l4sEnabledMap;
     }
 
     /**
@@ -361,6 +373,15 @@ public class BpfNetMaps {
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private static BpfBoolean getL4sEnabledMap() {
+        try {
+            return new BpfBoolean(L4S_ENABLED_MAP_PATH, true /* exclusive */);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open l4s_accecn_ map", e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private static void initBpfMaps(final Dependencies deps) {
         if (sConfigurationMap == null) {
             sConfigurationMap = getConfigurationMap();
@@ -431,6 +452,18 @@ public class BpfNetMaps {
             } catch (ErrnoException e) {
                 throw new IllegalStateException("Failed to initialize local_net_blocked_uid map",
                         e);
+            }
+        }
+
+        if (deps.isL4SSupported()) {
+            if (sL4sEnabledMap == null) {
+                sL4sEnabledMap = getL4sEnabledMap();
+            }
+            try {
+                sL4sEnabledMap.clear();
+            } catch (ErrnoException e) {
+                throw new IllegalStateException("Failed to initialize l4s_accecn_status map",
+                    e);
             }
         }
 
@@ -517,6 +550,14 @@ public class BpfNetMaps {
          */
         public boolean isPermissionMapUidMigrationEnabled() {
             return com.android.tethering.flags.Flags.permissionMapUidMigration();
+        }
+
+        /**
+         * Checks if L4S is potentially supported by verifying the existence of the BPF map.
+         */
+        public boolean isL4SSupported() {
+            final File file = new File(L4S_ENABLED_MAP_PATH);
+            return file.exists();
         }
     }
 
@@ -1094,6 +1135,39 @@ public class BpfNetMaps {
                     + "localNetAccessKey : " + localNetAccessKey);
         }
         return true;
+    }
+
+    /**
+     * Set the L4S enabled status.
+     *
+     * @param enabled The new status for L4S. Must be true or false.
+     */
+    @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
+    public void setL4sEnabled(boolean enabled) {
+        if (!mDeps.isL4SSupported()) return;
+
+        try {
+            sL4sEnabledMap.set(enabled);
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to set L4S enabled: " + enabled, e);
+        }
+    }
+
+    /**
+     * Get the L4S enabled status.
+     *
+     * @return The current L4S enabled status.
+     */
+    @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
+    public boolean isL4sEnabled() {
+        if (!mDeps.isL4SSupported()) return false;
+
+        try {
+            return sL4sEnabledMap.get();
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to get L4S enabled", e);
+        }
+        return false;
     }
 
     /**

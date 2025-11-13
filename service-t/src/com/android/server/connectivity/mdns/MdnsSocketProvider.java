@@ -16,7 +16,6 @@
 
 package com.android.server.connectivity.mdns;
 
-import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_LOCAL_NETWORK;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_THREAD;
@@ -24,6 +23,7 @@ import static android.net.NetworkCapabilities.TRANSPORT_VPN;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 
 import static com.android.net.module.util.HandlerUtils.ensureRunningOnHandlerThread;
+import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.isNetworkMatched;
 
 import android.annotation.NonNull;
@@ -57,7 +57,6 @@ import com.android.net.module.util.BitUtils;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.LinkPropertiesUtils.CompareResult;
 import com.android.net.module.util.SharedLog;
-import com.android.server.connectivity.mdns.MdnsFeatureFlags;
 
 import java.io.IOException;
 import java.net.NetworkInterface;
@@ -93,6 +92,7 @@ public class MdnsSocketProvider {
     @NonNull private final AbstractSocketNetlinkMonitor mSocketNetlinkMonitor;
     @NonNull private final SharedLog mSharedLog;
     private final ArrayMap<Network, SocketInfo> mNetworkSockets = new ArrayMap<>();
+    private final ArrayMap<Network, SocketKey> mNoSocketNetworks = new ArrayMap<>();
     private final ArrayMap<String, SocketInfo> mTetherInterfaceSockets = new ArrayMap<>();
     private final ArrayMap<Network, LinkProperties> mActiveNetworksLinkProperties =
             new ArrayMap<>();
@@ -112,6 +112,8 @@ public class MdnsSocketProvider {
     private boolean mMonitoringSockets = false;
     private boolean mRequestStop = false;
     private String mWifiP2pTetherInterface = null;
+    // Below flag will be replaced with Aflag
+    private boolean mIsMdnsScanOffloadEnabled = false;
 
     private final BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
         @Override
@@ -403,6 +405,7 @@ public class MdnsSocketProvider {
             // Clear all saved status.
             mActiveNetworksLinkProperties.clear();
             mNetworkSockets.clear();
+            mNoSocketNetworks.clear();
             mTetherInterfaceSockets.clear();
             mLocalOnlyInterfaces.clear();
             mTetheredInterfaces.clear();
@@ -444,12 +447,14 @@ public class MdnsSocketProvider {
 
         final NetworkAsKey networkKey = new NetworkAsKey(network);
         final SocketInfo socketInfo = mNetworkSockets.get(network);
-        if (socketInfo == null) {
+        final SocketKey socketKey = mNoSocketNetworks.get(network);
+        if (socketInfo == null && socketKey == null) {
             createSocket(networkKey, lp);
-        } else {
+        } else if (socketInfo != null) {
             updateSocketInfoAddress(network, socketInfo, lp.getLinkAddresses());
         }
     }
+
     private void maybeUpdateTetheringSocketAddress(int ifaceIndex,
             @NonNull final List<LinkAddress> updatedAddresses) {
         for (int i = 0; i < mTetherInterfaceSockets.size(); ++i) {
@@ -547,8 +552,22 @@ public class MdnsSocketProvider {
                 mSharedLog.wtf("networkCapabilities is missing for key: " + networkKey);
                 transports = new int[0];
             }
-
-            if (networkInterface == null || !isMdnsCapableInterface(networkInterface, transports)) {
+            if (networkInterface == null) {
+                return;
+            }
+            final Network network =
+                    networkKey == LOCAL_NET ? null : ((NetworkAsKey) networkKey).mNetwork;
+            final List<LinkAddress> addresses = lp.getLinkAddresses();
+            final long capabilitiesBits = (caps == null || !mUseNetworkCallbackForLocalNetworks)
+                    ? EMPTY_NETWORK_CAPABILITIES : BitUtils.packBits(caps.getCapabilities());
+            final SocketKey socketKey = new SocketKey(
+                    network, networkInterface.getIndex(), networkInterface.getName(),
+                    capabilitiesBits);
+            if (!isMdnsCapableInterface(networkInterface, transports)) {
+                if (mIsMdnsScanOffloadEnabled) {
+                    mNoSocketNetworks.put(network, socketKey);
+                    notifyNoSocketCreated(socketKey);
+                }
                 return;
             }
 
@@ -557,14 +576,6 @@ public class MdnsSocketProvider {
                     networkInterface.getNetworkInterface(), MdnsConstants.MDNS_PORT, mLooper,
                     mPacketReadBuffer, mSharedLog.forSubComponent(
                             MdnsInterfaceSocket.class.getSimpleName() + "/" + interfaceName));
-            final List<LinkAddress> addresses = lp.getLinkAddresses();
-            final Network network =
-                    networkKey == LOCAL_NET ? null : ((NetworkAsKey) networkKey).mNetwork;
-            final long capabilitiesBits = (caps == null || !mUseNetworkCallbackForLocalNetworks)
-                    ? EMPTY_NETWORK_CAPABILITIES : BitUtils.packBits(caps.getCapabilities());
-            final SocketKey socketKey = new SocketKey(
-                    network, networkInterface.getIndex(), networkInterface.getName(),
-                    capabilitiesBits);
             // TODO: technically transport types are mutable, although generally not in ways that
             // would meaningfully impact the logic using it here. Consider updating logic to
             // support transports being added/removed.
@@ -615,9 +626,17 @@ public class MdnsSocketProvider {
     }
 
     private void removeNetworkSocket(Network network) {
+        if (mIsMdnsScanOffloadEnabled) {
+            final SocketKey socketKey = mNoSocketNetworks.remove(network);
+            if (socketKey != null) {
+                mSharedLog.log("Notifying socket clients about network = " + network
+                        + " without socket got destroyed with socket key = " + socketKey);
+                notifyNetworkWithNoSocketDestroyed(socketKey);
+                return;
+            }
+        }
         final SocketInfo socketInfo = mNetworkSockets.remove(network);
         if (socketInfo == null) return;
-
         socketInfo.mSocket.destroy();
         notifyInterfaceDestroyed(network, socketInfo);
         mSocketRequestMonitor.onSocketDestroyed(network, socketInfo.mSocket);
@@ -645,6 +664,28 @@ public class MdnsSocketProvider {
         }
     }
 
+    private void notifyNoSocketCreated(SocketKey socketKey) {
+        for (int i = 0; i < mCallbacksToRequestedNetworks.size(); i++) {
+            final Network requestedNetwork = mCallbacksToRequestedNetworks.valueAt(i);
+            if (isNetworkMatched(requestedNetwork, socketKey.getNetwork())) {
+                mCallbacksToRequestedNetworks
+                        .keyAt(i)
+                        .onNoSocketCreated(socketKey);
+            }
+        }
+    }
+
+    private void notifyNetworkWithNoSocketDestroyed(SocketKey socketKey) {
+        for (int i = 0; i < mCallbacksToRequestedNetworks.size(); i++) {
+            final Network requestedNetwork = mCallbacksToRequestedNetworks.valueAt(i);
+            if (isNetworkMatched(requestedNetwork, socketKey.getNetwork())) {
+                mCallbacksToRequestedNetworks
+                        .keyAt(i)
+                        .onNetworkWithNoSocketDestroyed(socketKey);
+            }
+        }
+    }
+
     private void notifyInterfaceDestroyed(Network network, SocketInfo socketInfo) {
         for (int i = 0; i < mCallbacksToRequestedNetworks.size(); i++) {
             final Network requestedNetwork = mCallbacksToRequestedNetworks.valueAt(i);
@@ -668,7 +709,16 @@ public class MdnsSocketProvider {
 
     private void retrieveAndNotifySocketFromNetwork(Network network, SocketCallback cb) {
         final SocketInfo socketInfo = mNetworkSockets.get(network);
-        if (socketInfo == null) {
+        final SocketKey socketKey = mNoSocketNetworks.get(network);
+        if (socketInfo != null) {
+            // Notify the socket for requested network.
+            cb.onSocketCreated(socketInfo.mSocketKey, socketInfo.mSocket,
+                    socketInfo.mAddresses);
+            mSocketRequestMonitor.onSocketRequestFulfilled(network, socketInfo.mSocket,
+                    socketInfo.mTransports);
+        } else if (socketKey != null) {
+            cb.onNoSocketCreated(socketKey);
+        } else {
             final LinkProperties lp = mActiveNetworksLinkProperties.get(network);
             if (lp == null) {
                 // The requested network is not existed. Maybe wait for LinkProperties change later.
@@ -676,11 +726,6 @@ public class MdnsSocketProvider {
                 return;
             }
             createSocket(new NetworkAsKey(network), lp);
-        } else {
-            // Notify the socket for requested network.
-            cb.onSocketCreated(socketInfo.mSocketKey, socketInfo.mSocket, socketInfo.mAddresses);
-            mSocketRequestMonitor.onSocketRequestFulfilled(network, socketInfo.mSocket,
-                    socketInfo.mTransports);
         }
     }
 
@@ -798,6 +843,21 @@ public class MdnsSocketProvider {
          */
         default void onAddressesChanged(@NonNull SocketKey socketKey,
                 @NonNull MdnsInterfaceSocket socket, @NonNull List<LinkAddress> addresses) {}
+
+        /**
+         * Notify that no socket was created for the SocketKey, or Network
+         *
+         * This indicates that a socket creation request on a particular network interface did not
+         * succeed because it did not support the mDNS capability.
+         */
+        default void onNoSocketCreated(@NonNull SocketKey socketKey) {}
+
+        /**
+         * Notify that a network with no active sockets was lost
+         *
+         * This indicates that a network with no active socket was lost.
+         */
+        default void onNetworkWithNoSocketDestroyed(@NonNull SocketKey socketKey) {}
     }
 
     /**

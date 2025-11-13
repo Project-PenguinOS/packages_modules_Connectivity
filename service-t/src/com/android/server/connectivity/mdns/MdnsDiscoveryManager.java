@@ -242,6 +242,9 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
                                     mdnsFeatureFlags.getCachedServicesRetentionTime());
                         }
                     }
+
+                    @Override
+                    public void onNoSocketCreated(@NonNull SocketKey socketKey) {}
                 });
     }
 

@@ -84,5 +84,8 @@ public interface MdnsSocketClientBase {
 
         /*** Notify requested socket is destroyed */
         void onSocketDestroyed(@NonNull SocketKey socketKey);
+
+        /*** Notify that no socket was created because network doesn't support mDNS */
+        void onNoSocketCreated(@NonNull SocketKey socketKey);
     }
 }

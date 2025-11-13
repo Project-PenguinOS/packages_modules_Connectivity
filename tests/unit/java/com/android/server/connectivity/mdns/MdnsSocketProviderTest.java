@@ -73,7 +73,6 @@ import com.android.net.module.util.netlink.NetlinkConstants;
 import com.android.net.module.util.netlink.RtNetlinkAddressMessage;
 import com.android.net.module.util.netlink.StructIfaddrMsg;
 import com.android.net.module.util.netlink.StructNlMsgHdr;
-import com.android.server.connectivity.mdns.MdnsFeatureFlags;
 import com.android.server.connectivity.mdns.MdnsSocketProvider.Dependencies;
 import com.android.server.connectivity.mdns.MdnsSocketProvider.SocketRequestMonitor;
 import com.android.server.connectivity.mdns.internal.SocketNetlinkMonitor;
@@ -88,7 +87,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.rules.TestRule;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
@@ -101,7 +99,6 @@ import java.net.InetAddress;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 @RunWith(DevSdkIgnoreRunner.class)
 @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.S_V2)
@@ -276,9 +273,21 @@ public class MdnsSocketProviderTest {
             }
         }
 
+        private class NoSocketCreatedEvent extends SocketEvent {
+            NoSocketCreatedEvent(SocketKey socketKey) {
+                super(socketKey, Collections.emptyList());
+            }
+        }
+
         private class InterfaceDestroyedEvent extends SocketEvent {
             InterfaceDestroyedEvent(SocketKey socketKey, List<LinkAddress> addresses) {
                 super(socketKey, addresses);
+            }
+        }
+
+        private class NetworkWithNoSocketDestroyedEvent extends SocketEvent {
+            NetworkWithNoSocketDestroyedEvent(SocketKey socketKey) {
+                super(socketKey, Collections.emptyList());
             }
         }
 
@@ -306,6 +315,16 @@ public class MdnsSocketProviderTest {
         public void onAddressesChanged(SocketKey socketKey, MdnsInterfaceSocket socket,
                 List<LinkAddress> addresses) {
             mHistory.add(new AddressesChangedEvent(socketKey, addresses));
+        }
+
+        @Override
+        public void onNoSocketCreated(SocketKey socketKey) {
+            mHistory.add(new NoSocketCreatedEvent(socketKey));
+        }
+
+        @Override
+        public void onNetworkWithNoSocketDestroyed(SocketKey socketKey) {
+            mHistory.add(new NetworkWithNoSocketDestroyedEvent(socketKey));
         }
 
         private void expectedSocketCreatedForNetwork(Network network, List<LinkAddress> addresses,
@@ -672,6 +691,53 @@ public class MdnsSocketProviderTest {
         runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
 
         postNetworkAvailable(TRANSPORT_BLUETOOTH);
+        testCallback.expectedNoCallback();
+    }
+
+    @Test
+    public void testNoSocketCreatedCallbackIsNotInvokedForNonMulticastInterface() throws Exception {
+        doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
+        startMonitoringSockets();
+
+        final TestSocketCallback testCallback = new TestSocketCallback();
+        runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
+
+        postNetworkAvailable(TRANSPORT_BLUETOOTH);
+        testCallback.expectedNoCallback();
+    }
+
+    @Test
+    public void testNotifyNetworkWithNoSocketDestroyedIsNotInvokedForNonMulticastInterface()
+            throws Exception {
+        doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
+        startMonitoringSockets();
+
+        final TestSocketCallback testCallback = new TestSocketCallback();
+        runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
+
+        postNetworkAvailable(TRANSPORT_BLUETOOTH);
+        testCallback.expectedNoCallback();
+
+        runOnHandler(() -> mNetworkCallback.onLost(TEST_NETWORK));
+        testCallback.expectedNoCallback();
+    }
+
+    @Test
+    public void testNoSocketCreatedCallbackIsNotInvokedWhenLinkPropertiesChanged()
+            throws Exception {
+        doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
+        startMonitoringSockets();
+
+        final TestSocketCallback testCallback = new TestSocketCallback();
+        runOnHandler(() -> mSocketProvider.requestSocket(TEST_NETWORK, testCallback));
+
+        postNetworkAvailable(TRANSPORT_BLUETOOTH);
+        testCallback.expectedNoCallback();
+
+        final LinkProperties newTestLp = new LinkProperties();
+        newTestLp.setInterfaceName(TEST_IFACE_NAME);
+        newTestLp.setLinkAddresses(List.of(LINKADDRV4));
+        runOnHandler(() -> mNetworkCallback.onLinkPropertiesChanged(TEST_NETWORK, newTestLp));
         testCallback.expectedNoCallback();
     }
 

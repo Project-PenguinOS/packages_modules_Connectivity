@@ -207,6 +207,8 @@ public final class BpfNetMapsTest {
             new TestBpfMap<>(S32.class, UidPermissionChunk.class);
     private final BpfBoolean mUidMigrationEnabledBpfBoolean =
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
+    private final BpfBoolean mL4sEnabledMap =
+            new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
 
     @Before
     public void setUp() throws Exception {
@@ -215,6 +217,7 @@ public final class BpfNetMapsTest {
         doReturn(TEST_IF_INDEX).when(mInterfaceTracker).getInterfaceIndex(TEST_IF_NAME);
         doReturn(TEST_IF_NAME).when(mDeps).getIfName(TEST_IF_INDEX);
         doReturn(0).when(mDeps).synchronizeKernelRCU();
+        doReturn(false).when(mDeps).isL4SSupported();
         doAnswer(invocation -> mFeatureFlags.getOrDefault(FLAG_PERMISSION_MAP_UID_MIGRATION, true))
                 .when(mDeps).isPermissionMapUidMigrationEnabled();
         BpfNetMaps.setConfigurationMapForTest(mConfigurationMap);
@@ -227,6 +230,7 @@ public final class BpfNetMapsTest {
         BpfNetMaps.setLocalNetBlockedUidMapForTest(mLocalNetBlockedUidMap);
         BpfNetMaps.setCookieTagMapForTest(mCookieTagMap);
         BpfNetMaps.setDataSaverEnabledMapForTest(mDataSaverEnabledMap);
+        BpfNetMaps.setL4sEnabledMapForTest(mL4sEnabledMap);
         mDataSaverEnabledMap.updateEntry(DATA_SAVER_ENABLED_KEY, new U8(DATA_SAVER_DISABLED));
         BpfNetMaps.setIngressDiscardMapForTest(mIngressDiscardMap);
         BpfNetMaps.setUidMigrationEnabledBpfBooleanForTest(mUidMigrationEnabledBpfBoolean);
@@ -1655,5 +1659,25 @@ public final class BpfNetMapsTest {
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testDumpUidMigrationMapEnsabled() throws Exception {
         assertDumpContains(getDump(), "sUidMigrationEnabledBpfBoolean: true");
+    }
+
+    @Test
+    public void testL4SDisabledIfNotSupported() {
+        doReturn(false).when(mDeps).isL4SSupported();
+        assertFalse(mBpfNetMaps.isL4sEnabled());
+    }
+
+    @Test
+    public void testSetL4SDisabled() {
+        doReturn(true).when(mDeps).isL4SSupported();
+        mBpfNetMaps.setL4sEnabled(false);
+        assertFalse(mBpfNetMaps.isL4sEnabled());
+    }
+
+    @Test
+    public void testSetL4SEnabled() {
+        doReturn(true).when(mDeps).isL4SSupported();
+        mBpfNetMaps.setL4sEnabled(true);
+        assertTrue(mBpfNetMaps.isL4sEnabled());
     }
 }
