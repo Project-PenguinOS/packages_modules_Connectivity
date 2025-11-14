@@ -19,6 +19,8 @@ package com.android.net.module.util;
 import android.net.MacAddress;
 import android.text.TextUtils;
 
+import androidx.annotation.VisibleForTesting;
+
 import java.net.NetworkInterface;
 import java.net.SocketException;
 
@@ -80,6 +82,16 @@ public class InterfaceParams {
         this.macAddr = hasMacAddress ? macAddr : MacAddress.fromBytes(new byte[] {
                 0x02, 0x00, 0x00, 0x00, 0x00, 0x00 });
         this.defaultMtu = (defaultMtu > IPV6_MIN_MTU) ? defaultMtu : IPV6_MIN_MTU;
+    }
+
+    @VisibleForTesting
+    public InterfaceParams(
+            String name, int index, boolean hasMacAddress, MacAddress macAddr, int defaultMtu) {
+        this.name = name;
+        this.index = index;
+        this.hasMacAddress = hasMacAddress;
+        this.macAddr = macAddr;
+        this.defaultMtu = defaultMtu;
     }
 
     @Override

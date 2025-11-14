@@ -1373,7 +1373,7 @@ public class VcnManagerTest extends VcnTestBase {
 
     private void setSafeModeTimeoutForCarrier(int subId, int timeoutSeconds) {
         final PersistableBundle carrierConfig = new PersistableBundle();
-        carrierConfig.putInt(VcnManager.VCN_SAFE_MODE_TIMEOUT_SECONDS_KEY, timeoutSeconds);
+        carrierConfig.putInt(VcnManager.KEY_SAFE_MODE_TIMEOUT_SEC_INT, timeoutSeconds);
         mCarrierConfigManager.overrideConfig(subId, carrierConfig);
     }
 

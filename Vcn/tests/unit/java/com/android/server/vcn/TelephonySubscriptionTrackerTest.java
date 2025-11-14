@@ -18,7 +18,7 @@ package com.android.server.vcn;
 
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
-import static android.net.vcn.VcnManager.VCN_RESTRICTED_TRANSPORTS_INT_ARRAY_KEY;
+import static android.net.vcn.VcnManager.KEY_RESTRICTED_TRANSPORTS_INT_ARRAY;
 import static android.net.vcn.util.PersistableBundleUtils.PersistableBundleWrapper;
 import static android.telephony.SubscriptionManager.INVALID_SIM_SLOT_INDEX;
 import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
@@ -117,11 +117,11 @@ public class TelephonySubscriptionTrackerTest {
 
     static {
         TEST_CARRIER_CONFIG.putString(
-                VcnManager.VCN_NETWORK_SELECTION_WIFI_ENTRY_RSSI_THRESHOLD_KEY,
-                VcnManager.VCN_NETWORK_SELECTION_WIFI_ENTRY_RSSI_THRESHOLD_KEY);
+                VcnManager.KEY_NETWORK_SELECTION_WIFI_ENTRY_RSSI_INT,
+                VcnManager.KEY_NETWORK_SELECTION_WIFI_ENTRY_RSSI_INT);
         TEST_CARRIER_CONFIG.putString(
-                VcnManager.VCN_NETWORK_SELECTION_WIFI_EXIT_RSSI_THRESHOLD_KEY,
-                VcnManager.VCN_NETWORK_SELECTION_WIFI_EXIT_RSSI_THRESHOLD_KEY);
+                VcnManager.KEY_NETWORK_SELECTION_WIFI_EXIT_RSSI_INT,
+                VcnManager.KEY_NETWORK_SELECTION_WIFI_EXIT_RSSI_INT);
         TEST_CARRIER_CONFIG_WRAPPER = new PersistableBundleWrapper(TEST_CARRIER_CONFIG);
 
         final Map<Integer, PersistableBundleWrapper> subIdToCarrierConfigMap = new HashMap<>();
@@ -511,7 +511,7 @@ public class TelephonySubscriptionTrackerTest {
 
         final PersistableBundle updatedConfig = new PersistableBundle();
         updatedConfig.putIntArray(
-                VCN_RESTRICTED_TRANSPORTS_INT_ARRAY_KEY,
+                KEY_RESTRICTED_TRANSPORTS_INT_ARRAY,
                 new int[] {TRANSPORT_WIFI, TRANSPORT_CELLULAR});
         doReturn(updatedConfig)
                 .when(mCarrierConfigManager)

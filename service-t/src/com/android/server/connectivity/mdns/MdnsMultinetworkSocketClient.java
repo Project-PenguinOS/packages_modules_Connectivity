@@ -60,6 +60,7 @@ public class MdnsMultinetworkSocketClient implements MdnsSocketClientBase {
     private final ArrayMap<SocketKey, ReadPacketHandler> mSocketPacketHandlers = new ArrayMap<>();
     private MdnsSocketClientBase.Callback mCallback = null;
     private int mReceivedPacketNumber = 0;
+    private final ArrayMap<String, Integer> mOffloadCallbackCountPerInterface = new ArrayMap<>();
 
     public MdnsMultinetworkSocketClient(@NonNull Looper looper,
             @NonNull MdnsSocketProvider provider, @NonNull SharedLog sharedLog,
@@ -74,10 +75,16 @@ public class MdnsMultinetworkSocketClient implements MdnsSocketClientBase {
         @NonNull
         private final SocketCreationCallback mSocketCreationCallback;
         @NonNull
-        private final ArrayMap<SocketKey, MdnsInterfaceSocket> mActiveSockets = new ArrayMap<>();
+        private final ArrayMap<SocketKey, MdnsInterfaceSocket> mActiveSocketKeys = new ArrayMap<>();
 
         InterfaceSocketCallback(SocketCreationCallback socketCreationCallback) {
             mSocketCreationCallback = socketCreationCallback;
+        }
+
+        private boolean isOffloadActive(@NonNull SocketKey socketKey) {
+            return mOffloadCallbackCountPerInterface.getOrDefault(
+                    socketKey.getInterfaceName(), 0
+            ) > 0;
         }
 
         @Override
@@ -92,40 +99,68 @@ public class MdnsMultinetworkSocketClient implements MdnsSocketClientBase {
                 mSocketPacketHandlers.put(socketKey, handler);
             }
             socket.addPacketHandler(handler);
-            mActiveSockets.put(socketKey, socket);
+            mActiveSocketKeys.put(socketKey, socket);
             mSocketCreationCallback.onSocketCreated(socketKey);
+        }
+
+        @Override
+        public void onNoSocketCreated(@NonNull SocketKey socketKey) {
+            mActiveSocketKeys.put(socketKey, null);
+            if (isOffloadActive(socketKey)) {
+                mSocketCreationCallback.onNoSocketCreated(socketKey);
+            }
+        }
+
+        @Override
+        public void onNetworkWithNoSocketDestroyed(@NonNull SocketKey socketKey) {
+            mActiveSocketKeys.remove(socketKey);
+            if (isOffloadActive(socketKey)) {
+                mSocketCreationCallback.onSocketDestroyed(socketKey);
+            }
         }
 
         @Override
         public void onInterfaceDestroyed(@NonNull SocketKey socketKey,
                 @NonNull MdnsInterfaceSocket socket) {
-            mActiveSockets.remove(socketKey);
+            mActiveSocketKeys.remove(socketKey);
             mSocketCreationCallback.onSocketDestroyed(socketKey);
             maybeCleanupPacketHandler(socketKey, socket);
         }
 
-        private void notifySocketDestroyed(@NonNull SocketKey socketKey) {
-            mActiveSockets.remove(socketKey);
-            if (!isSocketActive(socketKey)) {
+        private void handleSocketUnrequested(@NonNull SocketKey socketKey) {
+            // If the key is not in the map, there's nothing to do.
+            if (!mActiveSocketKeys.containsKey(socketKey)) {
+                return;
+            }
+
+            MdnsInterfaceSocket socket = mActiveSocketKeys.remove(socketKey);
+
+            // Determine if the callback should be triggered based on the state of the removed
+            // socket.
+            boolean shouldNotify = !isSocketKeyActive(socketKey)
+                    && (socket != null || isOffloadActive(socketKey));
+            if (shouldNotify) {
                 mSocketCreationCallback.onSocketDestroyed(socketKey);
             }
         }
 
         void onNetworkUnrequested() {
-            for (int i = mActiveSockets.size() - 1; i >= 0; i--) {
+            for (int i = mActiveSocketKeys.size() - 1; i >= 0; i--) {
                 // Iterate from the end so the socket can be removed
-                final SocketKey socketKey = mActiveSockets.keyAt(i);
-                final MdnsInterfaceSocket socket = mActiveSockets.valueAt(i);
-                notifySocketDestroyed(socketKey);
-                maybeCleanupPacketHandler(socketKey, socket);
+                final SocketKey socketKey = mActiveSocketKeys.keyAt(i);
+                final MdnsInterfaceSocket socket = mActiveSocketKeys.valueAt(i);
+                handleSocketUnrequested(socketKey);
+                if (socket != null) {
+                    maybeCleanupPacketHandler(socketKey, socket);
+                }
             }
         }
     }
 
-    private boolean isSocketActive(@NonNull SocketKey socketKey) {
+    private boolean isSocketKeyActive(@NonNull SocketKey socketKey) {
         for (int i = 0; i < mSocketRequests.size(); i++) {
             final InterfaceSocketCallback ifaceSocketCallback = mSocketRequests.valueAt(i);
-            if (ifaceSocketCallback.mActiveSockets.containsKey(socketKey)) {
+            if (ifaceSocketCallback.mActiveSocketKeys.containsKey(socketKey)) {
                 return true;
             }
         }
@@ -136,9 +171,9 @@ public class MdnsMultinetworkSocketClient implements MdnsSocketClientBase {
     private MdnsInterfaceSocket getTargetSocket(@NonNull SocketKey targetSocketKey) {
         for (int i = 0; i < mSocketRequests.size(); i++) {
             final InterfaceSocketCallback ifaceSocketCallback = mSocketRequests.valueAt(i);
-            final int index = ifaceSocketCallback.mActiveSockets.indexOfKey(targetSocketKey);
+            final int index = ifaceSocketCallback.mActiveSocketKeys.indexOfKey(targetSocketKey);
             if (index >= 0) {
-                return ifaceSocketCallback.mActiveSockets.valueAt(index);
+                return ifaceSocketCallback.mActiveSocketKeys.valueAt(index);
             }
         }
         return null;
@@ -146,7 +181,7 @@ public class MdnsMultinetworkSocketClient implements MdnsSocketClientBase {
 
     private void maybeCleanupPacketHandler(@NonNull SocketKey socketKey,
             @NonNull MdnsInterfaceSocket socket) {
-        if (isSocketActive(socketKey)) return;
+        if (isSocketKeyActive(socketKey)) return;
         final ReadPacketHandler handler = mSocketPacketHandlers.remove(socketKey);
         if (handler != null) {
             socket.removePacketHandler(handler);
@@ -219,6 +254,46 @@ public class MdnsMultinetworkSocketClient implements MdnsSocketClientBase {
     @Override
     public boolean supportsRequestingSpecificNetworks() {
         return true;
+    }
+
+    @Override
+    public void notifyOffloadStart(String interfaceName) {
+        Integer prevCnt = mOffloadCallbackCountPerInterface.getOrDefault(
+                interfaceName,
+                0
+        );
+        mOffloadCallbackCountPerInterface.put(interfaceName, prevCnt + 1);
+        if (prevCnt == 0) {
+            // loop through mSocketRequests
+            mSocketRequests.forEach((serviceListener, socketCallback) -> {
+                socketCallback.mActiveSocketKeys.forEach((socketKey, socket) ->  {
+                    if (socket == null
+                            && socketKey.getInterfaceName().equals(interfaceName)) {
+                        socketCallback.mSocketCreationCallback.onNoSocketCreated(socketKey);
+                    }
+                });
+            });
+        }
+    }
+
+    @Override
+    public void notifyOffloadStop(String interfaceName) {
+        Integer prevCnt = mOffloadCallbackCountPerInterface.getOrDefault(
+                interfaceName,
+                0
+        );
+        mOffloadCallbackCountPerInterface.put(interfaceName, prevCnt - 1);
+        if (prevCnt == 1) {
+            mOffloadCallbackCountPerInterface.remove(interfaceName);
+            mSocketRequests.forEach((serviceListener, socketCallback) -> {
+                socketCallback.mActiveSocketKeys.forEach((socketKey, socket) ->  {
+                    if (socket == null
+                            && socketKey.getInterfaceName().equals(interfaceName)) {
+                        socketCallback.mSocketCreationCallback.onSocketDestroyed(socketKey);
+                    }
+                });
+            });
+        }
     }
 
     private void sendMdnsPackets(@NonNull List<DatagramPacket> packets,

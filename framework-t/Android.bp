@@ -130,9 +130,12 @@ java_sdk_library {
         // static_libs is not used to compile stubs. So libs which have
         // been included in static_libs might still need to
         // be in stub_only_libs to be usable when generating the API stubs.
-        "com.android.net.flags-aconfig-java-deprecated",
         "com.android.nearby.flags-aconfig-java",
         "com.android.net.thread.flags-aconfig-java",
+        // framework-connectivity-pre-jarjar is in impl_only_libs, but the framework-connectivity-t
+        // stubs only build against its stubs + the flag libraries that it contains
+        "com.android.net.flags-aconfig-java-deprecated",
+        "com.android.tethering.flags-aconfig-java",
         // Use prebuilt framework-connectivity stubs to avoid circular dependencies
         "sdk_module-lib_current_framework-connectivity",
     ],

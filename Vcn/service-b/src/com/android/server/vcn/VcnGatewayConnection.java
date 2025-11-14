@@ -1318,8 +1318,7 @@ public class VcnGatewayConnection extends StateMachine {
 
         if (carrierConfig != null) {
             resultSeconds =
-                    carrierConfig.getInt(
-                            VcnManager.VCN_SAFE_MODE_TIMEOUT_SECONDS_KEY, defaultSeconds);
+                    carrierConfig.getInt(VcnManager.KEY_SAFE_MODE_TIMEOUT_SEC_INT, defaultSeconds);
         }
 
         return TimeUnit.SECONDS.toMillis(resultSeconds);
@@ -2935,7 +2934,7 @@ public class VcnGatewayConnection extends StateMachine {
             if (carrierConfig != null) {
                 result =
                         carrierConfig.getInt(
-                                VcnManager.VCN_TUNNEL_AGGREGATION_SA_COUNT_MAX_KEY,
+                                VcnManager.KEY_TUNNEL_AGGREGATION_SA_COUNT_MAX_INT,
                                 TUNNEL_AGGREGATION_SA_COUNT_MAX_DEFAULT);
             }
 

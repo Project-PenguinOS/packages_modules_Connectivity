@@ -240,10 +240,8 @@ public class NetworkPriorityClassifierTest extends NetworkEvaluationTestBase {
     @Test
     public void testMatchSelectedWifiBelowRssiThreshold() {
         final PersistableBundle carrierConfig = new PersistableBundle();
-        carrierConfig.putInt(
-                VcnManager.VCN_NETWORK_SELECTION_WIFI_EXIT_RSSI_THRESHOLD_KEY, WIFI_RSSI_HIGH);
-        carrierConfig.putInt(
-                VcnManager.VCN_NETWORK_SELECTION_WIFI_ENTRY_RSSI_THRESHOLD_KEY, WIFI_RSSI_HIGH);
+        carrierConfig.putInt(VcnManager.KEY_NETWORK_SELECTION_WIFI_EXIT_RSSI_INT, WIFI_RSSI_HIGH);
+        carrierConfig.putInt(VcnManager.KEY_NETWORK_SELECTION_WIFI_ENTRY_RSSI_INT, WIFI_RSSI_HIGH);
 
         verifyMatchWifi(true /* isSelectedNetwork */, carrierConfig, false /* expectMatch */);
     }
@@ -257,8 +255,7 @@ public class NetworkPriorityClassifierTest extends NetworkEvaluationTestBase {
     @Test
     public void testMatchUnselectedWifiBelowRssiThreshold() {
         final PersistableBundle carrierConfig = new PersistableBundle();
-        carrierConfig.putInt(
-                VcnManager.VCN_NETWORK_SELECTION_WIFI_ENTRY_RSSI_THRESHOLD_KEY, WIFI_RSSI_HIGH);
+        carrierConfig.putInt(VcnManager.KEY_NETWORK_SELECTION_WIFI_ENTRY_RSSI_INT, WIFI_RSSI_HIGH);
 
         verifyMatchWifi(false /* isSelectedNetwork */, carrierConfig, false /* expectMatch */);
     }

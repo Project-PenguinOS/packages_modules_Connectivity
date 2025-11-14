@@ -16,9 +16,13 @@
 
 package com.android.server.connectivity.mdns;
 
+import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.Network;
+
+import com.android.internal.annotations.VisibleForTesting;
 
 import java.util.Objects;
 
@@ -40,22 +44,29 @@ public class SocketKey {
      */
     @NonNull
     private final String mInterfaceName;
+    // A snapshot of the NetworkCapabilities bits at creation time. This value is not updated,
+    // so mutable capabilities (e.g., VALIDATED) may become stale.
+    private final long mCreationCapabilitiesBits;
     private final int mHashCode;
 
     SocketKey(int interfaceIndex, @NonNull String interfaceName) {
-        this(null /* network */, interfaceIndex, interfaceName);
+        this(null /* network */, interfaceIndex, interfaceName, EMPTY_NETWORK_CAPABILITIES);
     }
 
-    SocketKey(@Nullable Network network, int interfaceIndex, @NonNull String interfaceName) {
+    @VisibleForTesting
+    public SocketKey(@Nullable Network network, int interfaceIndex, @NonNull String interfaceName,
+            long creationCapabilitiesBits) {
         mNetwork = network;
         mInterfaceIndex = interfaceIndex;
         mInterfaceName = interfaceName;
+        mCreationCapabilitiesBits = creationCapabilitiesBits;
 
-        // Equivalent to Objects.hash(mNetwork, mInterfaceIndex), but without
-        // the unnecessary array allocation.
+        // Equivalent to Objects.hash(mNetwork, mInterfaceIndex, mCreationCapabilitiesBits), but
+        // without the unnecessary array allocation.
         int hashCode = 1;
         hashCode = 31 * hashCode + (mNetwork == null ? 0 : mNetwork.hashCode());
         hashCode = 31 * hashCode + Integer.hashCode(mInterfaceIndex);
+        hashCode = 31 * hashCode + Long.hashCode(mCreationCapabilitiesBits);
         mHashCode = hashCode;
     }
 
@@ -73,6 +84,10 @@ public class SocketKey {
         return mInterfaceName;
     }
 
+    public long getCreationCapabilitiesBits() {
+        return mCreationCapabilitiesBits;
+    }
+
     @Override
     public int hashCode() {
         return mHashCode;
@@ -83,14 +98,17 @@ public class SocketKey {
         if (!(other instanceof SocketKey)) {
             return false;
         }
-        return Objects.equals(mNetwork, ((SocketKey) other).mNetwork)
-                && mInterfaceIndex == ((SocketKey) other).mInterfaceIndex;
+        final SocketKey otherKey = (SocketKey) other;
+        return Objects.equals(mNetwork, otherKey.mNetwork)
+                && mInterfaceIndex == otherKey.mInterfaceIndex
+                && mCreationCapabilitiesBits == otherKey.mCreationCapabilitiesBits;
     }
 
     @Override
     public String toString() {
         return "SocketKey{ network=" + mNetwork
                 + " interfaceIndex=" + mInterfaceIndex
-                + " interfaceName=" + mInterfaceName + " }";
+                + " interfaceName=" + mInterfaceName
+                + " capabilities=" + mCreationCapabilitiesBits + " }";
     }
 }

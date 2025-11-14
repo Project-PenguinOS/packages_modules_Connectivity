@@ -109,10 +109,11 @@ public class L2capNetwork {
     }
 
     public interface ICallback {
-        /** Called when an error is encountered */
-        void onError(L2capNetwork network);
-        /** Called when CS triggers NetworkAgent#onNetworkUnwanted */
-        void onNetworkUnwanted(L2capNetwork network);
+        /** Called when the network should be torn down. This is triggered when an error is
+         * encountered, the other side disconnects, or the network is unwanted. Note that
+         * onTeardownRequested might be called multiple times if an error is encountered while
+         * teardown is ongoing. */
+        void onTeardownRequested(L2capNetwork network);
     }
 
     public L2capNetwork(String logTag, Handler handler, Context context, NetworkProvider provider,
@@ -123,12 +124,10 @@ public class L2capNetwork {
         mNetworkCapabilities = nc;
 
         final L2capNetworkSpecifier spec = (L2capNetworkSpecifier) nc.getNetworkSpecifier();
-        final boolean compressHeaders = spec.getHeaderCompression() == HEADER_COMPRESSION_6LOWPAN;
+        final boolean compressHdrs = spec.getHeaderCompression() == HEADER_COMPRESSION_6LOWPAN;
 
-        mForwarder = deps.createL2capPacketForwarder(handler, tunFd, socket, compressHeaders,
-                () -> {
-            // TODO: add a check that this callback is invoked on the handler thread.
-            cb.onError(L2capNetwork.this);
+        mForwarder = deps.createL2capPacketForwarder(handler, tunFd, socket, compressHdrs, () -> {
+            cb.onTeardownRequested(L2capNetwork.this);
         });
 
         final NetworkAgentConfig config = new NetworkAgentConfig.Builder().build();
@@ -138,7 +137,7 @@ public class L2capNetwork {
             public void onNetworkUnwanted() {
                 Log.i(mLogTag, "Network is unwanted");
                 // TODO: add a check that this callback is invoked on the handler thread.
-                cb.onNetworkUnwanted(L2capNetwork.this);
+                cb.onTeardownRequested(L2capNetwork.this);
             }
         };
         mNetworkAgent.register();

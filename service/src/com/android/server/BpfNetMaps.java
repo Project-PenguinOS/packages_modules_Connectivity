@@ -25,12 +25,14 @@ import static android.net.BpfNetMapsConstants.DATA_SAVER_ENABLED_KEY;
 import static android.net.BpfNetMapsConstants.DATA_SAVER_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.IIF_MATCH;
 import static android.net.BpfNetMapsConstants.INGRESS_DISCARD_MAP_PATH;
+import static android.net.BpfNetMapsConstants.L4S_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
 import static android.net.BpfNetMapsConstants.UID_MIGRATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_OWNER_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_PERMISSION_MAP_PATH;
+import static android.net.BpfNetMapsConstants.UID_PERMISSION_CHUNK_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_RULES_CONFIGURATION_KEY;
 import static android.net.BpfNetMapsUtils.getMatchByFirewallChain;
 import static android.net.BpfNetMapsUtils.isFirewallAllowList;
@@ -45,8 +47,21 @@ import static android.system.OsConstants.ENOENT;
 import static android.system.OsConstants.EOPNOTSUPP;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getIndex;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getShift;
+import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_INT64_COUNT;
+import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_UID_COUNT;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERNET;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_COUNT;
+import static com.android.net.module.util.bpf.UidPermissionChunk.UID_PERMISSION_MASK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
 import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
 import static com.android.server.connectivity.NetworkPermissions.PERMISSION_NONE;
+import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_INTERNET;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UNINSTALLED;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
@@ -64,10 +79,12 @@ import android.os.ServiceSpecificException;
 import android.os.UserHandle;
 import android.system.ErrnoException;
 import android.system.Os;
+import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.IndentingPrintWriter;
 import android.util.Log;
 import android.util.Pair;
+import android.util.SparseIntArray;
 import android.util.StatsEvent;
 
 import androidx.annotation.RequiresApi;
@@ -78,6 +95,7 @@ import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.BpfBoolean;
 import com.android.net.module.util.BpfDump;
 import com.android.net.module.util.BpfMap;
+import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.IBpfMap;
 import com.android.net.module.util.SingleWriterBpfMap;
 import com.android.net.module.util.Struct;
@@ -90,12 +108,15 @@ import com.android.net.module.util.bpf.CookieTagMapValue;
 import com.android.net.module.util.bpf.IngressDiscardKey;
 import com.android.net.module.util.bpf.IngressDiscardValue;
 import com.android.net.module.util.bpf.LocalNetAccessKey;
+import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 
+import java.io.File;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Arrays;
+import java.util.function.BiFunction;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -137,6 +158,7 @@ public class BpfNetMaps {
     // BpfMap for UID_OWNER_MAP_PATH. This map is not accessed by others.
     private static IBpfMap<S32, UidOwnerValue> sUidOwnerMap = null;
     private static IBpfMap<S32, U8> sUidPermissionMap = null;
+    private static IBpfMap<S32, UidPermissionChunk> sUidPermissionChunkMap = null;
     private static IBpfMap<S64, CookieTagMapValue> sCookieTagMap = null;
     // TODO: Add BOOL class and replace U8?
     private static IBpfMap<S32, U8> sDataSaverEnabledMap = null;
@@ -145,10 +167,12 @@ public class BpfNetMaps {
 
     private static IBpfMap<LocalNetAccessKey, Bool> sLocalNetAccessMap = null;
     private static IBpfMap<U32, Bool> sLocalNetBlockedUidMap = null;
+    private static BpfBoolean sL4sEnabledMap = null;
 
     private static final List<Pair<Integer, String>> PERMISSION_LIST = Arrays.asList(
             Pair.create(TRAFFIC_PERMISSION_INTERNET, "PERMISSION_INTERNET"),
-            Pair.create(TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS, "PERMISSION_UPDATE_DEVICE_STATS")
+            Pair.create(TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS, "PERMISSION_UPDATE_DEVICE_STATS"),
+            Pair.create(TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK, "PERMISSION_ACCESS_LOCAL_NETWORK")
     );
     private final InterfaceTracker mInterfaceTracker;
     private static boolean sPermissionMapUidMigrationEnabled = false;
@@ -183,6 +207,15 @@ public class BpfNetMaps {
     @VisibleForTesting
     public static void setUidPermissionMapForTest(IBpfMap<S32, U8> uidPermissionMap) {
         sUidPermissionMap = uidPermissionMap;
+    }
+
+    /**
+     * Set uidPermissionChunkMap for test.
+     */
+    @VisibleForTesting
+    public static void setUidPermissionChunkMapForTest(
+        IBpfMap<S32, UidPermissionChunk> uidPermissionChunkMap) {
+        sUidPermissionChunkMap = uidPermissionChunkMap;
     }
 
     /**
@@ -239,6 +272,15 @@ public class BpfNetMaps {
     }
 
     /**
+     * Set l4sEnabledMap for test.
+     */
+    @VisibleForTesting
+    public static void setL4sEnabledMapForTest(
+            BpfBoolean l4sEnabledMap) {
+        sL4sEnabledMap = l4sEnabledMap;
+    }
+
+    /**
      * Set sInitialized for test.
      */
     @VisibleForTesting
@@ -273,6 +315,16 @@ public class BpfNetMaps {
                     UID_PERMISSION_MAP_PATH, S32.class, U8.class);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Cannot open uid permission map", e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private static IBpfMap<S32, UidPermissionChunk> getUidPermissionChunkMap() {
+        try {
+            return SingleWriterBpfMap.getSingleton(
+                    UID_PERMISSION_CHUNK_MAP_PATH, S32.class, UidPermissionChunk.class);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open uid permission chunk map", e);
         }
     }
 
@@ -333,6 +385,15 @@ public class BpfNetMaps {
                     LocalNetAccessKey.class, Bool.class);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Cannot open local_net_access map", e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private static BpfBoolean getL4sEnabledMap() {
+        try {
+            return new BpfBoolean(L4S_ENABLED_MAP_PATH, true /* exclusive */);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open l4s_accecn_ map", e);
         }
     }
 
@@ -410,15 +471,35 @@ public class BpfNetMaps {
             }
         }
 
+        if (deps.isL4SSupported()) {
+            if (sL4sEnabledMap == null) {
+                sL4sEnabledMap = getL4sEnabledMap();
+            }
+            try {
+                sL4sEnabledMap.clear();
+            } catch (ErrnoException e) {
+                throw new IllegalStateException("Failed to initialize l4s_accecn_status map",
+                    e);
+            }
+        }
+
         if (sUidMigrationEnabledBpfBoolean == null) {
             sUidMigrationEnabledBpfBoolean = getUidMigrationEnabledBpfBoolean();
         }
 
-        sPermissionMapUidMigrationEnabled = deps.isPermissionMapUidMigrationEnabled();
         try {
             sUidMigrationEnabledBpfBoolean.set(sPermissionMapUidMigrationEnabled);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Failed to set uid migration enabled map", e);
+        }
+
+        if (sUidPermissionChunkMap == null) {
+            sUidPermissionChunkMap = getUidPermissionChunkMap();
+        }
+        try {
+            sUidPermissionChunkMap.clear();
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot clear uid permission chunk map", e);
         }
     }
 
@@ -426,11 +507,13 @@ public class BpfNetMaps {
      * Initializes the class if it is not already initialized. This method will open maps but not
      * cause any other effects. This method may be called multiple times on any thread.
      */
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private static synchronized void ensureInitialized(final Context context,
             final Dependencies deps) {
         if (sInitialized) return;
-        initBpfMaps(deps);
+        sPermissionMapUidMigrationEnabled = deps.isPermissionMapUidMigrationEnabled();
+        if (SdkLevel.isAtLeastT()) {
+            initBpfMaps(deps);
+        }
         sInitialized = true;
     }
 
@@ -485,6 +568,14 @@ public class BpfNetMaps {
         public boolean isPermissionMapUidMigrationEnabled() {
             return com.android.tethering.flags.Flags.permissionMapUidMigration();
         }
+
+        /**
+         * Checks if L4S is potentially supported by verifying the existence of the BPF map.
+         */
+        public boolean isL4SSupported() {
+            final File file = new File(L4S_ENABLED_MAP_PATH);
+            return file.exists();
+        }
     }
 
     /** Constructor used after T that doesn't need to use netd anymore. */
@@ -504,9 +595,7 @@ public class BpfNetMaps {
     public BpfNetMaps(final Context context, final INetd netd, final Dependencies deps,
             @NonNull final  InterfaceTracker interfaceTracker) {
         Objects.requireNonNull(interfaceTracker);
-        if (SdkLevel.isAtLeastT()) {
-            ensureInitialized(context, deps);
-        }
+        ensureInitialized(context, deps);
         mNetd = netd;
         mDeps = deps;
         mInterfaceTracker = interfaceTracker;
@@ -526,6 +615,12 @@ public class BpfNetMaps {
 
     private void throwIfPre25Q2(final String msg) {
         if (!isAtLeastB()) {
+            throw new UnsupportedOperationException(msg);
+        }
+    }
+
+    private void throwIfUidMigrationIsDisabled(final String msg) {
+        if (!isUidMigrationEnabled()) {
             throw new UnsupportedOperationException(msg);
         }
     }
@@ -953,6 +1048,209 @@ public class BpfNetMaps {
         }
     }
 
+    private void setPermListForUidsToNetd(
+        final SparseIntArray permissionsUids
+    ) throws RemoteException {
+        // merge permission for App ID
+        final SparseIntArray permissionsAppIds = new SparseIntArray();
+        final ArrayMap<Integer, ArraySet<Integer>> permissionIntegersByAppId =
+                groupPermissionsIdsBy(
+                        permissionsUids,
+                        (uid, permissions) -> UserHandle.getAppId(uid), /* keyFunction */
+                        (uid, permissions) -> permissions /* valueFunction */
+                );
+        for (int i = 0; i < permissionIntegersByAppId.size(); i++) {
+            final Integer appId = permissionIntegersByAppId.keyAt(i);
+            final ArraySet<Integer> permissionIntegers = permissionIntegersByAppId.valueAt(i);
+            permissionsAppIds.put(appId, mergePermissionsForAppId(permissionIntegers));
+        }
+
+        // group App Ids by permissions
+        final ArrayMap<Integer, ArraySet<Integer>> appIdsByPermissionInteger =
+                groupPermissionsIdsBy(
+                        permissionsAppIds,
+                        (appId, permissions) -> permissions, /* keyFunction */
+                        (appId, permissions) -> appId /* valueFunction */
+                );
+        for (int i = 0; i < appIdsByPermissionInteger.size(); i++) {
+            final Integer permissions = appIdsByPermissionInteger.keyAt(i);
+            final ArraySet<Integer> appIds = appIdsByPermissionInteger.valueAt(i);
+            final int netdSupportedTrafficPerm = TRAFFIC_PERMISSION_INTERNET
+                    | TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
+            final int clearMask = ~netdSupportedTrafficPerm;
+            // TODO(436242702) add unit test for un-supported permission types
+            if (permissions != TRAFFIC_PERMISSION_UNINSTALLED && (permissions & clearMask) != 0) {
+                Log.e(TAG, "unknown permission type: " + permissions);
+            }
+            mNetd.trafficSetNetPermForUids(permissions, CollectionUtils.toIntArray(appIds));
+        }
+    }
+
+    /**
+     * Convert and sets traffic permission for each corresponding UID in the provided arrays
+     * in UidPermissionChunk bfp map.
+     * <p>
+     * <b>Note:</b> This method is not thread-safe and is intended to be called from
+     * PermissionMonitor thread.
+     * </p>
+     *
+     * @param permissionsUids integer pairs of uids and the traffic permissions. If the
+     *                        permission is 0, revoke all permissions of that uid.
+     * @throws RemoteException when netd has crashed.
+     */
+    public void setPermListForUids(final SparseIntArray permissionsUids) throws RemoteException {
+        throwIfUidMigrationIsDisabled(
+            "setPermListForUids is not available when flag permission_map_uid_migration" +
+            " is disabled");
+
+        if (!SdkLevel.isAtLeastT()) {
+            setPermListForUidsToNetd(permissionsUids);
+            return;
+        }
+
+        // Convert traffic permission to a dense set of persistence bits
+        for(int i = 0; i < permissionsUids.size(); i++) {
+            final int uid = permissionsUids.keyAt(i);
+            final int permissions = permissionsUids.valueAt(i);
+            if(permissions == TRAFFIC_PERMISSION_UNINSTALLED) {
+                permissionsUids.put(uid, PERMISSION_BIT_NONE);
+            } else {
+                permissionsUids.put(uid, convertToChunkPermission(permissions));
+            }
+        }
+
+        setChunkPermListForUids(permissionsUids);
+    }
+
+    /**
+     * Sets a specific chunk permission for each corresponding UID in the provided arrays
+     * in UidPermissionChunk bpf map.
+     * <p>
+     * <b>Note:</b> This method is not thread-safe and is intended to be called from
+     * PermissionMonitor thread.
+     * </p>
+     *
+     * @param permissionsUids integer pairs of uids and the chunk permissions. If the
+     *                        permission is 0, revoke all permissions of that uid.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    public void setChunkPermListForUids(final SparseIntArray permissionsUids) {
+        throwIfUidMigrationIsDisabled(
+            "setChunkPermListForUids is not available when flag permission_map_uid_migration" +
+            " is disabled");
+
+        // group UIDs by chunkId
+        final ArrayMap<Integer, ArraySet<Integer>> uidsByChunkId = groupPermissionsIdsBy(
+            permissionsUids,
+            (uid, permissions) -> getChunkId(uid), /* keyFunction */
+            (uid, permissions) -> uid /* valueFunction */
+        );
+
+        // write permission bits into chunk
+        final int numChunks = uidsByChunkId.size();
+        for (int i = 0; i < numChunks; i++) {
+            final Integer chunkId = uidsByChunkId.keyAt(i);
+            final ArraySet<Integer> uidsInChunk = uidsByChunkId.valueAt(i);
+
+            try {
+                final UidPermissionChunk uidPermissionChunk = sUidPermissionChunkMap.getValue(
+                    new S32(chunkId));
+                final long[] chunk;
+                if (uidPermissionChunk == null) {
+                    chunk = new long[CHUNK_INT64_COUNT];
+                } else {
+                    chunk = uidPermissionChunk.val;
+                }
+
+                final int numUids = uidsInChunk.size();
+                for (int j = 0; j < numUids; j++) {
+                    final int uid = uidsInChunk.valueAt(j);
+                    final int permissionBits = permissionsUids.get(uid);
+                    // Clear permission mask for the uid.
+                    chunk[getIndex(uid)] &= ~(UID_PERMISSION_MASK << getShift(uid));
+                    // Set new permission for the uid
+                    chunk[getIndex(uid)] |= (permissionBits & UID_PERMISSION_MASK) << getShift(uid);
+                }
+
+                // TODO(436242702): deleteEntry if chunk is all 0
+                sUidPermissionChunkMap.updateEntry(
+                    new S32(chunkId),
+                    new UidPermissionChunk(chunk)
+                );
+            } catch (ErrnoException e) {
+                throw new IllegalStateException("Failed to update uid permission chunk map", e);
+            }
+        }
+    }
+
+    /**
+     * Convert traffic permission to a dense set of persistence bits
+     *
+     * @param trafficPermissions the traffic permission to be converted.
+     * @return the permission bits which can be stored in UidPermissionChunkMap
+     */
+    private int convertToChunkPermission(int trafficPermissions) {
+        int chunkPermissions = PERMISSION_BIT_NONE;
+        if ((trafficPermissions & TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK) != 0) {
+            chunkPermissions |= PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+        }
+        if ((trafficPermissions & TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS) != 0) {
+            chunkPermissions |= PERMISSION_BIT_UPDATE_DEVICE_STATS;
+        }
+        if ((trafficPermissions & TRAFFIC_PERMISSION_INTERNET) != 0) {
+            chunkPermissions |= PERMISSION_BIT_INTERNET;
+        }
+        return chunkPermissions;
+    }
+
+    private int convertToTrafficPermission(int chunkPermissions) {
+        int trafficPermissions = PERMISSION_NONE;
+        if ((chunkPermissions & PERMISSION_BIT_ACCESS_LOCAL_NETWORK) != 0) {
+            trafficPermissions |= TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK;
+        }
+        if ((chunkPermissions & PERMISSION_BIT_UPDATE_DEVICE_STATS) != 0) {
+            trafficPermissions |= TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
+        }
+        if ((chunkPermissions & PERMISSION_BIT_INTERNET) != 0) {
+            trafficPermissions |= TRAFFIC_PERMISSION_INTERNET;
+        }
+        return trafficPermissions;
+    }
+
+    private int mergePermissionsForAppId(ArraySet<Integer> permissionIntegers) {
+        int result = 0;
+        boolean isAllTrafficPermissionUninstalled = true;
+        for (int i = 0; i < permissionIntegers.size(); i++) {
+            final int permissionInteger = permissionIntegers.valueAt(i);
+            if (permissionInteger != TRAFFIC_PERMISSION_UNINSTALLED) {
+                result |= permissionInteger;
+                isAllTrafficPermissionUninstalled = false;
+            }
+        }
+        return isAllTrafficPermissionUninstalled ? TRAFFIC_PERMISSION_UNINSTALLED : result;
+    }
+
+    private ArrayMap<Integer, ArraySet<Integer>> groupPermissionsIdsBy(
+        SparseIntArray permissionsUids,
+        BiFunction<Integer, Integer, Integer> keyFunction,
+        BiFunction<Integer, Integer, Integer> valueFunction
+    ){
+        final ArrayMap<Integer, ArraySet<Integer>> groupByResult = new ArrayMap<>();
+        for(int i = 0; i < permissionsUids.size(); i++) {
+            final int uid = permissionsUids.keyAt(i);
+            final int permissions = permissionsUids.valueAt(i);
+            final int key = keyFunction.apply(uid, permissions);
+
+            ArraySet<Integer> valueSet = groupByResult.get(key);
+            if (valueSet == null) {
+                valueSet = new ArraySet<>();
+                groupByResult.put(key, valueSet);
+            }
+            valueSet.add(valueFunction.apply(uid, permissions));
+        }
+        return groupByResult;
+    }
+
     /**
      * Add configuration to local_net_access trie map.
      * @param lpmBitlen prefix length that will be used for longest matching
@@ -1064,6 +1362,39 @@ public class BpfNetMaps {
     }
 
     /**
+     * Set the L4S enabled status.
+     *
+     * @param enabled The new status for L4S. Must be true or false.
+     */
+    @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
+    public void setL4sEnabled(boolean enabled) {
+        if (!mDeps.isL4SSupported()) return;
+
+        try {
+            sL4sEnabledMap.set(enabled);
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to set L4S enabled: " + enabled, e);
+        }
+    }
+
+    /**
+     * Get the L4S enabled status.
+     *
+     * @return The current L4S enabled status.
+     */
+    @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
+    public boolean isL4sEnabled() {
+        if (!mDeps.isL4SSupported()) return false;
+
+        try {
+            return sL4sEnabledMap.get();
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to get L4S enabled", e);
+        }
+        return false;
+    }
+
+    /**
      * Add uid to local_net_blocked_uid map.
      * @param uid application uid that needs to block local network calls.
      */
@@ -1118,6 +1449,11 @@ public class BpfNetMaps {
      */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     public int getNetPermForUid(final int uid) {
+        if (isUidMigrationEnabled()) {
+            final int chunkPermissions = getChunkPermForUid(uid);
+            return convertToTrafficPermission(chunkPermissions);
+        }
+
         final int appId = UserHandle.getAppId(uid);
         try {
             // Key of uid permission map is appId
@@ -1127,6 +1463,34 @@ public class BpfNetMaps {
         } catch (ErrnoException e) {
             Log.wtf(TAG, "Failed to get permission for uid: " + uid);
             return TRAFFIC_PERMISSION_INTERNET;
+        }
+    }
+
+    /**
+     * Get granted chunk permissions for specified uid.
+     *
+     * @param uid the uid to get the granted permissions
+     * @return    the granted chunk permissions.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    @VisibleForTesting
+    public int getChunkPermForUid(final int uid) {
+        throwIfUidMigrationIsDisabled(
+            "getChunkPermForUid is not available when flag" +
+            " permission_map_uid_migration is disabled");
+        try {
+            UidPermissionChunk uidPermissionChunk = sUidPermissionChunkMap.getValue(
+                new S32(getChunkId(uid)));
+            if (uidPermissionChunk == null) {
+                return PERMISSION_BIT_NONE;
+            }
+            long[] chunk = uidPermissionChunk.val;
+            return (int)(
+                (chunk[getIndex(uid)] >> getShift(uid)) & UID_PERMISSION_MASK);
+        }
+        catch (ErrnoException e) {
+            Log.wtf(TAG, "Failed to get chunk permission for uid: " + uid);
+            return PERMISSION_BIT_NONE;
         }
     }
 
@@ -1295,6 +1659,26 @@ public class BpfNetMaps {
         return sj.toString();
     }
 
+    private String permissionsInChunkToString(int permissions) {
+        if (permissions < 0 || permissions > UID_PERMISSION_MASK) {
+            return "PERMISSION_UNKNOWN(" + permissions + ")";
+        }
+        if (permissions == PERMISSION_BIT_NONE) {
+            return "PERMISSION_NONE";
+        }
+        final StringJoiner sj = new StringJoiner(" ");
+        if ((permissions & PERMISSION_BIT_ACCESS_LOCAL_NETWORK) != 0) {
+            sj.add("PERMISSION_ACCESS_LOCAL_NETWORK");
+        }
+        if ((permissions & PERMISSION_BIT_UPDATE_DEVICE_STATS) != 0) {
+            sj.add("PERMISSION_UPDATE_DEVICE_STATS");
+        }
+        if ((permissions & PERMISSION_BIT_INTERNET) != 0) {
+            sj.add("PERMISSION_INTERNET");
+        }
+        return sj.toString();
+    }
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private void dumpOwnerMatchConfig(final IndentingPrintWriter pw) {
         try {
@@ -1334,6 +1718,33 @@ public class BpfNetMaps {
         } catch (ErrnoException e) {
             pw.println("Failed to read uid migration enabled map: " + e);
         }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private void dumpUidPermissionChunkMap(final IndentingPrintWriter pw) {
+        pw.println("sUidPermissionChunkMap:" );
+        pw.increaseIndent();
+        try {
+            sUidPermissionChunkMap.forEach((chunkId, chunk) -> {
+                for(int index = 0; index < chunk.val.length; index++) {
+                    int shift = 0;
+                    long currentValue = chunk.val[index];
+                    while(currentValue != 0) {
+                        int permissionBits = (int) (currentValue & UID_PERMISSION_MASK);
+                        if (permissionBits > 0) {
+                            int uid = CHUNK_UID_COUNT * chunkId.val + index * UIDS_PER_INT64
+                                    + shift / PERMISSION_COUNT;
+                            pw.println(uid + " " + permissionsInChunkToString(permissionBits));
+                        }
+                        currentValue = currentValue >>> PERMISSION_COUNT;
+                        shift += PERMISSION_COUNT;
+                    }
+                }
+            });
+        } catch (ErrnoException e) {
+            pw.println("Failed to read uid permission chunk map: " + e);
+        }
+        pw.decreaseIndent();
     }
 
     /**
@@ -1399,6 +1810,7 @@ public class BpfNetMaps {
             }
             dumpDataSaverConfig(pw);
             dumpUidMigrationConfig(pw);
+            dumpUidPermissionChunkMap(pw);
             pw.decreaseIndent();
         }
     }

@@ -16,12 +16,10 @@
 
 package com.android.server.vcn.routeselection;
 
-import static android.net.vcn.util.PersistableBundleUtils.PersistableBundleWrapper;
 
 import static com.android.server.VcnManagementService.LOCAL_LOG;
 
 import android.annotation.NonNull;
-import android.annotation.Nullable;
 import android.annotation.TargetApi;
 import android.net.IpSecTransform;
 import android.net.IpSecTransformState;
@@ -33,6 +31,7 @@ import android.util.Slog;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.annotations.VisibleForTesting.Visibility;
+import com.android.server.vcn.VcnCarrierConfig;
 import com.android.server.vcn.VcnContext;
 
 import java.util.Objects;
@@ -63,7 +62,7 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
     protected NetworkMetricMonitor(
             @NonNull VcnContext vcnContext,
             @NonNull Network network,
-            @Nullable PersistableBundleWrapper carrierConfig,
+            @NonNull VcnCarrierConfig carrierConfig,
             @NonNull NetworkMetricMonitorCallback callback)
             throws IllegalAccessException {
         mVcnContext = Objects.requireNonNull(vcnContext, "Missing vcnContext");
@@ -182,7 +181,7 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
     }
 
     /** Update the carrierconfig */
-    public void setCarrierConfig(@Nullable PersistableBundleWrapper carrierConfig) {
+    public void setCarrierConfig(@NonNull VcnCarrierConfig carrierConfig) {
         // Subclasses MUST override it if they care
     }
 

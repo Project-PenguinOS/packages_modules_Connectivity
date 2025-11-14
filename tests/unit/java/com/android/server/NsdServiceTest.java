@@ -65,6 +65,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -275,7 +276,8 @@ public class NsdServiceTest {
             return mDiscoveryManager;
         }).when(mDeps).makeMdnsDiscoveryManager(any(), any(), any(), any(), any());
         doReturn(mMulticastLock).when(mWifiManager).createMulticastLock(any());
-        doReturn(mSocketProvider).when(mDeps).makeMdnsSocketProvider(any(), any(), any(), any());
+        doReturn(mSocketProvider).when(mDeps).makeMdnsSocketProvider(
+                any(), any(), any(), any(), any());
         doReturn(DEFAULT_RUNNING_APP_ACTIVE_IMPORTANCE_CUTOFF).when(mDeps).getDeviceConfigInt(
                 eq(NsdService.MDNS_CONFIG_RUNNING_APP_ACTIVE_IMPORTANCE_CUTOFF), anyInt());
         doAnswer(inv -> {
@@ -288,7 +290,8 @@ public class NsdServiceTest {
         mService = makeService();
         final ArgumentCaptor<SocketRequestMonitor> cbMonitorCaptor =
                 ArgumentCaptor.forClass(SocketRequestMonitor.class);
-        verify(mDeps).makeMdnsSocketProvider(any(), any(), any(), cbMonitorCaptor.capture());
+        verify(mDeps).makeMdnsSocketProvider(
+                any(), any(), any(), cbMonitorCaptor.capture(), any());
         mSocketRequestMonitor = cbMonitorCaptor.getValue();
 
         final ArgumentCaptor<OnUidImportanceListener> uidListenerCaptor =
@@ -588,7 +591,8 @@ public class NsdServiceTest {
                 List.of(), /* textEntries */
                 interfaceIdx, /* interfaceIndex */
                 null /* network */,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* cachedCapabilitiesBits */);
 
         // Verify service is found with the interface index
         discoverListenerCaptor.getValue().onServiceNameDiscovered(
@@ -1066,7 +1070,8 @@ public class NsdServiceTest {
                 List.of() /* textEntries */,
                 1234,
                 network,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* creationCapabilitiesBits */);
 
         // Callbacks for query sent.
         listener.onDiscoveryQuerySent(Collections.emptyList(), 1 /* transactionId */);
@@ -1096,7 +1101,8 @@ public class NsdServiceTest {
                 List.of() /* textEntries */,
                 1234,
                 network,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* cachedCapabilitiesBits */);
 
         // Verify onServiceUpdated callback.
         listener.onServiceUpdated(updatedServiceInfo);
@@ -1206,7 +1212,8 @@ public class NsdServiceTest {
                 List.of() /* textEntries */,
                 1234,
                 network,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* creationCapabilitiesBits */);
 
         // Discover the service and report back
         final MdnsListener listener = listenerCaptor.getValue();
@@ -1227,7 +1234,8 @@ public class NsdServiceTest {
                 List.of() /* textEntries */,
                 1234,
                 network,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* cachedCapabilitiesBits */);
 
         // Update, lose, and then recover the service. finishDataDelivery() still only be called
         // once.
@@ -1324,7 +1332,8 @@ public class NsdServiceTest {
                 List.of(), /* textEntries */
                 1234, /* interfaceIndex */
                 network,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* cachedCapabilitiesBits */);
 
         // Verify onServiceNameDiscovered callback
         listener.onServiceNameDiscovered(foundInfo, true /* isServiceFromCache */);
@@ -1345,7 +1354,8 @@ public class NsdServiceTest {
                 null, /* textEntries */
                 1234, /* interfaceIndex */
                 network,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* cachedCapabilitiesBits */);
         // Verify onServiceNameRemoved callback
         listener.onServiceNameRemoved(removedInfo);
         verify(discListener, timeout(TIMEOUT_MS)).onServiceLost(argThat(info ->
@@ -1485,7 +1495,8 @@ public class NsdServiceTest {
                 List.of(), /* textEntries */
                 1234, /* interfaceIndex */
                 network,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* creationCapabilitiesBits */);
         listener.onServiceNameDiscovered(foundInfo, true /* isServiceFromCache */);
 
         // Remove service
@@ -1500,7 +1511,8 @@ public class NsdServiceTest {
                 null, /* textEntries */
                 1234, /* interfaceIndex */
                 network,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* cachedCapabilitiesBits */);
         listener.onServiceNameRemoved(removedInfo);
         client.stopServiceDiscovery(discListener);
         waitForIdle();
@@ -1577,7 +1589,8 @@ public class NsdServiceTest {
                         'k', 'e', 'y', '=', (byte) 0xFF, (byte) 0xFE})) /* textEntries */,
                 1234,
                 network,
-                Instant.ofEpochSecond(1000_000L) /* expirationTime */);
+                Instant.ofEpochSecond(1000_000L) /* expirationTime */,
+                0L /* cachedCapabilitiesBits */);
 
         // Verify onServiceFound callback
         doReturn(TEST_TIME_MS + 10L).when(mClock).elapsedRealtime();
@@ -1676,7 +1689,8 @@ public class NsdServiceTest {
                 List.of() /* textEntries */,
                 1234,
                 network,
-                Instant.MAX /* expirationTime */);
+                Instant.MAX /* expirationTime */,
+                0L /* creationCapabilitiesBits */);
 
         // Verify onServiceFound callback
         listener.onServiceFound(mdnsServiceInfo, true /* isServiceFromCache */);

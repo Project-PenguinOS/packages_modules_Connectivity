@@ -16,7 +16,6 @@
 
 package com.android.server.vcn.routeselection;
 
-import static android.net.vcn.util.PersistableBundleUtils.PersistableBundleWrapper;
 
 import static com.android.internal.annotations.VisibleForTesting.Visibility;
 
@@ -31,7 +30,6 @@ import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.IpSecTransformState;
 import android.net.Network;
-import android.net.vcn.VcnManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.OutcomeReceiver;
@@ -40,6 +38,7 @@ import android.os.PowerManager;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.annotations.VisibleForTesting.Visibility;
 import com.android.modules.utils.HandlerExecutor;
+import com.android.server.vcn.VcnCarrierConfig;
 import com.android.server.vcn.VcnContext;
 
 import java.lang.annotation.ElementType;
@@ -124,16 +123,16 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
     // Security"). For audio and video streaming, above 10-12% packet loss is unacceptable (as per
     // "ICTP-SDU: About PingER"). Thus choose 12% as a conservative default threshold to declare a
     // validation failure.
-    private static final int IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DEFAULT = 12;
+    public static final int IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DEFAULT = 12;
 
     /** Carriers can disable the detector by setting the threshold to -1 */
     @VisibleForTesting(visibility = Visibility.PRIVATE)
     static final int IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DISABLE_DETECTOR = -1;
 
-    private static final int POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT = 20;
+    public static final int POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT = 20;
 
     // By default, there's no maximum limit enforced
-    private static final int MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED = -1;
+    public static final int MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED = -1;
 
     private long mPollIpSecStateIntervalMs;
     private int mPacketLossRatePercentThreshold;
@@ -154,7 +153,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
     public IpSecPacketLossDetector(
             @NonNull VcnContext vcnContext,
             @NonNull Network network,
-            @Nullable PersistableBundleWrapper carrierConfig,
+            @NonNull VcnCarrierConfig carrierConfig,
             @NonNull NetworkMetricMonitorCallback callback,
             @NonNull Dependencies deps)
             throws IllegalAccessException {
@@ -170,8 +169,11 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
 
         mPacketLossCalculator = deps.getPacketLossCalculator();
 
-        mPollIpSecStateIntervalMs = getPollIpSecStateIntervalMs(carrierConfig);
-        mPacketLossRatePercentThreshold = getPacketLossRatePercentThreshold(carrierConfig);
+        mPollIpSecStateIntervalMs =
+                TimeUnit.SECONDS.toMillis(
+                        carrierConfig.getNwSelectIpSecLossDetectPollIntervalSec());
+        mPacketLossRatePercentThreshold =
+                carrierConfig.getNwSelectIpSecLossDetectPercentThreshold();
         mMaxSeqNumIncreasePerSecond = getMaxSeqNumIncreasePerSecond(carrierConfig);
 
         // Register for system broadcasts to monitor idle mode change
@@ -200,7 +202,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
     public IpSecPacketLossDetector(
             @NonNull VcnContext vcnContext,
             @NonNull Network network,
-            @Nullable PersistableBundleWrapper carrierConfig,
+            @NonNull VcnCarrierConfig carrierConfig,
             @NonNull NetworkMetricMonitorCallback callback)
             throws IllegalAccessException {
         this(vcnContext, network, carrierConfig, callback, new Dependencies());
@@ -213,41 +215,9 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
         }
     }
 
-    private static long getPollIpSecStateIntervalMs(
-            @Nullable PersistableBundleWrapper carrierConfig) {
-        final int seconds;
-
-        if (carrierConfig != null) {
-            seconds =
-                    carrierConfig.getInt(
-                            VcnManager.VCN_NETWORK_SELECTION_POLL_IPSEC_STATE_INTERVAL_SECONDS_KEY,
-                            POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT);
-        } else {
-            seconds = POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT;
-        }
-
-        return TimeUnit.SECONDS.toMillis(seconds);
-    }
-
-    private static int getPacketLossRatePercentThreshold(
-            @Nullable PersistableBundleWrapper carrierConfig) {
-        if (carrierConfig != null) {
-            return carrierConfig.getInt(
-                    VcnManager.VCN_NETWORK_SELECTION_IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_KEY,
-                    IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DEFAULT);
-        }
-        return IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DEFAULT;
-    }
-
     @VisibleForTesting(visibility = Visibility.PRIVATE)
-    static int getMaxSeqNumIncreasePerSecond(@Nullable PersistableBundleWrapper carrierConfig) {
-        int maxSeqNumIncrease = MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED;
-        if (carrierConfig != null) {
-            maxSeqNumIncrease =
-                    carrierConfig.getInt(
-                            VcnManager.VCN_NETWORK_SELECTION_MAX_SEQ_NUM_INCREASE_PER_SECOND_KEY,
-                            MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED);
-        }
+    static int getMaxSeqNumIncreasePerSecond(VcnCarrierConfig vcnCarrierConfig) {
+        int maxSeqNumIncrease = vcnCarrierConfig.getNwSelectIpSecLossDetectMaxSeqIncPerSec();
 
         if (maxSeqNumIncrease < MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED) {
             logE(TAG, "Invalid value of MAX_SEQ_NUM_INCREASE_PER_SECOND_KEY " + maxSeqNumIncrease);
@@ -291,12 +261,14 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
     }
 
     @Override
-    public void setCarrierConfig(@Nullable PersistableBundleWrapper carrierConfig) {
+    public void setCarrierConfig(@NonNull VcnCarrierConfig carrierConfig) {
         // The already scheduled event will not be affected. The followup events will be scheduled
         // with the new interval
-        mPollIpSecStateIntervalMs = getPollIpSecStateIntervalMs(carrierConfig);
-
-        mPacketLossRatePercentThreshold = getPacketLossRatePercentThreshold(carrierConfig);
+        mPollIpSecStateIntervalMs =
+                TimeUnit.SECONDS.toMillis(
+                        carrierConfig.getNwSelectIpSecLossDetectPollIntervalSec());
+        mPacketLossRatePercentThreshold =
+                carrierConfig.getNwSelectIpSecLossDetectPercentThreshold();
         mMaxSeqNumIncreasePerSecond = getMaxSeqNumIncreasePerSecond(carrierConfig);
 
         if (canStart() != isStarted()) {

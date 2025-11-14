@@ -16,7 +16,7 @@
 
 package com.android.server.vcn.routeselection;
 
-import static android.net.vcn.VcnManager.VCN_NETWORK_SELECTION_PENALTY_TIMEOUT_MINUTES_LIST_KEY;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_PENALTY_TIMEOUT_MIN_INT_ARRAY;
 import static android.net.vcn.util.PersistableBundleUtils.PersistableBundleWrapper;
 
 import static com.android.server.vcn.routeselection.NetworkPriorityClassifier.PRIORITY_INVALID;
@@ -77,7 +77,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
                 .thenReturn(mIpSecPacketLossDetector);
 
         when(mCarrierConfig.getIntArray(
-                        eq(VCN_NETWORK_SELECTION_PENALTY_TIMEOUT_MINUTES_LIST_KEY), any()))
+                        eq(KEY_NETWORK_SELECTION_PENALTY_TIMEOUT_MIN_INT_ARRAY), any()))
                 .thenReturn(new int[] {PENALTY_TIMEOUT_MIN});
 
         mNetworkEvaluator = newValidUnderlyingNetworkEvaluator();
@@ -303,7 +303,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
     public void testSetCarrierConfig() throws Exception {
         final int additionalTimeoutMin = 10;
         when(mCarrierConfig.getIntArray(
-                        eq(VCN_NETWORK_SELECTION_PENALTY_TIMEOUT_MINUTES_LIST_KEY), any()))
+                        eq(KEY_NETWORK_SELECTION_PENALTY_TIMEOUT_MIN_INT_ARRAY), any()))
                 .thenReturn(new int[] {PENALTY_TIMEOUT_MIN + additionalTimeoutMin});
 
         // Update evaluator and penalize the network
