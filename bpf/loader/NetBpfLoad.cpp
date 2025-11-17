@@ -119,25 +119,6 @@ static_assert(__ANDROID_API__ == 30, "NetBpfLoad must be compiled for 30/R");
 // should be 0 for APEX/mainline builds.
 static_assert(!minSupportedKernelVer, "NetBpfLoad must not assume min kver");
 
-// Returns the build type string (from ro.build.type).
-const std::string& getBuildType() {
-    static std::string t = GetProperty("ro.build.type", "unknown");
-    return t;
-}
-
-// The following functions classify the 3 Android build types.
-inline bool isEng() {
-    return getBuildType() == "eng";
-}
-
-inline bool isUser() {
-    return getBuildType() == "user";
-}
-
-inline bool isUserdebug() {
-    return getBuildType() == "userdebug";
-}
-
 static unsigned int page_size = static_cast<unsigned int>(getpagesize());
 
 typedef struct {
@@ -1139,7 +1120,7 @@ static int loadCodeSections(ElfObject& elfObj, vector<codeSection>& cs, const st
 
             if (!fd.ok()) {
                 // kernel NULL terminates log_buf, so this checks for non-empty string
-                if (log_buf[0] && !isUser()) {
+                if (log_buf[0] && !isUser) {
                     vector<string> lines = Split(log_buf, "\n");
 
                     ALOGW("BPF_PROG_LOAD - BEGIN log_buf contents:");
@@ -1783,7 +1764,7 @@ static int doLoad(char** argv, char * const envp[]) {
     }
 
     // Ensure we can determine the Android build type.
-    if (!isEng() && !isUser() && !isUserdebug()) {
+    if (!isEng && !isUser && !isUserdebug) {
         ALOGE("Failed to determine the build type: got %s, want 'eng', 'user', or 'userdebug'",
               getBuildType().c_str());
         return 22;

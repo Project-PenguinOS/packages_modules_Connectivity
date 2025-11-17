@@ -53,3 +53,11 @@ flag {
     description: "Controls whether Thread support for mobile devices is enabled"
     bug: "368867060"
 }
+
+flag {
+    name: "dnssd_rdp_enabled"
+    is_exported: false
+    namespace: "thread_network"
+    description: "Controls whether DNSSD Reverse Discovery Proxy is enabled"
+    bug: "444382946"
+}

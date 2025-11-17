@@ -45,7 +45,7 @@ android_test {
         "ike-tun-utils",
         "net-tests-utils",
         "telephony-cts-utils",
-        "android.net.vcn.flags-aconfig-java-export",
+        "android.net.vcn.flags-aconfig-java",
         "flag-junit",
     ],
 

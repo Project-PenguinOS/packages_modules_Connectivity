@@ -29,7 +29,6 @@ import com.android.server.connectivity.ConnectivityNativeService;
 import com.android.server.nearby.NearbyService;
 import com.android.server.net.ct.CertificateTransparencyService;
 import com.android.server.thread.ThreadNetworkService;
-import com.android.server.vcn.VcnLocation;
 
 import java.lang.reflect.Constructor;
 
@@ -230,7 +229,7 @@ public final class ConnectivityServiceInitializer extends SystemService {
     /** Return ConnectivityServiceInitializerB instance if enable, otherwise null. */
     @Nullable
     private SystemService createConnectivityServiceInitializerB(Context context) {
-        if (!VcnLocation.IS_VCN_IN_MAINLINE || !SdkLevel.isAtLeastB()) {
+        if (!SdkLevel.isAtLeastB()) {
             return null;
         }
 
