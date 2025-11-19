@@ -64,7 +64,10 @@ class ApfV6Test(apf_test_base.ApfTestBase):
   def teardown_class(self):
     # force to stop capture on the server device if any test case failed
     try:
-      apf_utils.stop_capture_packets(self.serverDevice, self.server_iface_name)
+      if hasattr(self, 'server_iface_name') and self.server_iface_name:
+        apf_utils.stop_capture_packets(
+            self.serverDevice, self.server_iface_name
+        )
     except assert_utils.UnexpectedBehaviorError:
       pass
     super().teardown_class()

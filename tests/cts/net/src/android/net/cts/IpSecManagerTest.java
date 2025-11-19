@@ -59,6 +59,7 @@ import static com.android.testutils.TestPermissionUtil.runAsShell;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
@@ -126,6 +127,7 @@ public class IpSecManagerTest extends IpSecBaseTest {
     private static final int MAX_PORT_BIND_ATTEMPTS = 10;
 
     private static final byte[] AEAD_KEY = getKey(288);
+    private static final int MIN_TCP_CLOSE_PACKETS = 3;
 
     /*
      * Allocate a random SPI
@@ -190,8 +192,8 @@ public class IpSecManagerTest extends IpSecBaseTest {
         return sock;
     }
 
-    private void checkUnconnectedUdp(IpSecTransform transform, InetAddress local, int sendCount,
-                                     boolean useJavaSockets) throws Exception {
+    private SocketPair<GenericSocket> checkUnconnectedUdp(IpSecTransform transform,
+            InetAddress local, int sendCount, boolean useJavaSockets) throws Exception {
         GenericUdpSocket sockLeft = null, sockRight = null;
         if (useJavaSockets) {
             SocketPair<JavaUdpSocket> sockets = getJavaUdpSocketPair(local, mISM, transform, false);
@@ -216,12 +218,11 @@ public class IpSecManagerTest extends IpSecBaseTest {
             assertArrayEquals("Right-to-left encrypted data did not match.", TEST_DATA, in);
         }
 
-        sockLeft.close();
-        sockRight.close();
+        return new SocketPair<>(sockLeft, sockRight);
     }
 
-    private void checkTcp(IpSecTransform transform, InetAddress local, int sendCount,
-                          boolean useJavaSockets) throws Exception {
+    private SocketPair<GenericSocket> checkTcp(IpSecTransform transform, InetAddress local,
+                          int sendCount, boolean useJavaSockets) throws Exception {
         GenericTcpSocket client = null, accepted = null;
         if (useJavaSockets) {
             SocketPair<JavaTcpSocket> sockets = getJavaTcpSocketPair(local, mISM, transform);
@@ -269,9 +270,7 @@ public class IpSecManagerTest extends IpSecBaseTest {
         //     closing the sockets, and then closing the transforms. See documentation for the
         //     Socket or FileDescriptor flavors of applyTransportModeTransform() in IpSecManager
         //     for more details.
-
-        client.close();
-        accepted.close();
+        return new SocketPair<>(client, accepted);
     }
 
     private IpSecTransform buildTransportModeTransform(
@@ -660,28 +659,47 @@ public class IpSecManagerTest extends IpSecBaseTest {
 
             try (IpSecTransform transform =
                         transformBuilder.buildTransportModeTransform(local, spi)) {
+                SocketPair<GenericSocket> sockPair = null;
                 if (protocol == IPPROTO_TCP) {
                     transportHdrLen = TCP_HDRLEN_WITH_TIMESTAMP_OPT;
-                    checkTcp(transform, local, sendCount, useJavaSockets);
+                    sockPair = checkTcp(transform, local, sendCount, useJavaSockets);
                 } else if (protocol == IPPROTO_UDP) {
                     transportHdrLen = UDP_HDRLEN;
 
                     // TODO: Also check connected udp.
-                    checkUnconnectedUdp(transform, local, sendCount, useJavaSockets);
+                    sockPair = checkUnconnectedUdp(transform, local, sendCount, useJavaSockets);
                 } else {
                     throw new IllegalArgumentException("Invalid protocol");
                 }
-            }
 
-            checkStatsChecker(
-                    protocol,
-                    ipHdrLen,
-                    transportHdrLen,
-                    udpEncapLen,
-                    sendCount,
-                    getIvLen(crypt != null ? crypt : aead),
-                    getBlkSize(crypt != null ? crypt : aead),
-                    getTruncLenBits(auth != null ? auth : aead));
+                checkStatsChecker(
+                        protocol,
+                        ipHdrLen,
+                        transportHdrLen,
+                        udpEncapLen,
+                        sendCount,
+                        getIvLen(crypt != null ? crypt : aead),
+                        getBlkSize(crypt != null ? crypt : aead),
+                        getTruncLenBits(auth != null ? auth : aead));
+
+                StatsChecker.initStatsChecker();
+                sockPair.mLeftSock.close();
+                sockPair.mRightSock.close();
+                // Try to check if the above close() actually triggered sock_close() at kernel.
+                // In case of TCP socket, we can do by checking packet stats increasement with TCP
+                // close procedure. But for UDP socket, there is no good way to check this. Because
+                // after close(), the socket FD will be always useless even though actual the FILE
+                // pointer and socket resource remain at the kernel side due to file's ref count.
+                // So, further socket operation always failed even though actual socket close
+                // doesn't happen at the kernel.
+                boolean tcpStatCheckForClose = (protocol == IPPROTO_TCP)
+                        // IpSecService is not mainlined until Tiramisu.
+                        && (android.os.Build.VERSION.SDK_INT_FULL
+                        >= Build.VERSION_CODES_FULL.TIRAMISU);
+                if (tcpStatCheckForClose) {
+                    StatsChecker.waitForNumPackets(MIN_TCP_CLOSE_PACKETS);
+                }
+            }
         }
     }
 

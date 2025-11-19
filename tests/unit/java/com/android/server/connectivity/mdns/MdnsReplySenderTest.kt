@@ -277,7 +277,7 @@ class MdnsReplySenderTest {
             Unit = runningOnHandlerAndReturn { sender.queueReply(reply) }
 
     private fun buildFlags(enableKAS: Boolean): MdnsFeatureFlags {
-        return MdnsFeatureFlags.newBuilder()
+        return MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                 .setIsKnownAnswerSuppressionEnabled(enableKAS).build()
     }
 

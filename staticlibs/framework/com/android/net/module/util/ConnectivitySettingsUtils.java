@@ -20,6 +20,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.net.ConnectivitySettingsManager;
 import android.provider.Settings;
 import android.text.TextUtils;
 
@@ -210,5 +211,34 @@ public class ConnectivitySettingsUtils {
     public static String getNetworkAvoidBadWifiSetting(@NonNull Context context, int subId) {
         return Settings.Global.getString(
             context.getContentResolver(), getAvoidBadWifiSettingKey(subId));
+    }
+
+    /**
+     * Retrieves the carrier-aware avoid bad wifi string from {@link Settings} and
+     * converts it to the corresponding integer constant defined in
+     * {@link ConnectivitySettingsManager}.
+     *
+     * The raw setting is a string, which is mapped to an integer constant as follows:
+     * If the setting string is {@code null},
+     *     it defaults to {@link ConnectivitySettingsManager#NETWORK_AVOID_BAD_WIFI_PROMPT}.
+     * If the setting string equals {@code "1"},
+     *     it maps to {@link ConnectivitySettingsManager#NETWORK_AVOID_BAD_WIFI_AVOID}.
+     * Any other non-null string
+     *     maps to {@link ConnectivitySettingsManager#NETWORK_AVOID_BAD_WIFI_IGNORE}.
+     *
+     * @param context The application {@link Context}.
+     * @param subId The subscription ID for which to fetch the setting.
+     * @return An integer constant from {@link ConnectivitySettingsManager} representing the
+     *         effective "Avoid Bad Wifi" mode (PROMPT, AVOID, or IGNORE).
+     */
+    public static int getNetworkAvoidBadWifiIntegerSetting(@NonNull Context context, int subId) {
+        final String setting = getNetworkAvoidBadWifiSetting(context, subId);
+        if (setting == null) return ConnectivitySettingsManager.NETWORK_AVOID_BAD_WIFI_PROMPT;
+
+        if ("1".equals(setting)) {
+            return ConnectivitySettingsManager.NETWORK_AVOID_BAD_WIFI_AVOID;
+        } else {
+            return ConnectivitySettingsManager.NETWORK_AVOID_BAD_WIFI_IGNORE;
+        }
     }
 }

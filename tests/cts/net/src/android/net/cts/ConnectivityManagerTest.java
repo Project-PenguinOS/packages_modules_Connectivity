@@ -211,6 +211,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import com.android.compatibility.common.util.DynamicConfigDeviceSide;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.CollectionUtils;
+import com.android.net.module.util.ConnectivitySettingsUtils;
 import com.android.net.module.util.DnsPacket;
 import com.android.net.module.util.Struct;
 import com.android.net.module.util.structs.Ipv4Header;
@@ -3183,21 +3184,41 @@ public class ConnectivityManagerTest {
         }
     }
 
-    @AppModeFull(reason = "WRITE_DEVICE_CONFIG permission can't be granted to instant apps")
-    @Test
-    public void testSetAvoidUnvalidated() throws Exception {
-        assumeTrue(TestUtils.shouldTestSApis());
+    private void doTestAvoidUnvalidated(boolean isCarrierAware) {
         // TODO: Allow in debuggable ROM only. To be replaced by FabricatedOverlay
         assumeTrue(Build.isDebuggable());
         final boolean canRunTest = mPackageManager.hasSystemFeature(FEATURE_WIFI)
                 && mPackageManager.hasSystemFeature(FEATURE_TELEPHONY);
-        assumeTrue("testSetAvoidUnvalidated cannot execute"
+        assumeTrue("doTestAvoidUnvalidated cannot execute"
                 + " unless device supports WiFi and telephony", canRunTest);
 
-        final int previousAvoidBadWifi =
+        // Allow bad wifi for the test duration.
+        // This block first saves the current setting and then sets the new value,
+        // differentiating between per carrier settings (if isCarrierAware is true)
+        // and the global system setting (if isCarrierAware is false).
+        // The original value will be restored in the test cleanup method.
+        final int previousAvoidBadWifi;
+        final int activeSubId;
+        setTestAllowBadWifiResource(
+                    System.currentTimeMillis() + WIFI_CONNECT_TIMEOUT_MS /* timeMs */);
+        if (isCarrierAware) {
+            activeSubId = SubscriptionManager.getActiveDataSubscriptionId();
+            previousAvoidBadWifi =
+                ConnectivitySettingsUtils.getNetworkAvoidBadWifiIntegerSetting(
+                        mContext, activeSubId);
+            ConnectivitySettingsManager.setNetworkAvoidBadWifi(
+                    mContext,
+                    activeSubId,
+                    ConnectivitySettingsManager.NETWORK_AVOID_BAD_WIFI_IGNORE);
+        } else {
+            // activeSubId is not used in global system setting test,
+            // so a valid Subscription ID is not needed (set to INVALID_SUBSCRIPTION_ID).
+            activeSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+            previousAvoidBadWifi =
                 ConnectivitySettingsManager.getNetworkAvoidBadWifi(mContext);
-
-        allowBadWifi();
+            ConnectivitySettingsManager.setNetworkAvoidBadWifi(mContext,
+                    ConnectivitySettingsManager.NETWORK_AVOID_BAD_WIFI_IGNORE);
+        }
 
         testAndCleanup(() -> {
             final Network cellNetwork = networkCallbackRule.requestCell();
@@ -3240,28 +3261,35 @@ public class ConnectivityManagerTest {
             // The network should not validate again.
             wifiCb.assertNoCallback(NO_CALLBACK_TIMEOUT_MS, c -> isValidatedCaps(c));
         }, () -> {
-            resetAvoidBadWifi(previousAvoidBadWifi);
+            // reset to the original setting
+            setTestAllowBadWifiResource(0 /* timeMs */);
+            if (isCarrierAware) {
+                ConnectivitySettingsManager.setNetworkAvoidBadWifi(
+                        mContext, activeSubId, previousAvoidBadWifi);
+            } else {
+                ConnectivitySettingsManager.setNetworkAvoidBadWifi(mContext, previousAvoidBadWifi);
+            }
             mHttpServer.stop();
             mTestValidationConfigRule.runAfterNextCleanup(this::reconnectWifiAndEnsureValidated);
         });
+    }
+
+    @AppModeFull(reason = "WRITE_DEVICE_CONFIG permission can't be granted to instant apps")
+    @Test @DevSdkIgnoreRule.IgnoreAfter(Build.VERSION_CODES.BAKLAVA)
+    public void testSetAvoidUnvalidatedSystemSetting() throws Exception {
+        doTestAvoidUnvalidated(false /* isCarrierAware */);
+    }
+
+    @AppModeFull(reason = "WRITE_DEVICE_CONFIG permission can't be granted to instant apps")
+    @Test @ConnectivityModuleTest
+    public void testSetAvoidUnvalidatedCarrierConfig() throws Exception {
+        doTestAvoidUnvalidated(true /* isCarrierAware */);
     }
 
     private boolean isValidatedCaps(Event c) {
         if (!(c instanceof Event.CapabilitiesChanged)) return false;
         final Event.CapabilitiesChanged capsChanged = (Event.CapabilitiesChanged) c;
         return capsChanged.getCaps().hasCapability(NET_CAPABILITY_VALIDATED);
-    }
-
-    private void resetAvoidBadWifi(int settingValue) {
-        setTestAllowBadWifiResource(0 /* timeMs */);
-        ConnectivitySettingsManager.setNetworkAvoidBadWifi(mContext, settingValue);
-    }
-
-    private void allowBadWifi() {
-        setTestAllowBadWifiResource(
-                System.currentTimeMillis() + WIFI_CONNECT_TIMEOUT_MS /* timeMs */);
-        ConnectivitySettingsManager.setNetworkAvoidBadWifi(mContext,
-                ConnectivitySettingsManager.NETWORK_AVOID_BAD_WIFI_IGNORE);
     }
 
     private void setTestAllowBadWifiResource(long timeMs) {

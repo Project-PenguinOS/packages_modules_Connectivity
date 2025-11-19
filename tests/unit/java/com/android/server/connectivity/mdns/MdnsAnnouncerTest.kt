@@ -55,7 +55,7 @@ class MdnsAnnouncerTest {
     private val socket = mock(MdnsInterfaceSocket::class.java)
     private val sharedLog = mock(SharedLog::class.java)
     private val buffer = ByteArray(1500)
-    private val flags = MdnsFeatureFlags.newBuilder().build()
+    private val flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build()
 
     @Before
     fun setUp() {

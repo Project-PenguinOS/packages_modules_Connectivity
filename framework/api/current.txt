@@ -696,6 +696,7 @@ package android.net.http {
     method @NonNull public android.net.http.HttpEngine.Builder setEnableHttpCache(int, long);
     method @NonNull public android.net.http.HttpEngine.Builder setEnablePublicKeyPinningBypassForLocalTrustAnchors(boolean);
     method @NonNull public android.net.http.HttpEngine.Builder setEnableQuic(boolean);
+    method @FlaggedApi("android.net.http.proxy_apis") @NonNull public android.net.http.HttpEngine.Builder setProxyOptions(@Nullable android.net.http.ProxyOptions);
     method @NonNull public android.net.http.HttpEngine.Builder setQuicOptions(@NonNull android.net.http.QuicOptions);
     method @NonNull public android.net.http.HttpEngine.Builder setStoragePath(@NonNull String);
     method @NonNull public android.net.http.HttpEngine.Builder setUserAgent(@NonNull String);
@@ -728,6 +729,28 @@ package android.net.http {
     field public static final int ERROR_OTHER = 11; // 0xb
     field public static final int ERROR_QUIC_PROTOCOL_FAILED = 10; // 0xa
     field public static final int ERROR_TIMED_OUT = 4; // 0x4
+  }
+
+  @FlaggedApi("android.net.http.proxy_apis") public final class Proxy {
+    method @NonNull public static android.net.http.Proxy createHttpProxy(int, @NonNull String, int, @NonNull java.util.concurrent.Executor, @NonNull android.net.http.Proxy.HttpConnectCallback);
+    field public static final int SCHEME_HTTP = 0; // 0x0
+    field public static final int SCHEME_HTTPS = 1; // 0x1
+  }
+
+  public static interface Proxy.HttpConnectCallback {
+    method public void onBeforeRequest(@NonNull android.net.http.Proxy.HttpConnectCallback.Request);
+    method public int onResponseReceived(@NonNull java.util.List<android.util.Pair<java.lang.String,java.lang.String>>, int);
+    field public static final int RESPONSE_ACTION_CLOSE = 0; // 0x0
+    field public static final int RESPONSE_ACTION_PROCEED = 1; // 0x1
+  }
+
+  public static final class Proxy.HttpConnectCallback.Request implements java.lang.AutoCloseable {
+    method public void close();
+    method public void proceed(@NonNull java.util.List<android.util.Pair<java.lang.String,java.lang.String>>);
+  }
+
+  @FlaggedApi("android.net.http.proxy_apis") public final class ProxyOptions {
+    method @NonNull public static android.net.http.ProxyOptions fromProxyList(@NonNull java.util.List<android.net.http.Proxy>);
   }
 
   public abstract class QuicException extends android.net.http.NetworkException {

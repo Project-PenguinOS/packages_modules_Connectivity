@@ -171,7 +171,8 @@ class BpfMapRO {
 
     // ~16KiB initial stack usage seems reasonable
     static constexpr int BATCHSIZE = 16384 / (sizeof(Key) + sizeof(Value));
-    static_assert(BATCHSIZE >= 64, "consider Key/Value size, whether incr mem limit, decr batch req");
+    static_assert(BATCHSIZE >= 15, "consider Key/Value size, whether incr mem limit, "
+                                    "decr batch req");
     static_assert(BATCHSIZE * sizeof(Key) + BATCHSIZE * sizeof(Value) <= 16384);
 
     Result<void> doBulkLookupAndMaybeDelete(bool del, const function<void(const Key &, const Value &)> &f) const {
@@ -184,7 +185,7 @@ class BpfMapRO {
         // is almost always enough for a bucket (which is what you'd expect, it's not a good
         // hashtable if there's lots of items in a single bucket)
         //
-        // Since we start with 64+ we shouldn't ever actually need to increase N...
+        // Since we start with 15+ we shouldn't ever actually need to increase N...
         // Also note that the 'true' condition is not really an infinite loop,
         // as we'll blow up the stack and crash instead of looping infinitely.
         // But that also shouldn't happen cause it would imply/require a ridiculously

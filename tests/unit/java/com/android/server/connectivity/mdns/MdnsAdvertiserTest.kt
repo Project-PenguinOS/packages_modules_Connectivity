@@ -220,7 +220,8 @@ class MdnsAdvertiserTest {
     private val mockDeps = mock(MdnsAdvertiser.Dependencies::class.java)
     private val context = mock(Context::class.java)
     private val resources = mock(Resources::class.java)
-    private val flags = MdnsFeatureFlags.newBuilder().setIsMdnsOffloadFeatureEnabled(true)
+    private val flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+        .setIsMdnsOffloadFeatureEnabled(true)
         .setIsSelectiveMdnsResponseOffloadEnabled(true).build()
 
     @Before
@@ -933,7 +934,8 @@ class MdnsAdvertiserTest {
 
     private fun doHostnameGenerationTest(shortHostname: Boolean): Array<String> {
         doCallRealMethod().`when`(mockDeps).generateHostname(anyBoolean())
-        val flags = MdnsFeatureFlags.newBuilder().setIsShortHostnamesEnabled(shortHostname).build()
+        val flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+            .setIsShortHostnamesEnabled(shortHostname).build()
         val advertiser = makeMdnsAdvertiser(flags)
         postSync { advertiser.addOrUpdateService(
             SERVICE_ID_1,

@@ -370,7 +370,30 @@ public class MdnsFeatureFlags {
 
     /** A builder to create {@link MdnsFeatureFlags}. */
     public static final class Builder {
+        private static final long FLAG_IS_MDNS_OFFLOAD_FEATURE_ENABLED = 1 << 0;
+        private static final long FLAG_INCLUDE_INET_ADDRESS_RECORDS_IN_PROBING = 1 << 1;
+        private static final long FLAG_IS_EXPIRED_SERVICES_REMOVAL_ENABLED = 1 << 2;
+        private static final long FLAG_IS_LABEL_COUNT_LIMIT_ENABLED = 1 << 3;
+        private static final long FLAG_IS_KNOWN_ANSWER_SUPPRESSION_ENABLED = 1 << 4;
+        private static final long FLAG_IS_UNICAST_REPLY_ENABLED = 1 << 5;
+        private static final long FLAG_IS_AGGRESSIVE_QUERY_MODE_ENABLED = 1 << 6;
+        private static final long FLAG_IS_QUERY_WITH_KNOWN_ANSWER_ENABLED = 1 << 7;
+        private static final long FLAG_AVOID_ADVERTISING_EMPTY_TXT_RECORDS = 1 << 8;
+        private static final long FLAG_IS_CACHED_SERVICES_REMOVAL_ENABLED = 1 << 9;
+        private static final long FLAG_CACHED_SERVICES_RETENTION_TIME = 1 << 10;
+        private static final long FLAG_IS_ACCURATE_DELAY_CALLBACK_ENABLED = 1 << 11;
+        private static final long FLAG_IS_SHORT_HOSTNAMES_ENABLED = 1 << 12;
+        private static final long FLAG_IS_SOCKET_CLIENT_NETWORK_GUESSING_ENABLED = 1 << 13;
+        private static final long FLAG_IS_CACHE_FLUSH_PER_ADDRESS_TYPE_ENABLED = 1 << 14;
+        private static final long FLAG_IS_OPTIMIZED_EXPIRED_SERVICE_REMOVAL_ENABLED = 1 << 15;
+        private static final long FLAG_IS_IGNORE_TEMPORARY_IPV6_ADDRESSES_ENABLED = 1 << 16;
+        private static final long FLAG_IS_SELECTIVE_MDNS_RESPONSE_OFFLOAD_ENABLED = 1 << 17;
+        private static final long FLAG_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS = 1 << 18;
+        private static final long FLAG_MDNS_SOCKET_THREAD_STATS_TAG = 1 << 19;
+        private static final long FLAG_IS_MDNS_SCAN_OFFLOAD_ENABLED = 1 << 20;
 
+        private long mSetFlags;
+        private long mExemptFlags;
         private boolean mIsMdnsOffloadFeatureEnabled;
         private boolean mIncludeInetAddressRecordsInProbing;
         private boolean mIsExpiredServicesRemovalEnabled;
@@ -420,6 +443,38 @@ public class MdnsFeatureFlags {
             mIsMdnsScanOffloadEnabled = false;
             mMdnsSocketThreadStatsTag = MDNS_SOCKET_THREAD_STATS_TAG_NONE;
             mOverrideProvider = null;
+
+            // Those flags are not used in NsdService.
+            mExemptFlags = FLAG_IS_SOCKET_CLIENT_NETWORK_GUESSING_ENABLED
+                    | FLAG_MDNS_SOCKET_THREAD_STATS_TAG;
+        }
+
+        /**
+         * Set all flags without changing their value. For testing only.
+         */
+        public Builder setAllFlagsForTesting() {
+            mSetFlags |= FLAG_IS_MDNS_OFFLOAD_FEATURE_ENABLED
+                    | FLAG_INCLUDE_INET_ADDRESS_RECORDS_IN_PROBING
+                    | FLAG_IS_EXPIRED_SERVICES_REMOVAL_ENABLED
+                    | FLAG_IS_LABEL_COUNT_LIMIT_ENABLED
+                    | FLAG_IS_KNOWN_ANSWER_SUPPRESSION_ENABLED
+                    | FLAG_IS_UNICAST_REPLY_ENABLED
+                    | FLAG_IS_AGGRESSIVE_QUERY_MODE_ENABLED
+                    | FLAG_IS_QUERY_WITH_KNOWN_ANSWER_ENABLED
+                    | FLAG_AVOID_ADVERTISING_EMPTY_TXT_RECORDS
+                    | FLAG_IS_CACHED_SERVICES_REMOVAL_ENABLED
+                    | FLAG_CACHED_SERVICES_RETENTION_TIME
+                    | FLAG_IS_ACCURATE_DELAY_CALLBACK_ENABLED
+                    | FLAG_IS_SHORT_HOSTNAMES_ENABLED
+                    | FLAG_IS_SOCKET_CLIENT_NETWORK_GUESSING_ENABLED
+                    | FLAG_IS_CACHE_FLUSH_PER_ADDRESS_TYPE_ENABLED
+                    | FLAG_IS_OPTIMIZED_EXPIRED_SERVICE_REMOVAL_ENABLED
+                    | FLAG_IS_IGNORE_TEMPORARY_IPV6_ADDRESSES_ENABLED
+                    | FLAG_IS_SELECTIVE_MDNS_RESPONSE_OFFLOAD_ENABLED
+                    | FLAG_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS
+                    | FLAG_MDNS_SOCKET_THREAD_STATS_TAG
+                    | FLAG_IS_MDNS_SCAN_OFFLOAD_ENABLED;
+            return this;
         }
 
         /**
@@ -430,6 +485,7 @@ public class MdnsFeatureFlags {
         public Builder setIsIgnoreTemporaryIPv6AddressesEnabled(
                 boolean isIgnoreTemporaryIPv6AddressesEnabled) {
             mIsIgnoreTemporaryIPv6AddressesEnabled = isIgnoreTemporaryIPv6AddressesEnabled;
+            mSetFlags |= FLAG_IS_IGNORE_TEMPORARY_IPV6_ADDRESSES_ENABLED;
             return this;
         }
 
@@ -440,6 +496,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsMdnsOffloadFeatureEnabled(boolean isMdnsOffloadFeatureEnabled) {
             mIsMdnsOffloadFeatureEnabled = isMdnsOffloadFeatureEnabled;
+            mSetFlags |= FLAG_IS_MDNS_OFFLOAD_FEATURE_ENABLED;
             return this;
         }
 
@@ -451,6 +508,7 @@ public class MdnsFeatureFlags {
         public Builder setIncludeInetAddressRecordsInProbing(
                 boolean includeInetAddressRecordsInProbing) {
             mIncludeInetAddressRecordsInProbing = includeInetAddressRecordsInProbing;
+            mSetFlags |= FLAG_INCLUDE_INET_ADDRESS_RECORDS_IN_PROBING;
             return this;
         }
 
@@ -461,6 +519,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsExpiredServicesRemovalEnabled(boolean isExpiredServicesRemovalEnabled) {
             mIsExpiredServicesRemovalEnabled = isExpiredServicesRemovalEnabled;
+            mSetFlags |= FLAG_IS_EXPIRED_SERVICES_REMOVAL_ENABLED;
             return this;
         }
 
@@ -471,6 +530,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsLabelCountLimitEnabled(boolean isLabelCountLimitEnabled) {
             mIsLabelCountLimitEnabled = isLabelCountLimitEnabled;
+            mSetFlags |= FLAG_IS_LABEL_COUNT_LIMIT_ENABLED;
             return this;
         }
 
@@ -481,6 +541,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsKnownAnswerSuppressionEnabled(boolean isKnownAnswerSuppressionEnabled) {
             mIsKnownAnswerSuppressionEnabled = isKnownAnswerSuppressionEnabled;
+            mSetFlags |= FLAG_IS_KNOWN_ANSWER_SUPPRESSION_ENABLED;
             return this;
         }
 
@@ -491,6 +552,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsUnicastReplyEnabled(boolean isUnicastReplyEnabled) {
             mIsUnicastReplyEnabled = isUnicastReplyEnabled;
+            mSetFlags |= FLAG_IS_UNICAST_REPLY_ENABLED;
             return this;
         }
 
@@ -512,6 +574,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsAggressiveQueryModeEnabled(boolean isAggressiveQueryModeEnabled) {
             mIsAggressiveQueryModeEnabled = isAggressiveQueryModeEnabled;
+            mSetFlags |= FLAG_IS_AGGRESSIVE_QUERY_MODE_ENABLED;
             return this;
         }
 
@@ -522,6 +585,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsQueryWithKnownAnswerEnabled(boolean isQueryWithKnownAnswerEnabled) {
             mIsQueryWithKnownAnswerEnabled = isQueryWithKnownAnswerEnabled;
+            mSetFlags |= FLAG_IS_QUERY_WITH_KNOWN_ANSWER_ENABLED;
             return this;
         }
 
@@ -532,6 +596,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setAvoidAdvertisingEmptyTxtRecords(boolean avoidAdvertisingEmptyTxtRecords) {
             mAvoidAdvertisingEmptyTxtRecords = avoidAdvertisingEmptyTxtRecords;
+            mSetFlags |= FLAG_AVOID_ADVERTISING_EMPTY_TXT_RECORDS;
             return this;
         }
 
@@ -542,6 +607,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsCachedServicesRemovalEnabled(boolean isCachedServicesRemovalEnabled) {
             mIsCachedServicesRemovalEnabled = isCachedServicesRemovalEnabled;
+            mSetFlags |= FLAG_IS_CACHED_SERVICES_REMOVAL_ENABLED;
             return this;
         }
 
@@ -552,6 +618,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setCachedServicesRetentionTime(long cachedServicesRetentionTime) {
             mCachedServicesRetentionTime = cachedServicesRetentionTime;
+            mSetFlags |= FLAG_CACHED_SERVICES_RETENTION_TIME;
             return this;
         }
 
@@ -562,6 +629,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsAccurateDelayCallbackEnabled(boolean isAccurateDelayCallbackEnabled) {
             mIsAccurateDelayCallbackEnabled = isAccurateDelayCallbackEnabled;
+            mSetFlags |= FLAG_IS_ACCURATE_DELAY_CALLBACK_ENABLED;
             return this;
         }
 
@@ -572,6 +640,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsShortHostnamesEnabled(boolean isShortHostnamesEnabled) {
             mIsShortHostnamesEnabled = isShortHostnamesEnabled;
+            mSetFlags |= FLAG_IS_SHORT_HOSTNAMES_ENABLED;
             return this;
         }
 
@@ -581,6 +650,7 @@ public class MdnsFeatureFlags {
         public Builder setIsSocketClientNetworkGuessingEnabled(
                 boolean isSocketClientNetworkGuessingEnabled) {
             mIsSocketClientNetworkGuessingEnabled = isSocketClientNetworkGuessingEnabled;
+            mSetFlags |= FLAG_IS_SOCKET_CLIENT_NETWORK_GUESSING_ENABLED;
             return this;
         }
 
@@ -592,6 +662,7 @@ public class MdnsFeatureFlags {
         public Builder setIsCacheFlushPerAddressTypeEnabled(
                 boolean isCacheFlushPerAddressTypeEnabled) {
             mIsCacheFlushPerAddressTypeEnabled = isCacheFlushPerAddressTypeEnabled;
+            mSetFlags |= FLAG_IS_CACHE_FLUSH_PER_ADDRESS_TYPE_ENABLED;
             return this;
         }
 
@@ -603,6 +674,7 @@ public class MdnsFeatureFlags {
         public Builder setIsOptimizedExpiredServiceRemovalEnabled(
                 boolean isOptimizedExpiredServiceRemovalEnabled) {
             mIsOptimizedExpiredServiceRemovalEnabled = isOptimizedExpiredServiceRemovalEnabled;
+            mSetFlags |= FLAG_IS_OPTIMIZED_EXPIRED_SERVICE_REMOVAL_ENABLED;
             return this;
         }
 
@@ -611,6 +683,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setMdnsSocketThreadStatsTag(int mdnsSocketThreadStatsTag) {
             mMdnsSocketThreadStatsTag = mdnsSocketThreadStatsTag;
+            mSetFlags |= FLAG_MDNS_SOCKET_THREAD_STATS_TAG;
             return this;
         }
 
@@ -622,6 +695,7 @@ public class MdnsFeatureFlags {
         public Builder setIsSelectiveMdnsResponseOffloadEnabled(
                 boolean isSelectiveMdnsResponseOffloadEnabled) {
             mIsSelectiveMdnsResponseOffloadEnabled = isSelectiveMdnsResponseOffloadEnabled;
+            mSetFlags |= FLAG_IS_SELECTIVE_MDNS_RESPONSE_OFFLOAD_ENABLED;
             return this;
         }
 
@@ -631,6 +705,7 @@ public class MdnsFeatureFlags {
         public Builder setUseNetworkCallbackForLocalNetworksEnabled(
                 boolean useNetworkCallbackForLocalNetworks) {
             mUseNetworkCallbackForLocalNetworks = useNetworkCallbackForLocalNetworks;
+            mSetFlags |= FLAG_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS;
             return this;
         }
 
@@ -641,6 +716,7 @@ public class MdnsFeatureFlags {
          */
         public Builder setIsMdnsScanOffloadEnabled(boolean isMdnsScanOffloadEnabled) {
             mIsMdnsScanOffloadEnabled = isMdnsScanOffloadEnabled;
+            mSetFlags |= FLAG_IS_MDNS_SCAN_OFFLOAD_ENABLED;
             return this;
         }
 
@@ -648,6 +724,34 @@ public class MdnsFeatureFlags {
          * Builds a {@link MdnsFeatureFlags} with the arguments supplied to this builder.
          */
         public MdnsFeatureFlags build() {
+            final long allFlags = FLAG_IS_MDNS_OFFLOAD_FEATURE_ENABLED
+                    | FLAG_INCLUDE_INET_ADDRESS_RECORDS_IN_PROBING
+                    | FLAG_IS_EXPIRED_SERVICES_REMOVAL_ENABLED
+                    | FLAG_IS_LABEL_COUNT_LIMIT_ENABLED
+                    | FLAG_IS_KNOWN_ANSWER_SUPPRESSION_ENABLED
+                    | FLAG_IS_UNICAST_REPLY_ENABLED
+                    | FLAG_IS_AGGRESSIVE_QUERY_MODE_ENABLED
+                    | FLAG_IS_QUERY_WITH_KNOWN_ANSWER_ENABLED
+                    | FLAG_AVOID_ADVERTISING_EMPTY_TXT_RECORDS
+                    | FLAG_IS_CACHED_SERVICES_REMOVAL_ENABLED
+                    | FLAG_CACHED_SERVICES_RETENTION_TIME
+                    | FLAG_IS_ACCURATE_DELAY_CALLBACK_ENABLED
+                    | FLAG_IS_SHORT_HOSTNAMES_ENABLED
+                    | FLAG_IS_SOCKET_CLIENT_NETWORK_GUESSING_ENABLED
+                    | FLAG_IS_CACHE_FLUSH_PER_ADDRESS_TYPE_ENABLED
+                    | FLAG_IS_OPTIMIZED_EXPIRED_SERVICE_REMOVAL_ENABLED
+                    | FLAG_IS_IGNORE_TEMPORARY_IPV6_ADDRESSES_ENABLED
+                    | FLAG_IS_SELECTIVE_MDNS_RESPONSE_OFFLOAD_ENABLED
+                    | FLAG_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS
+                    | FLAG_MDNS_SOCKET_THREAD_STATS_TAG
+                    | FLAG_IS_MDNS_SCAN_OFFLOAD_ENABLED;
+
+            final long requiredFlags = allFlags & ~mExemptFlags;
+            final long missingFlags = requiredFlags & ~mSetFlags;
+            if (missingFlags != 0) {
+                throw new IllegalStateException("Not all flags are set. Missing flags: "
+                        + Long.toHexString(missingFlags));
+            }
             return new MdnsFeatureFlags(mIsMdnsOffloadFeatureEnabled,
                     mIncludeInetAddressRecordsInProbing,
                     mIsExpiredServicesRemovalEnabled,

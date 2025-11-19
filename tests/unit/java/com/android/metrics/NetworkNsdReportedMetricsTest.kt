@@ -163,6 +163,7 @@ class NetworkNsdReportedMetricsTest {
         val lostCallbackCount = 49
         val servicesCount = 75
         val sentQueryCount = 150
+        val cachedServiceExpiredCount = 25
         val metrics = NetworkNsdReportedMetrics(clientId, deps, uid)
         metrics.reportServiceDiscoveryStop(
             true /* isLegacy */,
@@ -172,7 +173,8 @@ class NetworkNsdReportedMetricsTest {
             lostCallbackCount,
             servicesCount,
             sentQueryCount,
-            true /* isServiceFromCache */
+            true /* isServiceFromCache */,
+            cachedServiceExpiredCount
         )
 
         val eventCaptor = ArgumentCaptor.forClass(NetworkNsdReported::class.java)
@@ -191,6 +193,7 @@ class NetworkNsdReportedMetricsTest {
             assertEquals(sentQueryCount, it.sentQueryCount)
             assertTrue(it.isKnownService)
             assertEquals(uid, it.uid)
+            assertEquals(cachedServiceExpiredCount, it.cachedServiceExpiredCount)
         }
     }
 
@@ -310,6 +313,7 @@ class NetworkNsdReportedMetricsTest {
         val updateCallbackCount = 100
         val lostCallbackCount = 10
         val sentQueryCount = 150
+        val cachedServiceExpiredCount = 8
         val metrics = NetworkNsdReportedMetrics(clientId, deps, uid)
         metrics.reportServiceInfoCallbackUnregistered(
             transactionId,
@@ -317,7 +321,8 @@ class NetworkNsdReportedMetricsTest {
             updateCallbackCount,
             lostCallbackCount,
             false /* isServiceFromCache */,
-            sentQueryCount
+            sentQueryCount,
+            cachedServiceExpiredCount
         )
 
         val eventCaptor = ArgumentCaptor.forClass(NetworkNsdReported::class.java)
@@ -334,6 +339,7 @@ class NetworkNsdReportedMetricsTest {
             assertFalse(it.isKnownService)
             assertEquals(sentQueryCount, it.sentQueryCount)
             assertEquals(uid, it.uid)
+            assertEquals(cachedServiceExpiredCount, it.cachedServiceExpiredCount)
         }
     }
 }

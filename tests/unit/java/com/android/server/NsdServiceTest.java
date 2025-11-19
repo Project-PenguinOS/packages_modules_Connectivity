@@ -51,6 +51,8 @@ import static com.android.server.NsdService.MdnsListener;
 import static com.android.server.NsdService.NO_TRANSACTION;
 import static com.android.server.NsdService.checkHostname;
 import static com.android.server.NsdService.parseTypeAndSubtype;
+import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_GOODBYE_RECEIVED;
+import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_TTL_EXPIRED;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.createOffloadServiceInfoFromFilterReplies;
 import static com.android.testutils.ContextUtils.mockService;
 
@@ -65,7 +67,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -1114,7 +1115,7 @@ public class NsdServiceTest {
                 PORT, IFACE_IDX_ANY, new Network(999));
 
         // Service lost then recovered.
-        listener.onServiceRemoved(updatedServiceInfo);
+        listener.onServiceRemoved(updatedServiceInfo, SERVICE_REMOVED_BY_TTL_EXPIRED);
         listener.onServiceFound(updatedServiceInfo, false /* isServiceFromCache */);
 
         // Verify service callback unregistration.
@@ -1124,7 +1125,8 @@ public class NsdServiceTest {
         verify(serviceInfoCallback, timeout(TIMEOUT_MS)).onServiceInfoCallbackUnregistered();
         verify(mMetrics).reportServiceInfoCallbackUnregistered(servInfoId, 10L /* durationMs */,
                 3 /* updateCallbackCount */, 1 /* lostCallbackCount */,
-                true /* isServiceFromCache */, 1 /* sentQueryCount */);
+                true /* isServiceFromCache */, 1 /* sentQueryCount */,
+                1 /* cachedServiceExpiredCount */);
     }
 
     @Test
@@ -1240,7 +1242,7 @@ public class NsdServiceTest {
         // Update, lose, and then recover the service. finishDataDelivery() still only be called
         // once.
         listener.onServiceUpdated(updatedServiceInfo);
-        listener.onServiceRemoved(updatedServiceInfo);
+        listener.onServiceRemoved(updatedServiceInfo, SERVICE_REMOVED_BY_GOODBYE_RECEIVED);
         listener.onServiceFound(updatedServiceInfo, false /* isServiceFromCache */);
 
         // Verify service callback unregistration.
@@ -1357,7 +1359,7 @@ public class NsdServiceTest {
                 Instant.MAX /* expirationTime */,
                 0L /* cachedCapabilitiesBits */);
         // Verify onServiceNameRemoved callback
-        listener.onServiceNameRemoved(removedInfo);
+        listener.onServiceNameRemoved(removedInfo, SERVICE_REMOVED_BY_TTL_EXPIRED);
         verify(discListener, timeout(TIMEOUT_MS)).onServiceLost(argThat(info ->
                 info.getServiceName().equals(SERVICE_NAME)
                         // Service type in discovery callbacks has a dot at the end
@@ -1372,7 +1374,8 @@ public class NsdServiceTest {
         verify(mSocketProvider, timeout(CLEANUP_DELAY_MS + TIMEOUT_MS)).requestStopWhenInactive();
         verify(mMetrics).reportServiceDiscoveryStop(false /* isLegacy */, discId,
                 10L /* durationMs */, 1 /* foundCallbackCount */, 1 /* lostCallbackCount */,
-                1 /* servicesCount */, 3 /* sentQueryCount */, true /* isServiceFromCache */);
+                1 /* servicesCount */, 3 /* sentQueryCount */, true /* isServiceFromCache */,
+                1 /* cachedServiceExpiredCount */);
     }
 
     @Test
@@ -1513,7 +1516,7 @@ public class NsdServiceTest {
                 network,
                 Instant.MAX /* expirationTime */,
                 0L /* cachedCapabilitiesBits */);
-        listener.onServiceNameRemoved(removedInfo);
+        listener.onServiceNameRemoved(removedInfo, SERVICE_REMOVED_BY_GOODBYE_RECEIVED);
         client.stopServiceDiscovery(discListener);
         waitForIdle();
 

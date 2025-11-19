@@ -61,7 +61,7 @@ class MdnsProberTest {
     private val cb = mock(MdnsPacketRepeater.PacketRepeaterCallback::class.java)
         as MdnsPacketRepeater.PacketRepeaterCallback<ProbingInfo>
     private val buffer = ByteArray(1500)
-    private val flags = MdnsFeatureFlags.newBuilder().build()
+    private val flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build()
 
     @Before
     fun setUp() {

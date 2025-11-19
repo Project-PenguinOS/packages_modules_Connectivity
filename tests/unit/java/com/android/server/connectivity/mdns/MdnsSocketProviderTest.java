@@ -189,7 +189,7 @@ public class MdnsSocketProviderTest {
             return mTestSocketNetLinkMonitor;
         }).when(mDeps).createSocketNetlinkMonitor(any(), any(),
                 any());
-        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                 .setUseNetworkCallbackForLocalNetworksEnabled(mFeatureFlags.getOrDefault(
                         Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS, false))
                 .build();
@@ -703,7 +703,7 @@ public class MdnsSocketProviderTest {
     @Test
     public void testNoSocketNetworkDestroyedEvent_FlaggedOff_NotInvoked()
             throws Exception {
-        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                 .setIsMdnsScanOffloadEnabled(false).build();
         mSocketProvider = makeMdnsSocketProvider(flags);
         doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
@@ -722,7 +722,7 @@ public class MdnsSocketProviderTest {
     @Test
     public void testNoSocketNetworkDestroyedEvent_FlaggedOn_Invoked()
             throws Exception {
-        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                 .setIsMdnsScanOffloadEnabled(true).build();
         mSocketProvider = makeMdnsSocketProvider(flags);
         doReturn(mTestNetworkIfaceWrapper).when(mDeps).getNetworkInterfaceByName(TEST_IFACE_NAME);
@@ -745,7 +745,7 @@ public class MdnsSocketProviderTest {
     public void testNoSocketCreatedEvent_FlaggedOff_NotInvoked()
             throws Exception {
 
-        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                 .setIsMdnsScanOffloadEnabled(false).build();
         mSocketProvider = makeMdnsSocketProvider(flags);
         doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();
@@ -763,7 +763,7 @@ public class MdnsSocketProviderTest {
     public void testNoSocketCreatedEvent_FlaggedOn_Invoked()
             throws Exception {
 
-        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                 .setIsMdnsScanOffloadEnabled(true).build();
         mSocketProvider = makeMdnsSocketProvider(flags);
         doReturn(false).when(mTestNetworkIfaceWrapper).supportsMulticast();

@@ -92,7 +92,7 @@ public class MdnsSocketClientTests {
     @Mock private SharedLog sharedLog;
 
     private MdnsSocketClient mdnsClient;
-    private MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().build();
+    private MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build();
 
     @Before
     public void setup() throws RuntimeException, IOException {
@@ -628,7 +628,7 @@ public class MdnsSocketClientTests {
 
     @Test
     public void testSetThreadStatsTag() throws IOException {
-        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                 .setMdnsSocketThreadStatsTag(42).build();
 
         final MdnsSocketClient socketClient = spy(makeTestSocketClient(flags));

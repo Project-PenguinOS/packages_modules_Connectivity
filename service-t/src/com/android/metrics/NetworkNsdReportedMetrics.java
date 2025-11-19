@@ -78,7 +78,8 @@ public class NetworkNsdReportedMetrics {
                     event.getConflictDuringProbingCount(),
                     event.getConflictAfterProbingCount(),
                     event.getRandomNumber(),
-                    event.getUid());
+                    event.getUid(),
+                    event.getCachedServiceExpiredCount());
         }
 
         /**
@@ -198,7 +199,7 @@ public class NetworkNsdReportedMetrics {
      */
     public void reportServiceDiscoveryStop(boolean isLegacy, int transactionId, long durationMs,
             int foundCallbackCount, int lostCallbackCount, int servicesCount, int sentQueryCount,
-            boolean isServiceFromCache) {
+            boolean isServiceFromCache, int cachedServiceExpiredCount) {
         final Builder builder = makeReportedBuilder(isLegacy, transactionId);
         builder.setType(NsdEventType.NET_DISCOVER);
         builder.setQueryResult(MdnsQueryResult.MQR_SERVICE_DISCOVERY_STOP);
@@ -208,6 +209,7 @@ public class NetworkNsdReportedMetrics {
         builder.setFoundServiceCount(servicesCount);
         builder.setSentQueryCount(sentQueryCount);
         builder.setIsKnownService(isServiceFromCache);
+        builder.setCachedServiceExpiredCount(cachedServiceExpiredCount);
         mDependencies.statsWrite(builder.build());
     }
 
@@ -303,7 +305,7 @@ public class NetworkNsdReportedMetrics {
      */
     public void reportServiceInfoCallbackUnregistered(int transactionId, long durationMs,
             int updateCallbackCount, int lostCallbackCount, boolean isServiceFromCache,
-            int sentQueryCount) {
+            int sentQueryCount, int cachedServiceExpiredCount) {
         // service info callback is always using new backend.
         final Builder builder = makeReportedBuilder(false /* isLegacy */, transactionId);
         builder.setType(NsdEventType.NET_SERVICE_INFO_CALLBACK);
@@ -313,6 +315,7 @@ public class NetworkNsdReportedMetrics {
         builder.setLostCallbackCount(lostCallbackCount);
         builder.setIsKnownService(isServiceFromCache);
         builder.setSentQueryCount(sentQueryCount);
+        builder.setCachedServiceExpiredCount(cachedServiceExpiredCount);
         mDependencies.statsWrite(builder.build());
     }
 }

@@ -49,8 +49,9 @@ public interface MdnsServiceBrowserListener {
      * called only if all service records (PTR, SRV, TXT, A or AAAA) are received before.
      *
      * @param serviceInfo The service instance of the removed mDNS service.
+     * @param serviceRemovedReason The reason code for service removal.
      */
-    void onServiceRemoved(@NonNull MdnsServiceInfo serviceInfo);
+    void onServiceRemoved(@NonNull MdnsServiceInfo serviceInfo, int serviceRemovedReason);
 
     /**
      * Called when searching for mDNS service has stopped because of an error.
@@ -93,6 +94,7 @@ public interface MdnsServiceBrowserListener {
      * Called when a discovered mDNS service instance is no longer valid and removed.
      *
      * @param serviceInfo The service instance of the removed mDNS service.
+     * @param serviceRemovedReason The reason code for service removal.
      */
-    void onServiceNameRemoved(@NonNull MdnsServiceInfo serviceInfo);
+    void onServiceNameRemoved(@NonNull MdnsServiceInfo serviceInfo, int serviceRemovedReason);
 }

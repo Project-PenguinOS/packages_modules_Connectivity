@@ -225,6 +225,7 @@ java_library {
         "PlatformProperties",
         "service-connectivity-protos",
         "service-connectivity-stats-protos",
+        "jsr305",
     ],
     apex_available: [
         "com.android.tethering",
