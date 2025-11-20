@@ -17,18 +17,18 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-android_app {
-    name: "CertificateTransparencyDemoApp",
-
+android_test {
+    name: "CertificateTransparencyTraceTest",
     manifest: "AndroidManifest.xml",
-
-    resource_dirs: ["res"],
     srcs: [
         "src/**/*.java",
     ],
     static_libs: [
-        "androidx-constraintlayout_constraintlayout",
+        "androidx.test.runner",
+        "collector-device-lib",
     ],
-
-    sdk_version: "current",
+    data: [":perfetto_artifacts"],
+    // Certificate Transparency is not enabled by default before API level 37.
+    // Update the following line to change the behaviour.
+    target_sdk_version: "current",
 }

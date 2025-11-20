@@ -326,6 +326,8 @@ Status BpfHandler::initMaps() {
     RETURN_IF_NOT_OK(mStatsMapA.init(STATS_MAP_A_PATH));
     RETURN_IF_NOT_OK(mStatsMapB.init(STATS_MAP_B_PATH));
     RETURN_IF_NOT_OK(mConfigurationMap.init(CONFIGURATION_MAP_PATH));
+    RETURN_IF_NOT_OK(mUidMigrationEnabledMap.init(UID_MIGRATION_ENABLED_MAP_PATH));
+    RETURN_IF_NOT_OK(mUidPermissionChunkMap.init(UID_PERMISSION_CHUNK_MAP_PATH));
     RETURN_IF_NOT_OK(mUidPermissionMap.init(UID_PERMISSION_MAP_PATH));
     // initialized last so mCookieTagMap.isValid() implies everything else is valid too
     RETURN_IF_NOT_OK(mCookieTagMap.init(COOKIE_TAG_MAP_PATH));
@@ -337,9 +339,23 @@ bool BpfHandler::hasUpdateDeviceStatsPermission(uid_t uid) {
     // This implementation is the same logic as method ActivityManager#checkComponentPermission.
     // It implies that the real uid can never be the same as PER_USER_RANGE.
     uint32_t appId = uid % PER_USER_RANGE;
-    auto permission = mUidPermissionMap.readValue(appId);
-    if (permission.ok() && (permission.value() & BPF_PERMISSION_UPDATE_DEVICE_STATS)) {
-        return true;
+    uint32_t mapKey = 0;
+    auto isUidMigrationEnabled = mUidMigrationEnabledMap.readValue(mapKey);
+    if (isUidMigrationEnabled.ok() && isUidMigrationEnabled.value()) {
+        uint32_t chunkId = uid / CHUNK_UID_COUNT;
+        uint32_t index = uid / UIDS_PER_INT64 % CHUNK_INT64_COUNT;
+        int shift = (uid % UIDS_PER_INT64 * PERMISSION_COUNT) & 63;
+        auto chunk = mUidPermissionChunkMap.readValue(chunkId);
+        if (chunk.ok() && (chunk.value().block[index] >> shift) &
+                              PERMISSION_BIT_UPDATE_DEVICE_STATS) {
+            return true;
+        }
+    } else {
+        auto permission = mUidPermissionMap.readValue(appId);
+        if (permission.ok() &&
+            (permission.value() & BPF_PERMISSION_UPDATE_DEVICE_STATS)) {
+            return true;
+        }
     }
     return ((appId == AID_ROOT) || (appId == AID_SYSTEM) || (appId == AID_DNS));
 }

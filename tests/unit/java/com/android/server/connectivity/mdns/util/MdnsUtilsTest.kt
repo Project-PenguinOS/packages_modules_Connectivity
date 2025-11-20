@@ -147,7 +147,13 @@ class MdnsUtilsTest {
         val questions = mutableListOf<MdnsRecord>()
         val answers = mutableListOf<MdnsRecord>()
         for ((index, packet) in packets.withIndex()) {
-            val mdnsPacket = MdnsPacket.parse(MdnsPacketReader(packet))
+            val mdnsPacket = MdnsPacket.parse(
+                MdnsPacketReader(
+                    packet.data,
+                    packet.length,
+                    MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build()
+                )
+            )
             if (index != packets.size - 1) {
                 assertTrue((mdnsPacket.flags and FLAG_TRUNCATED) == FLAG_TRUNCATED)
             }
@@ -211,8 +217,8 @@ class MdnsUtilsTest {
 
     @Test
     fun testConvertIncompleteNsdServiceInfoToMdnsResponse() {
-        val featureFlags =
-            MdnsFeatureFlags.newBuilder().setAvoidAdvertisingEmptyTxtRecords(true).build()
+        val featureFlags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+            .setAvoidAdvertisingEmptyTxtRecords(true).build()
         val nsdServiceInfo = NsdServiceInfo("MyService", SERVICE_TYPE).also { it ->
             it.subtypes = setOf("subtype0", "subtype1")
         }
@@ -288,8 +294,8 @@ class MdnsUtilsTest {
         }
         val responseReceiveTime = FAKE_RESPONSE_RECEIVE_TIME
         val isServiceLost = false
-        val featureFlags =
-            MdnsFeatureFlags.newBuilder().setAvoidAdvertisingEmptyTxtRecords(true).build()
+        val featureFlags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+            .setAvoidAdvertisingEmptyTxtRecords(true).build()
         val expectedSrvRecord = MdnsServiceRecord (
             arrayOf("MyService", *SERVICE_TYPE_LABELS, MdnsUtils.LOCAL_TLD),
             responseReceiveTime,

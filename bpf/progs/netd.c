@@ -76,7 +76,7 @@ DEFINE_BPF_MAP_NO_NETD(iface_stats_map, HASH, uint32_t, StatsValue, 1000)
 DEFINE_BPF_MAP_RO_NETD(uid_owner_map, HASH, uint32_t, UidOwnerValue, 20000)
 DEFINE_BPF_MAP_RO_NETD(uid_permission_map, HASH, uint32_t, uint8_t, 6000)
 // Support up to 2688 * 400 = 1,075,200 UIDs
-DEFINE_BPF_MAP_NO_NETD(uid_permission_chunk_map, HASH, uint32_t, UidPermissionChunk, -400)
+DEFINE_BPF_MAP_RO_NETD(uid_permission_chunk_map, HASH, uint32_t, UidPermissionChunk, -400)
 DEFINE_BPF_MAP_NO_NETD(ingress_discard_map, HASH, IngressDiscardKey, IngressDiscardValue, 100)
 
 DEFINE_BPF_MAP_RW_NETD(lock_array_test_map, ARRAY, uint32_t, bool, 1)
@@ -108,7 +108,7 @@ DEFINE_BPF_MAP_EXT(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000,
                    AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
                    BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
 
-DEFINE_BPF_MAP_NO_NETD(uid_migration_enabled_map, ARRAY, uint32_t, bool, 1)
+DEFINE_BPF_MAP_RO_NETD(uid_migration_enabled_map, ARRAY, uint32_t, bool, 1)
 
 // iptables xt_bpf programs need to be usable by both netd and netutils_wrappers
 // selinux contexts, because even non-xt_bpf iptables mutations are implemented as
@@ -262,6 +262,19 @@ static inline __always_inline bool is_local_net_access_allowed(const uint32_t if
     };
     bool* v = bpf_local_net_access_map_lookup_elem(&query_key);
     return v ? *v : true;
+}
+
+static __always_inline inline uint8_t
+get_chunk_permissions(const uint32_t uid) {
+    // All chunks has the same size CHUNK_INT64_COUNT
+    uint32_t chunkId = uid / CHUNK_UID_COUNT;
+    uint32_t index = uid / UIDS_PER_INT64 % CHUNK_INT64_COUNT;
+    int shift = (uid % UIDS_PER_INT64 * PERMISSION_COUNT) & 63;
+
+    UidPermissionChunk *chunk =
+        bpf_uid_permission_chunk_map_lookup_elem(&chunkId);
+    return chunk ? ((chunk->block[index] >> shift) & UID_PERMISSION_MASK)
+                 : PERMISSION_BIT_NONE;
 }
 
 static __always_inline inline bool should_block_local_network_packets(struct __sk_buff *skb,
@@ -768,47 +781,38 @@ DEFINE_XTBPF_PROG(skfilter, denylist_xtbpf, )
 static __always_inline inline uint8_t get_app_permissions() {
     uint64_t gid_uid = bpf_get_current_uid_gid();
     uint32_t uid = (gid_uid & 0xffffffff);
-
-    uint32_t mapKey = 0;
-    bool *uidMigrationEnabled =
-        bpf_uid_migration_enabled_map_lookup_elem(&mapKey);
-    if (uidMigrationEnabled && *uidMigrationEnabled) {
-
-        uint32_t chunkId = uid / CHUNK_UID_COUNT;
-        // All chunks has the same size CHUNK_INT64_COUNT
-        uint32_t index = uid / UIDS_PER_INT64 % CHUNK_INT64_COUNT;
-        int shift = (uid % UIDS_PER_INT64 * PERMISSION_COUNT) & 63;
-        UidPermissionChunk *chunk =
-            bpf_uid_permission_chunk_map_lookup_elem(&chunkId);
-        return chunk
-                   ? ((chunk->block[index] >> shift) & UID_PERMISSION_MASK)
-                   : BPF_PERMISSION_NONE;
-    } else {
-        /*
-         * A given app is guaranteed to have the same app ID in all the profiles
-         * in which it is installed, and install permission is granted to app
-         * for all user at install time so we only check the appId part of a
-         * request uid at run time. See UserHandle#isSameApp for detail.
-         */
-        uint32_t appId = uid % AID_USER_OFFSET; // == PER_USER_RANGE == 100000
-        uint8_t *permissions = bpf_uid_permission_map_lookup_elem(&appId);
-        // if UID not in map, then default to just INTERNET permission.
-        return permissions ? *permissions : BPF_PERMISSION_INTERNET;
-    }
+    /*
+     * A given app is guaranteed to have the same app ID in all the profiles
+     * in which it is installed, and install permission is granted to app
+     * for all user at install time so we only check the appId part of a
+     * request uid at run time. See UserHandle#isSameApp for detail.
+     */
+    uint32_t appId = uid % AID_USER_OFFSET; // == PER_USER_RANGE == 100000
+    uint8_t *permissions = bpf_uid_permission_map_lookup_elem(&appId);
+    // if UID not in map, then default to just INTERNET permission.
+    return permissions ? *permissions : BPF_PERMISSION_INTERNET;
 }
 
 static __always_inline inline int inet_socket_create(struct bpf_sock* sk,
                                                      const struct kver_uint kver) {
+    uint64_t gid_uid = bpf_get_current_uid_gid();
     if (KVER_IS_AT_LEAST(kver, 5, 10, 0)) {
         SkStorageValue *v = bpf_sk_storage_get(sk, 0, BPF_SK_STORAGE_GET_F_CREATE);
         if (v) {
             v->cookie = bpf_get_sk_cookie(sk);
-            uint64_t gid_uid = bpf_get_current_uid_gid();
             v->uid = gid_uid;
             v->gid = (gid_uid >> 32);
         }
     }
-    return (get_app_permissions() & BPF_PERMISSION_INTERNET) ? BPF_ALLOW : BPF_DISALLOW;
+
+    uint32_t mapKey = 0;
+    bool *uidMigrationEnabled = bpf_uid_migration_enabled_map_lookup_elem(&mapKey);
+    if (uidMigrationEnabled && *uidMigrationEnabled) {
+        uint32_t uid = (gid_uid & 0xffffffff);
+        return (get_chunk_permissions(uid) & PERMISSION_BIT_INTERNET) ? BPF_ALLOW : BPF_DISALLOW;
+    } else {
+        return (get_app_permissions() & BPF_PERMISSION_INTERNET) ? BPF_ALLOW : BPF_DISALLOW;
+    }
 }
 
 DEFINE_NETD_BPF_PROG_KVER(cgroupsock, inet_create, 5_10, 5_10)

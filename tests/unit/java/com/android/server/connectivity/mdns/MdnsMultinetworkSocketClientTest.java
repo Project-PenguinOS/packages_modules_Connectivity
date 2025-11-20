@@ -90,7 +90,7 @@ public class MdnsMultinetworkSocketClientTest {
         mHandler = new Handler(mHandlerThread.getLooper());
         mSocketKey = new SocketKey(1000 /* interfaceIndex */, "interface");
         mSocketClient = new MdnsMultinetworkSocketClient(mHandlerThread.getLooper(), mProvider,
-                mSharedLog, MdnsFeatureFlags.newBuilder().build());
+                mSharedLog, MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build());
         mHandler.post(() -> mSocketClient.setCallback(mCallback));
     }
 

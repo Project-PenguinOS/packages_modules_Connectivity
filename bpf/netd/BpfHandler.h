@@ -63,6 +63,8 @@ class BpfHandler {
     BpfMapRO<StatsKey, StatsValue> mStatsMapA;
     BpfMapRO<StatsKey, StatsValue> mStatsMapB;
     BpfMapRO<uint32_t, uint32_t> mConfigurationMap;
+    BpfMapRO<uint32_t, bool> mUidMigrationEnabledMap;
+    BpfMapRO<uint32_t, UidPermissionChunk> mUidPermissionChunkMap;
     BpfMapRO<uint32_t, uint8_t> mUidPermissionMap;
 
     // The limit on the number of stats entries a uid can have in the per uid stats map. BpfHandler

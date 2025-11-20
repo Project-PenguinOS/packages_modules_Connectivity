@@ -50,6 +50,8 @@ class BpfHandlerTest : public ::testing::Test {
     BpfMap<uint64_t, UidTagValue> mFakeCookieTagMap;
     BpfMap<StatsKey, StatsValue> mFakeStatsMapA;
     BpfMap<uint32_t, uint32_t> mFakeConfigurationMap;
+    BpfMap<uint32_t, bool> mFakeUidMigrationEnabledMap;
+    BpfMap<uint32_t, UidPermissionChunk> mFakeUidPermissionChunkMap;
     BpfMap<uint32_t, uint8_t> mFakeUidPermissionMap;
 
     void SetUp() {
@@ -64,6 +66,12 @@ class BpfHandlerTest : public ::testing::Test {
         mFakeConfigurationMap.resetMap(BPF_MAP_TYPE_ARRAY, CONFIGURATION_MAP_SIZE);
         ASSERT_VALID(mFakeConfigurationMap);
 
+        mFakeUidMigrationEnabledMap.resetMap(BPF_MAP_TYPE_HASH, 1);
+        ASSERT_VALID(mFakeUidMigrationEnabledMap);
+
+        mFakeUidPermissionChunkMap.resetMap(BPF_MAP_TYPE_HASH, TEST_MAP_SIZE);
+        ASSERT_VALID(mFakeUidPermissionChunkMap);
+
         mFakeUidPermissionMap.resetMap(BPF_MAP_TYPE_HASH, TEST_MAP_SIZE);
         ASSERT_VALID(mFakeUidPermissionMap);
 
@@ -76,6 +84,10 @@ class BpfHandlerTest : public ::testing::Test {
         // Always write to stats map A by default.
         static_assert(SELECT_MAP_A == 0, "bpf map arrays are zero-initialized");
 
+        mBh.mUidMigrationEnabledMap = mFakeUidMigrationEnabledMap;
+        ASSERT_VALID(mBh.mUidMigrationEnabledMap);
+        mBh.mUidPermissionChunkMap = mFakeUidPermissionChunkMap;
+        ASSERT_VALID(mBh.mUidPermissionChunkMap);
         mBh.mUidPermissionMap = mFakeUidPermissionMap;
         ASSERT_VALID(mBh.mUidPermissionMap);
     }
@@ -215,6 +227,48 @@ TEST_F(BpfHandlerTest, TestTagSocketWithPermission) {
     // Tag a socket to a different uid other then realUid.
     uint64_t sockCookie;
     int v6socket = setUpSocketAndTag(AF_INET6, &sockCookie, TEST_TAG, TEST_UID, realUid);
+    expectUidTag(sockCookie, TEST_UID, TEST_TAG);
+    EXPECT_EQ(0, mBh.untagSocket(v6socket));
+    expectNoTag(sockCookie);
+    expectMapEmpty(mFakeCookieTagMap);
+
+    // Tag a socket to AID_CLAT other then realUid.
+    int sock = socket(AF_INET6, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    ASSERT_NE(-1, sock);
+    ASSERT_EQ(-EPERM, mBh.tagSocket(sock, TEST_TAG, AID_CLAT, realUid));
+    expectMapEmpty(mFakeCookieTagMap);
+}
+
+TEST_F(BpfHandlerTest, TestTagSocketWithoutChunkPermission) {
+    uint32_t mapKey = 0;
+    ASSERT_RESULT_OK(
+        mFakeUidMigrationEnabledMap.writeValue(mapKey, true, BPF_ANY));
+
+    int sock = socket(AF_INET6, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    ASSERT_NE(-1, sock);
+    ASSERT_EQ(-EPERM, mBh.tagSocket(sock, TEST_TAG, TEST_UID, TEST_UID2));
+    expectMapEmpty(mFakeCookieTagMap);
+}
+
+TEST_F(BpfHandlerTest, TestTagSocketWithChunkPermission) {
+    uint32_t mapKey = 0;
+    ASSERT_RESULT_OK(
+        mFakeUidMigrationEnabledMap.writeValue(mapKey, true, BPF_ANY));
+
+    uid_t realUid = TEST_UID2;
+    uint32_t chunkId = realUid / CHUNK_UID_COUNT;
+    uint32_t index = realUid / UIDS_PER_INT64 % CHUNK_INT64_COUNT;
+    int shift = (realUid % UIDS_PER_INT64 * PERMISSION_COUNT) & 63;
+    UidPermissionChunk chunk = {};
+    chunk.block[index] |=
+        ((uint64_t)PERMISSION_BIT_UPDATE_DEVICE_STATS << shift);
+    ASSERT_RESULT_OK(
+        mFakeUidPermissionChunkMap.writeValue(chunkId, chunk, BPF_ANY));
+
+    // Tag a socket to a different uid other then realUid.
+    uint64_t sockCookie;
+    int v6socket =
+        setUpSocketAndTag(AF_INET6, &sockCookie, TEST_TAG, TEST_UID, realUid);
     expectUidTag(sockCookie, TEST_UID, TEST_TAG);
     EXPECT_EQ(0, mBh.untagSocket(v6socket));
     expectNoTag(sockCookie);

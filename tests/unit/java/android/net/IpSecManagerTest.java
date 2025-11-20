@@ -21,17 +21,21 @@ import static android.system.OsConstants.IPPROTO_UDP;
 import static android.system.OsConstants.SOCK_DGRAM;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.os.Build;
+import android.os.ParcelFileDescriptor;
 import android.system.Os;
 import android.test.mock.MockContext;
 
@@ -206,25 +210,41 @@ public class IpSecManagerTest {
         IpSecConfig dummyConfig = new IpSecConfig();
         IpSecTransform dummyTransform = new IpSecTransform(null, dummyConfig);
 
-        // Even if underlying SocketImpl is not initalized, this should force the init, and
+        doAnswer(invocation -> {
+            ParcelFileDescriptor receivedPfd = invocation.getArgument(0);
+            receivedPfd.close();
+            assertFalse("Received PFD should be invalid after closing it.",
+                    receivedPfd.getFileDescriptor().valid());
+            return null;
+        }).when(mMockIpSecService).applyTransportModeTransform(any(), anyInt(), anyInt());
+        // Even if underlying SocketImpl is not initialized, this should force the init, and
         // thereby succeed.
         mIpSecManager.applyTransportModeTransform(
                 socket, IpSecManager.DIRECTION_IN, dummyTransform);
 
         // Check to make sure the FileDescriptor is non-null
-        assertNotNull(socket.getFileDescriptor$());
+        assertTrue("Original socket should be valid after return of the API.",
+                socket.getFileDescriptor$().valid());
     }
 
     @Test
     public void testRemoveTransportModeTransformsForcesSocketCreation() throws Exception {
         Socket socket = new Socket();
 
+        doAnswer(invocation -> {
+            ParcelFileDescriptor receivedPfd = invocation.getArgument(0);
+            receivedPfd.close();
+            assertFalse("Received PFD should be invalid after closing it.",
+                    receivedPfd.getFileDescriptor().valid());
+            return null;
+        }).when(mMockIpSecService).removeTransportModeTransforms(any());
         // Even if underlying SocketImpl is not initalized, this should force the init, and
         // thereby succeed.
         mIpSecManager.removeTransportModeTransforms(socket);
 
         // Check to make sure the FileDescriptor is non-null
-        assertNotNull(socket.getFileDescriptor$());
+        assertTrue("Original socket should be valid after return of the API.",
+                socket.getFileDescriptor$().valid());
     }
 
     @Test

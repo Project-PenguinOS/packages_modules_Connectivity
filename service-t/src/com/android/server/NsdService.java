@@ -45,6 +45,9 @@ import static com.android.modules.utils.build.SdkLevel.isAtLeastU;
 import static com.android.networkstack.apishim.ConstantsShim.REGISTER_NSD_OFFLOAD_ENGINE;
 import static com.android.server.connectivity.mdns.MdnsAdvertiser.AdvertiserMetrics;
 import static com.android.server.connectivity.mdns.MdnsConstants.NO_PACKET;
+import static com.android.server.connectivity.mdns.MdnsConstants.NO_SERVICE_REMOVED;
+import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_GOODBYE_RECEIVED;
+import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_TTL_EXPIRED;
 import static com.android.server.connectivity.mdns.MdnsRecord.MAX_LABEL_LENGTH;
 import static com.android.server.connectivity.mdns.MdnsSearchOptions.AGGRESSIVE_QUERY_MODE;
 import static com.android.server.connectivity.mdns.MdnsSearchOptions.PASSIVE_QUERY_MODE;
@@ -322,14 +325,16 @@ public class NsdService extends INsdManager.Stub {
         public void onServiceUpdated(@NonNull MdnsServiceInfo serviceInfo) { }
 
         @Override
-        public void onServiceRemoved(@NonNull MdnsServiceInfo serviceInfo) { }
+        public void onServiceRemoved(@NonNull MdnsServiceInfo serviceInfo,
+                int serviceRemovedReason) { }
 
         @Override
         public void onServiceNameDiscovered(@NonNull MdnsServiceInfo serviceInfo,
                 boolean isServiceFromCache) { }
 
         @Override
-        public void onServiceNameRemoved(@NonNull MdnsServiceInfo serviceInfo) { }
+        public void onServiceNameRemoved(@NonNull MdnsServiceInfo serviceInfo,
+                int serviceRemovedReason) { }
 
         @Override
         public void onSearchStoppedWithError(int error) { }
@@ -365,10 +370,11 @@ public class NsdService extends INsdManager.Stub {
         }
 
         @Override
-        public void onServiceNameRemoved(@NonNull MdnsServiceInfo serviceInfo) {
+        public void onServiceNameRemoved(@NonNull MdnsServiceInfo serviceInfo,
+                int serviceRemovedReason) {
             mHandler.sendMessage(MDNS_DISCOVERY_MANAGER_EVENT, mTransactionId,
                     NsdManager.SERVICE_LOST,
-                    new MdnsEvent(mClientRequestId, serviceInfo));
+                    new MdnsEvent(mClientRequestId, serviceInfo, serviceRemovedReason));
         }
 
         @Override
@@ -441,10 +447,11 @@ public class NsdService extends INsdManager.Stub {
         }
 
         @Override
-        public void onServiceRemoved(@NonNull MdnsServiceInfo serviceInfo) {
+        public void onServiceRemoved(@NonNull MdnsServiceInfo serviceInfo,
+                int serviceRemovedReason) {
             mHandler.sendMessage(MDNS_DISCOVERY_MANAGER_EVENT, mTransactionId,
                     NsdManager.SERVICE_UPDATED_LOST,
-                    new MdnsEvent(mClientRequestId, serviceInfo));
+                    new MdnsEvent(mClientRequestId, serviceInfo, serviceRemovedReason));
         }
 
         @Override
@@ -621,6 +628,7 @@ public class NsdService extends INsdManager.Stub {
         @Nullable
         final MdnsServiceInfo mMdnsServiceInfo;
         final boolean mIsServiceFromCache;
+        final int mServiceRemovedReason;
 
         MdnsEvent(int clientRequestId) {
             this(clientRequestId, null /* mdnsServiceInfo */, false /* isServiceFromCache */);
@@ -632,9 +640,21 @@ public class NsdService extends INsdManager.Stub {
 
         MdnsEvent(int clientRequestId, @Nullable MdnsServiceInfo mdnsServiceInfo,
                 boolean isServiceFromCache) {
+            this(clientRequestId, mdnsServiceInfo, isServiceFromCache, NO_SERVICE_REMOVED);
+        }
+
+        MdnsEvent(int clientRequestId, @Nullable MdnsServiceInfo mdnsServiceInfo,
+                int serviceRemovedReason) {
+            this(clientRequestId, mdnsServiceInfo, false /* isServiceFromCache */,
+                    serviceRemovedReason);
+        }
+
+        MdnsEvent(int clientRequestId, @Nullable MdnsServiceInfo mdnsServiceInfo,
+                boolean isServiceFromCache, int serviceRemovedReason) {
             mClientRequestId = clientRequestId;
             mMdnsServiceInfo = mdnsServiceInfo;
             mIsServiceFromCache = isServiceFromCache;
+            mServiceRemovedReason = serviceRemovedReason;
         }
     }
 
@@ -1599,7 +1619,8 @@ public class NsdService extends INsdManager.Stub {
         // TODO: avoid returning null in that case, possibly by remembering
         // found services on the same interface index and their network at the time
         setServiceNetworkForCallback(servInfo, lostNetId, info.interfaceIdx);
-        clientInfo.onServiceLost(clientRequestId, servInfo, request);
+        clientInfo.onServiceLost(
+                clientRequestId, servInfo, request, SERVICE_REMOVED_BY_GOODBYE_RECEIVED);
     }
 
     private void handleMDnsServiceDiscoveryFailed(ClientInfo clientInfo, int transactionId,
@@ -1808,17 +1829,15 @@ public class NsdService extends INsdManager.Stub {
                     clientRequestId, request,
                     info, event);
             case NsdManager.SERVICE_LOST -> handleDiscoveryManagerServiceLost(clientInfo,
-                    clientRequestId, request,
-                    info);
+                    clientRequestId, request, info, event.mServiceRemovedReason);
             case NsdManager.RESOLVE_SERVICE_SUCCEEDED ->
                     handleDiscoveryManagerResolveSucceeded(clientInfo, transactionId,
                             clientRequestId, request, info, event);
             case NsdManager.SERVICE_UPDATED -> handleDiscoveryManagerServiceUpdated(
                     clientInfo, clientRequestId, request,
                     info, event);
-            case NsdManager.SERVICE_UPDATED_LOST ->
-                    handleDiscoveryManagerServiceUpdatedLost(clientInfo, clientRequestId,
-                            request);
+            case NsdManager.SERVICE_UPDATED_LOST -> handleDiscoveryManagerServiceUpdatedLost(
+                    clientInfo, clientRequestId, request, event.mServiceRemovedReason);
             default -> {
                 return false;
             }
@@ -1839,8 +1858,9 @@ public class NsdService extends INsdManager.Stub {
     }
 
     private void handleDiscoveryManagerServiceLost(ClientInfo clientInfo,
-            int clientRequestId, ClientRequest request, NsdServiceInfo info) {
-        clientInfo.onServiceLost(clientRequestId, info, request);
+            int clientRequestId, ClientRequest request, NsdServiceInfo info,
+            int serviceRemovedReason) {
+        clientInfo.onServiceLost(clientRequestId, info, request, serviceRemovedReason);
     }
 
     private void handleDiscoveryManagerResolveSucceeded(ClientInfo clientInfo,
@@ -1910,8 +1930,8 @@ public class NsdService extends INsdManager.Stub {
     }
 
     private void handleDiscoveryManagerServiceUpdatedLost(ClientInfo clientInfo,
-            int clientRequestId, ClientRequest request) {
-        clientInfo.onServiceUpdatedLost(clientRequestId, request);
+            int clientRequestId, ClientRequest request, int serviceRemovedReason) {
+        clientInfo.onServiceUpdatedLost(clientRequestId, request, serviceRemovedReason);
     }
 
     @NonNull
@@ -2963,6 +2983,7 @@ public class NsdService extends INsdManager.Stub {
         private final Set<String> mServices = new ArraySet<>();
         private boolean mIsServiceFromCache = false;
         private int mSentQueryCount = NO_SENT_QUERY_COUNT;
+        private int mCachedServiceExpiredCount = 0;
 
         private ClientRequest(int transactionId, long startTimeMs) {
             mTransactionId = transactionId;
@@ -2980,8 +3001,11 @@ public class NsdService extends INsdManager.Stub {
             }
         }
 
-        public void onServiceLost() {
+        void onServiceLost(int serviceRemovedReason) {
             mLostServiceCount++;
+            if (serviceRemovedReason == SERVICE_REMOVED_BY_TTL_EXPIRED) {
+                mCachedServiceExpiredCount++;
+            }
         }
 
         public int getFoundServiceCount() {
@@ -3010,6 +3034,10 @@ public class NsdService extends INsdManager.Stub {
 
         public int getSentQueryCount() {
             return mSentQueryCount;
+        }
+
+        int getCachedServiceExpiredCount() {
+            return mCachedServiceExpiredCount;
         }
 
         @NonNull
@@ -3209,7 +3237,8 @@ public class NsdService extends INsdManager.Stub {
                                 request.getLostServiceCount(),
                                 request.getServicesCount(),
                                 request.getSentQueryCount(),
-                                request.isServiceFromCache());
+                                request.isServiceFromCache(),
+                                request.getCachedServiceExpiredCount());
                     } else if (listener instanceof ResolutionListener) {
                         mMetrics.reportServiceResolutionStop(false /* isLegacy */, transactionId,
                                 request.calculateRequestDurationMs(mClock.elapsedRealtime()),
@@ -3220,7 +3249,8 @@ public class NsdService extends INsdManager.Stub {
                                 request.getFoundServiceCount(),
                                 request.getLostServiceCount(),
                                 request.isServiceFromCache(),
-                                request.getSentQueryCount());
+                                request.getSentQueryCount(),
+                                request.getCachedServiceExpiredCount());
                     } else {
                         throw new RuntimeException("MdnsListener type not supported");
                     }
@@ -3254,7 +3284,8 @@ public class NsdService extends INsdManager.Stub {
                                 request.getLostServiceCount(),
                                 request.getServicesCount(),
                                 NO_SENT_QUERY_COUNT,
-                                request.isServiceFromCache());
+                                request.isServiceFromCache(),
+                                request.getCachedServiceExpiredCount());
                         finishDataDelivery(mUid, mPid);
                         break;
                     case NsdManager.RESOLVE_SERVICE:
@@ -3367,8 +3398,9 @@ public class NsdService extends INsdManager.Stub {
             }
         }
 
-        void onServiceLost(int listenerKey, NsdServiceInfo info, ClientRequest request) {
-            request.onServiceLost();
+        void onServiceLost(int listenerKey, NsdServiceInfo info, ClientRequest request,
+                int serviceRemovedReason) {
+            request.onServiceLost(serviceRemovedReason);
             try {
                 mCb.onServiceLost(listenerKey, info);
             } catch (RemoteException e) {
@@ -3393,7 +3425,8 @@ public class NsdService extends INsdManager.Stub {
                     request.getLostServiceCount(),
                     request.getServicesCount(),
                     request.getSentQueryCount(),
-                    request.isServiceFromCache());
+                    request.isServiceFromCache(),
+                    request.getCachedServiceExpiredCount());
             finishDataDelivery(mUid, mPid);
             try {
                 mCb.onStopDiscoverySucceeded(listenerKey);
@@ -3551,8 +3584,9 @@ public class NsdService extends INsdManager.Stub {
             }
         }
 
-        void onServiceUpdatedLost(int listenerKey, ClientRequest request) {
-            request.onServiceLost();
+        void onServiceUpdatedLost(int listenerKey, ClientRequest request,
+                int serviceRemovedReason) {
+            request.onServiceLost(serviceRemovedReason);
             try {
                 mCb.onServiceUpdatedLost(listenerKey);
             } catch (RemoteException e) {
@@ -3567,7 +3601,8 @@ public class NsdService extends INsdManager.Stub {
                     request.getFoundServiceCount(),
                     request.getLostServiceCount(),
                     request.isServiceFromCache(),
-                    request.getSentQueryCount());
+                    request.getSentQueryCount(),
+                    request.getCachedServiceExpiredCount());
             finishDataDelivery(mUid, mPid);
             try {
                 mCb.onServiceInfoCallbackUnregistered(listenerKey);

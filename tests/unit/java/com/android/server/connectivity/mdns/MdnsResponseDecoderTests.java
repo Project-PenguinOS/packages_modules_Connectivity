@@ -213,7 +213,8 @@ public class MdnsResponseDecoderTests {
     private static final String MATTER_SERVICE_NAME = "_matter";
     private static final String[] MATTER_SERVICE_TYPE =
             new String[] {MATTER_SERVICE_NAME, "_tcp", "local"};
-    private final MdnsFeatureFlags defaultFlags = MdnsFeatureFlags.newBuilder().build();
+    private final MdnsFeatureFlags defaultFlags =
+            MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build();
 
     private ArraySet<MdnsResponse> responses;
 
@@ -509,7 +510,7 @@ public class MdnsResponseDecoderTests {
     @Test
     public void testDecodeWithAddressesReplaced_PerAddressTypeCacheFlushDisabled()
             throws IOException {
-        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder()
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                 .setIsCacheFlushPerAddressTypeEnabled(false)
                 .build();
         MdnsResponse response = makeMdnsResponse(0, DATAIN_SERVICE_NAME_1, List.of(

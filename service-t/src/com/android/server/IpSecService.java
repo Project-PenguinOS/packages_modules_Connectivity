@@ -1941,13 +1941,28 @@ public class IpSecService extends IIpSecService.Stub {
                 c.getMode() == IpSecTransform.MODE_TRANSPORT,
                 "Transform mode was not Transport mode; cannot be applied to a socket");
 
-        mNetd.ipSecApplyTransportModeTransform(
-                socket,
-                callingUid,
-                direction,
-                c.getSourceAddress(),
-                c.getDestinationAddress(),
-                info.getSpiRecord().getSpi());
+        try {
+            mNetd.ipSecApplyTransportModeTransform(
+                    socket,
+                    callingUid,
+                    direction,
+                    c.getSourceAddress(),
+                    c.getDestinationAddress(),
+                    info.getSpiRecord().getSpi());
+        } finally {
+            // As a remote binder rpc handler we get a new local process fd, which we need to close.
+            // Since it's not differentiable between remote vs local, client side will get a dup,
+            // which will be also closed. However we want to explicitly close the fd right now
+            // instead of relying on the ParcelFileDescriptor finalizer which can be arbitrarily
+            // delayed. Because this would be another reference to the underlying kernel file object
+            // and may cause unexpectedly delayed socket close when original socket owner wants to
+            // close it later.
+            try {
+                socket.close();
+            } catch (IOException e) {
+                Log.e(TAG, "applyTransportModeTransform close pfd:" + e);
+            }
+        }
     }
 
     /**
@@ -1959,7 +1974,22 @@ public class IpSecService extends IIpSecService.Stub {
     @Override
     public synchronized void removeTransportModeTransforms(ParcelFileDescriptor socket)
             throws RemoteException {
-        mNetd.ipSecRemoveTransportModeTransform(socket);
+        try {
+            mNetd.ipSecRemoveTransportModeTransform(socket);
+        } finally {
+            // As a remote binder rpc handler we get a new local process fd, which we need to close.
+            // Since it's not differentiable between remote vs local, client side will get a dup,
+            // which will be also closed. However we want to explicitly close the fd right now
+            // instead of relying on the ParcelFileDescriptor finalizer which can be arbitrarily
+            // delayed. Because this would be another reference to the underlying kernel file object
+            // and may cause unexpectedly delayed socket close when original socket owner wants to
+            // close it later.
+            try {
+                socket.close();
+            } catch (IOException e) {
+                Log.e(TAG, "removeTransportModeTransforms close pfd:" + e);
+            }
+        }
     }
 
     /**

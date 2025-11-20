@@ -115,7 +115,7 @@ class MdnsServiceCacheTest {
     private fun makeFlags(
             isExpiredServicesRemovalEnabled: Boolean = false,
             isOptimizedExpiredServiceRemovalEnabled: Boolean = false
-    ) = MdnsFeatureFlags.Builder()
+    ) = MdnsFeatureFlags.Builder().setAllFlagsForTesting()
             .setIsExpiredServicesRemovalEnabled(isExpiredServicesRemovalEnabled)
             .setIsOptimizedExpiredServiceRemovalEnabled(isOptimizedExpiredServiceRemovalEnabled)
             .build()

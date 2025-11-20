@@ -154,6 +154,8 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define IFACE_STATS_MAP_PATH BPF_NETD_PATH "map_netd_iface_stats_map"
 #define CONFIGURATION_MAP_PATH BPF_NETD_PATH "map_netd_configuration_map"
 #define UID_OWNER_MAP_PATH BPF_NETD_PATH "map_netd_uid_owner_map"
+#define UID_PERMISSION_CHUNK_MAP_PATH                                          \
+    BPF_NETD_PATH "map_netd_uid_permission_chunk_map"
 #define UID_PERMISSION_MAP_PATH BPF_NETD_PATH "map_netd_uid_permission_map"
 #define INGRESS_DISCARD_MAP_PATH BPF_NETD_PATH "map_netd_ingress_discard_map"
 #define PACKET_TRACE_RINGBUF_PATH BPF_NETD_PATH "map_netd_packet_trace_ringbuf"
@@ -204,10 +206,9 @@ enum UidOwnerMatchType : uint32_t {
 };
 // LINT.ThenChange(../framework/src/android/net/BpfNetMapsConstants.java)
 
-// TODO(b/436242702): change BPF_PERMISSION_UPDATE_DEVICE_STATS to "1 << 1"
+// TODO(b/436242702): remove this permission masks once the uid migration flag is rolled out
+// The following are used in uid_permission_map
 enum BpfPermissionMatch : uint8_t {
-    BPF_PERMISSION_NONE = 0,
-    BPF_PERMISSION_ACCESS_LOCAL_NETWORK = 1,
     BPF_PERMISSION_INTERNET = 1 << 2,
     BPF_PERMISSION_UPDATE_DEVICE_STATS = 1 << 3,
 };
@@ -266,6 +267,10 @@ STRUCT_SIZE(LocalNetAccessKey, 4 + 4 + 16 + 2 + 2);  // 28
 // One chunk can store 128 * 21 = 2688 UIDs using 128 int64
 #define CHUNK_UID_COUNT 2688
 #define UID_PERMISSION_MASK 7
+#define PERMISSION_BIT_NONE 0
+#define PERMISSION_BIT_ACCESS_LOCAL_NETWORK 1
+#define PERMISSION_BIT_UPDATE_DEVICE_STATS 2
+#define PERMISSION_BIT_INTERNET 4
 // LINT.ThenChange(../../common/src/com/android/net/module/util/bpf/UidPermissionChunk.java)
 
 typedef struct {
