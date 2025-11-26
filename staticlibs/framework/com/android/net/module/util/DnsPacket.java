@@ -20,6 +20,7 @@ import static android.net.DnsResolver.TYPE_A;
 import static android.net.DnsResolver.TYPE_AAAA;
 
 import static com.android.internal.annotations.VisibleForTesting.Visibility.PRIVATE;
+import static com.android.net.module.util.DnsHttpsPacket.TYPE_HTTPS;
 import static com.android.net.module.util.DnsPacketUtils.DnsRecordParser.domainNameToLabels;
 
 import android.annotation.IntDef;
@@ -330,7 +331,7 @@ public class DnsPacket {
             return switch (nsType) {
                 case TYPE_SVCB ->
                     new DnsSvcbRecord(rType, buf);
-                case 65 ->
+                case TYPE_HTTPS ->
                     // There is no data to parse if the record is in the question section.
                     rType == QDSECTION ? new DnsRecord(rType, buf) : new DnsHttpsRecord(rType, buf);
                 default ->

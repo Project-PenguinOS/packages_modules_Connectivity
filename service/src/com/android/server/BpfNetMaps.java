@@ -97,6 +97,7 @@ import com.android.net.module.util.BpfDump;
 import com.android.net.module.util.BpfMap;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.IBpfMap;
+import com.android.net.module.util.IBpfMap.ThrowingBiConsumer;
 import com.android.net.module.util.SingleWriterBpfMap;
 import com.android.net.module.util.Struct;
 import com.android.net.module.util.Struct.Bool;
@@ -117,6 +118,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.function.BiFunction;
+import java.util.function.Predicate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -153,6 +155,8 @@ public class BpfNetMaps {
     private static final long UID_RULES_DEFAULT_CONFIGURATION = 0;
     private static final long STATS_SELECT_MAP_A = 0;
     private static final long STATS_SELECT_MAP_B = 1;
+
+    private static final int AID_USER_OFFSET = 100000;
 
     private static IBpfMap<S32, U32> sConfigurationMap = null;
     // BpfMap for UID_OWNER_MAP_PATH. This map is not accessed by others.
@@ -1252,6 +1256,85 @@ public class BpfNetMaps {
     }
 
     /**
+     * Remove permissions from the UidPermissionChunk bpf map for a given App ID.
+     * <p>
+     * <b>Note:</b> This method is not thread-safe and is intended to be called from
+     * PermissionManager thread.
+     * </p>
+     *
+     * @param appId App Id whose permissions should be removed from the UidPermissionChunk bpf map.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    public void removePermissionsForAppId(int appId) {
+        throwIfUidMigrationIsDisabled(
+            "removePermissionsForAppId is not available when flag permission_map_uid_migration" +
+            " is disabled");
+        try {
+            removePermissionsIf(uid -> uid % AID_USER_OFFSET == appId);
+        } catch (RemoteException | ErrnoException e) {
+            Log.e(TAG, "Failed to remove permission for App Id "
+                    + appId + ": " + e);
+        }
+    }
+
+    /**
+     * Remove permissions from the UidPermissionChunk bpf map for a given User ID.
+     * <p>
+     * <b>Note:</b> This method is not thread-safe and is intended to be called from
+     * PermissionManager thread.
+     * </p>
+     *
+     * @param userId User Id whose permissions should be removed from the UidPermissionChunk bpf
+     *               map.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    public void removePermissionsForUserId(int userId) {
+        throwIfUidMigrationIsDisabled(
+            "removePermissionsForUserId is not available when flag permission_map_uid_migration" +
+            " is disabled");
+        try {
+            removePermissionsIf(uid -> uid / AID_USER_OFFSET == userId);
+        } catch (RemoteException | ErrnoException e) {
+            Log.e(TAG, "Failed to remove permission for User Id "
+                    + userId + ": " + e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private void removePermissionsIf(
+        Predicate<Integer> function
+    ) throws ErrnoException, RemoteException {
+        final SparseIntArray permissionsUids = new SparseIntArray();
+        forEachUidPermission((uid, permissionBits) -> {
+            if (function.test(uid)) {
+                permissionsUids.put(uid, PERMISSION_BIT_NONE);
+            }
+        });
+        setChunkPermListForUids(permissionsUids);
+    }
+
+    private void forEachUidPermission(
+        ThrowingBiConsumer<Integer, Integer> action
+    ) throws ErrnoException {
+        sUidPermissionChunkMap.forEach((chunkId, chunk) -> {
+            for(int index = 0; index < chunk.val.length; index++) {
+                int shift = 0;
+                long currentValue = chunk.val[index];
+                while(currentValue != 0) {
+                    int permissionBits = (int) (currentValue & UID_PERMISSION_MASK);
+                    if (permissionBits > 0) {
+                        int uid = CHUNK_UID_COUNT * chunkId.val + index * UIDS_PER_INT64
+                                + shift / PERMISSION_COUNT;
+                        action.accept(uid, permissionBits);
+                    }
+                    currentValue = currentValue >>> PERMISSION_COUNT;
+                    shift += PERMISSION_COUNT;
+                }
+            }
+        });
+    }
+
+    /**
      * Add configuration to local_net_access trie map.
      * @param lpmBitlen prefix length that will be used for longest matching
      * @param iface interface name
@@ -1725,21 +1808,8 @@ public class BpfNetMaps {
         pw.println("sUidPermissionChunkMap:" );
         pw.increaseIndent();
         try {
-            sUidPermissionChunkMap.forEach((chunkId, chunk) -> {
-                for(int index = 0; index < chunk.val.length; index++) {
-                    int shift = 0;
-                    long currentValue = chunk.val[index];
-                    while(currentValue != 0) {
-                        int permissionBits = (int) (currentValue & UID_PERMISSION_MASK);
-                        if (permissionBits > 0) {
-                            int uid = CHUNK_UID_COUNT * chunkId.val + index * UIDS_PER_INT64
-                                    + shift / PERMISSION_COUNT;
-                            pw.println(uid + " " + permissionsInChunkToString(permissionBits));
-                        }
-                        currentValue = currentValue >>> PERMISSION_COUNT;
-                        shift += PERMISSION_COUNT;
-                    }
-                }
+            forEachUidPermission((uid, permissionBits) -> {
+                pw.println(uid + " " + permissionsInChunkToString(permissionBits));
             });
         } catch (ErrnoException e) {
             pw.println("Failed to read uid permission chunk map: " + e);

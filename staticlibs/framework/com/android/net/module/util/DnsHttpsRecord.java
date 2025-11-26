@@ -19,6 +19,7 @@ package com.android.net.module.util;
 import static android.net.DnsResolver.CLASS_IN;
 
 import static com.android.internal.annotations.VisibleForTesting.Visibility.PACKAGE;
+import static com.android.net.module.util.DnsHttpsPacket.TYPE_HTTPS;
 import static com.android.net.module.util.SvcParam.KEY_ALPN;
 import static com.android.net.module.util.SvcParam.KEY_DOHPATH;
 import static com.android.net.module.util.SvcParam.KEY_ECH;
@@ -91,7 +92,7 @@ public class DnsHttpsRecord extends DnsRecord {
             throws IllegalStateException, ParseException, BufferUnderflowException {
         super(rType, buff);
 
-        if (nsType != 65) {
+        if (nsType != TYPE_HTTPS) {
             throw new IllegalStateException("incorrect nsType: " + nsType);
         }
 

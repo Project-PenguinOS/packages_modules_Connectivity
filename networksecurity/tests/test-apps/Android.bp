@@ -13,7 +13,7 @@
 // limitations under the License.
 
 package {
-    default_team: "trendy_team_rubidium_sdk_runtime",
+    default_team: "trendy_team_network_security",
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 

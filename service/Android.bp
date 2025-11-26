@@ -224,6 +224,7 @@ java_library {
         "networkstack-client",
         "PlatformProperties",
         "service-connectivity-protos",
+        "service-connectivity-resources-aidl",
         "service-connectivity-stats-protos",
         "jsr305",
     ],
