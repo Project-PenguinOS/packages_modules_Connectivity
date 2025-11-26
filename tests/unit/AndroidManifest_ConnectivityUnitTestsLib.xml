@@ -15,8 +15,7 @@
 -->
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-        package="com.android.frameworks.tests.net">
-
+        package="com.android.connectivity.tests.lib">
     <uses-permission android:name="android.permission.READ_LOGS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
@@ -63,14 +62,7 @@
         </intent>
     </queries>
     <application android:testOnly="true">
-        <uses-library android:name="android.test.runner" />
-        <uses-library android:name="android.net.ipsec.ike" />
         <activity
             android:name="android.net.connectivity.com.android.server.connectivity.NetworkNotificationManagerTest$TestDialogActivity"/>
     </application>
-
-    <instrumentation
-        android:name="androidx.test.runner.AndroidJUnitRunner"
-        android:targetPackage="com.android.frameworks.tests.net"
-        android:label="Frameworks Networking Tests" />
 </manifest>

@@ -326,12 +326,16 @@ public class DnsPacket {
             buf.position(oldPos);
             // Return a DnsRecord instance by default for backward compatibility, this is useful
             // when a partner supports new type of DnsRecord but does not inherit DnsRecord.
-            switch (nsType) {
-                case TYPE_SVCB:
-                    return new DnsSvcbRecord(rType, buf);
-                default:
-                    return new DnsRecord(rType, buf);
-            }
+            // TODO(b/454544870): remove the need for passing in rType to construct the record
+            return switch (nsType) {
+                case TYPE_SVCB ->
+                    new DnsSvcbRecord(rType, buf);
+                case 65 ->
+                    // There is no data to parse if the record is in the question section.
+                    rType == QDSECTION ? new DnsRecord(rType, buf) : new DnsHttpsRecord(rType, buf);
+                default ->
+                    new DnsRecord(rType, buf);
+            };
         }
 
         /**

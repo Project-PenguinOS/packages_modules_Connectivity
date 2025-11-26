@@ -7028,7 +7028,7 @@ public class ConnectivityServiceTest {
             throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_latency);
+                com.android.connectivity.tests.lib.R.xml.self_certified_capabilities_latency);
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
                 .build();
@@ -7046,7 +7046,7 @@ public class ConnectivityServiceTest {
             throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_bandwidth);
+                com.android.connectivity.tests.lib.R.xml.self_certified_capabilities_bandwidth);
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .build();
@@ -7082,7 +7082,7 @@ public class ConnectivityServiceTest {
     public void requestNetwork_withNetworkSliceDeclaration_shouldSucceed() throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_all);
+                com.android.connectivity.tests.lib.R.xml.self_certified_capabilities_all);
 
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
@@ -7101,7 +7101,7 @@ public class ConnectivityServiceTest {
     public void requestNetwork_withNetworkSliceDeclaration_shouldUseCache() throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_all);
+                com.android.connectivity.tests.lib.R.xml.self_certified_capabilities_all);
 
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)

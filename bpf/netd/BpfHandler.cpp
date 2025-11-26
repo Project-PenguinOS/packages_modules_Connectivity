@@ -28,6 +28,7 @@
 #include <private/android_filesystem_config.h>
 
 #include "BpfSyscallWrappers.h"
+#include "bpf/BpfUtils.h"
 
 namespace android {
 namespace net {

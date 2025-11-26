@@ -53,7 +53,7 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.getShift;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_INT64_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_UID_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERNET;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_COUNT;
@@ -1197,8 +1197,8 @@ public class BpfNetMaps {
         if ((trafficPermissions & TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS) != 0) {
             chunkPermissions |= PERMISSION_BIT_UPDATE_DEVICE_STATS;
         }
-        if ((trafficPermissions & TRAFFIC_PERMISSION_INTERNET) != 0) {
-            chunkPermissions |= PERMISSION_BIT_INTERNET;
+        if ((trafficPermissions & TRAFFIC_PERMISSION_INTERNET) == 0) {
+            chunkPermissions |= PERMISSION_BIT_NO_INTERNET;
         }
         return chunkPermissions;
     }
@@ -1211,7 +1211,7 @@ public class BpfNetMaps {
         if ((chunkPermissions & PERMISSION_BIT_UPDATE_DEVICE_STATS) != 0) {
             trafficPermissions |= TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
         }
-        if ((chunkPermissions & PERMISSION_BIT_INTERNET) != 0) {
+        if ((chunkPermissions & PERMISSION_BIT_NO_INTERNET) == 0) {
             trafficPermissions |= TRAFFIC_PERMISSION_INTERNET;
         }
         return trafficPermissions;
@@ -1663,9 +1663,6 @@ public class BpfNetMaps {
         if (permissions < 0 || permissions > UID_PERMISSION_MASK) {
             return "PERMISSION_UNKNOWN(" + permissions + ")";
         }
-        if (permissions == PERMISSION_BIT_NONE) {
-            return "PERMISSION_NONE";
-        }
         final StringJoiner sj = new StringJoiner(" ");
         if ((permissions & PERMISSION_BIT_ACCESS_LOCAL_NETWORK) != 0) {
             sj.add("PERMISSION_ACCESS_LOCAL_NETWORK");
@@ -1673,8 +1670,11 @@ public class BpfNetMaps {
         if ((permissions & PERMISSION_BIT_UPDATE_DEVICE_STATS) != 0) {
             sj.add("PERMISSION_UPDATE_DEVICE_STATS");
         }
-        if ((permissions & PERMISSION_BIT_INTERNET) != 0) {
+        if ((permissions & PERMISSION_BIT_NO_INTERNET) == 0) {
             sj.add("PERMISSION_INTERNET");
+        }
+        if (sj.length() == 0) {
+            return "PERMISSION_NONE";
         }
         return sj.toString();
     }

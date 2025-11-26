@@ -21,7 +21,7 @@ import android.content.res.Resources
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.connectivity.ConnectivityCompatChanges.ENABLE_SELF_CERTIFIED_CAPABILITIES_DECLARATION
-import com.android.frameworks.tests.net.R
+import com.android.connectivity.tests.lib.R
 import com.android.networkstack.apishim.ConstantsShim
 import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabilities
 import com.android.testutils.TestableNetworkCallback

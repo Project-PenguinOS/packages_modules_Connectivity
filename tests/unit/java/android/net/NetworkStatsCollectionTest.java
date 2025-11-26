@@ -58,7 +58,7 @@ import android.util.RecurrenceRule;
 import androidx.test.InstrumentationRegistry;
 import androidx.test.filters.SmallTest;
 
-import com.android.frameworks.tests.net.R;
+import com.android.connectivity.tests.lib.R;
 import com.android.net.module.util.BitUtils;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;

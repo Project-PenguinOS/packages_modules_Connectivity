@@ -51,7 +51,7 @@ import android.util.Log;
 import androidx.test.InstrumentationRegistry;
 import androidx.test.filters.SmallTest;
 
-import com.android.frameworks.tests.net.R;
+import com.android.connectivity.tests.lib.R;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
 import com.android.testutils.SkipPresubmit;

@@ -43,7 +43,7 @@ public class UidPermissionChunk extends Struct {
     public final static int PERMISSION_BIT_NONE = 0;
     public final static int PERMISSION_BIT_ACCESS_LOCAL_NETWORK = 1;
     public final static int PERMISSION_BIT_UPDATE_DEVICE_STATS = 2;
-    public final static int PERMISSION_BIT_INTERNET = 4;
+    public final static int PERMISSION_BIT_NO_INTERNET = 4;
     // LINT.ThenChange(../../../../../../../../bpf/progs/netd.h)
 
     @Struct.Field(order = 0, type = Struct.Type.S64Array,
