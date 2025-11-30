@@ -270,7 +270,7 @@ STRUCT_SIZE(LocalNetAccessKey, 4 + 4 + 16 + 2 + 2);  // 28
 #define PERMISSION_BIT_NONE 0
 #define PERMISSION_BIT_ACCESS_LOCAL_NETWORK 1
 #define PERMISSION_BIT_UPDATE_DEVICE_STATS 2
-#define PERMISSION_BIT_INTERNET 4
+#define PERMISSION_BIT_NO_INTERNET 4
 // LINT.ThenChange(../../common/src/com/android/net/module/util/bpf/UidPermissionChunk.java)
 
 typedef struct {

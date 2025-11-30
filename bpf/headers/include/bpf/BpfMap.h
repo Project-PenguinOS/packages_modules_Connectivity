@@ -24,10 +24,21 @@
 #include <android-base/unique_fd.h>
 
 #include "BpfSyscallWrappers.h"
-#include "bpf/BpfUtils.h"
+#include "bpf/KernelUtils.h"
 
 #include <cstdio>
 #include <functional>
+
+#ifdef BPF_MAP_MAKE_VISIBLE_FOR_TESTING
+#undef BPFMAP_VERBOSE
+#define BPFMAP_VERBOSE
+#undef BPFMAP_VERBOSE_ABORT
+#define BPFMAP_VERBOSE_ABORT
+#endif
+
+#ifdef BPFMAP_VERBOSE
+#include <log/log.h>
+#endif
 
 namespace android {
 namespace bpf {
@@ -36,13 +47,6 @@ using base::Result;
 using base::ResultError;
 using base::unique_fd;
 using std::function;
-
-#ifdef BPF_MAP_MAKE_VISIBLE_FOR_TESTING
-#undef BPFMAP_VERBOSE
-#define BPFMAP_VERBOSE
-#undef BPFMAP_VERBOSE_ABORT
-#define BPFMAP_VERBOSE_ABORT
-#endif
 
 [[noreturn]] __attribute__((__format__(__printf__, 2, 3))) static inline
 void Abort(int __unused error, const char* __unused fmt, ...) {

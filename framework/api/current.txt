@@ -696,7 +696,7 @@ package android.net.http {
     method @NonNull public android.net.http.HttpEngine.Builder setEnableHttpCache(int, long);
     method @NonNull public android.net.http.HttpEngine.Builder setEnablePublicKeyPinningBypassForLocalTrustAnchors(boolean);
     method @NonNull public android.net.http.HttpEngine.Builder setEnableQuic(boolean);
-    method @FlaggedApi("android.net.http.proxy_apis") @NonNull public android.net.http.HttpEngine.Builder setProxyOptions(@Nullable android.net.http.ProxyOptions);
+    method @FlaggedApi("android.net.http.proxy_apis") @NonNull public android.net.http.HttpEngine.Builder setProxyOptions(@NonNull android.net.http.ProxyOptions);
     method @NonNull public android.net.http.HttpEngine.Builder setQuicOptions(@NonNull android.net.http.QuicOptions);
     method @NonNull public android.net.http.HttpEngine.Builder setStoragePath(@NonNull String);
     method @NonNull public android.net.http.HttpEngine.Builder setUserAgent(@NonNull String);
@@ -732,7 +732,7 @@ package android.net.http {
   }
 
   @FlaggedApi("android.net.http.proxy_apis") public final class Proxy {
-    method @NonNull public static android.net.http.Proxy createHttpProxy(int, @NonNull String, int, @NonNull java.util.concurrent.Executor, @NonNull android.net.http.Proxy.HttpConnectCallback);
+    method @NonNull public static android.net.http.Proxy createHttpProxy(int, @NonNull String, @IntRange(from=0, to=65535) int, @NonNull java.util.concurrent.Executor, @NonNull android.net.http.Proxy.HttpConnectCallback);
     field public static final int SCHEME_HTTP = 0; // 0x0
     field public static final int SCHEME_HTTPS = 1; // 0x1
   }

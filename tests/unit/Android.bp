@@ -78,6 +78,7 @@ android_library {
     defaults: [
         "framework-connectivity-internal-test-defaults",
     ],
+    manifest: "AndroidManifest_ConnectivityUnitTestsLib.xml",
     srcs: [
         "java/**/*.java",
         "java/**/*.kt",
@@ -153,6 +154,7 @@ android_test {
         "framework-connectivity-internal-test-defaults",
         "FrameworksNetTests-jni-defaults",
     ],
+    manifest: "AndroidManifest_FrameworksNetTests.xml",
     jarjar_rules: ":frameworks-net-tests-jarjar-rules",
     srcs: [":non-connectivity-module-test"],
     test_suites: ["device-tests"],

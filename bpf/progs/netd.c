@@ -809,7 +809,9 @@ static __always_inline inline int inet_socket_create(struct bpf_sock* sk,
     bool *uidMigrationEnabled = bpf_uid_migration_enabled_map_lookup_elem(&mapKey);
     if (uidMigrationEnabled && *uidMigrationEnabled) {
         uint32_t uid = (gid_uid & 0xffffffff);
-        return (get_chunk_permissions(uid) & PERMISSION_BIT_INTERNET) ? BPF_ALLOW : BPF_DISALLOW;
+        return (get_chunk_permissions(uid) & PERMISSION_BIT_NO_INTERNET)
+                   ? BPF_DISALLOW
+                   : BPF_ALLOW;
     } else {
         return (get_app_permissions() & BPF_PERMISSION_INTERNET) ? BPF_ALLOW : BPF_DISALLOW;
     }

@@ -69,7 +69,7 @@ import static android.system.OsConstants.EPERM;
 
 import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERNET;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
@@ -168,7 +168,7 @@ public final class BpfNetMapsTest {
             }, (name) -> mFeatureFlags.getOrDefault(name, false));
 
     private static final int MOCK_USER_ID1 = 0;
-    private static final int MOCK_USER_ID2 = 1;
+    private static final int MOCK_USER_ID2 = 10;
     private static final UserHandle MOCK_USER1 = UserHandle.of(MOCK_USER_ID1);
     private static final UserHandle MOCK_USER2 = UserHandle.of(MOCK_USER_ID2);
     private static final int TEST_APP_ID_1 = 10002;
@@ -176,6 +176,7 @@ public final class BpfNetMapsTest {
     private static final int TEST_UID = 10086;
     private static final int TEST_UID_1 = MOCK_USER1.getUid(TEST_APP_ID_1);
     private static final int TEST_UID_2 = MOCK_USER1.getUid(TEST_APP_ID_2);
+    private static final int TEST_SECONDARY_USER_UID = MOCK_USER2.getUid(TEST_APP_ID_1);
     private static final int TEST_UID_NO_PERMISSION = 99999;
     private static final int[] TEST_UIDS = {TEST_UID_1, TEST_UID_2};
     private static final int[] CORE_AIDS = {
@@ -1172,15 +1173,21 @@ public final class BpfNetMapsTest {
     @Test
     public void testGetNetPermFoUid_uidMigrationEnabled() throws Exception {
         mUidPermissionChunkMap.deleteEntry(new S32(getChunkId(TEST_UID)));
-        assertEquals(PERMISSION_NONE, mBpfNetMaps.getNetPermForUid(TEST_UID));
+        assertEquals(TRAFFIC_PERMISSION_INTERNET, mBpfNetMaps.getNetPermForUid(TEST_UID));
 
         SparseIntArray permissionsUids = new SparseIntArray();
-        permissionsUids.put(TEST_UID, PERMISSION_BIT_NONE);
+        permissionsUids.put(TEST_UID, PERMISSION_BIT_NO_INTERNET);
         mBpfNetMaps.setChunkPermListForUids(permissionsUids);
         assertEquals(PERMISSION_NONE, mBpfNetMaps.getNetPermForUid(TEST_UID));
 
         permissionsUids = new SparseIntArray();
-        permissionsUids.put(TEST_UID, PERMISSION_BIT_INTERNET | PERMISSION_BIT_UPDATE_DEVICE_STATS);
+        permissionsUids.put(TEST_UID,
+                PERMISSION_BIT_NO_INTERNET | PERMISSION_BIT_UPDATE_DEVICE_STATS);
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+        assertEquals(TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS,
+                mBpfNetMaps.getNetPermForUid(TEST_UID));
+
+        permissionsUids.put(TEST_UID, PERMISSION_BIT_UPDATE_DEVICE_STATS);
         mBpfNetMaps.setChunkPermListForUids(permissionsUids);
         assertEquals(TRAFFIC_PERMISSION_INTERNET | TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS,
                 mBpfNetMaps.getNetPermForUid(TEST_UID));
@@ -1193,10 +1200,10 @@ public final class BpfNetMapsTest {
         mUidPermissionMap.deleteEntry(new S32(getChunkId(TEST_UID_2)));
         assertEquals(PERMISSION_BIT_NONE, mBpfNetMaps.getChunkPermForUid(TEST_UID_2));
         SparseIntArray permissionsUids = new SparseIntArray();
-        permissionsUids.put(TEST_UID_2, PERMISSION_BIT_INTERNET);
+        permissionsUids.put(TEST_UID_2, PERMISSION_BIT_NO_INTERNET);
         mBpfNetMaps.setChunkPermListForUids(permissionsUids);
         assertEquals(
-            PERMISSION_BIT_INTERNET,
+            PERMISSION_BIT_NO_INTERNET,
             mBpfNetMaps.getChunkPermForUid(TEST_UID_2));
         assertEquals(
             PERMISSION_BIT_NONE,
@@ -1790,14 +1797,14 @@ public final class BpfNetMapsTest {
 
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(TEST_UID_1, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
-        permissionsUids.put(TEST_UID_2, PERMISSION_BIT_INTERNET);
+        permissionsUids.put(TEST_UID_2, PERMISSION_BIT_NO_INTERNET);
         mBpfNetMaps.setChunkPermListForUids(permissionsUids);
 
         assertEquals(
             PERMISSION_BIT_ACCESS_LOCAL_NETWORK,
             mBpfNetMaps.getChunkPermForUid(TEST_UID_1));
         assertEquals(
-            PERMISSION_BIT_INTERNET,
+            PERMISSION_BIT_NO_INTERNET,
             mBpfNetMaps.getChunkPermForUid(TEST_UID_2));
         assertEquals(
             PERMISSION_BIT_NONE, mBpfNetMaps.getChunkPermForUid(TEST_UID_NO_PERMISSION));
@@ -1807,7 +1814,7 @@ public final class BpfNetMapsTest {
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testSetChunkPermListForUidsGrantMultiplePermissions() throws Exception {
-        final int permission = PERMISSION_BIT_INTERNET
+        final int permission = PERMISSION_BIT_NO_INTERNET
                 | PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(TEST_UID_2, permission);
@@ -1821,7 +1828,7 @@ public final class BpfNetMapsTest {
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testSetChunkPermListForUidsRevokeMultiplePermission() throws Exception {
-        final int permission = PERMISSION_BIT_INTERNET
+        final int permission = PERMISSION_BIT_NO_INTERNET
                 | PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(TEST_UID_1, permission);
@@ -1842,28 +1849,28 @@ public final class BpfNetMapsTest {
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testSetChunkPermListForUidsRevokeOnePermission() throws Exception {
-        final int permission = PERMISSION_BIT_INTERNET
+        final int permission = PERMISSION_BIT_NO_INTERNET
                 | PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(TEST_UID_1, permission);
         permissionsUids.put(TEST_UID_2, permission);
         mBpfNetMaps.setChunkPermListForUids(permissionsUids);
 
-        SparseIntArray internetPermissionOnly = new SparseIntArray();
-        internetPermissionOnly.put(TEST_UID_2, PERMISSION_BIT_INTERNET);
-        mBpfNetMaps.setChunkPermListForUids(internetPermissionOnly);
+        SparseIntArray noInternetPermissionOnly = new SparseIntArray();
+        noInternetPermissionOnly.put(TEST_UID_2, PERMISSION_BIT_NO_INTERNET);
+        mBpfNetMaps.setChunkPermListForUids(noInternetPermissionOnly);
 
         assertEquals(
             permission, mBpfNetMaps.getChunkPermForUid(TEST_UID_1));
         assertEquals(
-            PERMISSION_BIT_INTERNET, mBpfNetMaps.getChunkPermForUid(TEST_UID_2));
+            PERMISSION_BIT_NO_INTERNET, mBpfNetMaps.getChunkPermForUid(TEST_UID_2));
     }
 
     @Test
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testSetChunkPermListForUidsDuplicatedGrantSilentlyIgnored() throws Exception {
-        final int permission = PERMISSION_BIT_INTERNET
+        final int permission = PERMISSION_BIT_NO_INTERNET
                 | PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(TEST_UID_1, permission);
@@ -1888,7 +1895,7 @@ public final class BpfNetMapsTest {
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testSetChunkPermListForUidsDuplicatedRevokeSilentlyIgnored() throws Exception {
-        final int permission = PERMISSION_BIT_INTERNET
+        final int permission = PERMISSION_BIT_NO_INTERNET
                 | PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(TEST_UID_1, permission);
@@ -1936,7 +1943,7 @@ public final class BpfNetMapsTest {
         mBpfNetMaps.setPermListForUids(permissionsUids);
 
         assertEquals(
-            PERMISSION_BIT_UPDATE_DEVICE_STATS,
+            PERMISSION_BIT_UPDATE_DEVICE_STATS | PERMISSION_BIT_NO_INTERNET,
             mBpfNetMaps.getChunkPermForUid(TEST_UID_2));
     }
 
@@ -1957,7 +1964,7 @@ public final class BpfNetMapsTest {
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = false)
     public void testSetChunkPermListForUids_uidMigrationDisabled() throws Exception {
-        final int permission = PERMISSION_BIT_INTERNET
+        final int permission = PERMISSION_BIT_NO_INTERNET
                 | PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(TEST_UID_1, permission);
@@ -1970,13 +1977,27 @@ public final class BpfNetMapsTest {
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testDumpUidPermissionChunkMap() throws Exception {
-        int permission = PERMISSION_BIT_INTERNET | PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+        int permission = PERMISSION_BIT_NO_INTERNET | PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(TEST_UID, permission);
         mBpfNetMaps.setChunkPermListForUids(permissionsUids);
         assertDumpContains(
             getDump(),
+            TEST_UID + " PERMISSION_ACCESS_LOCAL_NETWORK");
+
+        permissionsUids = new SparseIntArray();
+        permissionsUids.put(TEST_UID, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+        assertDumpContains(
+            getDump(),
             TEST_UID + " PERMISSION_ACCESS_LOCAL_NETWORK PERMISSION_INTERNET");
+
+        permissionsUids = new SparseIntArray();
+        permissionsUids.put(TEST_UID, PERMISSION_BIT_NO_INTERNET);
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+        assertDumpContains(
+            getDump(),
+            TEST_UID + " PERMISSION_NONE");
     }
 
     public void testL4SDisabledIfNotSupported() {
@@ -1996,5 +2017,57 @@ public final class BpfNetMapsTest {
         doReturn(true).when(mDeps).isL4SSupported();
         mBpfNetMaps.setL4sEnabled(true);
         assertTrue(mBpfNetMaps.isL4sEnabled());
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    public void testRemoveUserIdFromUidPermissionChunkMap_uidMigrationEnabled() throws Exception {
+        SparseIntArray permissionsUids = new SparseIntArray();
+        permissionsUids.put(TEST_UID_1, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        permissionsUids.put(TEST_SECONDARY_USER_UID, PERMISSION_BIT_NO_INTERNET);
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+
+        mBpfNetMaps.removePermissionsForUserId(MOCK_USER_ID2);
+
+        assertEquals(
+            PERMISSION_BIT_ACCESS_LOCAL_NETWORK,
+            mBpfNetMaps.getChunkPermForUid(TEST_UID_1));
+        assertEquals(
+            PERMISSION_BIT_NONE, mBpfNetMaps.getChunkPermForUid(TEST_SECONDARY_USER_UID));
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = false)
+    public void testRemoveUserIdFromUidPermissionChunkMap_uidMigrationDisabled() throws Exception {
+        assertThrows(UnsupportedOperationException.class,
+                () -> mBpfNetMaps.removePermissionsForUserId(MOCK_USER_ID2));
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    public void testRemoveAppIdFromUidPermissionChunkMap_uidMigrationEnabled() throws Exception {
+        SparseIntArray permissionsUids = new SparseIntArray();
+        permissionsUids.put(TEST_UID_1, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        permissionsUids.put(TEST_UID_2, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+
+        mBpfNetMaps.removePermissionsForAppId(TEST_APP_ID_1);
+
+        assertEquals(
+            PERMISSION_BIT_NONE, mBpfNetMaps.getChunkPermForUid(TEST_UID_1));
+        assertEquals(
+            PERMISSION_BIT_ACCESS_LOCAL_NETWORK,
+            mBpfNetMaps.getChunkPermForUid(TEST_UID_2));
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = false)
+    public void testRemoveAppIdFromUidPermissionChunkMap_uidMigrationDisabled() throws Exception {
+        assertThrows(UnsupportedOperationException.class,
+                () -> mBpfNetMaps.removePermissionsForAppId(TEST_APP_ID_1));
     }
 }

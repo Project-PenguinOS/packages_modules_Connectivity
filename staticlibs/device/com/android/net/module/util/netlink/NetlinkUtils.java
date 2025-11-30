@@ -287,22 +287,32 @@ public class NetlinkUtils {
      * netlink message of at most |bufsize| size.
      *
      * Multi-threaded calls with different timeouts will cause unexpected results.
+     * @deprecated Use {@link #recvMessage(FileDescriptor, ByteBuffer, long)} instead
      */
+    @Deprecated
     public static ByteBuffer recvMessage(FileDescriptor fd, int bufsize, long timeoutMs)
             throws ErrnoException, IllegalArgumentException, InterruptedIOException {
-        checkTimeout(timeoutMs);
-
-        Os.setsockoptTimeval(fd, SOL_SOCKET, SO_RCVTIMEO, StructTimeval.fromMillis(timeoutMs));
-
         final ByteBuffer byteBuffer = ByteBuffer.allocate(bufsize);
-        final int length = Os.read(fd, byteBuffer);
-        if (length == bufsize) {
+        return recvMessage(fd, byteBuffer, timeoutMs);
+    }
+
+    /**
+     * Wait up to |timeoutMs| (or until underlying socket error) for a netlink message.
+     * The message will be stored in |buffer| within its capacity.
+     *
+     * Multi-threaded calls with different timeouts will cause unexpected results.
+     */
+    public static ByteBuffer recvMessage(FileDescriptor fd, ByteBuffer buffer, long timeoutMs)
+            throws ErrnoException, IllegalArgumentException, InterruptedIOException {
+        checkTimeout(timeoutMs);
+        Os.setsockoptTimeval(fd, SOL_SOCKET, SO_RCVTIMEO, StructTimeval.fromMillis(timeoutMs));
+        Os.read(fd, buffer);
+        if (!buffer.hasRemaining()) {
             Log.w(TAG, "maximum read");
         }
-        byteBuffer.position(0);
-        byteBuffer.limit(length);
-        byteBuffer.order(ByteOrder.nativeOrder());
-        return byteBuffer;
+        buffer.flip();
+        buffer.order(ByteOrder.nativeOrder());
+        return buffer;
     }
 
     /**
@@ -347,11 +357,15 @@ public class NetlinkUtils {
         // should be handled by caller
         sendMessage(fd, dumpRequestMessage, 0, dumpRequestMessage.length, IO_TIMEOUT_MS);
 
+        final ByteBuffer buf = ByteBuffer.allocate(NetlinkUtils.DEFAULT_RECV_BUFSIZE);
         while (true) {
+            // reset buf and set default endian before calling recvMessage
+            buf.clear();
+            buf.order(ByteOrder.BIG_ENDIAN);
+
             // recvMessage throws ErrnoException, InterruptedIOException
             // should be handled by caller
-            final ByteBuffer buf = recvMessage(
-                    fd, NetlinkUtils.DEFAULT_RECV_BUFSIZE, IO_TIMEOUT_MS);
+            recvMessage(fd, buf, IO_TIMEOUT_MS);
 
             while (buf.remaining() > 0) {
                 final int position = buf.position();
