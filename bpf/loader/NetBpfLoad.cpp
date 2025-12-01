@@ -1062,6 +1062,14 @@ static int validateProg(const borrowed_fd& fd, const char* const progPinLoc) {
     return 0;
 }
 
+static enum bpf_attach_type fixup_attach(enum bpf_prog_type prog_type, enum bpf_attach_type expected_attach_type) {
+    if (!isAtLeastKernelVersion(4, 19))
+        if (prog_type == BPF_PROG_TYPE_CGROUP_SKB)
+            if (expected_attach_type == BPF_CGROUP_INET_EGRESS)
+                return BPF_CGROUP_INET_INGRESS; // aka BPF_PROG_ATTACH_TYPE_DEFAULT
+    return expected_attach_type;
+}
+
 static int loadCodeSections(ElfObject& elfObj, vector<codeSection>& cs, const string& license) {
     for (int i = 0; i < (int)cs.size(); i++) {
         unique_fd& fd = cs[i].prog_fd;
@@ -1099,7 +1107,7 @@ static int loadCodeSections(ElfObject& elfObj, vector<codeSection>& cs, const st
               .log_level = 1,
               .log_size = sizeof(log_buf),
               .log_buf = ptr_to_u64(log_buf),
-              .expected_attach_type = cs[i].prog_def->attach_type,
+              .expected_attach_type = fixup_attach(cs[i].prog_def->type, cs[i].prog_def->attach_type),
             };
             if (isAtLeastKernelVersion(4, 15))
                 strlcpy(req.prog_name, cs[i].prog_def->name(), sizeof(req.prog_name));
@@ -1223,7 +1231,7 @@ static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSecti
         }
 
         bpf_program__set_type(prog, cs[i].prog_def->type);
-        bpf_program__set_expected_attach_type(prog, cs[i].prog_def->attach_type);
+        bpf_program__set_expected_attach_type(prog, fixup_attach(cs[i].prog_def->type, cs[i].prog_def->attach_type));
     }
     return 0;
 }
@@ -1582,11 +1590,11 @@ static int doLoad(char** argv, char * const envp[]) {
     // first in U QPR2 beta~2
     const bool has_platform_netbpfload_rc = exists("/system/etc/init/netbpfload.rc");
 
-    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s) libbpf: v%u.%u uid:%d rc:%d%d",
+    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s) libbpf: v%u.%u uid:%d rc:%d%d user:%d%d%d",
           argv[0], android_get_device_api_level(), api_level_full,
           kernelVer, describeArch(), libbpf_major_version(),
           libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
-          has_platform_netbpfload_rc);
+          has_platform_netbpfload_rc, isUser, isUserdebug, isEng);
 
     if (!has_platform_bpfloader_rc && !has_platform_netbpfload_rc) {
         ALOGE("Unable to find platform's bpfloader & netbpfload init scripts.");

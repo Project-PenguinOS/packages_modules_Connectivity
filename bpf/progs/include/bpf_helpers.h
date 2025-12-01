@@ -458,7 +458,6 @@ static long (*bpf_trace_printk)(const char* fmt, int fmt_size, ...) = (void*) BP
 
 #define BPF_PROG_TYPE_bind4             BPF_PROG_TYPE_CGROUP_SOCK_ADDR
 #define BPF_PROG_TYPE_bind6             BPF_PROG_TYPE_CGROUP_SOCK_ADDR
-#define BPF_PROG_TYPE_cgroupskb         BPF_PROG_TYPE_CGROUP_SKB
 #define BPF_PROG_TYPE_cgroupsock        BPF_PROG_TYPE_CGROUP_SOCK
 #define BPF_PROG_TYPE_cgroupsockcreate  BPF_PROG_TYPE_CGROUP_SOCK
 #define BPF_PROG_TYPE_cgroupsockrelease BPF_PROG_TYPE_CGROUP_SOCK
@@ -485,7 +484,6 @@ static long (*bpf_trace_printk)(const char* fmt, int fmt_size, ...) = (void*) BP
 
 #define BPF_PROG_ATTACH_TYPE_bind4             BPF_CGROUP_INET4_BIND
 #define BPF_PROG_ATTACH_TYPE_bind6             BPF_CGROUP_INET6_BIND
-#define BPF_PROG_ATTACH_TYPE_cgroupskb         BPF_PROG_ATTACH_TYPE_DEFAULT
 #define BPF_PROG_ATTACH_TYPE_cgroupsock        BPF_PROG_ATTACH_TYPE_DEFAULT
 #define BPF_PROG_ATTACH_TYPE_cgroupsockcreate  BPF_CGROUP_INET_SOCK_CREATE
 #define BPF_PROG_ATTACH_TYPE_cgroupsockrelease BPF_CGROUP_INET_SOCK_RELEASE
