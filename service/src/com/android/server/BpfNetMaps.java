@@ -1700,6 +1700,14 @@ public class BpfNetMaps {
         return keySet.size();
     }
 
+    private int getAppidPermissionCount() throws ErrnoException {
+        // forEach could restart iteration from the beginning if there is a concurrent entry
+        // deletion. So using Set to count the number of entry in the map.
+        Set<Integer> keySet = new ArraySet<>();
+        forEachUidPermission((uid, permissionBits) -> keySet.add(UserHandle.getAppId(uid)));
+        return keySet.size();
+    }
+
     /** Callback for StatsManager#setPullAtomCallback */
     @VisibleForTesting
     public int pullBpfMapInfoAtom(final int atomTag, final List<StatsEvent> data) {
@@ -1710,7 +1718,8 @@ public class BpfNetMaps {
 
         try {
             data.add(mDeps.buildStatsEvent(getMapSize(sCookieTagMap), getMapSize(sUidOwnerMap),
-                    getMapSize(sUidPermissionMap)));
+                    isUidMigrationEnabled()
+                            ? getAppidPermissionCount() : getMapSize(sUidPermissionMap)));
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to pull NETWORK_BPF_MAP_INFO atom: " + e);
             return StatsManager.PULL_SKIP;

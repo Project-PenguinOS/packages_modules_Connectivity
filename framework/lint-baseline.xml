@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<issues format="6" by="lint 8.4.0-alpha08" type="baseline" client="" dependencies="true" name="" variant="all" version="8.4.0-alpha08">
-
+<issues
+    format="6"
+    by="lint 8.4.0-alpha08"
+    type="baseline"
+    client=""
+    dependencies="true"
+    name=""
+    variant="all"
+    version="8.4.0-alpha08">
     <issue
         id="NewApi"
         message="Call requires API level 31 (current min is 30): `android.net.IpSecManager.UdpEncapsulationSocket#getResourceId`"
@@ -92,7 +99,7 @@
     <issue
         id="NewApi"
         message="Field requires API level 31 (current min is 30): `android.system.OsConstants#ENONET`"
-        errorLine1='                    new DnsException(ERROR_SYSTEM, new ErrnoException("resNetworkQuery", ENONET))));'
+        errorLine1="                    new DnsException(ERROR_SYSTEM, new ErrnoException(&quot;resNetworkQuery&quot;, ENONET))));"
         errorLine2="                                                                                         ~~~~~~">
         <location
             file="packages/modules/Connectivity/framework/src/android/net/DnsResolver.java"
@@ -384,6 +391,28 @@
             file="packages/modules/Connectivity/framework/src/android/net/UidRange.java"
             line="50"
             column="34"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 35 (current min is 30): `android.telecom.Call.Details#getId`"
+        errorLine1="        final String callId = call.getDetails().getId();"
+        errorLine2="                                                ~~~~~">
+        <location
+            file="packages/modules/Connectivity/framework/src/android/net/ConnectivityCallListenerService.java"
+            line="122"
+            column="49"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 35 (current min is 30): `android.telecom.Call.Details#getId`"
+        errorLine1="        final String callId = details.getId();"
+        errorLine2="                                      ~~~~~">
+        <location
+            file="packages/modules/Connectivity/framework/src/android/net/ConnectivityCallListenerService.java"
+            line="207"
+            column="39"/>
     </issue>
 
 </issues>

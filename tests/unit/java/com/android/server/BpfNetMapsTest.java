@@ -1279,6 +1279,33 @@ public final class BpfNetMapsTest {
         assertEquals(StatsManager.PULL_SKIP, ret);
     }
 
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    public void testPullBpfMapInfo_uidMigrationEnabled() throws Exception {
+        // mCookieTagMap has 1 entry
+        mCookieTagMap.updateEntry(new S64(0), new CookieTagMapValue(0, 0));
+
+        // mUidOwnerMap has 2 entries
+        mUidOwnerMap.updateEntry(new S32(0), new UidOwnerValue(0, 0));
+        mUidOwnerMap.updateEntry(new S32(1), new UidOwnerValue(0, 0));
+
+        // mUidPermissionMap has 3 entries
+        SparseIntArray permissionsUids = new SparseIntArray();
+        permissionsUids.put(0, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        permissionsUids.put(1, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        permissionsUids.put(2, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        permissionsUids.put(MOCK_USER2.getUid(0), PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        permissionsUids.put(MOCK_USER2.getUid(1), PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        permissionsUids.put(MOCK_USER2.getUid(2), PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+
+        final int ret = mBpfNetMaps.pullBpfMapInfoAtom(NETWORK_BPF_MAP_INFO, new ArrayList<>());
+        assertEquals(StatsManager.PULL_SUCCESS, ret);
+        verify(mDeps).buildStatsEvent(
+                1 /* cookieTagMapSize */, 2 /* uidOwnerMapSize */, 3 /* uidPermissionMapSize */);
+    }
+
     private void assertDumpContains(final String dump, final String message) {
         assertTrue(String.format("dump(%s) does not contain '%s'", dump, message),
                 dump.contains(message));

@@ -103,8 +103,8 @@ static const set<string> MAINLINE_FOR_T_PLUS = {
     SHARED "prog_clatd_schedcls_egress4_clat_rawip",
     SHARED "prog_clatd_schedcls_ingress6_clat_ether",
     SHARED "prog_clatd_schedcls_ingress6_clat_rawip",
-    NETD "prog_netd_cgroupskb_egress_stats",
-    NETD "prog_netd_cgroupskb_ingress_stats",
+    NETD "prog_netd_egress_stats",
+    NETD "prog_netd_ingress_stats",
     NETD "prog_netd_schedact_ingress_account",
     NETD "prog_netd_skfilter_allowlist_xtbpf",
     NETD "prog_netd_skfilter_denylist_xtbpf",
@@ -163,6 +163,13 @@ static const set<string> MAINLINE_FOR_V_5_4_PLUS = {
 static const set<string> MAINLINE_FOR_25Q2_PLUS = {
     NETD "map_netd_local_net_access_map",
     NETD "map_netd_local_net_blocked_uid_map",
+    NETD "map_netd_local_net_note_op_cache_map",
+    NETD "map_netd_local_net_note_op_enabled_map",
+};
+
+// Provided by *current* mainline module for 25Q2+ devices with 5.10+ kernels
+static const set<string> MAINLINE_FOR_25Q2_5_10_PLUS = {
+    NETD "map_netd_local_net_note_op_ringbuf",
 };
 
 // Provided by *current* mainline module for 26Q2+ devices
@@ -234,6 +241,7 @@ TEST_F(BpfExistenceTest, TestPrograms) {
 
     if (isAtLeast25Q2) ASSERT_TRUE(isAtLeastKernelVersion(5, 4));
     DO_EXPECT(isAtLeast25Q2, MAINLINE_FOR_25Q2_PLUS);
+    DO_EXPECT(isAtLeast25Q2 && isAtLeastKernelVersion(5, 10), MAINLINE_FOR_25Q2_5_10_PLUS);
 
     if (isAtLeast25Q4) ASSERT_TRUE(isAtLeastKernelVersion(5, 10));
 
