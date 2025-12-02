@@ -27,6 +27,18 @@ android_app {
     resource_dirs: [
         "res",
     ],
+    srcs: [
+        "src/**/*.java",
+    ],
+    libs: [
+        "framework-connectivity.stubs.module_lib",
+        "framework-connectivity-t.stubs.module_lib",
+    ],
+    static_libs: [
+        "androidx.appcompat_appcompat",
+        "androidx.fragment_fragment",
+        "service-connectivity-resources-aidl",
+    ],
     privileged: true,
     export_package_resources: true,
     apex_available: [
