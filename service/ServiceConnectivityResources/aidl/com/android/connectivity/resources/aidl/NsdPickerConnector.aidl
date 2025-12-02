@@ -31,6 +31,11 @@ interface NsdPickerConnector {
      */
     const String EXTRA_CONNECTOR = "connector";
 
+    /**
+     * Intent extra containing the user-friendly name of the app requesting discovery.
+     */
+    const String EXTRA_APP_NAME = "app_name";
+
     oneway void setServiceReceiver(in NsdServiceReceiver receiver);
     oneway void notifyServiceSelected(in NsdServiceInfo service);
 }

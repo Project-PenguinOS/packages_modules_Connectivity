@@ -876,6 +876,11 @@ public class MdnsServiceTypeClient {
                 cacheKey, false /* excludeExpiredServices */)) {
             notifyRemovedServiceToListeners(response, SERVICE_REMOVED_BY_SOCKET_DESTROYED);
         }
+        // Remove all listeners and update offload info.
+        while (!listeners.isEmpty()) {
+            final ListenerInfo listenerInfo = listeners.removeAt(listeners.size() - 1);
+            updateOffloadInfo(listenerInfo.filterRepliesInfo.serviceName, null /* newInfo */);
+        }
         shutDown();
     }
 

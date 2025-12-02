@@ -159,6 +159,25 @@ java_library {
     visibility: ["//external/cronet:__subpackages__"],
 }
 
+// This breaks the cyclic dependency by allowing targets that depend on `framework-connectivity`
+// (e.g., service-connectivity) to depend on this target instead, while `framework-connectivity` can
+// trace references from those depending targets to ensure that referenced methods and classes
+// are not stripped during proguarding.
+java_library {
+    name: "framework-connectivity-post-jarjar",
+    defaults: ["framework-module-defaults"],
+    installable: false,
+    min_sdk_version: "30",
+    static_libs: [
+        "framework-connectivity-pre-jarjar",
+    ],
+    apex_available: [
+        "com.android.tethering",
+    ],
+    jarjar_rules: ":framework-connectivity-jarjar-rules",
+    visibility: ["//packages/modules/Connectivity:__subpackages__"],
+}
+
 java_library {
     name: "framework-connectivity-pre-jarjar",
     defaults: ["framework-module-defaults"],
@@ -180,7 +199,29 @@ java_sdk_library {
         "framework-connectivity-defaults",
         "httpengine_java_defaults",
     ],
+    optimize: {
+        enabled: select(release_flag("RELEASE_FRAMEWORK_CONNECTIVITY_SHRINKING"), {
+            true: true,
+            default: false,
+        }),
+        ignore_warnings: false,
+        shrink: true,
+        trace_references_from: [
+            "service-connectivity",
+            "framework-connectivity-t",
+        ],
+        optimize: false,
+        obfuscate: false,
+        protect_api_surface: true,
+        include: "r8_include_list.txt",
+        proguard_compatibility: false,
+    },
+    dxflags: ["--debug"],
     installable: true,
+    // Depending on `framework-connectivity-post-jarjar` directly is complicated because the
+    // sources used to generate the stubs must be propagated correctly to this module. Hence, this
+    // module will avoid depending on `post-jarjar` module to avoid confusion until it's
+    // refactored correctly.
     jarjar_rules: ":framework-connectivity-jarjar-rules",
     permitted_packages: ["android.net"],
     impl_library_visibility: [

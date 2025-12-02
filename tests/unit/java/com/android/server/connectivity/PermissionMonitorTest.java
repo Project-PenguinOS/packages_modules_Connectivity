@@ -44,11 +44,19 @@ import static android.net.INetd.PERMISSION_UPDATE_DEVICE_STATS;
 import static android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK;
 import static android.net.connectivity.ConnectivityCompatChanges.RESTRICT_LOCAL_NETWORK;
 import static android.os.Process.SYSTEM_UID;
+import static android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED;
 import static android.permission.PermissionManager.PERMISSION_GRANTED;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.server.connectivity.ConnectivityFlags.USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR;
 import static com.android.server.connectivity.PermissionMonitor.isHigherNetworkPermission;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_INTERNET;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_UPDATE_DEVICE_STATS;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSIONS;
 import static com.android.testutils.TestPermissionUtil.runAsShell;
 import static com.android.tethering.flags.Flags.FLAG_PERMISSION_MAP_UID_MIGRATION;
 
@@ -56,6 +64,7 @@ import static junit.framework.Assert.fail;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 import static org.mockito.AdditionalMatchers.aryEq;
@@ -93,6 +102,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Process;
+import android.os.RemoteException;
 import android.os.SystemConfigManager;
 import android.os.UserHandle;
 import android.os.UserManager;
@@ -137,6 +147,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 @RunWith(DevSdkIgnoreRunner.class)
 @SmallTest
@@ -247,6 +258,9 @@ public class PermissionMonitorTest {
                 .when(mDeps).isFeatureNotChickenedOut(any(), anyString());
         doAnswer(invocation -> mFeatureFlags.getOrDefault(FLAG_PERMISSION_MAP_UID_MIGRATION, false))
                 .when(mBpfNetMaps).isUidMigrationEnabled();
+        doAnswer(invocation -> mFeatureFlags.getOrDefault(
+                        FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, false))
+                .when(mBpfNetMaps).isPermissionPropagationEnabled();
 
         mHandlerThread = new HandlerThread("PermissionMonitorTest");
         mPermissionMonitor = new PermissionMonitor(
@@ -1494,7 +1508,8 @@ public class PermissionMonitorTest {
         final Context realContext = InstrumentationRegistry.getContext();
         final PermissionMonitor monitor = runAsShell(
                 OBSERVE_GRANT_REVOKE_PERMISSIONS, READ_DEVICE_CONFIG,
-                () -> new PermissionMonitor(realContext, mNetdService, mBpfNetMaps, mHandlerThread)
+                () -> new PermissionMonitor(realContext, mNetdService, mBpfNetMaps, mDeps,
+                        mHandlerThread)
         );
         final PackageManager manager = realContext.getPackageManager();
         final PackageInfo systemInfo = manager.getPackageInfo(REAL_SYSTEM_PACKAGE_NAME,
@@ -1935,6 +1950,146 @@ public class PermissionMonitorTest {
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
         return listener;
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = false)
+    public void testPermissionBpfMap_lnpPermissionDisabled() {
+        verify(mDeps, never()).registerBpfMap(any(), any(), any(), any());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    public void testSetUidsPermissionBits_lnpPermissionEnabled() throws RemoteException {
+        LocalPermissionBpfMap permissionBpfMap = verifyAndCapturePermissionBpfMap();
+        SparseIntArray given = new SparseIntArray();
+        given.put(MOCK_UID11, PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK
+                | PERMISSION_BPF_MAP_BIT_INTERNET
+                | PERMISSION_BPF_MAP_BIT_UPDATE_DEVICE_STATS);
+        permissionBpfMap.setUidsPermissionBits(given);
+
+        SparseIntArray actual = verifySetChunkPermListForUidsAndCaptureInput();
+        SparseIntArray expected = new SparseIntArray();
+        expected.put(MOCK_UID11, PERMISSION_BIT_ACCESS_LOCAL_NETWORK
+                | PERMISSION_BIT_UPDATE_DEVICE_STATS);
+        if (hasSdkSandbox(MOCK_UID11)) {
+            expected.put(mProcessShim.toSdkSandboxUid(MOCK_UID11),
+                    PERMISSION_BIT_ACCESS_LOCAL_NETWORK | PERMISSION_BIT_UPDATE_DEVICE_STATS);
+        }
+        assertSameSparseIntArray(expected, actual);
+        verify(mDeps).logPermissionChangeListenerLatency(anyInt());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    public void testSetUidsPermissionBits_noInternet_lnpPermissionEnabled() throws RemoteException {
+        LocalPermissionBpfMap permissionBpfMap = verifyAndCapturePermissionBpfMap();
+        SparseIntArray given = new SparseIntArray();
+        given.put(MOCK_UID11, PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK
+                | PERMISSION_BPF_MAP_BIT_UPDATE_DEVICE_STATS);
+        permissionBpfMap.setUidsPermissionBits(given);
+
+        SparseIntArray actual = verifySetChunkPermListForUidsAndCaptureInput();
+        SparseIntArray expected = new SparseIntArray();
+        expected.put(MOCK_UID11, PERMISSION_BIT_ACCESS_LOCAL_NETWORK
+                | PERMISSION_BIT_UPDATE_DEVICE_STATS | PERMISSION_BIT_NO_INTERNET);
+        if (hasSdkSandbox(MOCK_UID11)) {
+            expected.put(mProcessShim.toSdkSandboxUid(MOCK_UID11),
+                    PERMISSION_BIT_ACCESS_LOCAL_NETWORK | PERMISSION_BIT_UPDATE_DEVICE_STATS
+                            | PERMISSION_BIT_NO_INTERNET);
+        }
+        assertSameSparseIntArray(expected, actual);
+        verify(mDeps).logPermissionChangeListenerLatency(anyInt());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    public void testRemoveUser_lnpPermissionEnabled() {
+        LocalPermissionBpfMap permissionBpfMap = verifyAndCapturePermissionBpfMap();
+        permissionBpfMap.removeUser(MOCK_USER_ID1);
+        verify(mBpfNetMaps).removePermissionsForUserId(MOCK_USER_ID1);
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    public void testRemoveAppId_lnpPermissionEnabled() {
+        LocalPermissionBpfMap permissionBpfMap = verifyAndCapturePermissionBpfMap();
+        permissionBpfMap.removeAppId(MOCK_APPID1);
+        verify(mBpfNetMaps).removePermissionsForAppId(MOCK_APPID1);
+        if (hasSdkSandbox(MOCK_APPID1)) {
+                int sdkSandboxAppId = mProcessShim.toSdkSandboxUid(MOCK_APPID1);
+                verify(mBpfNetMaps).removePermissionsForAppId(sdkSandboxAppId);
+        }
+    }
+
+    private void assertSameSparseIntArray(SparseIntArray expected, SparseIntArray actual) {
+        if (expected == actual) {
+            return;
+        }
+        if (expected == null || actual == null) {
+            fail("One SparseIntArray is null, but the other is not.");
+        }
+        assertEquals(expected.size(), actual.size());
+        for (int i = 0; i < expected.size(); i++) {
+            int key = expected.keyAt(i);
+            int expectedValue = expected.valueAt(i);
+            assertEquals(expectedValue, actual.get(key, -1));
+        }
+    }
+
+    private SparseIntArray verifySetChunkPermListForUidsAndCaptureInput() throws RemoteException {
+        ArgumentCaptor<SparseIntArray> inputCaptor =
+                ArgumentCaptor.forClass(SparseIntArray.class);
+        verify(mBpfNetMaps).setChunkPermListForUids(inputCaptor.capture());
+        SparseIntArray input = inputCaptor.getValue();
+        assertNotNull(input);
+        return input;
+    }
+
+    interface LocalPermissionBpfMap {
+        void setUidsPermissionBits(SparseIntArray uidsPermissionBits);
+        void removeAppId(int appId);
+        void removeUser(int userId);
+    }
+
+    private LocalPermissionBpfMap verifyAndCapturePermissionBpfMap() {
+        ArgumentCaptor<Consumer> setUidsPermissionBitsCaptor =
+                ArgumentCaptor.forClass(Consumer.class);
+        ArgumentCaptor<Consumer> removeAppIdCaptor =
+                ArgumentCaptor.forClass(Consumer.class);
+        ArgumentCaptor<Consumer> removeUserCaptor =
+                ArgumentCaptor.forClass(Consumer.class);
+
+        verify(mDeps).registerBpfMap(
+                setUidsPermissionBitsCaptor.capture(),
+                removeAppIdCaptor.capture(),
+                removeUserCaptor.capture(),
+                eq(PERMISSIONS));
+        Consumer<SparseIntArray> setUidsPermissionBits = setUidsPermissionBitsCaptor.getValue();
+        assertNotNull(setUidsPermissionBits);
+        Consumer<Integer> removeAppId = removeAppIdCaptor.getValue();
+        assertNotNull(removeAppId);
+        Consumer<Integer> removeUser = removeUserCaptor.getValue();
+        assertNotNull(removeUser);
+        return new LocalPermissionBpfMap() {
+            @Override
+            public void setUidsPermissionBits(SparseIntArray uidsPermissionBits) {
+                setUidsPermissionBits.accept(uidsPermissionBits);
+            }
+            @Override
+            public void removeAppId(int appId) {
+                removeAppId.accept(appId);
+            }
+            @Override
+            public void removeUser(int userId) {
+                removeUser.accept(userId);
+            }
+        };
     }
 
     @Test

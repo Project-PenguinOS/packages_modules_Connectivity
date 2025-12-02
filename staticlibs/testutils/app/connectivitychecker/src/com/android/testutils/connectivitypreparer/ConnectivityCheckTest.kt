@@ -214,7 +214,8 @@ class ConnectivityCheckTest {
             "The device has a SIM card, but it does not supports data connectivity. " +
             "Check the data plan, and verify that mobile data is working. " + commonError
         )
-        val network = connectUtil.ensureCellularValidated()
-        checkQuic(network, netLabel = "cellular", ipv6 = false)
+        connectUtil.withValidatedCellularNetwork { network ->
+            checkQuic(network, netLabel = "cellular", ipv6 = false)
+        }
     }
 }

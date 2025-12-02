@@ -19,6 +19,7 @@ package com.android.testutils
 import android.os.Build
 import androidx.test.InstrumentationRegistry
 import com.android.modules.utils.build.UnboundedSdkLevel
+import com.android.net.module.util.SdkUtil
 import java.util.regex.Pattern
 import org.junit.Assume.assumeTrue
 import org.junit.rules.TestRule
@@ -38,6 +39,7 @@ private fun isDevSdkInRange(minExclusive: String?, maxInclusive: String?): Boole
 }
 
 private fun isAtMost(sdkVersionOrCodename: String): Boolean {
+    val intVersion = sdkVersionOrCodename.toIntOrNull()
     // UnboundedSdkLevel does not support builds < Q, and may stop supporting Q as well since it
     // is intended for mainline modules that are now R+.
     if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
@@ -45,8 +47,14 @@ private fun isAtMost(sdkVersionOrCodename: String): Boolean {
         // Q: this util did not exist before Q, and codenames are only used before the corresponding
         // build is finalized. This util could list 28 older codenames to check against (as per
         // ro.build.version.known_codenames in more recent builds), but this does not seem valuable.
-        val intVersion = sdkVersionOrCodename.toIntOrNull() ?: return true
+        if (intVersion == null) {
+            return true;
+        }
         return Build.VERSION.SDK_INT <= intVersion
+    }
+    // If intVersion is greater than Build.VERSION_CODES_FULL.BASE, then it is a full SDK version.
+    if (intVersion != null && intVersion > Build.VERSION_CODES_FULL.BASE) {
+        return SdkUtil.isFullSdkVersionAtMost(intVersion)
     }
     return UnboundedSdkLevel.isAtMost(sdkVersionOrCodename)
 }

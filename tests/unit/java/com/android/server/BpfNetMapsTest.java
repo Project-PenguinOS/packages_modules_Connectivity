@@ -64,6 +64,7 @@ import static android.net.INetd.PERMISSION_INTERNET;
 import static android.net.INetd.PERMISSION_NONE;
 import static android.net.INetd.PERMISSION_UNINSTALLED;
 import static android.net.INetd.PERMISSION_UPDATE_DEVICE_STATS;
+import static android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED;
 import static android.system.OsConstants.EINVAL;
 import static android.system.OsConstants.EPERM;
 
@@ -228,6 +229,8 @@ public final class BpfNetMapsTest {
             new TestBpfMap<>(S32.class, UidPermissionChunk.class);
     private final BpfBoolean mUidMigrationEnabledBpfBoolean =
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
+    private final BpfBoolean mPermissionPropagationEnabledBpfBoolean =
+            new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
     private final BpfBoolean mL4sEnabledMap =
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
 
@@ -241,6 +244,9 @@ public final class BpfNetMapsTest {
         doReturn(false).when(mDeps).isL4SSupported();
         doAnswer(invocation -> mFeatureFlags.getOrDefault(FLAG_PERMISSION_MAP_UID_MIGRATION, false))
                 .when(mDeps).isPermissionMapUidMigrationEnabled();
+        doAnswer(invocation -> mFeatureFlags.getOrDefault(
+                        FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, true))
+                .when(mDeps).isAccessLocalNetworkPermissionEnabled();
         BpfNetMaps.setConfigurationMapForTest(mConfigurationMap);
         mConfigurationMap.updateEntry(UID_RULES_CONFIGURATION_KEY, new U32(0));
         mConfigurationMap.updateEntry(
@@ -255,6 +261,8 @@ public final class BpfNetMapsTest {
         mDataSaverEnabledMap.updateEntry(DATA_SAVER_ENABLED_KEY, new U8(DATA_SAVER_DISABLED));
         BpfNetMaps.setIngressDiscardMapForTest(mIngressDiscardMap);
         BpfNetMaps.setUidMigrationEnabledBpfBooleanForTest(mUidMigrationEnabledBpfBoolean);
+        BpfNetMaps.setPermissionPropagationEnabledBpfBooleanForTest(
+                mPermissionPropagationEnabledBpfBoolean);
         BpfNetMaps.setUidPermissionChunkMapForTest(mUidPermissionChunkMap);
         BpfNetMaps.setInitializedForTest(false);
         mBpfNetMaps = new BpfNetMaps(mContext, mNetd, mDeps, mInterfaceTracker);
@@ -1818,6 +1826,54 @@ public final class BpfNetMapsTest {
     }
 
     @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testSetPermissionPropagationDisabled() throws Exception {
+        assertFalse(mPermissionPropagationEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testSetPermissionPropagationEnabled_uidMigrationDisabled() throws Exception {
+        assertFalse(mPermissionPropagationEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testSetPermissionPropagationEnabled() throws Exception {
+        assertTrue(mPermissionPropagationEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpPermissionPropagationMapEnabled() throws Exception {
+        assertDumpContains(getDump(),
+                "sPermissionPropagationEnabledMap: true");
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpPermissionPropagationMap_uiMigrationDisabled() throws Exception {
+        assertDumpContains(getDump(),
+                "sPermissionPropagationEnabledMap: false");
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpPermissionPropagationMapDisabled() throws Exception {
+        assertDumpContains(getDump(),
+                "sPermissionPropagationEnabledMap: false");
+    }
+
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testSetChunkPermListForUidsGrantPermission() throws Exception {

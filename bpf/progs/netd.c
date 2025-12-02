@@ -110,6 +110,8 @@ DEFINE_BPF_MAP_EXT(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000,
 
 DEFINE_BPF_MAP_RO_NETD(uid_migration_enabled_map, ARRAY, uint32_t, bool, 1)
 
+DEFINE_BPF_MAP_NO_NETD(permission_propagation_enabled_map, ARRAY, uint32_t,
+                       bool, 1)
 // A ring buffer on which note op event of local network access is pushed.
 DEFINE_BPF_RINGBUF_EXT(local_net_note_op_ringbuf, LocalNetNoteOp, 8 * 512,
                        AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
@@ -903,10 +905,12 @@ static __always_inline inline int check_localhost(__unused struct bpf_sock_addr 
     return BPF_ALLOW;
 }
 
-static inline __always_inline int block_port(struct bpf_sock_addr *ctx) {
-    if (!ctx->user_port) return BPF_ALLOW;
+// --- BIND CGROUP HOOKS ---
 
-    switch (ctx->protocol) {
+static inline __always_inline bool block_bind_port(__u32 protocol, __u32 user_port) {
+    if (!user_port) return false;
+
+    switch (protocol) {
         case IPPROTO_TCP:
         case IPPROTO_MPTCP:
         case IPPROTO_UDP:
@@ -915,29 +919,46 @@ static inline __always_inline int block_port(struct bpf_sock_addr *ctx) {
         case IPPROTO_SCTP:
             break;
         default:
-            return BPF_ALLOW; // unknown protocols are allowed
+            return false; // unknown protocols are allowed
     }
 
-    int key = ctx->user_port >> 6;
-    int shift = ctx->user_port & 63;
+    int key = user_port >> 6;
+    int shift = user_port & 63;
 
     uint64_t *val = bpf_blocked_ports_map_lookup_elem(&key);
     // Lookup should never fail in reality, but if it does return here to keep the
     // BPF verifier happy.
-    if (!val) return BPF_ALLOW;
+    if (!val) return false;
 
-    if ((*val >> shift) & 1) return BPF_DISALLOW;
-    return BPF_ALLOW;
+    if ((*val >> shift) & 1) return true;
+    return false;
 }
 
-DEFINE_NETD_BPF_PROG_KVER(bind4, inet4_bind, , 4_19)
+DEFINE_NETD_BPF_PROG_KVER(bind4, inet4_bind, 5_15, 5_15)
 (struct bpf_sock_addr *ctx) {
-    return block_port(ctx);
+    return block_bind_port(ctx->protocol, ctx->user_port) ? BPF_DISALLOW : BPF_ALLOW;
 }
 
-DEFINE_NETD_BPF_PROG_KVER(bind6, inet6_bind, , 4_19)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(bind4, inet4_bind, 4_19, 4_19, 5_15)
 (struct bpf_sock_addr *ctx) {
-    return block_port(ctx);
+    return block_bind_port(ctx->protocol, ctx->user_port) ? BPF_DISALLOW : BPF_ALLOW;
+}
+
+DEFINE_NETD_BPF_PROG_KVER(bind6, inet6_bind, 5_15, 5_15)
+(struct bpf_sock_addr *ctx) {
+    return block_bind_port(ctx->protocol, ctx->user_port) ? BPF_DISALLOW : BPF_ALLOW;
+}
+
+DEFINE_NETD_BPF_PROG_KVER_RANGE(bind6, inet6_bind, 4_19, 4_19, 5_15)
+(struct bpf_sock_addr *ctx) {
+    return block_bind_port(ctx->protocol, ctx->user_port) ? BPF_DISALLOW : BPF_ALLOW;
+}
+
+// --- CONNECT CGROUP HOOKS ---
+
+DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, 5_10, 5_10)
+(struct bpf_sock_addr *ctx) {
+    return check_localhost(ctx);
 }
 
 DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect4, inet4_connect, 4_19, 4_19, 5_10)
@@ -945,7 +966,7 @@ DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect4, inet4_connect, 4_19, 4_19, 5_10)
     return check_localhost(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, 5_10, 5_10)
+DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, 5_10, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
@@ -955,10 +976,7 @@ DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect6, inet6_connect, 4_19, 4_19, 5_10)
     return check_localhost(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
+// --- UDP RECVMSG HOOKS ---
 
 DEFINE_NETD_V_BPF_PROG_KVER(recvmsg4, udp4_recvmsg, , 4_19)
 (struct bpf_sock_addr *ctx) {
@@ -970,18 +988,14 @@ DEFINE_NETD_V_BPF_PROG_KVER(recvmsg6, udp6_recvmsg, , 4_19)
     return check_localhost(ctx);
 }
 
-
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg4, udp4_sendmsg, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
+// --- UDP SENDMSG HOOKS ---
 
 DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, 5_10, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg6, udp6_sendmsg, 4_19, 4_19, 5_10)
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg4, udp4_sendmsg, 4_19, 4_19, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
@@ -991,6 +1005,13 @@ DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, 5_10, 5_10)
     return check_localhost(ctx);
 }
 
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg6, udp6_sendmsg, 4_19, 4_19, 5_10)
+(struct bpf_sock_addr *ctx) {
+    return check_localhost(ctx);
+}
+
+// --- GETSOCKOPT HOOK ---
+
 DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, , 5_4)
 (struct bpf_sockopt *ctx) {
     // Tell kernel to return 'original' kernel reply (instead of the bpf modified buffer)
@@ -998,6 +1019,8 @@ DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, , 5_4)
     ctx->optlen = 0;
     return BPF_ALLOW;
 }
+
+// --- SETSOCKOPT HOOK ---
 
 DEFINE_NETD_V_BPF_PROG_KVER(setsockopt, prog, , 5_4)
 (struct bpf_sockopt *ctx) {

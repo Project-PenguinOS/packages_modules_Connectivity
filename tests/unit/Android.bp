@@ -85,6 +85,7 @@ android_library {
     ],
     exclude_srcs: [":non-connectivity-module-test"],
     static_libs: [
+        "android.permission.flags-aconfig-java-export",
         "androidx.test.rules",
         "androidx.test.uiautomator_uiautomator",
         "bouncycastle-repackaged-unbundled",

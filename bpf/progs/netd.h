@@ -165,6 +165,8 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define LOCAL_NET_BLOCKED_UID_MAP_PATH BPF_NETD_PATH "map_netd_local_net_blocked_uid_map"
 #define UID_MIGRATION_ENABLED_MAP_PATH                                         \
     BPF_NETD_PATH "map_netd_uid_migration_enabled_map"
+#define PERMISSION_PROPAGATION_ENABLED_MAP_PATH                                                 \
+    BPF_NETD_PATH "map_netd_permission_propagation_enabled_map"
 #define LOCAL_NET_NOTE_OP_RINGBUF_PATH BPF_NETD_PATH "map_netd_local_net_note_op_ringbuf"
 #define LOCAL_NET_NOTE_OP_CACHE_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_cache_map"
 #define LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_enabled_map"

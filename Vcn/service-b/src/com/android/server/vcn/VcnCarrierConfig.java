@@ -17,13 +17,21 @@
 package com.android.server.vcn;
 
 import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_TIME_DIFF_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MIN_SEQ_INC_INT;
 import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT;
 import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_POLL_INTERVAL_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_DURATION_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_POLL_INTERVAL_SEC_INT;
 import static android.net.vcn.util.PersistableBundleUtils.PersistableBundleWrapper;
 
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DEFAULT;
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.MAX_TIME_DIFF_SECONDS_DEFAULT;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.MIN_SEQ_NUM_INCREASE_DEFAULT;
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.RAPID_MODE_EXIT_TIMER_SECONDS_DEFAULT;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.RAPID_MODE_POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -37,6 +45,10 @@ public class VcnCarrierConfig {
     private final int mNwSelectIpSecLossDetectPollIntervalSec;
     private final int mNwSelectIpSecLossDetectPercentThreshold;
     private final int mNwSelectIpSecLossDetectMaxSeqIncPerSec;
+    private final int mNwSelectIpSecLossDetectMinSeqInc;
+    private final int mNwSelectIpSecLossDetectMaxTimeDiffSec;
+    private final int mNwSelectIpSecLossDetectRapidPollIntervalSec;
+    private final int mNwSelectIpSecLossDetectRapidDurationSec;
 
     public VcnCarrierConfig(@Nullable PersistableBundleWrapper carrierConfig) {
         mNwSelectIpSecLossDetectPollIntervalSec =
@@ -56,6 +68,30 @@ public class VcnCarrierConfig {
                         carrierConfig,
                         KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT,
                         MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED);
+
+        mNwSelectIpSecLossDetectMinSeqInc =
+                getCarrierConfigInt(
+                        carrierConfig,
+                        KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MIN_SEQ_INC_INT,
+                        MIN_SEQ_NUM_INCREASE_DEFAULT);
+
+        mNwSelectIpSecLossDetectMaxTimeDiffSec =
+                getCarrierConfigInt(
+                        carrierConfig,
+                        KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_TIME_DIFF_SEC_INT,
+                        MAX_TIME_DIFF_SECONDS_DEFAULT);
+
+        mNwSelectIpSecLossDetectRapidPollIntervalSec =
+                getCarrierConfigInt(
+                        carrierConfig,
+                        KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_POLL_INTERVAL_SEC_INT,
+                        RAPID_MODE_POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT);
+
+        mNwSelectIpSecLossDetectRapidDurationSec =
+                getCarrierConfigInt(
+                        carrierConfig,
+                        KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_DURATION_SEC_INT,
+                        RAPID_MODE_EXIT_TIMER_SECONDS_DEFAULT);
     }
 
     private static int getCarrierConfigInt(
@@ -78,5 +114,21 @@ public class VcnCarrierConfig {
 
     public int getNwSelectIpSecLossDetectMaxSeqIncPerSec() {
         return mNwSelectIpSecLossDetectMaxSeqIncPerSec;
+    }
+
+    public int getNwSelectIpSecLossDetectMinSeqInc() {
+        return mNwSelectIpSecLossDetectMinSeqInc;
+    }
+
+    public int getNwSelectIpSecLossDetectMaxTimeDiffSec() {
+        return mNwSelectIpSecLossDetectMaxTimeDiffSec;
+    }
+
+    public int getNwSelectIpSecLossDetectRapidPollIntervalSec() {
+        return mNwSelectIpSecLossDetectRapidPollIntervalSec;
+    }
+
+    public int getNwSelectIpSecLossDetectRapidDurationSec() {
+        return mNwSelectIpSecLossDetectRapidDurationSec;
     }
 }

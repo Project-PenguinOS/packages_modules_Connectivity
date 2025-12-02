@@ -34,9 +34,15 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.UserHandle
 import android.os.UserManager
+import com.android.net.module.util.TestableCallback
 import com.android.server.connectivity.BroadcastReceiveHelper.Delegate
+import com.android.server.connectivity.BroadcastReceiveHelperTest.TestDelegate.CallbackEvent.OnExternalApplicationsAvailable
+import com.android.server.connectivity.BroadcastReceiveHelperTest.TestDelegate.CallbackEvent.OnPackageAdded
+import com.android.server.connectivity.BroadcastReceiveHelperTest.TestDelegate.CallbackEvent.OnPackageRemoved
+import com.android.server.connectivity.BroadcastReceiveHelperTest.TestDelegate.CallbackEvent.OnPackageReplaced
+import com.android.server.connectivity.BroadcastReceiveHelperTest.TestDelegate.CallbackEvent.OnUserAdded
+import com.android.server.connectivity.BroadcastReceiveHelperTest.TestDelegate.CallbackEvent.OnUserRemoved
 import com.android.testutils.DevSdkIgnoreRunner
-import com.android.testutils.waitForIdle
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -59,11 +65,8 @@ private inline fun <reified T> any() = org.mockito.Mockito.any(T::class.java)
 @RunWith(DevSdkIgnoreRunner::class)
 class BroadcastReceiveHelperTest {
     private val mockContext = mock(Context::class.java)
-    private val mockDelegate = mock(Delegate::class.java)
+    private val testDelegate = TestDelegate()
     private val mockUserManager = mock(UserManager::class.java)
-
-    // Create an InOrder object to verify the sequence of delegate calls.
-    private val delegateInOrderVerifier = org.mockito.Mockito.inOrder(mockDelegate)
 
     // lateinit is used here because thread and handler need to be initialized in the
     // @Before setUp method.
@@ -79,7 +82,7 @@ class BroadcastReceiveHelperTest {
         handlerThread = HandlerThread("TestThread")
         handlerThread.start()
         handler = Handler(handlerThread.looper)
-        broadcastReceiveHelper = BroadcastReceiveHelper(mockContext, handler, mockDelegate)
+        broadcastReceiveHelper = BroadcastReceiveHelper(mockContext, handler, testDelegate)
 
         // Capture intent receivers.
         doReturn(mockUserManager).`when`(mockContext).getSystemService(UserManager::class.java)
@@ -115,9 +118,11 @@ class BroadcastReceiveHelperTest {
             data = Uri.fromParts("package", TEST_PACKAGE_NAME, null)
             putExtra(EXTRA_UID, TEST_UID)
         }
-        processOnHandlerThread { packageReceiver.onReceive(mockContext, intent) }
-        delegateInOrderVerifier.verify(mockDelegate).onPackageAdded(TEST_PACKAGE_NAME, TEST_UID)
-        delegateInOrderVerifier.verifyNoMoreInteractions()
+        handler.post { packageReceiver.onReceive(mockContext, intent) }
+        testDelegate.expect<OnPackageAdded> {
+            it.packageName == TEST_PACKAGE_NAME && it.uid == TEST_UID
+        }
+        testDelegate.assertNoCallback()
     }
 
     @Test
@@ -126,9 +131,11 @@ class BroadcastReceiveHelperTest {
             data = Uri.fromParts("package", TEST_PACKAGE_NAME, null)
             putExtra(EXTRA_UID, TEST_UID)
         }
-        processOnHandlerThread { packageReceiver.onReceive(mockContext, intent) }
-        delegateInOrderVerifier.verify(mockDelegate).onPackageRemoved(TEST_PACKAGE_NAME, TEST_UID)
-        delegateInOrderVerifier.verifyNoMoreInteractions()
+        handler.post { packageReceiver.onReceive(mockContext, intent) }
+        testDelegate.expect<OnPackageRemoved> {
+            it.packageName == TEST_PACKAGE_NAME && it.uid == TEST_UID
+        }
+        testDelegate.assertNoCallback()
     }
 
     @Test
@@ -137,9 +144,11 @@ class BroadcastReceiveHelperTest {
             data = Uri.fromParts("package", TEST_PACKAGE_NAME, null)
             putExtra(EXTRA_UID, TEST_UID)
         }
-        processOnHandlerThread { packageReceiver.onReceive(mockContext, intent) }
-        delegateInOrderVerifier.verify(mockDelegate).onPackageReplaced(TEST_PACKAGE_NAME, TEST_UID)
-        delegateInOrderVerifier.verifyNoMoreInteractions()
+        handler.post { packageReceiver.onReceive(mockContext, intent) }
+        testDelegate.expect<OnPackageReplaced> {
+            it.packageName == TEST_PACKAGE_NAME && it.uid == TEST_UID
+        }
+        testDelegate.assertNoCallback()
     }
 
     @Test
@@ -148,9 +157,11 @@ class BroadcastReceiveHelperTest {
         val intent = Intent(ACTION_EXTERNAL_APPLICATIONS_AVAILABLE).apply {
             putExtra(EXTRA_CHANGED_PACKAGE_LIST, packageList)
         }
-        processOnHandlerThread { externalAppReceiver.onReceive(mockContext, intent) }
-        delegateInOrderVerifier.verify(mockDelegate).onExternalApplicationsAvailable(packageList)
-        delegateInOrderVerifier.verifyNoMoreInteractions()
+        handler.post { externalAppReceiver.onReceive(mockContext, intent) }
+        testDelegate.expect<OnExternalApplicationsAvailable> {
+            it.pkgList.contentEquals(packageList)
+        }
+        testDelegate.assertNoCallback()
     }
 
     @Test
@@ -159,9 +170,11 @@ class BroadcastReceiveHelperTest {
         val intent = Intent(ACTION_USER_ADDED).apply {
             putExtra(EXTRA_USER, userHandle)
         }
-        processOnHandlerThread { userReceiver.onReceive(mockContext, intent) }
-        delegateInOrderVerifier.verify(mockDelegate).onUserAdded(userHandle)
-        delegateInOrderVerifier.verifyNoMoreInteractions()
+        handler.post { userReceiver.onReceive(mockContext, intent) }
+        testDelegate.expect<OnUserAdded> {
+            it.userHandle == userHandle
+        }
+        testDelegate.assertNoCallback()
     }
 
     @Test
@@ -170,9 +183,11 @@ class BroadcastReceiveHelperTest {
         val intent = Intent(ACTION_USER_REMOVED).apply {
             putExtra(EXTRA_USER, userHandle)
         }
-        processOnHandlerThread { userReceiver.onReceive(mockContext, intent) }
-        delegateInOrderVerifier.verify(mockDelegate).onUserRemoved(userHandle)
-        delegateInOrderVerifier.verifyNoMoreInteractions()
+        handler.post { userReceiver.onReceive(mockContext, intent) }
+        testDelegate.expect<OnUserRemoved> {
+            it.userHandle == userHandle
+        }
+        testDelegate.assertNoCallback()
     }
 
     @Test
@@ -237,54 +252,53 @@ class BroadcastReceiveHelperTest {
             }
         }
 
-        // Wait for all intents to be processed at once.
-        handler.waitForIdle(TIMEOUT_MS)
-
         // Verify the order of delegate calls.
         eventList.forEach {
             when (it.action) {
-                ACTION_PACKAGE_ADDED -> delegateInOrderVerifier.verify(mockDelegate)
-                        .onPackageAdded(
-                                it.data?.schemeSpecificPart!!,
-                                it.getIntExtra(EXTRA_UID, -1)
-                        )
-
-                ACTION_PACKAGE_REMOVED -> delegateInOrderVerifier.verify(mockDelegate)
-                        .onPackageRemoved(
-                                it.data?.schemeSpecificPart!!,
-                                it.getIntExtra(EXTRA_UID, -1)
-                        )
-
-                ACTION_PACKAGE_REPLACED -> delegateInOrderVerifier.verify(mockDelegate)
-                        .onPackageReplaced(
-                                it.data?.schemeSpecificPart!!,
-                                it.getIntExtra(EXTRA_UID, -1)
-                        )
-
-                ACTION_EXTERNAL_APPLICATIONS_AVAILABLE ->
-                    delegateInOrderVerifier.verify(mockDelegate)
-                            .onExternalApplicationsAvailable(it.getStringArrayExtra(
-                                    EXTRA_CHANGED_PACKAGE_LIST
-                            )!!)
-
-                ACTION_USER_ADDED -> delegateInOrderVerifier.verify(mockDelegate)
-                        .onUserAdded(it.getParcelableExtra(EXTRA_USER)!!)
-
-                ACTION_USER_REMOVED -> delegateInOrderVerifier.verify(mockDelegate)
-                        .onUserRemoved(it.getParcelableExtra(EXTRA_USER)!!)
+                ACTION_PACKAGE_ADDED -> {
+                    val pkgName = it.data?.schemeSpecificPart!!
+                    val uid = it.getIntExtra(EXTRA_UID, -1)
+                    testDelegate.expect<OnPackageAdded> { event ->
+                        event.packageName == pkgName && event.uid == uid
+                    }
+                }
+                ACTION_PACKAGE_REMOVED -> {
+                    val pkgName = it.data?.schemeSpecificPart!!
+                    val uid = it.getIntExtra(EXTRA_UID, -1)
+                    testDelegate.expect<OnPackageRemoved> { event ->
+                        event.packageName == pkgName && event.uid == uid
+                    }
+                }
+                ACTION_PACKAGE_REPLACED -> {
+                    val pkgName = it.data?.schemeSpecificPart!!
+                    val uid = it.getIntExtra(EXTRA_UID, -1)
+                    testDelegate.expect<OnPackageReplaced> { event ->
+                        event.packageName == pkgName && event.uid == uid
+                    }
+                }
+                ACTION_EXTERNAL_APPLICATIONS_AVAILABLE -> {
+                    val pkgList = it.getStringArrayExtra(EXTRA_CHANGED_PACKAGE_LIST)!!
+                    testDelegate.expect<OnExternalApplicationsAvailable> { event ->
+                        event.pkgList.contentEquals(pkgList)
+                    }
+                }
+                ACTION_USER_ADDED -> {
+                    val user = it.getParcelableExtra<UserHandle>(EXTRA_USER)!!
+                    testDelegate.expect<OnUserAdded> { event ->
+                        event.userHandle == user
+                    }
+                }
+                ACTION_USER_REMOVED -> {
+                    val user = it.getParcelableExtra<UserHandle>(EXTRA_USER)!!
+                    testDelegate.expect<OnUserRemoved> { event ->
+                        event.userHandle == user
+                    }
+                }
             }
         }
 
         // Ensure no other calls were made to the delegate.
-        delegateInOrderVerifier.verifyNoMoreInteractions()
-    }
-
-    private fun processOnHandlerThread(function: Runnable) {
-        handler.post { function.run() }
-        // Wait twice since the onReceive defers actual handling logic to another message.
-        // See BroadcastReceiveHelper#HandlerPostReceiver.
-        handler.waitForIdle(HANDLER_TIMEOUT_MS)
-        handler.waitForIdle(HANDLER_TIMEOUT_MS)
+        testDelegate.assertNoCallback()
     }
 
     @Test
@@ -295,12 +309,47 @@ class BroadcastReceiveHelperTest {
         val existingUsers = listOf(existingUser1, existingUser2)
         doReturn(existingUsers).`when`(mockUserManager).getUserHandles(any())
         // Make sure there is no interactions.
-        delegateInOrderVerifier.verifyNoMoreInteractions()
+        testDelegate.assertNoCallback()
 
         // Verify that onUserAdded is called for each existing user.
-        processOnHandlerThread { broadcastReceiveHelper.callOnUserAddedForExistingUsers() }
-        delegateInOrderVerifier.verify(mockDelegate).onUserAdded(existingUser1)
-        delegateInOrderVerifier.verify(mockDelegate).onUserAdded(existingUser2)
-        delegateInOrderVerifier.verifyNoMoreInteractions()
+        handler.post { broadcastReceiveHelper.callOnUserAddedForExistingUsers() }
+        testDelegate.expect<OnUserAdded> { it.userHandle == existingUser1 }
+        testDelegate.expect<OnUserAdded> { it.userHandle == existingUser2 }
+        testDelegate.assertNoCallback()
+    }
+
+    private class TestDelegate : TestableCallback<TestDelegate.CallbackEvent>(), Delegate {
+        sealed class CallbackEvent {
+            data class OnPackageAdded(val packageName: String, val uid: Int) : CallbackEvent()
+            data class OnPackageRemoved(val packageName: String, val uid: Int) : CallbackEvent()
+            data class OnPackageReplaced(val packageName: String, val uid: Int) : CallbackEvent()
+            data class OnExternalApplicationsAvailable(val pkgList: Array<String>) : CallbackEvent()
+            data class OnUserAdded(val userHandle: UserHandle) : CallbackEvent()
+            data class OnUserRemoved(val userHandle: UserHandle) : CallbackEvent()
+        }
+
+        override fun onPackageAdded(packageName: String, uid: Int) {
+            history.add(CallbackEvent.OnPackageAdded(packageName, uid))
+        }
+
+        override fun onPackageRemoved(packageName: String, uid: Int) {
+            history.add(CallbackEvent.OnPackageRemoved(packageName, uid))
+        }
+
+        override fun onPackageReplaced(packageName: String, uid: Int) {
+            history.add(CallbackEvent.OnPackageReplaced(packageName, uid))
+        }
+
+        override fun onExternalApplicationsAvailable(pkgList: Array<String>) {
+            history.add(CallbackEvent.OnExternalApplicationsAvailable(pkgList))
+        }
+
+        override fun onUserAdded(userHandle: UserHandle) {
+            history.add(CallbackEvent.OnUserAdded(userHandle))
+        }
+
+        override fun onUserRemoved(userHandle: UserHandle) {
+            history.add(CallbackEvent.OnUserRemoved(userHandle))
+        }
     }
 }

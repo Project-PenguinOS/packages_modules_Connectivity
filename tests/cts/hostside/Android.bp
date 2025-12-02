@@ -63,6 +63,7 @@ java_test_host {
         ":CtsHostsideNetworkCapTestsAppWithoutProperty",
         ":CtsHostsideNetworkCapTestsAppWithProperty",
         ":CtsHostsideNetworkCapTestsAppSdk33",
+        ":ConnectivityTestPreparer"
     ],
     per_testcase_directory: true,
 }

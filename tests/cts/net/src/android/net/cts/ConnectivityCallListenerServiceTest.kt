@@ -26,6 +26,7 @@ import android.telecom.ConnectionService
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
+import android.platform.test.annotations.AppModeFull
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SmallTest
 import androidx.test.platform.app.InstrumentationRegistry
@@ -41,6 +42,7 @@ private const val TEST_TIMEOUT_MS = 5000L
 
 @RunWith(AndroidJUnit4::class)
 @SmallTest
+@AppModeFull(reason = "MANAGE_OWN_CALLS permission can't be grant to instant apps")
 class ConnectivityCallListenerServiceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext

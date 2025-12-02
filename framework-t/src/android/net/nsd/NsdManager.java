@@ -719,7 +719,7 @@ public final class NsdManager {
 
         try {
             mService = service.connect(new NsdCallbackImpl(mHandler), CompatChanges.isChangeEnabled(
-                    ENABLE_PLATFORM_MDNS_BACKEND));
+                    ENABLE_PLATFORM_MDNS_BACKEND), context.getPackageName());
         } catch (RemoteException e) {
             throw new RuntimeException("Failed to connect to NsdService");
         }

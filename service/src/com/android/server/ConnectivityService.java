@@ -1641,7 +1641,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
          * Get a reference to the ModuleNetworkStackClient.
          */
         public NetworkStackClientBase getNetworkStack() {
-            return ModuleNetworkStackClient.getInstance(null);
+            return ModuleNetworkStackClient.getInstance();
         }
 
         /**
@@ -10884,10 +10884,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
             }
         }
 
-        // Rule 2: Check if any route covers a device's own address.
+        // Rule 2: Check if any non-default route covers a device's own address.
         for (final RouteInfo route : routes) {
             for (LinkAddress linkAddress : lp.getLinkAddresses()) {
-                if (route.matches(linkAddress.getAddress())) {
+                if (!route.isDefaultRoute() && route.matches(linkAddress.getAddress())) {
                     localPrefixes.add(route.getDestination());
                 }
             }

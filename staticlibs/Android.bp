@@ -531,7 +531,7 @@ java_library {
     ],
     libs: [
         "net-utils-framework-connectivity",
-        "framework-connectivity.impl",
+        "framework-connectivity-post-jarjar",
         "framework-tethering.impl",
     ],
     defaults: ["net-utils-non-bootclasspath-defaults"],
