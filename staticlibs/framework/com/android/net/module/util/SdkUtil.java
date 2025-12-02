@@ -19,6 +19,8 @@ package com.android.net.module.util;
 import android.annotation.Nullable;
 import android.os.Build;
 
+import java.util.Objects;
+
 /**
  * Utilities to deal with multiple SDKs in a single mainline module.
  * @hide
@@ -51,5 +53,16 @@ public class SdkUtil {
     /** Checks if the device is running on a release version of Android 25Q4 or newer */
     public static boolean isAtLeast25Q4() {
         return Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1;
+    }
+
+    /**
+     * Checks if the full SDK version is at most the given version.
+     */
+    public static boolean isFullSdkVersionAtMost(int version) {
+        if (version == Build.VERSION.SDK_INT_FULL && !Objects.equals(Build.VERSION.CODENAME,
+                "REL")) {
+            return false;
+        }
+        return Build.VERSION.SDK_INT_FULL <= version;
     }
 }

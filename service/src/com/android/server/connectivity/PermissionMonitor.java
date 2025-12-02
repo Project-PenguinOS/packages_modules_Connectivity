@@ -16,6 +16,7 @@
 
 package com.android.server.connectivity;
 
+import static android.Manifest.permission.ACCESS_LOCAL_NETWORK;
 import static android.Manifest.permission.CHANGE_NETWORK_STATE;
 import static android.Manifest.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS;
 import static android.Manifest.permission.INTERNET;
@@ -31,6 +32,10 @@ import static android.os.Process.INVALID_UID;
 import static android.os.Process.SYSTEM_UID;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.CollectionUtils.toIntArray;
 import static com.android.server.ConnectivityStatsLog.CONNECTIVITY_PERMISSION_CHANGE_LISTENER_LATENCY_REPORTED;
 import static com.android.server.connectivity.ConnectivityFlags.USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR;
@@ -87,8 +92,11 @@ import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.SharedLog;
 import com.android.networkstack.apishim.ProcessShimImpl;
 import com.android.networkstack.apishim.common.ProcessShim;
+import com.android.server.permission.PermissionBpfMap;
+import com.android.server.permission.PermissionManagerLocal;
 import com.android.server.BpfNetMaps;
 import com.android.server.ConnectivityStatsLog;
+import com.android.server.LocalManagerRegistry;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -96,6 +104,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * A utility class to inform Netd of UID permissions.
@@ -230,6 +239,32 @@ public class PermissionMonitor {
         }
     };
 
+    // Bits in the bitmap of PermissionBpfMap are in the same order as this list. Use this
+    // list in PermissionManagerLocal#registerBpfMap().
+    public static final List<String> PERMISSIONS = List.of(
+        ACCESS_LOCAL_NETWORK,
+        UPDATE_DEVICE_STATS,
+        INTERNET
+    );
+
+    public static final int PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK = 1;
+    public static final int PERMISSION_BPF_MAP_BIT_UPDATE_DEVICE_STATS = 2;
+    public static final int PERMISSION_BPF_MAP_BIT_INTERNET = 4;
+
+    private int convertToChunkPermissionBits(int permissionBits) {
+        int chunkPermissions = PERMISSION_BIT_NONE;
+        if ((permissionBits & PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK) != 0) {
+            chunkPermissions |= PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+        }
+        if ((permissionBits & PERMISSION_BPF_MAP_BIT_UPDATE_DEVICE_STATS) != 0) {
+            chunkPermissions |= PERMISSION_BIT_UPDATE_DEVICE_STATS;
+        }
+        if ((permissionBits & PERMISSION_BPF_MAP_BIT_INTERNET) == 0) {
+            chunkPermissions |= PERMISSION_BIT_NO_INTERNET;
+        }
+        return chunkPermissions;
+    }
+
     /**
      * Dependencies of PermissionMonitor, for injection in tests.
      */
@@ -285,6 +320,36 @@ public class PermissionMonitor {
          */
         public boolean isLnpDeveloperOptInEnabled() {
             return com.android.tethering.mainline.beta.Flags.lnpDeveloperOptIn();
+        }
+
+        /**
+         * @see com.android.server.permission.PermissionManagerLocal#registerBpfMap
+         */
+        public void registerBpfMap(
+                Consumer<SparseIntArray> setUidsPermissionBits,
+                Consumer<Integer> removeAppId,
+                Consumer<Integer> removeUser,
+                List<String> permissionNames) {
+            final PermissionManagerLocal permissionManagerLocal =
+                    LocalManagerRegistry.getManager(
+                            PermissionManagerLocal.class);
+            permissionManagerLocal.registerBpfMap(new PermissionBpfMap() {
+                @Override
+                public void setUidsPermissionBits(
+                        SparseIntArray uidsPermissionBits) {
+                    setUidsPermissionBits.accept(uidsPermissionBits);
+                }
+
+                @Override
+                public void removeAppId(int appId) {
+                    removeAppId.accept(appId);
+                }
+
+                @Override
+                public void removeUser(int userId) {
+                    removeUser.accept(userId);
+                }
+            }, permissionNames);
         }
     }
 
@@ -345,6 +410,51 @@ public class PermissionMonitor {
             // boot setup such that any changes to runtime permissions for local network
             // restrictions can only occur after this registration has completed.
             mPackageManager.addOnPermissionsChangeListener(mPermissionChangeListener);
+        }
+
+        if (mBpfNetMaps.isPermissionPropagationEnabled()) {
+            mDeps.registerBpfMap(
+                    (SparseIntArray uidsPermissionBits) -> {
+                        long startTimeNanos = SystemClock.elapsedRealtimeNanos();
+                        try {
+                            SparseIntArray allUidsPermissionBits = new SparseIntArray();
+                            for (int i = 0; i < uidsPermissionBits.size(); i++){
+                                int uid = uidsPermissionBits.keyAt(i);
+                                int chunkPermissions = convertToChunkPermissionBits(
+                                        uidsPermissionBits.valueAt(i));
+                                allUidsPermissionBits.put(uid, chunkPermissions);
+                                if (hasSdkSandbox(uid)) {
+                                    allUidsPermissionBits.put(sProcessShim.toSdkSandboxUid(uid),
+                                            chunkPermissions);
+                                }
+                            }
+                            mBpfNetMaps.setChunkPermListForUids(allUidsPermissionBits);
+                        } catch (ServiceSpecificException e) {
+                            Log.e(TAG, "Send uid traffic permission failed." + e);
+                        } finally {
+                            long durationNanos =
+                                    SystemClock.elapsedRealtimeNanos() - startTimeNanos;
+                            int durationMicros = (int) TimeUnit.NANOSECONDS.toMicros(durationNanos);
+                            if (DBG) {
+                                Log.d(TAG,
+                                        "setUidsPermissionBits in PermissionBpfMap took "
+                                                + durationMicros + " microseconds.");
+                            }
+                            mDeps.logPermissionChangeListenerLatency(durationMicros);
+                        }
+                    },
+                    (Integer appId) -> {
+                        mBpfNetMaps.removePermissionsForAppId(appId);
+                        if (hasSdkSandbox(appId)) {
+                            int sdkSandboxAppId = sProcessShim.toSdkSandboxUid(appId);
+                            mBpfNetMaps.removePermissionsForAppId(sdkSandboxAppId);
+                        }
+                    },
+                    (Integer userId) -> {
+                        mBpfNetMaps.removePermissionsForUserId(userId);
+                    },
+                    PERMISSIONS
+            );
         }
         mUseBroadcastReceiveHelper = mDeps.isFeatureNotChickenedOut(
                 mContext, USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR);
@@ -573,8 +683,10 @@ public class PermissionMonitor {
         // Read system traffic permissions when a user removed and put them to USER_ALL because they
         // are not specific to any particular user.
         if (mBpfNetMaps.isUidMigrationEnabled()) {
-            mUsersUidsTrafficPermissions.put(UserHandle.ALL,
-                    getSystemTrafficPerm(true /* isUidMigrationEnabled */));
+            if (!mBpfNetMaps.isPermissionPropagationEnabled()) {
+                mUsersUidsTrafficPermissions.put(UserHandle.ALL,
+                        getSystemTrafficPerm(true /* isUidMigrationEnabled */));
+            }
         } else {
             mUsersAppIdsTrafficPermissions.put(UserHandle.ALL,
                     getSystemTrafficPerm(false /* isUidMigrationEnabled */));
@@ -735,18 +847,24 @@ public class PermissionMonitor {
         updateUidsNetworkPermission(uids);
 
         if (mBpfNetMaps.isUidMigrationEnabled()) {
-            // Add new user uids permissions.
-            final SparseIntArray addedUserUids = makeAppsTrafficPerm(apps,
-                    true /* isUidMigrationEnabled */);
-            mUsersUidsTrafficPermissions.put(user, addedUserUids);
-            // Generate uids from all users and send result to netd.
-            final SparseIntArray permUids = makeTrafficPermForAllUsers(
-                mUsersUidsTrafficPermissions, true /* isUidMigrationEnabled */);
-            sendUidsTrafficPermission(permUids);
+            if (mBpfNetMaps.isPermissionPropagationEnabled()) {
+                // Log user added
+                mPermissionUpdateLogs.log("New user(" + user.getIdentifier()
+                        + ") added: nPerm uids=" + uids);
+            } else {
+                // Add new user uids permissions.
+                final SparseIntArray addedUserUids = makeAppsTrafficPerm(apps,
+                        true /* isUidMigrationEnabled */);
+                mUsersUidsTrafficPermissions.put(user, addedUserUids);
+                // Generate uids from all users and send result to netd.
+                final SparseIntArray permUids = makeTrafficPermForAllUsers(
+                    mUsersUidsTrafficPermissions, true /* isUidMigrationEnabled */);
+                sendUidsTrafficPermission(permUids);
 
-            // Log user added
-            mPermissionUpdateLogs.log("New user(" + user.getIdentifier()
-                    + ") added: networkPerm uids=" + uids + ", trafficPerm uids=" + permUids);
+                // Log user added
+                mPermissionUpdateLogs.log("New user(" + user.getIdentifier()
+                        + ") added: networkPerm uids=" + uids + ", trafficPerm uids=" + permUids);
+            }
         } else {
             // Add new user appIds permissions.
             final SparseIntArray addedUserAppIds = makeAppsTrafficPerm(apps,
@@ -791,28 +909,34 @@ public class PermissionMonitor {
         sendUidsNetworkPermission(removedUids, false /* add */);
 
         if (mBpfNetMaps.isUidMigrationEnabled()) {
-            // Remove traffic permission that belongs to the user
-            final SparseIntArray removedTrafficPerm = mUsersUidsTrafficPermissions.remove(user);
-            // Generate uids from the remaining users.
-            final SparseIntArray trafficPermForAllUsers = makeTrafficPermForAllUsers(
-                mUsersUidsTrafficPermissions, true /* isUidMigrationEnabled */);
+            if (mBpfNetMaps.isPermissionPropagationEnabled()) {
+                // Log user removed
+                mPermissionUpdateLogs.log("User(" + user.getIdentifier() + ") removed: nPerm uids="
+                        + removedUids);
+            } else {
+                // Remove traffic permission that belongs to the user
+                final SparseIntArray removedTrafficPerm = mUsersUidsTrafficPermissions.remove(user);
+                // Generate uids from the remaining users.
+                final SparseIntArray trafficPermForAllUsers = makeTrafficPermForAllUsers(
+                    mUsersUidsTrafficPermissions, true /* isUidMigrationEnabled */);
 
-            if (removedTrafficPerm == null) {
-                Log.wtf(TAG, "onUserRemoved: Receive unknown user=" + user);
-                return;
+                if (removedTrafficPerm == null) {
+                    Log.wtf(TAG, "onUserRemoved: Receive unknown user=" + user);
+                    return;
+                }
+
+                // Clear permission on those ids belong to this user only, set the permission to
+                // PERMISSION_UNINSTALLED.
+                for (int i = 0; i < removedTrafficPerm.size(); i++) {
+                    final int uid = removedTrafficPerm.keyAt(i);
+                    trafficPermForAllUsers.put(uid, TRAFFIC_PERMISSION_UNINSTALLED);
+                }
+                sendUidsTrafficPermission(trafficPermForAllUsers);
+
+                // Log user removed
+                mPermissionUpdateLogs.log("User(" + user.getIdentifier() + ") removed: nPerm uids="
+                    + removedUids + ", tPerm uids=" + removedTrafficPerm);
             }
-
-            // Clear permission on those ids belong to this user only, set the permission to
-            // PERMISSION_UNINSTALLED.
-            for (int i = 0; i < removedTrafficPerm.size(); i++) {
-                final int uid = removedTrafficPerm.keyAt(i);
-                trafficPermForAllUsers.put(uid, TRAFFIC_PERMISSION_UNINSTALLED);
-            }
-            sendUidsTrafficPermission(trafficPermForAllUsers);
-
-            // Log user removed
-            mPermissionUpdateLogs.log("User(" + user.getIdentifier() + ") removed: nPerm uids="
-                + removedUids + ", tPerm uids=" + removedTrafficPerm);
         } else {
             // Remove appIds traffic permission that belongs to the user
             final SparseIntArray removedUserAppIds = mUsersAppIdsTrafficPermissions.remove(user);
@@ -1011,15 +1135,23 @@ public class PermissionMonitor {
         final int appId = UserHandle.getAppId(uid);
         final int trafficPermission;
         if (mBpfNetMaps.isUidMigrationEnabled()) {
-            updateUidTrafficPermission(uid);
-            trafficPermission = getUidPackagePermissions(uid);
-            sendPackagePermissionsForUid(uid, trafficPermission);
+            if (!mBpfNetMaps.isPermissionPropagationEnabled()) {
+                updateUidTrafficPermission(uid);
+                trafficPermission = getUidPackagePermissions(uid);
+                sendPackagePermissionsForUid(uid, trafficPermission);
+
+                mPermissionUpdateLogs.log("Package add: uid=" + uid
+                        + ", tPerm=" + permissionToString(trafficPermission));
+                }
         } else {
             // Update uid permission.
             updateAppIdTrafficPermission(uid);
             // Get the appId permission from all users then send the latest permission to netd.
             trafficPermission = getAppIdTrafficPermission(appId);
             sendPackagePermissionsForAppId(appId, trafficPermission);
+
+            mPermissionUpdateLogs.log("Package add: uid=" + uid
+                    + ", tPerm=" + permissionToString(trafficPermission));
         }
 
         final int currentPermission = mUidToNetworkPerm.get(uid, PERMISSION_NONE);
@@ -1050,8 +1182,7 @@ public class PermissionMonitor {
         // Log package added.
         mPermissionUpdateLogs.log("Package add: uid=" + uid
                 + ", nPerm=(" + permissionToString(permission) + "/"
-                + permissionToString(currentPermission) + ")"
-                + ", tPerm=" + permissionToString(trafficPermission));
+                + permissionToString(currentPermission) + ")");
     }
 
     private int highestUidNetworkPermission(int uid) {
@@ -1081,15 +1212,23 @@ public class PermissionMonitor {
         final int appId = UserHandle.getAppId(uid);
         final int trafficPermission;
         if (mBpfNetMaps.isUidMigrationEnabled()) {
-            updateUidTrafficPermission(uid);
-            trafficPermission = getUidPackagePermissions(uid);
-            sendPackagePermissionsForUid(uid, trafficPermission);
+            if (!mBpfNetMaps.isPermissionPropagationEnabled()) {
+                updateUidTrafficPermission(uid);
+                trafficPermission = getUidPackagePermissions(uid);
+                sendPackagePermissionsForUid(uid, trafficPermission);
+
+                mPermissionUpdateLogs.log("Package remove: uid=" + uid
+                        + ", tPerm=" + permissionToString(trafficPermission));
+            }
         } else {
             // Update uid permission.
             updateAppIdTrafficPermission(uid);
             // Get the appId permission from all users then send the latest permission to netd.
             trafficPermission = getAppIdTrafficPermission(appId);
             sendPackagePermissionsForAppId(appId, trafficPermission);
+
+            mPermissionUpdateLogs.log("Package remove: uid=" + uid
+                    + ", tPerm=" + permissionToString(trafficPermission));
         }
 
         if (isAtLeastB()) {
@@ -1115,8 +1254,7 @@ public class PermissionMonitor {
         // Log package removed.
         mPermissionUpdateLogs.log("Package remove: uid=" + uid
                 + ", nPerm=(" + permissionToString(permission) + "/"
-                + permissionToString(currentPermission) + ")"
-                + ", tPerm=" + permissionToString(trafficPermission));
+                + permissionToString(currentPermission) + ")");
 
         if (permission != currentPermission) {
             final SparseIntArray apps = new SparseIntArray();

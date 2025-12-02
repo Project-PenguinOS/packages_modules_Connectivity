@@ -112,7 +112,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
     private val LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_2 = IpPrefix("2601:19b:67f:e220::/56")
     private val LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_3 = IpPrefix("2601:19b:67f:e220::/64")
     private val LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_4 = IpPrefix("fe80::/64")
-    private val LOCAL_IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX = IpPrefix("::/0")
+    private val IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX = IpPrefix("::/0")
 
     private val LOCAL_IPV4_IP_ADDRESS_PREFIX_1 = IpPrefix("10.0.0.184/24")
     private val LOCAL_IPV4_LINK_ADDRRESS_1 =
@@ -139,6 +139,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
             LOCAL_IPV4_ROUTE_ADDRESS_PREFIX.getAddress(),
             LOCAL_IPV4_ROUTE_ADDRESS_PREFIX.getPrefixLength()
         )
+    private val IPV4_DEFAULT_ROUTE_ADDRESS_PREFIX = IpPrefix("0.0.0.0/0")
 
     @Test
     fun testNetworkWithIPv6LocalAddress_AddressAddedToBpfMap() {
@@ -221,6 +222,40 @@ class CSLocalNetworkProtectionTest : CSTest() {
             eq(0),
             eq(0),
             eq(false)
+        )
+    }
+
+    @Test
+    fun testNetworkWithIPv4DefaultRoute_DefaultRouteNotAddedToBpfMap() {
+        val nr = nr(TRANSPORT_WIFI)
+        val cb = TestableNetworkCallback()
+        cm.requestNetwork(nr, cb)
+
+        val routes = listOf(RouteInfo(
+                IPV4_DEFAULT_ROUTE_ADDRESS_PREFIX,
+                LOCAL_IPV4_LINK_ADDRRESS_3.address,
+                WIFI_IFNAME
+        ))
+        val wifiLp = lpWithRoutes(
+                WIFI_IFNAME,
+                routes,
+                LOCAL_IPV4_LINK_ADDRRESS_3
+        )
+        val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
+        wifiAgent.connect()
+        cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
+
+        // Multicast and Broadcast address should always be populated in local_net_access map
+        verifyPopulationOfMulticastAndBroadcastAddress()
+
+        // Verifying default route(0.0.0.0/0) should not be populated in local_net_access map
+        verify(bpfNetMaps, never()).addLocalNetAccess(
+                eq(PREFIX_LENGTH_IPV4),
+                eq(WIFI_IFNAME),
+                eq(IPV4_DEFAULT_ROUTE_ADDRESS_PREFIX.address),
+                eq(0),
+                eq(0),
+                eq(false)
         )
     }
 
@@ -605,13 +640,13 @@ class CSLocalNetworkProtectionTest : CSTest() {
     }
 
     @Test
-    fun testNetworkWithIPv6LocalAddressAndDefaultRoutes_RouteAddedToBpfMap() {
+    fun testNetworkWithIPv6DefaultRoutes_DefaultRouteNotAddedToBpfMap() {
         val nr = nr(TRANSPORT_WIFI)
         val cb = TestableNetworkCallback()
         cm.requestNetwork(nr, cb)
 
         val routes = listOf(RouteInfo(
-            LOCAL_IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX,
+            IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX,
             LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_1.getAddress(),
             WIFI_IFNAME
         ))
@@ -629,14 +664,11 @@ class CSLocalNetworkProtectionTest : CSTest() {
         // Multicast and Broadcast address should always be populated in local_net_access map
         verifyPopulationOfMulticastAndBroadcastAddress()
 
-        // Verifying IPv6 default route should be populated in local_net_access map
-        verify(bpfNetMaps).addLocalNetAccess(
-            eq(
-                PREFIX_LENGTH_IPV6 +
-                    LOCAL_IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX.getPrefixLength()
-            ),
+        // Verifying IPv6 default route should not be populated in local_net_access map
+        verify(bpfNetMaps, never()).addLocalNetAccess(
+            eq(PREFIX_LENGTH_IPV6),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX.getAddress()),
+            eq(IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)

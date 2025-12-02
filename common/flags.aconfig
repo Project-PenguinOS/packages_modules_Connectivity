@@ -63,3 +63,10 @@ flag {
   description: "Enable usage of a service picker for mDNS discovery"
   bug: "454248446"
 }
+
+flag {
+  name: "collect_beta_metrics"
+  namespace: "com_android_tethering"
+  description: "Enable metrics collection from beta users"
+  bug: "462217324"
+}

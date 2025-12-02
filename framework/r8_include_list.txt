@@ -1,0 +1,2 @@
+# This file defines the set of classes that will be ProGuarded when building the Connectivity module.
+android.net.http.internal.**

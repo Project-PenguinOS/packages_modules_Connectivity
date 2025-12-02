@@ -750,7 +750,9 @@ package android.net.http {
   }
 
   @FlaggedApi("android.net.http.proxy_apis") public final class ProxyOptions {
-    method @NonNull public static android.net.http.ProxyOptions fromProxyList(@NonNull java.util.List<android.net.http.Proxy>);
+    method @NonNull public static android.net.http.ProxyOptions fromProxyList(@NonNull java.util.List<android.net.http.Proxy>, int);
+    field public static final int ALL_PROXIES_FAILED_BEHAVIOR_ALLOW_DIRECT = 1; // 0x1
+    field public static final int ALL_PROXIES_FAILED_BEHAVIOR_DISALLOW_DIRECT = 0; // 0x0
   }
 
   public abstract class QuicException extends android.net.http.NetworkException {

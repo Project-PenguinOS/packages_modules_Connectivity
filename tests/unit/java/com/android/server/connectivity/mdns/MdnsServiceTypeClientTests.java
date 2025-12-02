@@ -2850,6 +2850,48 @@ public class MdnsServiceTypeClientTests {
         verify(mockCallback).onOffloadStop(socketKey.getInterfaceName(), discoverInfo);
     }
 
+    @Test
+    public void testNotifySocketDestroyed_offloadInfoUpdated() {
+        // 1. Enable feature flag and create client
+        featureFlags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+                .setIsSelectiveMdnsResponseOffloadEnabled(true)
+                .build();
+        client = makeMdnsServiceTypeClient(featureFlags, false /* isReceiveOnly */);
+
+        // 2. Register listeners
+        final MdnsServiceBrowserListener listener1 = Mockito.mock(MdnsServiceBrowserListener.class);
+        final MdnsServiceBrowserListener listener2 = Mockito.mock(MdnsServiceBrowserListener.class);
+
+        final MdnsSearchOptions discoveryOptions = MdnsSearchOptions.getDefaultOptions();
+        final String resolveInstanceName = "my-instance";
+        final MdnsSearchOptions resolutionOptions = MdnsSearchOptions.newBuilder()
+                .setResolveInstanceName(resolveInstanceName).build();
+
+        // Register discovery listener
+        startSendAndReceive(listener1, discoveryOptions);
+        final FilterRepliesInfo discoveryInfo = new FilterRepliesInfo(
+                SERVICE_NAME_DISCOVERY, SERVICE_TYPE, Collections.emptyList(), NO_HOSTNAME);
+        verify(mockCallback).onOffloadStartOrUpdate(eq(socketKey.getInterfaceName()),
+                eq(createOffloadServiceInfoFromFilterReplies(discoveryInfo)));
+
+        // Register resolution listener
+        startSendAndReceive(listener2, resolutionOptions);
+        final FilterRepliesInfo resolutionInfo = new FilterRepliesInfo(
+                resolveInstanceName, SERVICE_TYPE, Collections.emptyList(), NO_HOSTNAME);
+        verify(mockCallback).onOffloadStartOrUpdate(eq(socketKey.getInterfaceName()),
+                eq(createOffloadServiceInfoFromFilterReplies(resolutionInfo)));
+
+        // 3. Call notifySocketDestroyed
+        notifySocketDestroyed();
+
+        // 4. Verify offload stop calls
+        verify(mockCallback).onOffloadStop(eq(socketKey.getInterfaceName()),
+                eq(createOffloadServiceInfoFromFilterReplies(resolutionInfo)));
+
+        verify(mockCallback).onOffloadStop(eq(socketKey.getInterfaceName()),
+                eq(createOffloadServiceInfoFromFilterReplies(discoveryInfo)));
+    }
+
     private static MdnsServiceInfo matchServiceName(String name) {
         return argThat(info -> info.getServiceInstanceName().equals(name));
     }

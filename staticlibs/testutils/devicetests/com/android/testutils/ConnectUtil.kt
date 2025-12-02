@@ -86,6 +86,25 @@ class ConnectUtil(private val context: Context) {
         }
     }
 
+    fun withValidatedCellularNetwork(block: (Network) -> Unit) {
+        val callback = TestableNetworkCallback()
+        cm.requestNetwork(
+            NetworkRequest.Builder()
+                .addTransportType(TRANSPORT_CELLULAR)
+                .addCapability(NET_CAPABILITY_INTERNET)
+                .build(), callback
+        )
+        try {
+            callback.eventuallyExpect<CapabilitiesChanged>(
+                "Timeout waiting for validated cellular network."
+            ) {
+                it.caps.hasCapability(NET_CAPABILITY_VALIDATED)
+            }.network.let { block(it) }
+        } finally {
+            cm.unregisterNetworkCallback(callback)
+        }
+    }
+
     private fun ensureWifiConnected(requireValidated: Boolean): Network {
         val callback = TestableNetworkCallback(timeoutMs = WIFI_CONNECT_TIMEOUT_MS)
         cm.registerNetworkCallback(NetworkRequest.Builder()
