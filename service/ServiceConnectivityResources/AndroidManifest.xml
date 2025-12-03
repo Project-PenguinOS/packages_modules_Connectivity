@@ -33,5 +33,24 @@
                 <action android:name="com.android.server.connectivity.intent.action.SERVICE_CONNECTIVITY_RESOURCES_APK" />
             </intent-filter>
         </activity>
+        <!-- The NsdPickerActivity should only be started by the system_server. It requires
+             MAINLINE_NETWORK_STACK permission which is more restrictive than platform signature
+             permissions, as it cannot be held by platform key-signed apps. This allows only
+             NetworkStack, Connectivity module components, and system_server (which holds all
+             permissions) to start it. -->
+        <activity
+            android:name=".NsdPickerActivity"
+            android:theme="@style/Theme.AppCompat.DayNight.Dialog.Alert"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=".NsdPickerActivity"
+            android:exported="true"
+            android:permission="android.permission.MAINLINE_NETWORK_STACK">
+
+            <intent-filter>
+                <action android:name="com.android.connectivity.resources.action.NSD_PICKER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

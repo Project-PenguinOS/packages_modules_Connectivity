@@ -80,4 +80,10 @@
     <!-- Network type name displayed if one of the types is not found in network_switch_type_name. -->
     <string name="network_switch_type_name_unknown">an unknown network type</string>
 
+    <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. This is the title of the dialog. -->
+    <string name="connect_to_service_title">Connect to service</string>
+
+    <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. This is the text of the dialog, before the list of devices. Devices displayed in the list may be from different networks (for example, one on local Wi-Fi and one on local Ethernet). -->
+    <string name="connect_to_service_summary"><xliff:g id="app_name" example="Google Home">%1$s</xliff:g> wants to connect to another device on a local network</string>
+
 </resources>

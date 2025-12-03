@@ -68,8 +68,8 @@ static inline StatsValue& operator+=(StatsValue& lhs, const StatsValue& rhs) {
 
 typedef struct {
     char name[IFNAMSIZ];
-} IfaceValue;
-STRUCT_SIZE(IfaceValue, 16);
+} __attribute__((aligned(16))) IfaceValue;
+STRUCT_SIZE(IfaceValue, 16);  // 16 (aligned to 16 for atomicity)
 
 typedef struct {
   uint64_t timestampNs;
