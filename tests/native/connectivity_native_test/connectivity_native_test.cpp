@@ -72,9 +72,9 @@ class ConnectivityNativeBinderTest : public ::testing::Test {
         sock = openSocket(&port, family, type, false /* expectBindFail */);
         sock2 = openSocket(&port, family, type, false /* expectBindFail */);
 
-        int blockedPort = 0;
+        // binder call (un)blockPortForBind() takes network endian port number
+        int blockedPort = htons(port);
         if (blockPort) {
-            blockedPort = ntohs(port);
             err = AConnectivityNative_blockPortForBind(blockedPort);
             EXPECT_EQ(err, 0);
         }

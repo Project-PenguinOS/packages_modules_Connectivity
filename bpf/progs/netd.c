@@ -79,6 +79,7 @@ DEFINE_BPF_MAP_RO_NETD(uid_permission_map, HASH, uint32_t, uint8_t, 6000)
 DEFINE_BPF_MAP_RO_NETD(uid_permission_chunk_map, HASH, uint32_t, UidPermissionChunk, -400)
 DEFINE_BPF_MAP_NO_NETD(ingress_discard_map, HASH, IngressDiscardKey, IngressDiscardValue, 100)
 
+DEFINE_BPF_MAP_RW_NETD(netd_pid_map, ARRAY, uint32_t, uint32_t, 1)
 DEFINE_BPF_MAP_RW_NETD(lock_array_test_map, ARRAY, uint32_t, bool, 1)
 DEFINE_BPF_MAP_RW_NETD(lock_hash_test_map, HASH, uint32_t, bool, 1)
 
@@ -907,7 +908,7 @@ static __always_inline inline int check_localhost(__unused struct bpf_sock_addr 
 
 // --- BIND CGROUP HOOKS ---
 
-static inline __always_inline bool block_bind_port(__u32 protocol, __u32 user_port) {
+static inline __always_inline bool block_bind_port(__u32 protocol, __be16 user_port) {
     if (!user_port) return false;
 
     switch (protocol) {
@@ -922,6 +923,7 @@ static inline __always_inline bool block_bind_port(__u32 protocol, __u32 user_po
             return false; // unknown protocols are allowed
     }
 
+    // Note: user_port is in network byte order, so bitmap ordering is funky.
     int key = user_port >> 6;
     int shift = user_port & 63;
 
@@ -934,24 +936,32 @@ static inline __always_inline bool block_bind_port(__u32 protocol, __u32 user_po
     return false;
 }
 
+static inline __always_inline int inet_bind(struct bpf_sock_addr *ctx,
+                                            const struct kver_uint kver) {
+    const bool is5_15 = KVER_IS_AT_LEAST(kver, 5, 15, 0);
+    if (block_bind_port(ctx->protocol, ctx->user_port)) return BPF_DISALLOW;
+    if (is5_15) return BPF_ALLOW;
+    return BPF_ALLOW;
+}
+
 DEFINE_NETD_BPF_PROG_KVER(bind4, inet4_bind, 5_15, 5_15)
 (struct bpf_sock_addr *ctx) {
-    return block_bind_port(ctx->protocol, ctx->user_port) ? BPF_DISALLOW : BPF_ALLOW;
+    return inet_bind(ctx, KVER_5_15);
 }
 
 DEFINE_NETD_BPF_PROG_KVER_RANGE(bind4, inet4_bind, 4_19, 4_19, 5_15)
 (struct bpf_sock_addr *ctx) {
-    return block_bind_port(ctx->protocol, ctx->user_port) ? BPF_DISALLOW : BPF_ALLOW;
+    return inet_bind(ctx, KVER_4_19);
 }
 
 DEFINE_NETD_BPF_PROG_KVER(bind6, inet6_bind, 5_15, 5_15)
 (struct bpf_sock_addr *ctx) {
-    return block_bind_port(ctx->protocol, ctx->user_port) ? BPF_DISALLOW : BPF_ALLOW;
+    return inet_bind(ctx, KVER_5_15);
 }
 
 DEFINE_NETD_BPF_PROG_KVER_RANGE(bind6, inet6_bind, 4_19, 4_19, 5_15)
 (struct bpf_sock_addr *ctx) {
-    return block_bind_port(ctx->protocol, ctx->user_port) ? BPF_DISALLOW : BPF_ALLOW;
+    return inet_bind(ctx, KVER_4_19);
 }
 
 // --- CONNECT CGROUP HOOKS ---

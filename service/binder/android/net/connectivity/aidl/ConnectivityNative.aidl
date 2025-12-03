@@ -23,7 +23,7 @@ interface ConnectivityNative {
      * will not automatically assign one of the blocked ports.
      * Will return success even if port was already blocked.
      *
-     * @param port Int corresponding to port number.
+     * @param port Int corresponding to port number (network endian).
      *
      * @throws IllegalArgumentException if the port is invalid.
      * @throws SecurityException if the UID of the client doesn't have network stack permission.
@@ -36,7 +36,7 @@ interface ConnectivityNative {
      * Unblocks a port that has previously been blocked.
      * Will return success even if port was already unblocked.
      *
-     * @param port Int corresponding to port number.
+     * @param port Int corresponding to port number (network endian).
      *
      * @throws IllegalArgumentException if the port is invalid.
      * @throws SecurityException if the UID of the client doesn't have network stack permission.

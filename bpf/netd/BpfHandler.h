@@ -66,6 +66,7 @@ class BpfHandler {
     BpfMapRO<uint32_t, bool> mUidMigrationEnabledMap;
     BpfMapRO<uint32_t, UidPermissionChunk> mUidPermissionChunkMap;
     BpfMapRO<uint32_t, uint8_t> mUidPermissionMap;
+    BpfMap<uint32_t, uint32_t> mNetdPidMap;
 
     // The limit on the number of stats entries a uid can have in the per uid stats map. BpfHandler
     // will block that specific uid from tagging new sockets after the limit is reached.
