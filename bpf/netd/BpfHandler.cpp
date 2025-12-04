@@ -330,8 +330,13 @@ Status BpfHandler::initMaps() {
     RETURN_IF_NOT_OK(mUidMigrationEnabledMap.init(UID_MIGRATION_ENABLED_MAP_PATH));
     RETURN_IF_NOT_OK(mUidPermissionChunkMap.init(UID_PERMISSION_CHUNK_MAP_PATH));
     RETURN_IF_NOT_OK(mUidPermissionMap.init(UID_PERMISSION_MAP_PATH));
+    RETURN_IF_NOT_OK(mNetdPidMap.init(NETD_PID_MAP_PATH));
     // initialized last so mCookieTagMap.isValid() implies everything else is valid too
     RETURN_IF_NOT_OK(mCookieTagMap.init(COOKIE_TAG_MAP_PATH));
+
+    const uint32_t zero = 0;
+    const uint32_t my_pid = getpid();
+    RETURN_IF_NOT_OK(mNetdPidMap.writeValue(zero, my_pid, BPF_ANY));
 
     return netdutils::status::ok;
 }

@@ -158,6 +158,7 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
     BPF_NETD_PATH "map_netd_uid_permission_chunk_map"
 #define UID_PERMISSION_MAP_PATH BPF_NETD_PATH "map_netd_uid_permission_map"
 #define INGRESS_DISCARD_MAP_PATH BPF_NETD_PATH "map_netd_ingress_discard_map"
+#define NETD_PID_MAP_PATH BPF_NETD_PATH "map_netd_netd_pid_map"
 #define PACKET_TRACE_RINGBUF_PATH BPF_NETD_PATH "map_netd_packet_trace_ringbuf"
 #define PACKET_TRACE_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_packet_trace_enabled_map"
 #define DATA_SAVER_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_data_saver_enabled_map"

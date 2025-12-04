@@ -64,6 +64,7 @@ import com.android.internal.util.IndentingPrintWriter;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.HexDump;
 import com.android.net.module.util.IpUtils;
+import com.android.net.module.util.SdkUtil;
 
 import java.io.FileDescriptor;
 import java.net.Inet4Address;
@@ -198,7 +199,14 @@ public class KeepaliveTracker {
             mCallback = callback;
             mPid = pid;
             mUid = uid;
-            mPrivileged = (PERMISSION_GRANTED == mContext.checkPermission(PERMISSION, mPid, mUid));
+            if (SdkUtil.isAtLeast26Q2()) {
+                mPrivileged = (PERMISSION_GRANTED == mContext.checkPermission(PERMISSION, mPid,
+                        mUid));
+            } else {
+                mPrivileged = (PERMISSION_GRANTED == mContext.checkPermission(PERMISSION, mPid,
+                        mUid)) || (PERMISSION_GRANTED == mContext.checkPermission(
+                        android.Manifest.permission.SCHEDULE_PRIORITIZED_ALARM, mPid, mUid));
+            }
 
             mNai = nai;
             mPacket = packet;

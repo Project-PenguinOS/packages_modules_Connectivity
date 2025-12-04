@@ -719,6 +719,7 @@ class NsdManagerTest {
         val si = NsdServiceInfo().apply {
             serviceType = this@NsdManagerTest.serviceType
             serviceName = serviceNames
+            network = testNetwork1.network
             port = 12345 // Test won't try to connect so port does not matter
         }
 

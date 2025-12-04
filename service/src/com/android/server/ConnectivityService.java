@@ -4339,7 +4339,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void enforceKeepalivePermission() {
-        mContext.enforceCallingOrSelfPermission(KeepaliveTracker.PERMISSION, "ConnectivityService");
+        if (SdkUtil.isAtLeast26Q2()) {
+            mContext.enforceCallingOrSelfPermission(KeepaliveTracker.PERMISSION,
+                    "ConnectivityService");
+        } else {
+            PermissionUtils.enforceAnyPermissionOf(mContext, KeepaliveTracker.PERMISSION,
+                    Manifest.permission.SCHEDULE_PRIORITIZED_ALARM);
+        }
     }
 
     @CheckResult

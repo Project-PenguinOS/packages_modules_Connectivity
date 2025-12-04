@@ -65,4 +65,14 @@ public class SdkUtil {
         }
         return Build.VERSION.SDK_INT_FULL <= version;
     }
+
+    /** Checks if the device is running on a release version of Android 17 or newer */
+    public static boolean isAtLeast26Q2() {
+        final int sdkIntFull = Build.VERSION.SDK_INT_FULL;
+        if (sdkIntFull == Build.VERSION_CODES_FULL.BAKLAVA_1 && !Objects.equals(
+                Build.VERSION.CODENAME, "REL")) {
+            return true;
+        }
+        return sdkIntFull >= Build.VERSION_CODES_FULL.CINNAMON_BUN;
+    }
 }

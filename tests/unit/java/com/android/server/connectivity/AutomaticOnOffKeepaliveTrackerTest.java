@@ -16,12 +16,17 @@
 
 package com.android.server.connectivity;
 
+import static android.Manifest.permission.SCHEDULE_PRIORITIZED_ALARM;
+import static android.content.pm.PackageManager.PERMISSION_DENIED;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.net.ConnectivityManager.TYPE_MOBILE;
 import static android.net.NetworkAgent.CMD_STOP_SOCKET_KEEPALIVE;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
+import static android.net.SocketKeepalive.ERROR_INSUFFICIENT_RESOURCES;
+
 import static com.android.server.connectivity.AutomaticOnOffKeepaliveTracker.METRICS_COLLECTION_DURATION_MS;
 import static com.android.testutils.HandlerUtils.visibleOnHandlerThread;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -41,6 +46,7 @@ import static org.mockito.Mockito.ignoreStubs;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
@@ -70,15 +76,29 @@ import android.os.Message;
 import android.os.SystemClock;
 import android.telephony.SubscriptionManager;
 import android.util.Log;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.test.filters.SmallTest;
+
 import com.android.internal.util.IndentingPrintWriter;
+import com.android.net.module.util.SdkUtil;
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker.AutomaticOnOffKeepalive;
 import com.android.server.connectivity.KeepaliveTracker.KeepaliveInfo;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
 import com.android.testutils.HandlerUtils;
+
+import libcore.util.HexEncoding;
+
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+
 import java.io.FileDescriptor;
 import java.io.StringWriter;
 import java.net.Inet4Address;
@@ -88,14 +108,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
-import libcore.util.HexEncoding;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
 @RunWith(DevSdkIgnoreRunner.class)
 @SmallTest
@@ -111,18 +123,25 @@ public class AutomaticOnOffKeepaliveTrackerTest {
     private static final int MOCK_RESOURCE_ID = 5;
     private static final int TEST_KEEPALIVE_INTERVAL_SEC = 10;
     private static final int TEST_KEEPALIVE_INVALID_INTERVAL_SEC = 9;
-    private static final byte[] V4_SRC_ADDR = new byte[] { (byte) 192, 0, 0, (byte) 129 };
+    private static final byte[] V4_SRC_ADDR = new byte[]{(byte) 192, 0, 0, (byte) 129};
     private static final String TEST_V4_IFACE = "v4-testIface";
     private AutomaticOnOffKeepaliveTracker mAOOKeepaliveTracker;
     private HandlerThread mHandlerThread;
 
-    @Mock INetd mNetd;
-    @Mock AutomaticOnOffKeepaliveTracker.Dependencies mDependencies;
-    @Mock Context mCtx;
-    @Mock AlarmManager mAlarmManager;
-    @Mock NetworkAgentInfo mNai;
-    @Mock SubscriptionManager mSubscriptionManager;
-    @Mock KeepaliveTracker.Dependencies mKeepaliveTrackerDeps;
+    @Mock
+    INetd mNetd;
+    @Mock
+    AutomaticOnOffKeepaliveTracker.Dependencies mDependencies;
+    @Mock
+    Context mCtx;
+    @Mock
+    AlarmManager mAlarmManager;
+    @Mock
+    NetworkAgentInfo mNai;
+    @Mock
+    SubscriptionManager mSubscriptionManager;
+    @Mock
+    KeepaliveTracker.Dependencies mKeepaliveTrackerDeps;
     KeepaliveStatsTracker mKeepaliveStatsTracker;
     TestKeepaliveTracker mKeepaliveTracker;
     AOOTestHandler mTestHandler;
@@ -132,92 +151,93 @@ public class AutomaticOnOffKeepaliveTrackerTest {
     private static final String SOCK_DIAG_TCP_INET_HEX =
             // struct nlmsghdr.
             "14010000"        // length = 276
-            + "1400"            // type = SOCK_DIAG_BY_FAMILY
-            + "0301"            // flags = NLM_F_REQUEST | NLM_F_DUMP
-            + "00000000"        // seqno
-            + "00000000"        // pid (0 == kernel)
-            // struct inet_diag_req_v2
-            + "02"              // family = AF_INET
-            + "06"              // state
-            + "00"              // timer
-            + "00"              // retrans
-            // inet_diag_sockid
-            + "DEA5"            // idiag_sport = 42462
-            + "71B9"            // idiag_dport = 47473
-            + "0a006402000000000000000000000000" // idiag_src = 10.0.100.2
-            + "08080808000000000000000000000000" // idiag_dst = 8.8.8.8
-            + "00000000"            // idiag_if
-            + "34ED000076270000"    // idiag_cookie = 43387759684916
-            + "00000000"            // idiag_expires
-            + "00000000"            // idiag_rqueue
-            + "00000000"            // idiag_wqueue
-            + "39300000"            // idiag_uid = 12345
-            + "00000000"            // idiag_inode
-            // rtattr
-            + "0500"            // len = 5
-            + "0800"            // type = 8
-            + "00000000"        // data
-            + "0800"            // len = 8
-            + "0F00"            // type = 15(INET_DIAG_MARK)
-            + "850A0C00"        // data, socket mark=789125
-            + "AC00"            // len = 172
-            + "0200"            // type = 2(INET_DIAG_INFO)
-            // tcp_info
-            + "01"               // state = TCP_ESTABLISHED
-            + "00"               // ca_state = TCP_CA_OPEN
-            + "05"               // retransmits = 5
-            + "00"               // probes = 0
-            + "00"               // backoff = 0
-            + "07"               // option = TCPI_OPT_WSCALE|TCPI_OPT_SACK|TCPI_OPT_TIMESTAMPS
-            + "88"               // wscale = 8
-            + "00"               // delivery_rate_app_limited = 0
-            + "4A911B00"         // rto = 1806666
-            + "00000000"         // ato = 0
-            + "2E050000"         // sndMss = 1326
-            + "18020000"         // rcvMss = 536
-            + "00000000"         // unsacked = 0
-            + "00000000"         // acked = 0
-            + "00000000"         // lost = 0
-            + "00000000"         // retrans = 0
-            + "00000000"         // fackets = 0
-            + "BB000000"         // lastDataSent = 187
-            + "00000000"         // lastAckSent = 0
-            + "BB000000"         // lastDataRecv = 187
-            + "BB000000"         // lastDataAckRecv = 187
-            + "DC050000"         // pmtu = 1500
-            + "30560100"         // rcvSsthresh = 87600
-            + "3E2C0900"         // rttt = 601150
-            + "1F960400"         // rttvar = 300575
-            + "78050000"         // sndSsthresh = 1400
-            + "0A000000"         // sndCwnd = 10
-            + "A8050000"         // advmss = 1448
-            + "03000000"         // reordering = 3
-            + "00000000"         // rcvrtt = 0
-            + "30560100"         // rcvspace = 87600
-            + "00000000"         // totalRetrans = 0
-            + "53AC000000000000"     // pacingRate = 44115
-            + "FFFFFFFFFFFFFFFF"     // maxPacingRate = 18446744073709551615
-            + "0100000000000000"     // bytesAcked = 1
-            + "0000000000000000"     // bytesReceived = 0
-            + "0A000000"         // SegsOut = 10
-            + "00000000"         // SegsIn = 0
-            + "00000000"         // NotSentBytes = 0
-            + "3E2C0900"         // minRtt = 601150
-            + "00000000"         // DataSegsIn = 0
-            + "00000000"         // DataSegsOut = 0
-            + "0000000000000000"; // deliverRate = 0
+                    + "1400"            // type = SOCK_DIAG_BY_FAMILY
+                    + "0301"            // flags = NLM_F_REQUEST | NLM_F_DUMP
+                    + "00000000"        // seqno
+                    + "00000000"        // pid (0 == kernel)
+                    // struct inet_diag_req_v2
+                    + "02"              // family = AF_INET
+                    + "06"              // state
+                    + "00"              // timer
+                    + "00"              // retrans
+                    // inet_diag_sockid
+                    + "DEA5"            // idiag_sport = 42462
+                    + "71B9"            // idiag_dport = 47473
+                    + "0a006402000000000000000000000000" // idiag_src = 10.0.100.2
+                    + "08080808000000000000000000000000" // idiag_dst = 8.8.8.8
+                    + "00000000"            // idiag_if
+                    + "34ED000076270000"    // idiag_cookie = 43387759684916
+                    + "00000000"            // idiag_expires
+                    + "00000000"            // idiag_rqueue
+                    + "00000000"            // idiag_wqueue
+                    + "39300000"            // idiag_uid = 12345
+                    + "00000000"            // idiag_inode
+                    // rtattr
+                    + "0500"            // len = 5
+                    + "0800"            // type = 8
+                    + "00000000"        // data
+                    + "0800"            // len = 8
+                    + "0F00"            // type = 15(INET_DIAG_MARK)
+                    + "850A0C00"        // data, socket mark=789125
+                    + "AC00"            // len = 172
+                    + "0200"            // type = 2(INET_DIAG_INFO)
+                    // tcp_info
+                    + "01"               // state = TCP_ESTABLISHED
+                    + "00"               // ca_state = TCP_CA_OPEN
+                    + "05"               // retransmits = 5
+                    + "00"               // probes = 0
+                    + "00"               // backoff = 0
+                    + "07"
+                    // option = TCPI_OPT_WSCALE|TCPI_OPT_SACK|TCPI_OPT_TIMESTAMPS
+                    + "88"               // wscale = 8
+                    + "00"               // delivery_rate_app_limited = 0
+                    + "4A911B00"         // rto = 1806666
+                    + "00000000"         // ato = 0
+                    + "2E050000"         // sndMss = 1326
+                    + "18020000"         // rcvMss = 536
+                    + "00000000"         // unsacked = 0
+                    + "00000000"         // acked = 0
+                    + "00000000"         // lost = 0
+                    + "00000000"         // retrans = 0
+                    + "00000000"         // fackets = 0
+                    + "BB000000"         // lastDataSent = 187
+                    + "00000000"         // lastAckSent = 0
+                    + "BB000000"         // lastDataRecv = 187
+                    + "BB000000"         // lastDataAckRecv = 187
+                    + "DC050000"         // pmtu = 1500
+                    + "30560100"         // rcvSsthresh = 87600
+                    + "3E2C0900"         // rttt = 601150
+                    + "1F960400"         // rttvar = 300575
+                    + "78050000"         // sndSsthresh = 1400
+                    + "0A000000"         // sndCwnd = 10
+                    + "A8050000"         // advmss = 1448
+                    + "03000000"         // reordering = 3
+                    + "00000000"         // rcvrtt = 0
+                    + "30560100"         // rcvspace = 87600
+                    + "00000000"         // totalRetrans = 0
+                    + "53AC000000000000"     // pacingRate = 44115
+                    + "FFFFFFFFFFFFFFFF"     // maxPacingRate = 18446744073709551615
+                    + "0100000000000000"     // bytesAcked = 1
+                    + "0000000000000000"     // bytesReceived = 0
+                    + "0A000000"         // SegsOut = 10
+                    + "00000000"         // SegsIn = 0
+                    + "00000000"         // NotSentBytes = 0
+                    + "3E2C0900"         // minRtt = 601150
+                    + "00000000"         // DataSegsIn = 0
+                    + "00000000"         // DataSegsOut = 0
+                    + "0000000000000000"; // deliverRate = 0
     private static final String SOCK_DIAG_NO_TCP_INET_HEX =
             // struct nlmsghdr
             "14000000"     // length = 20
-            + "0300"         // type = NLMSG_DONE
-            + "0301"         // flags = NLM_F_REQUEST | NLM_F_DUMP
-            + "00000000"     // seqno
-            + "00000000"     // pid (0 == kernel)
-            // struct inet_diag_req_v2
-            + "02"           // family = AF_INET
-            + "06"           // state
-            + "00"           // timer
-            + "00";          // retrans
+                    + "0300"         // type = NLMSG_DONE
+                    + "0301"         // flags = NLM_F_REQUEST | NLM_F_DUMP
+                    + "00000000"     // seqno
+                    + "00000000"     // pid (0 == kernel)
+                    // struct inet_diag_req_v2
+                    + "02"           // family = AF_INET
+                    + "06"           // state
+                    + "00"           // timer
+                    + "00";          // retrans
     private static final byte[] SOCK_DIAG_NO_TCP_INET_BYTES =
             HexEncoding.decode(SOCK_DIAG_NO_TCP_INET_HEX.toCharArray(), false);
     private static final String TEST_RESPONSE_HEX =
@@ -340,7 +360,7 @@ public class AutomaticOnOffKeepaliveTrackerTest {
         doReturn(true).when(mKeepaliveTrackerDeps).isAddressTranslationEnabled(mCtx);
         doReturn(new ConnectivityResources(mCtx)).when(mKeepaliveTrackerDeps)
                 .createConnectivityResources(mCtx);
-        doReturn(new int[] {3, 0, 0, 3}).when(mKeepaliveTrackerDeps).getSupportedKeepalives(mCtx);
+        doReturn(new int[]{3, 0, 0, 3}).when(mKeepaliveTrackerDeps).getSupportedKeepalives(mCtx);
 
         mHandlerThread = new HandlerThread("KeepaliveTrackerTest");
         mHandlerThread.start();
@@ -435,13 +455,13 @@ public class AutomaticOnOffKeepaliveTrackerTest {
     private TestKeepaliveInfo doStartNattKeepalive(int intervalSeconds) throws Exception {
         final InetAddress srcAddress = InetAddress.getByAddress(V4_SRC_ADDR);
         final int srcPort = 12345;
-        final InetAddress dstAddress = InetAddress.getByAddress(new byte[] {8, 8, 8, 8});
+        final InetAddress dstAddress = InetAddress.getByAddress(new byte[]{8, 8, 8, 8});
         final int dstPort = 12345;
 
         mNai.linkProperties.addLinkAddress(new LinkAddress(srcAddress, 24));
 
         final NattKeepalivePacketData kpd = new NattKeepalivePacketData(srcAddress, srcPort,
-                dstAddress, dstPort, new byte[] {1});
+                dstAddress, dstPort, new byte[]{1});
 
         final TestKeepaliveInfo testInfo = new TestKeepaliveInfo(kpd);
 
@@ -617,7 +637,7 @@ public class AutomaticOnOffKeepaliveTrackerTest {
         final LinkProperties stacked = new LinkProperties();
         stacked.setInterfaceName(TEST_V4_IFACE);
         final InetAddress srcAddress = InetAddress.getByAddress(
-                new byte[] { (byte) 192, 0, 0, (byte) 129 });
+                new byte[]{(byte) 192, 0, 0, (byte) 129});
         mNai.linkProperties.addLinkAddress(new LinkAddress(srcAddress, 24));
         mNai.linkProperties.addStackedLink(stacked);
     }
@@ -626,8 +646,8 @@ public class AutomaticOnOffKeepaliveTrackerTest {
         final KeepalivePacketData kpd = new TcpKeepalivePacketData(
                 srcAddr,
                 12345 /* srcPort */,
-                InetAddress.getByAddress(new byte[] { 8, 8, 8, 8}) /* dstAddr */,
-                12345 /* dstPort */, new byte[] {1},  111 /* tcpSeq */,
+                InetAddress.getByAddress(new byte[]{8, 8, 8, 8}) /* dstAddr */,
+                12345 /* dstPort */, new byte[]{1}, 111 /* tcpSeq */,
                 222 /* tcpAck */, 800 /* tcpWindow */, 2 /* tcpWindowScale */,
                 4 /* ipTos */, 64 /* ipTtl */);
         final TestKeepaliveInfo testInfo = new TestKeepaliveInfo(kpd);
@@ -643,6 +663,7 @@ public class AutomaticOnOffKeepaliveTrackerTest {
         HandlerUtils.waitForIdle(mTestHandler, TIMEOUT_MS);
         return testInfo;
     }
+
     @Test
     public void testStartTcpKeepalive_addressTranslationOnClat() throws Exception {
         setupTestNaiForClat(InetAddresses.parseNumericAddress("2001:db8::1") /* v6Src */,
@@ -914,7 +935,7 @@ public class AutomaticOnOffKeepaliveTrackerTest {
         verify(testInfo1.socketKeepaliveCallback).onStarted();
         assertNotNull(getAutoKiForBinder(testInfo1.binder));
 
-        final AutomaticOnOffKeepalive autoKi1  = getAutoKiForBinder(testInfo1.binder);
+        final AutomaticOnOffKeepalive autoKi1 = getAutoKiForBinder(testInfo1.binder);
         doPauseKeepalive(autoKi1);
         checkAndProcessKeepaliveStop(TEST_SLOT);
         verify(testInfo1.socketKeepaliveCallback).onPaused();
@@ -955,7 +976,7 @@ public class AutomaticOnOffKeepaliveTrackerTest {
     @Test
     public void testStartTcpKeepalive_fdInitiatedStop() throws Exception {
         final InetAddress srcAddress = InetAddress.getByAddress(
-                new byte[] { (byte) 192, 0, 0, (byte) 129 });
+                new byte[]{(byte) 192, 0, 0, (byte) 129});
         mNai.linkProperties.addLinkAddress(new LinkAddress(srcAddress, 24));
 
         final TestKeepaliveInfo testInfo =
@@ -976,12 +997,68 @@ public class AutomaticOnOffKeepaliveTrackerTest {
         final TestKeepaliveInfo testInfo2 = doStartNattKeepalive();
         checkAndProcessKeepaliveStart(TEST_SLOT, testInfo1.kpd);
         checkAndProcessKeepaliveStart(TEST_SLOT + 1, testInfo2.kpd);
-        final AutomaticOnOffKeepalive autoKi1  = getAutoKiForBinder(testInfo1.binder);
+        final AutomaticOnOffKeepalive autoKi1 = getAutoKiForBinder(testInfo1.binder);
         doPauseKeepalive(autoKi1);
 
         final StringWriter stringWriter = new StringWriter();
         final IndentingPrintWriter pw = new IndentingPrintWriter(stringWriter, "   ");
         visibleOnHandlerThread(mTestHandler, () -> mAOOKeepaliveTracker.dump(pw));
         assertFalse(stringWriter.toString().isEmpty());
+    }
+
+    @Test
+    public void testStartNattKeepalive_withSchedulePrioritizedAlarmPermission()
+            throws Exception {
+        doReturn(PERMISSION_DENIED).when(mCtx)
+                .checkPermission(eq(KeepaliveTracker.PERMISSION), anyInt(), anyInt());
+        doReturn(PERMISSION_GRANTED).when(mCtx)
+                .checkPermission(eq(SCHEDULE_PRIORITIZED_ALARM),
+                        anyInt(), anyInt());
+
+        final InetAddress srcAddress = InetAddress.getByAddress(V4_SRC_ADDR);
+        final int srcPort = 12345;
+        final InetAddress dstAddress = InetAddress.getByAddress(new byte[]{8, 8, 8, 8});
+        final int dstPort = 12345;
+
+        mNai.linkProperties.addLinkAddress(new LinkAddress(srcAddress, 24));
+
+        final NattKeepalivePacketData kpd = new NattKeepalivePacketData(srcAddress, srcPort,
+                dstAddress, dstPort, new byte[]{1});
+
+        final TestKeepaliveInfo testInfo = new TestKeepaliveInfo(kpd);
+
+        final KeepaliveInfo ki = mKeepaliveTracker.new KeepaliveInfo(
+                testInfo.socketKeepaliveCallback, mNai, kpd, TEST_KEEPALIVE_INTERVAL_SEC,
+                KeepaliveInfo.TYPE_NATT, testInfo.fd);
+        mKeepaliveTracker.setReturnedKeepaliveInfo(ki);
+
+        mAOOKeepaliveTracker.startNattKeepalive(mNai, testInfo.fd, TEST_KEEPALIVE_INTERVAL_SEC,
+                testInfo.socketKeepaliveCallback, srcAddress.toString(), srcPort,
+                dstAddress.toString(), dstPort, true /* automaticOnOffKeepalives */,
+                testInfo.underpinnedNetwork);
+        verify(mCtx, timeout(TIMEOUT_MS)).checkPermission(eq(KeepaliveTracker.PERMISSION), anyInt(),
+                anyInt());
+        if (SdkUtil.isAtLeast26Q2()) {
+            // on 26Q2+, SCHEDULE_PRIORITIZED_ALARM permission will not allow start the keepalive
+            // offload
+            verify(mCtx, never()).checkPermission(eq(SCHEDULE_PRIORITIZED_ALARM), anyInt(),
+                    anyInt());
+            verify(testInfo.socketKeepaliveCallback, timeout(TIMEOUT_MS)).onError(
+                    ERROR_INSUFFICIENT_RESOURCES);
+        } else {
+            verify(mCtx, timeout(TIMEOUT_MS)).checkPermission(eq(SCHEDULE_PRIORITIZED_ALARM),
+                    anyInt(),
+                    anyInt());
+
+            checkAndProcessKeepaliveStart(testInfo.kpd);
+
+            final AutomaticOnOffKeepalive autoKi = getAutoKiForBinder(testInfo.binder);
+            assertNotNull(autoKi);
+            assertEquals(testInfo.socketKeepaliveCallback, autoKi.getCallback());
+
+            verify(testInfo.socketKeepaliveCallback).onStarted();
+            verifyNoMoreInteractions(ignoreStubs(testInfo.socketKeepaliveCallback));
+
+        }
     }
 }

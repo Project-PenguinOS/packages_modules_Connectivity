@@ -72,17 +72,14 @@ public class ProxyTracker {
     @Nullable
     @GuardedBy("mProxyLock")
     private ProxyInfo mGlobalProxy = null;
-    // The default proxy is the proxy that applies to no particular network if the global proxy
-    // is not set. Individual networks have their own settings that override this. This member
-    // is set through setDefaultProxy, which is called when the default network changes proxies
-    // in its LinkProperties, or when ConnectivityService switches to a new default network, or
-    // when PacProxyService resolves the proxy.
+    // The default proxy is applied to a network if that network does not have its own proxy
+    // settings and the global proxy is not set. This member is set through setDefaultProxy, which
+    // is called when the default network changes proxies in its LinkProperties, or when
+    // ConnectivityService switches to a new default network, or when PacProxyService resolves the
+    // proxy.
     @Nullable
     @GuardedBy("mProxyLock")
     private volatile ProxyInfo mDefaultProxy = null;
-    // Whether the default proxy is enabled.
-    @GuardedBy("mProxyLock")
-    private boolean mDefaultProxyEnabled = true;
 
     private final Handler mConnectivityServiceHandler;
 
@@ -161,8 +158,7 @@ public class ProxyTracker {
         // This information is already available as a world read/writable jvm property.
         synchronized (mProxyLock) {
             if (mGlobalProxy != null) return mGlobalProxy;
-            if (mDefaultProxyEnabled) return mDefaultProxy;
-            return null;
+            return mDefaultProxy;
         }
     }
 
@@ -364,9 +360,7 @@ public class ProxyTracker {
             mDefaultProxy = proxyInfo;
 
             if (mGlobalProxy != null) return;
-            if (mDefaultProxyEnabled) {
-                sendProxyBroadcast();
-            }
+            sendProxyBroadcast();
         }
     }
 
