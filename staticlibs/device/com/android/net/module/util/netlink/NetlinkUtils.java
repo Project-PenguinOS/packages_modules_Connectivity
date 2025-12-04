@@ -51,6 +51,7 @@ import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.net.Inet6Address;
 import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -88,6 +89,8 @@ public class NetlinkUtils {
     public static final int DEFAULT_RECV_BUFSIZE = 8 * 1024;
     public static final int SOCKET_RECV_BUFSIZE = 64 * 1024;
     public static final int SOCKET_DUMP_RECV_BUFSIZE = 1024 * 1024;
+
+    public static final int DEFAULT_INTERFACE_MTU = 1500;
 
     /**
      * Return whether the input ByteBuffer contains enough remaining bytes for
@@ -523,6 +526,95 @@ public class NetlinkUtils {
             return true;
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to set MTU to " + mtu + " for interface with index: " + ifIndex, e);
+            return false;
+        }
+    }
+
+    private static int getIfIndex(@NonNull String iface) throws SocketException {
+        final NetworkInterface netif = NetworkInterface.getByName(iface);
+        if (netif == null) {
+            throw new SocketException("Failed to get NetworkInterface for " + iface);
+        }
+        final int ifIndex = netif.getIndex();
+        if (ifIndex == -1) {
+            throw new SocketException("Failed to get index for " + iface);
+        }
+        return ifIndex;
+    }
+
+    /**
+     * Sends a netlink request to get MTU for given interface.
+     *
+     * @param iface The name of the network interface to query.
+     * @return MTU value on success, otherwise DEFAULT_INTERFACE_MTU.
+     */
+    public static int getInterfaceMtu(@NonNull String iface) {
+        try {
+            final int ifIndex = getIfIndex(iface);
+            // This single-element array is a common Java workaround to enable
+            // a local variable to be modified inside a lambda.
+            // The 'final' keyword applies to the array *reference*, making the
+            // reference effectively final, while the *contents* (mtu[0]) remain mutable.
+            final int[] mtu = new int[] { DEFAULT_INTERFACE_MTU };
+            final Consumer<RtNetlinkLinkMessage> consumer = (linkMsg) -> {
+                if (linkMsg.getHeader().nlmsg_type == NetlinkConstants.RTM_NEWLINK
+                        && linkMsg.getIfinfoHeader().index == ifIndex) {
+                    mtu[0] = linkMsg.getMtu();
+                }
+            };
+
+            final RtNetlinkLinkMessage request =
+                    RtNetlinkLinkMessage.createGetMtuMessage(ifIndex, 1 /* seqNo */);
+            Objects.requireNonNull(request);
+
+            final byte[] msg = request.pack(ByteOrder.nativeOrder());
+            getAndProcessNetlinkDumpMessages(
+                    msg, NETLINK_ROUTE, RtNetlinkLinkMessage.class, consumer);
+            return mtu[0];
+        } catch (Exception e) {
+            Log.wtf(TAG, "Failed to get MTU for " + iface, e);
+            return DEFAULT_INTERFACE_MTU;
+        }
+    }
+
+    /**
+     * Send an RTM_NEWQDISC message to kernel to add qdisc
+     *
+     * @param ifIndex interface index.
+     * @param qdisc qdisc class.
+     */
+    public static boolean sendRtmNewQdiscRequest(int ifIndex, @NonNull String qdisc) {
+        Objects.requireNonNull(qdisc, "Qdisc to be added should not be null.");
+        final byte[] msg = RtNetlinkQdiscMessage.newRtmNewQdiscMessage(ifIndex, qdisc);
+        try {
+            NetlinkUtils.sendOneShotKernelMessage(NETLINK_ROUTE, msg);
+            return true;
+        } catch (ErrnoException e) {
+            Log.e(TAG, String.format(
+                        "Fail to send RTM_NEWQDISC to add %s for interface with index: %d",
+                        qdisc, ifIndex), e);
+            return false;
+        }
+    }
+
+    /**
+     * Send an RTM_DELQDISC message to kernel to delete qdisc.
+     *
+     * @param ifIndex interface index.
+     * @param qdisc qdisc class.
+     */
+    public static boolean sendRtmDelQdiscRequest(int ifIndex, @NonNull String qdisc) {
+        Objects.requireNonNull(qdisc, "Qdisc to be deleted should not be null.");
+        final byte[] msg = RtNetlinkQdiscMessage.newRtmDelQdiscMessage(ifIndex, qdisc);
+        try {
+            NetlinkUtils.sendOneShotKernelMessage(NETLINK_ROUTE, msg);
+            return true;
+        } catch (ErrnoException e) {
+            if (e.errno != OsConstants.ENOENT) {
+                Log.e(TAG, String.format(
+                        "Fail to send RTM_DELQDISC to delete %s for interface with index: %d",
+                        qdisc, ifIndex), e);
+            }
             return false;
         }
     }

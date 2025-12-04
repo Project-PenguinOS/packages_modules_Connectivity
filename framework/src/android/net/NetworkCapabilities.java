@@ -474,6 +474,7 @@ public final class NetworkCapabilities implements Parcelable {
             NET_CAPABILITY_PRIORITIZE_BANDWIDTH,
             NET_CAPABILITY_LOCAL_NETWORK,
             NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED,
+            NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS,
     })
     public @interface NetCapability { }
 
@@ -720,18 +721,20 @@ public final class NetworkCapabilities implements Parcelable {
     /**
      * Indicates that this network should be able to prioritize latency for the internet.
      *
-     * Starting with {@link Build.VERSION_CODES#UPSIDE_DOWN_CAKE}, requesting this capability with
-     * {@link ConnectivityManager#requestNetwork} requires declaration in the self-certified
-     * network capabilities. See {@link NetworkRequest} for the self-certification documentation.
+     * Apps targeting {@link Build.VERSION_CODES#UPSIDE_DOWN_CAKE} or higher, requesting
+     * this capability with {@link ConnectivityManager#requestNetwork} requires declaration in the
+     * self-certified network capabilities. See {@link NetworkRequest} for the self-certification
+     * documentation.
      */
     public static final int NET_CAPABILITY_PRIORITIZE_LATENCY = 34;
 
     /**
      * Indicates that this network should be able to prioritize bandwidth for the internet.
      *
-     * Starting with {@link Build.VERSION_CODES#UPSIDE_DOWN_CAKE}, requesting this capability with
-     * {@link ConnectivityManager#requestNetwork} requires declaration in the self-certified
-     * network capabilities. See {@link NetworkRequest} for the self-certification documentation.
+     * Apps targeting {@link Build.VERSION_CODES#UPSIDE_DOWN_CAKE} or higher, requesting
+     * this capability with {@link ConnectivityManager#requestNetwork} requires declaration in the
+     * self-certified network capabilities. See {@link NetworkRequest} for the self-certification
+     * documentation.
      */
     public static final int NET_CAPABILITY_PRIORITIZE_BANDWIDTH = 35;
 
@@ -775,7 +778,35 @@ public final class NetworkCapabilities implements Parcelable {
     @FlaggedApi(Flags.FLAG_NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED)
     public static final int NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED = 37;
 
-    private static final int MAX_NET_CAPABILITY = NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED;
+    /**
+     * Indicates that this network is optimized for real-time unified communications,
+     * such as Over-the-Top (OTT) voice and video calls.
+     *
+     * <p>This capability is intended specifically for applications that handle Over-the-Top (OTT)
+     * voice and video calls. It is not intended for non ott applications.
+     *
+     * <p>This capability signals to the system that the network may offer a dedicated slice for
+     * high-priority, low-latency data paths. It can be used in two ways:
+     * <ul>
+     *     <li>The system can request a network with this capability on behalf of an eligible
+     *     application when it detects an active OTT call to improve Quality of Service (QoS).</li>
+     *     <li>An ott application can request a network with this capability directly using
+     *     {@link android.net.ConnectivityManager#requestNetwork}.</li>
+     * </ul>
+     *
+     * <p>This capability is a hint from the network and does not guarantee that it will
+     * be used for any given call.
+     *
+     * Apps targeting {@link Build.VERSION_CODES#UPSIDE_DOWN_CAKE} or higher, requesting
+     * this capability with {@link ConnectivityManager#requestNetwork} requires declaration in the
+     * self-certified network capabilities. See {@link NetworkRequest} for the self-certification
+     * documentation.
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags
+            .FLAG_NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
+    public static final int NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS = 38;
+
+    private static final int MAX_NET_CAPABILITY = NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS;
 
     // Set all bits up to the MAX_NET_CAPABILITY-th bit
     private static final long ALL_VALID_CAPABILITIES = (2L << MAX_NET_CAPABILITY) - 1;
@@ -2669,6 +2700,8 @@ public final class NetworkCapabilities implements Parcelable {
             case NET_CAPABILITY_PRIORITIZE_BANDWIDTH:        return "PRIORITIZE_BANDWIDTH";
             case NET_CAPABILITY_LOCAL_NETWORK:        return "LOCAL_NETWORK";
             case NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED:    return "NOT_BANDWIDTH_CONSTRAINED";
+            case NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS:
+                return "PRIORITIZE_UNIFIED_COMMUNICATIONS";
             default:                                  return Integer.toString(capability);
         }
     }

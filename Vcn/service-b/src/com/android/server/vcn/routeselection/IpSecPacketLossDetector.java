@@ -75,31 +75,34 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
 
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(
-            prefix = {"PACKET_LOSS_"},
+            prefix = {"LOSS_RESULT_"},
             value = {
-                PACKET_LOSS_RATE_VALID,
-                PACKET_LOSS_RATE_INVALID,
-                PACKET_LOSS_UNUSUAL_SEQ_NUM_LEAP,
+                LOSS_RESULT_VALID,
+                LOSS_RESULT_SEQ_DIFF_TOO_SMALL,
+                LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP,
+                LOSS_RESULT_UNEXPECTED_ERROR,
             })
     @Target({ElementType.TYPE_USE})
-    private @interface PacketLossResultType {}
+    @VisibleForTesting(visibility = Visibility.PRIVATE)
+    @interface PacketLossResultType {}
 
     /** Indicates a valid packet loss rate is available */
-    private static final int PACKET_LOSS_RATE_VALID = 0;
+    @VisibleForTesting(visibility = Visibility.PRIVATE)
+    static final int LOSS_RESULT_VALID = 0;
 
     /**
-     * Indicates that the detector cannot get a valid packet loss rate due to one of the following
-     * reasons:
+     * Indicates that the detector cannot get a valid packet loss rate because the sequence number
+     * increase is too small. It can be one of the following reasons:
      *
      * <ul>
      *   <li>The replay window did not proceed and thus all packets might have been delivered out of
      *       order
-     *   <li>The expected received packet number is too small and thus the detection result is not
-     *       reliable
-     *   <li>There are unexpected errors
+     *   <li>The expected received packet number (calculated from sequence number increase) is end
+     *       up being too small and thus the detection result is not reliable
      * </ul>
      */
-    private static final int PACKET_LOSS_RATE_INVALID = 1;
+    @VisibleForTesting(visibility = Visibility.PRIVATE)
+    static final int LOSS_RESULT_SEQ_DIFF_TOO_SMALL = 1;
 
     /**
      * The sequence number increase is unusually large and might be caused an intentional leap on
@@ -109,7 +112,12 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
      * server might add a big leap on the sequence number intentionally. In such case a high packet
      * loss rate does not always indicate a lossy network
      */
-    private static final int PACKET_LOSS_UNUSUAL_SEQ_NUM_LEAP = 2;
+    @VisibleForTesting(visibility = Visibility.PRIVATE)
+    static final int LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP = 2;
+
+    /** Indicates that the detector cannot get a valid packet loss rate due to unexpected errors */
+    @VisibleForTesting(visibility = Visibility.PRIVATE)
+    static final int LOSS_RESULT_UNEXPECTED_ERROR = 3;
 
     // For VoIP, losses between 5% and 10% of the total packet stream will affect the quality
     // significantly (as per "Computer Networking for LANS to WANS: Hardware, Software and
@@ -416,9 +424,9 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
                         mMaxSeqNumIncreasePerSecond,
                         getLogPrefix());
 
-        if (calculateResult.getResultType() == PACKET_LOSS_RATE_INVALID) {
-            return;
-        }
+        final int packetLossResultType = calculateResult.getResultType();
+        final int packetLossPercent = calculateResult.getPacketLossRatePercent();
+        final boolean isLossy = packetLossPercent >= mPacketLossRatePercentThreshold;
 
         final String logMsg =
                 "calculateResult: "
@@ -428,25 +436,56 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
                                 - mLastIpSecTransformState.getTimestampMillis())
                         + "ms";
 
-        mLastIpSecTransformState = state;
-        if (calculateResult.getPacketLossRatePercent() < mPacketLossRatePercentThreshold) {
-            logV(logMsg);
+        if (shouldUpdateLastTransformState(packetLossResultType)) {
+            mLastIpSecTransformState = state;
+        }
 
-            // In both "valid" or "unusual_seq_num_leap" cases, notify that the network has passed
-            // the validation
-            onValidationResultReceivedInternal(false /* isFailed */);
-        } else {
-            logInfo(logMsg);
+        if (shouldReportValidationResult(isLossy, packetLossResultType)) {
+            onValidationResultReceivedInternal(!isLossy /* isSucceeded */);
+        }
 
-            if (calculateResult.getResultType() == PACKET_LOSS_RATE_VALID) {
-                onValidationResultReceivedInternal(true /* isFailed */);
-            }
-
-            // In both "invalid" and "unusual_seq_num_leap" cases, trigger network validation. If
-            // validation fails, the VCN will attempt to migrate away.
+        if (shouldReportNetworkConnectivity(isLossy, packetLossResultType)) {
             mConnectivityManager.reportNetworkConnectivity(
                     getNetwork(), false /* hasConnectivity */);
         }
+    }
+
+    /**
+     * Return whether the mLastIpSecTransformState should be updated when handling the result
+     *
+     * <p>When the seq diff is too small to calculate the packet loss reliably, the detector should
+     * grab a newer state and still compare it with the current "last state" so as to increase the
+     * seq diff.
+     */
+    @VisibleForTesting(visibility = Visibility.PRIVATE)
+    public static boolean shouldUpdateLastTransformState(@PacketLossResultType int resultType) {
+        return resultType != LOSS_RESULT_SEQ_DIFF_TOO_SMALL;
+    }
+
+    /** Return whether it is a reliable validation result to report */
+    @VisibleForTesting(visibility = Visibility.PRIVATE)
+    public static boolean shouldReportValidationResult(
+            boolean isLossy, @PacketLossResultType int resultType) {
+        return switch (resultType) {
+            case LOSS_RESULT_VALID -> true;
+            // In this case a high loss rate might be caused by an intentional sequence number leap.
+            // Thus only trust the result if it is "not lossy"
+            case LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP -> !isLossy;
+            default -> false;
+        };
+    }
+
+    /** Return whether to trigger network revalidation */
+    @VisibleForTesting(visibility = Visibility.PRIVATE)
+    public static boolean shouldReportNetworkConnectivity(
+            boolean isLossy, @PacketLossResultType int resultType) {
+        return switch (resultType) {
+            case LOSS_RESULT_VALID -> isLossy;
+            // Although the "loss report" might be caused by an intentional leap, still trigger a
+            // revalidation to double check
+            case LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP -> isLossy;
+            default -> false;
+        };
     }
 
     @VisibleForTesting(visibility = Visibility.PRIVATE)
@@ -469,7 +508,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
             if (oldSeqHi == newSeqHi || newSeqHi < replayWindowSize) {
                 // The replay window did not proceed and all packets might have been delivered out
                 // of order
-                return PacketLossCalculationResult.invalid();
+                return PacketLossCalculationResult.seqDiffTooSmall();
             }
 
             boolean isUnusualSeqNumLeap = false;
@@ -508,7 +547,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
 
             if (expectedPktCntDiff < MIN_VALID_EXPECTED_RX_PACKET_NUM) {
                 // The sample size is too small to ensure a reliable detection result
-                return PacketLossCalculationResult.invalid();
+                return PacketLossCalculationResult.seqDiffTooSmall();
             }
 
             if (expectedPktCntDiff < 0
@@ -516,7 +555,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
                     || actualPktCntDiff < 0
                     || actualPktCntDiff > expectedPktCntDiff) {
                 logWtf(TAG, "Impossible values for expectedPktCntDiff or" + " actualPktCntDiff");
-                return PacketLossCalculationResult.invalid();
+                return PacketLossCalculationResult.unexpectedError();
             }
 
             final int percent = 100 - (int) (actualPktCntDiff * 100 / expectedPktCntDiff);
@@ -555,18 +594,24 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
 
         /** Construct an instance that contains a valid packet loss rate */
         public static PacketLossCalculationResult valid(int percent) {
-            return new PacketLossCalculationResult(PACKET_LOSS_RATE_VALID, percent);
+            return new PacketLossCalculationResult(LOSS_RESULT_VALID, percent);
         }
 
-        /** Construct an instance indicating the inability to get a valid packet loss rate */
-        public static PacketLossCalculationResult invalid() {
+        /** Constructs an instance indicating the sequence number difference is too small */
+        public static PacketLossCalculationResult seqDiffTooSmall() {
             return new PacketLossCalculationResult(
-                    PACKET_LOSS_RATE_INVALID, PACKET_LOSS_PERCENT_UNAVAILABLE);
+                    LOSS_RESULT_SEQ_DIFF_TOO_SMALL, PACKET_LOSS_PERCENT_UNAVAILABLE);
+        }
+
+        /** Constructs an instance indicating that there is an unexpected error */
+        public static PacketLossCalculationResult unexpectedError() {
+            return new PacketLossCalculationResult(
+                    LOSS_RESULT_UNEXPECTED_ERROR, PACKET_LOSS_PERCENT_UNAVAILABLE);
         }
 
         /** Construct an instance indicating that there is an unusual sequence number leap */
         public static PacketLossCalculationResult unusualSeqNumLeap(int percent) {
-            return new PacketLossCalculationResult(PACKET_LOSS_UNUSUAL_SEQ_NUM_LEAP, percent);
+            return new PacketLossCalculationResult(LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP, percent);
         }
 
         @PacketLossResultType

@@ -22,8 +22,15 @@ import static android.net.vcn.VcnManager.VCN_NETWORK_SELECTION_POLL_IPSEC_STATE_
 import static android.net.vcn.util.PersistableBundleUtils.PersistableBundleWrapper;
 
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DISABLE_DETECTOR;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.LOSS_RESULT_SEQ_DIFF_TOO_SMALL;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.LOSS_RESULT_UNEXPECTED_ERROR;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.LOSS_RESULT_VALID;
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.MIN_VALID_EXPECTED_RX_PACKET_NUM;
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.getMaxSeqNumIncreasePerSecond;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.shouldReportNetworkConnectivity;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.shouldReportValidationResult;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.shouldUpdateLastTransformState;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -150,7 +157,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
 
     private void verifyStopped() {
         assertFalse(mIpSecPacketLossDetector.isStarted());
-        assertFalse(mIpSecPacketLossDetector.isValidationFailed());
+        assertTrue(mIpSecPacketLossDetector.isValidationSucceeded());
         assertNull(mIpSecPacketLossDetector.getLastTransformState());
 
         // No event scheduled
@@ -183,7 +190,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 startMonitorAndCaptureStateReceiver();
 
         assertTrue(mIpSecPacketLossDetector.isStarted());
-        assertFalse(mIpSecPacketLossDetector.isValidationFailed());
+        assertTrue(mIpSecPacketLossDetector.isValidationSucceeded());
         assertTrue(mIpSecPacketLossDetector.isSelectedUnderlyingNetwork());
         assertEquals(mIpSecTransform, mIpSecPacketLossDetector.getInboundTransformInternal());
 
@@ -380,7 +387,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     @Test
     public void testHandleLossRate_resultUnavalaible() throws Exception {
         checkHandleLossRate(
-                PacketLossCalculationResult.invalid(),
+                PacketLossCalculationResult.seqDiffTooSmall(),
                 false /* isLastStateExpectedToUpdate */,
                 false /* isCallbackExpected */);
     }
@@ -442,9 +449,13 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
         checkGetPacketLossRate(
                 mTransformStateInitial,
                 mTransformStateInitial,
-                PacketLossCalculationResult.invalid());
+                PacketLossCalculationResult.seqDiffTooSmall());
         checkGetPacketLossRate(
-                mTransformStateInitial, 3000, 2000, 2000, PacketLossCalculationResult.invalid());
+                mTransformStateInitial,
+                3000,
+                2000,
+                2000,
+                PacketLossCalculationResult.seqDiffTooSmall());
     }
 
     @Test
@@ -459,7 +470,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
         final IpSecTransformState newState =
                 newTransformState(oldRxNo + pktCntDiff, oldPktCnt + pktCntDiff, bitmapReceiveAll);
 
-        checkGetPacketLossRate(oldState, newState, PacketLossCalculationResult.invalid());
+        checkGetPacketLossRate(oldState, newState, PacketLossCalculationResult.seqDiffTooSmall());
     }
 
     @Test
@@ -645,5 +656,59 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
         detector.setCarrierConfig(mCarrierConfig);
 
         assertFalse(detector.isStarted());
+    }
+
+    @Test
+    public void testShouldUpdateLastTransformState() {
+        assertTrue(shouldUpdateLastTransformState(LOSS_RESULT_VALID));
+        assertFalse(shouldUpdateLastTransformState(LOSS_RESULT_SEQ_DIFF_TOO_SMALL));
+        assertTrue(shouldUpdateLastTransformState(LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP));
+        assertTrue(shouldUpdateLastTransformState(LOSS_RESULT_UNEXPECTED_ERROR));
+    }
+
+    @Test
+    public void testShouldReportValidationResult() {
+        assertTrue(shouldReportValidationResult(true /* isLossy */, LOSS_RESULT_VALID));
+        assertTrue(shouldReportValidationResult(false /* isLossy */, LOSS_RESULT_VALID));
+
+        assertFalse(
+                shouldReportValidationResult(true /* isLossy */, LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP));
+        assertTrue(
+                shouldReportValidationResult(
+                        false /* isLossy */, LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP));
+
+        assertFalse(
+                shouldReportValidationResult(true /* isLossy */, LOSS_RESULT_SEQ_DIFF_TOO_SMALL));
+        assertFalse(
+                shouldReportValidationResult(false /* isLossy */, LOSS_RESULT_SEQ_DIFF_TOO_SMALL));
+
+        assertFalse(shouldReportValidationResult(true /* isLossy */, LOSS_RESULT_UNEXPECTED_ERROR));
+        assertFalse(
+                shouldReportValidationResult(false /* isLossy */, LOSS_RESULT_UNEXPECTED_ERROR));
+    }
+
+    @Test
+    public void testShouldReportNetworkConnectivity() {
+        assertTrue(shouldReportNetworkConnectivity(true /* isLossy */, LOSS_RESULT_VALID));
+        assertFalse(shouldReportNetworkConnectivity(false /* isLossy */, LOSS_RESULT_VALID));
+
+        assertTrue(
+                shouldReportNetworkConnectivity(
+                        true /* isLossy */, LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP));
+        assertFalse(
+                shouldReportNetworkConnectivity(
+                        false /* isLossy */, LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP));
+
+        assertFalse(
+                shouldReportNetworkConnectivity(
+                        true /* isLossy */, LOSS_RESULT_SEQ_DIFF_TOO_SMALL));
+        assertFalse(
+                shouldReportNetworkConnectivity(
+                        false /* isLossy */, LOSS_RESULT_SEQ_DIFF_TOO_SMALL));
+
+        assertFalse(
+                shouldReportNetworkConnectivity(true /* isLossy */, LOSS_RESULT_UNEXPECTED_ERROR));
+        assertFalse(
+                shouldReportNetworkConnectivity(false /* isLossy */, LOSS_RESULT_UNEXPECTED_ERROR));
     }
 }

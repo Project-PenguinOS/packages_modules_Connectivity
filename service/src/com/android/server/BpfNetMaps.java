@@ -28,6 +28,7 @@ import static android.net.BpfNetMapsConstants.INGRESS_DISCARD_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
+import static android.net.BpfNetMapsConstants.UID_MIGRATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_OWNER_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_PERMISSION_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_RULES_CONFIGURATION_KEY;
@@ -73,6 +74,7 @@ import androidx.annotation.RequiresApi;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.BackgroundThread;
 import com.android.modules.utils.build.SdkLevel;
+import com.android.net.module.util.BpfBoolean;
 import com.android.net.module.util.BpfDump;
 import com.android.net.module.util.BpfMap;
 import com.android.net.module.util.IBpfMap;
@@ -137,6 +139,7 @@ public class BpfNetMaps {
     private static IBpfMap<S64, CookieTagMapValue> sCookieTagMap = null;
     // TODO: Add BOOL class and replace U8?
     private static IBpfMap<S32, U8> sDataSaverEnabledMap = null;
+    private static BpfBoolean sUidMigrationEnabledBpfBoolean = null;
     private static IBpfMap<IngressDiscardKey, IngressDiscardValue> sIngressDiscardMap = null;
 
     private static IBpfMap<LocalNetAccessKey, Bool> sLocalNetAccessMap = null;
@@ -190,6 +193,15 @@ public class BpfNetMaps {
     }
 
     /**
+     * Set uidMigrationEnabledBpfBoolean for test.
+     */
+    @VisibleForTesting
+    public static void setUidMigrationEnabledBpfBooleanForTest(
+            BpfBoolean uidMigrationEnabledBpfBoolean) {
+        sUidMigrationEnabledBpfBoolean = uidMigrationEnabledBpfBoolean;
+    }
+
+    /**
      * Set ingressDiscardMap for test.
      */
     @VisibleForTesting
@@ -216,6 +228,13 @@ public class BpfNetMaps {
         sLocalNetBlockedUidMap = localNetBlockedUidMap;
     }
 
+    /**
+     * Set sInitialized for test.
+     */
+    @VisibleForTesting
+    public static void setInitializedForTest(boolean initialized) {
+        sInitialized = initialized;
+    }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private static IBpfMap<S32, U32> getConfigurationMap() {
@@ -288,6 +307,15 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private static BpfBoolean getUidMigrationEnabledBpfBoolean() {
+        try {
+            return new BpfBoolean(UID_MIGRATION_ENABLED_MAP_PATH, true);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open uid migration enabled map", e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     private static IBpfMap<LocalNetAccessKey, Bool> getLocalNetAccessMap() {
         try {
@@ -299,7 +327,7 @@ public class BpfNetMaps {
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private static void initBpfMaps() {
+    private static void initBpfMaps(final Dependencies deps) {
         if (sConfigurationMap == null) {
             sConfigurationMap = getConfigurationMap();
         }
@@ -371,6 +399,16 @@ public class BpfNetMaps {
                         e);
             }
         }
+
+        if (sUidMigrationEnabledBpfBoolean == null) {
+            sUidMigrationEnabledBpfBoolean = getUidMigrationEnabledBpfBoolean();
+        }
+
+        try {
+            sUidMigrationEnabledBpfBoolean.set(deps.isPermissionMapUidMigrationEnabled());
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Failed to set uid migration enabled map", e);
+        }
     }
 
     /**
@@ -378,9 +416,10 @@ public class BpfNetMaps {
      * cause any other effects. This method may be called multiple times on any thread.
      */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private static synchronized void ensureInitialized(final Context context) {
+    private static synchronized void ensureInitialized(final Context context,
+            final Dependencies deps) {
         if (sInitialized) return;
-        initBpfMaps();
+        initBpfMaps(deps);
         sInitialized = true;
     }
 
@@ -424,6 +463,13 @@ public class BpfNetMaps {
             return ConnectivityStatsLog.buildStatsEvent(NETWORK_BPF_MAP_INFO, cookieTagMapSize,
                     uidOwnerMapSize, uidPermissionMapSize);
         }
+
+        /**
+         * @see com.android.tethering.flags.Flags#permissionMapUidMigration()
+         */
+        public boolean isPermissionMapUidMigrationEnabled() {
+            return com.android.tethering.flags.Flags.permissionMapUidMigration();
+        }
     }
 
     /** Constructor used after T that doesn't need to use netd anymore. */
@@ -444,7 +490,7 @@ public class BpfNetMaps {
             @NonNull final  InterfaceTracker interfaceTracker) {
         Objects.requireNonNull(interfaceTracker);
         if (SdkLevel.isAtLeastT()) {
-            ensureInitialized(context);
+            ensureInitialized(context, deps);
         }
         mNetd = netd;
         mDeps = deps;
@@ -1273,6 +1319,17 @@ public class BpfNetMaps {
             pw.println("Failed to read data saver configuration: " + e);
         }
     }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private void dumpUidMigrationConfig(final IndentingPrintWriter pw) {
+        try {
+            final boolean enabled = sUidMigrationEnabledBpfBoolean.get();
+            pw.println("sUidMigrationEnabledBpfBoolean: " + enabled);
+        } catch (ErrnoException e) {
+            pw.println("Failed to read uid migration enabled map: " + e);
+        }
+    }
+
     /**
      * Dump BPF maps
      *
@@ -1335,6 +1392,7 @@ public class BpfNetMaps {
                         (key, value) -> "" + key + ": " + value.val);
             }
             dumpDataSaverConfig(pw);
+            dumpUidMigrationConfig(pw);
             pw.decreaseIndent();
         }
     }

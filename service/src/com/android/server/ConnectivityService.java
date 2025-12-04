@@ -160,6 +160,7 @@ import static com.android.net.module.util.PermissionUtils.enforceAnyPermissionOf
 import static com.android.net.module.util.PermissionUtils.enforceNetworkStackPermission;
 import static com.android.net.module.util.PermissionUtils.enforceNetworkStackPermissionOr;
 import static com.android.net.module.util.PermissionUtils.hasAnyPermissionOf;
+import static com.android.net.module.util.netlink.RtNetlinkQdiscMessage.CLSACT;
 import static com.android.server.ConnectivityStatsLog.CONNECTIVITY_STATE_SAMPLE;
 import static com.android.server.ConnectivityStatsLog.DEFAULT_NETWORK_REMATCH__REMATCH_REASON__RMR_NETWORK_DISCONNECTED;
 import static com.android.server.NetIdManager.MAX_NET_ID;
@@ -172,7 +173,6 @@ import static com.android.server.connectivity.ConnectivityFlags.INGRESS_TO_VPN_A
 import static com.android.server.connectivity.ConnectivityFlags.NAMESPACE_TETHERING_BOOT;
 import static com.android.server.connectivity.ConnectivityFlags.QUEUE_CALLBACKS_FOR_FROZEN_APPS;
 import static com.android.server.connectivity.ConnectivityFlags.QUEUE_NETWORK_AGENT_EVENTS_AFTER_B;
-import static com.android.server.connectivity.ConnectivityFlags.REQUEST_RESTRICTED_WIFI;
 import static com.android.server.connectivity.ConnectivityFlags.SATISFIED_BY_LOCAL_NETWORK_METRICS;
 import static com.android.server.connectivity.ConnectivityFlags.USE_SATELLITE_REPORTED_SUSPENDED_AND_ROAMING;
 import static com.android.server.connectivity.ConnectivityFlags.WIFI_DATA_INACTIVITY_TIMEOUT;
@@ -322,6 +322,7 @@ import android.provider.Settings;
 import android.stats.connectivity.RequestType;
 import android.sysprop.NetworkProperties;
 import android.system.ErrnoException;
+import android.system.Os;
 import android.system.OsConstants;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -378,12 +379,14 @@ import com.android.net.module.util.ip.NetlinkMonitor;
 import com.android.net.module.util.netlink.InetDiagMessage;
 import com.android.net.module.util.netlink.NetlinkConstants;
 import com.android.net.module.util.netlink.NetlinkMessage;
+import com.android.net.module.util.netlink.NetlinkUtils;
 import com.android.net.module.util.netlink.RtNetlinkAddressMessage;
 import com.android.net.module.util.netlink.StructIfaddrMsg;
 import com.android.networkstack.apishim.BroadcastOptionsShimImpl;
 import com.android.networkstack.apishim.ConstantsShim;
 import com.android.networkstack.apishim.common.BroadcastOptionsShim;
 import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy;
 import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabilities;
 import com.android.server.connectivity.AutodestructReference;
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker;
@@ -419,7 +422,7 @@ import com.android.server.connectivity.ProfileNetworkPreferenceInfo;
 import com.android.server.connectivity.ProxyTracker;
 import com.android.server.connectivity.QosCallbackTracker;
 import com.android.server.connectivity.QuicConnectionCloser;
-import com.android.server.connectivity.SatelliteAccessController;
+import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.UidRangeUtils;
 import com.android.server.connectivity.VpnNetworkPreferenceInfo;
 import com.android.server.connectivity.wear.CompanionDeviceManagerProxyService;
@@ -437,6 +440,7 @@ import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -445,6 +449,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.ConcurrentModificationException;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -712,9 +717,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
     // See {@link ConnectivitySettingsManager#setMobileDataPreferredUids}
     @VisibleForTesting
     static final int PREFERENCE_ORDER_MOBILE_DATA_PREFERERRED = 30;
-    // Order of setting satellite network preference fallback when default message application
-    // with role_sms role and android.permission.SATELLITE_COMMUNICATION permission detected
-    public static final int PREFERENCE_ORDER_SATELLITE_FALLBACK = 40;
+    /**
+     * Defines the preference order for all network requests managed by the
+     * {@code AppOptInDefaultNetworkController}. This single preference level is used
+     * for various application-specific policies, including satellite fallback for SMS role holders,
+     * and satellite fallback for opt-in UIDs.
+     */
+    public static final int PREFERENCE_ORDER_APP_OPT_IN = 40;
     // Preference order that signifies the network shouldn't be set as a default network for
     // the UIDs, only give them access to it. TODO : replace this with a boolean
     // in NativeUidRangeConfig
@@ -1090,7 +1099,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     private final QosCallbackTracker mQosCallbackTracker;
     private final NetworkNotificationManager mNotifier;
     private final LingerMonitor mLingerMonitor;
-    private final SatelliteAccessController mSatelliteAccessController;
+    private final AppOptInDefaultNetworkController mAppOptInDefaultNetworkController;
     private final SatelliteCoarseUsageMetricsCollector mSatelliteCoarseUsageMetricsCollector;
 
     private final L2capNetworkProvider mL2capNetworkProvider;
@@ -1747,14 +1756,16 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         /**
-         * @see SatelliteAccessController
+         * @see AppOptInDefaultNetworkController
          */
         @Nullable
-        public SatelliteAccessController makeSatelliteAccessController(
+        public AppOptInDefaultNetworkController makeAppOptInDefaultNetworkController(
                 @NonNull final Context context,
-                BiConsumer<Set<Integer>, Set<Integer>> updateSatelliteNetworkFallbackUidCallback,
+                Consumer<List<AppOptInDefaultNetworkPolicy>>
+                        handleUpdateAppOptInDefaultNetworkPoliciesCallback,
                 @NonNull final Handler connectivityServiceInternalHandler) {
-            return new SatelliteAccessController(context, updateSatelliteNetworkFallbackUidCallback,
+            return new AppOptInDefaultNetworkController(context,
+                    handleUpdateAppOptInDefaultNetworkPoliciesCallback,
                     connectivityServiceInternalHandler);
         }
 
@@ -2039,6 +2050,40 @@ public class ConnectivityService extends IConnectivityManager.Stub
             return Flags.connectivityServiceDestroySocket();
         }
 
+        /** Whether the flag for connectivity service modify qdisc clsact is enabled or not. */
+        public boolean flagConnectivityServiceModifyQdiscClsact() {
+            return Flags.connectivityServiceModifyQdiscClsact();
+        }
+
+        /**
+         * Retrieves the network interface index for a given interface name.
+         */
+        public int if_nametoindex(@NonNull String iface) {
+            return Os.if_nametoindex(iface);
+        }
+
+        /**
+         * Sends a Netlink request to add a `clsact` qdisc for a given network interface.
+         */
+        public boolean sendNewRtmQdiscClsactRequest(int ifIndex) {
+            return NetlinkUtils.sendRtmNewQdiscRequest(ifIndex, CLSACT);
+        }
+
+        /**
+         * Sends a Netlink request to remove a `clsact` qdisc for a given network interface.
+         */
+        public boolean sendDelRtmQdiscClsactRequest(int ifIndex) {
+            return NetlinkUtils.sendRtmDelQdiscRequest(ifIndex, CLSACT);
+        }
+
+        /**
+         * Retrieves all the network interfaces on the local machine.
+         */
+        public @Nullable Enumeration<NetworkInterface> getNetworkInterfaces()
+                throws SocketException {
+            return NetworkInterface.getNetworkInterfaces();
+        }
+
         /**
          * Create a AddressUpdateMonitor instance.
          */
@@ -2172,8 +2217,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         mTelephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
         mAppOpsManager = (AppOpsManager) mContext.getSystemService(Context.APP_OPS_SERVICE);
         mLocationPermissionChecker = mDeps.makeLocationPermissionChecker(mContext);
-        mRequestRestrictedWifiEnabled = mDeps.isAtLeastU()
-                && mDeps.isFeatureNotChickenedOut(context, REQUEST_RESTRICTED_WIFI);
+        mRequestRestrictedWifiEnabled = mDeps.isAtLeastU();
         mBackgroundFirewallChainEnabled = mDeps.isAtLeastV() && mDeps.isFeatureNotChickenedOut(
                 context, ConnectivityFlags.BACKGROUND_FIREWALL_CHAIN);
         mUseDeclaredMethodsForCallbacksEnabled =
@@ -2195,12 +2239,12 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (mDeps.isAtLeastU()
                 && mDeps
                 .isFeatureNotChickenedOut(mContext, ALLOW_SATALLITE_NETWORK_FALLBACK)) {
-            mSatelliteAccessController = mDeps.makeSatelliteAccessController(
-                    mContext, this::updateSatelliteNetworkPreferenceUids, mHandler);
+            mAppOptInDefaultNetworkController = mDeps.makeAppOptInDefaultNetworkController(
+                    mContext, this::handleUpdateAppOptInDefaultNetworkPolicies, mHandler);
         } else {
-            mSatelliteAccessController = null;
+            mAppOptInDefaultNetworkController = null;
         }
-        mConstrainedDataSatelliteMetrics = (mSatelliteAccessController != null)
+        mConstrainedDataSatelliteMetrics = (mAppOptInDefaultNetworkController != null)
                 && mDeps.isFeatureNotChickenedOut(mContext, CONSTRAINED_DATA_SATELLITE_METRICS);
         if (mConstrainedDataSatelliteMetrics) {
             mSatelliteCoarseUsageMetricsCollector =
@@ -2475,24 +2519,6 @@ public class ConnectivityService extends IConnectivityManager.Stub
             @NonNull final ProxyInfo proxyInfo) {
         Message.obtain(mHandler, EVENT_PAC_PROXY_HAS_CHANGED,
                 new Pair<>(network, proxyInfo)).sendToTarget();
-    }
-
-    /**
-     * Called when satellite network fallback uids from the {@link SatelliteAccessController}
-     * cache was updated based on {@link
-     * android.app.role.OnRoleHoldersChangedListener#onRoleHoldersChanged(String, UserHandle)}
-     * and self-certified applications, to create multilayer request with preference order
-     * {@link #PREFERENCE_ORDER_SATELLITE_FALLBACK}.
-     */
-    private void updateSatelliteNetworkPreferenceUids(
-            @NonNull final Set<Integer> messagingRoleUids,
-            @NonNull final Set<Integer> optinUids
-    ) {
-        if (CollectionUtils.containsAny(messagingRoleUids, optinUids)) {
-            throw new IllegalArgumentException("There can be no overlap between the "
-                    + "messagingRoleUids and the optinUids for satellite");
-        }
-        handleSetSatelliteNetworkPreference(messagingRoleUids, optinUids);
     }
 
     private void handleAlwaysOnNetworkRequest(
@@ -2971,7 +2997,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
         builder.setNetworkRequestCount(sampleNetworkRequestCount(mNetworkRequests.values()));
         builder.setNetworks(sampleNetworks(mNetworkAgentInfos));
         if (mConstrainedDataSatelliteMetrics) {
-            builder.setSatelliteAccessInfo(sampleSatelliteAccessInfo(mSatelliteAccessController));
+            builder.setSatelliteAccessInfo(sampleSatelliteAccessInfo(
+                    mAppOptInDefaultNetworkController));
         }
         return builder.build();
     }
@@ -3048,7 +3075,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
     @NonNull
     private static SatelliteAccessInfo sampleSatelliteAccessInfo(
-            @NonNull final SatelliteAccessController controller) {
+            @NonNull final AppOptInDefaultNetworkController controller) {
         final int optInUidCount = controller.getCachedOptInUidsCount();
         return SatelliteAccessInfo.newBuilder().setOptinUidCount(optInUidCount).build();
     }
@@ -4397,6 +4424,26 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
     }
 
+    private void maybeClearTcQdiscClsact() {
+        if (!mDeps.flagConnectivityServiceModifyQdiscClsact()) return;
+
+        final Enumeration<NetworkInterface> networkInterfaces;
+        try {
+            networkInterfaces = mDeps.getNetworkInterfaces();
+            if (networkInterfaces == null) return;
+        } catch (SocketException e) {
+            Log.e(TAG, "Failed to get network interfaces", e);
+            return;
+        }
+
+        while (networkInterfaces.hasMoreElements()) {
+            final int ifIndex = networkInterfaces.nextElement().getIndex();
+            if (ifIndex <= 0) continue;
+
+            mDeps.sendDelRtmQdiscClsactRequest(ifIndex);
+        }
+    }
+
     @VisibleForTesting
     static String createDeliveryGroupKeyForConnectivityAction(NetworkInfo info) {
         final StringBuilder sb = new StringBuilder();
@@ -4475,8 +4522,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
             mHandler.sendEmptyMessage(EVENT_MOBILE_DATA_PREFERRED_UIDS_CHANGED);
         }
 
-        if (mSatelliteAccessController != null) {
-            mSatelliteAccessController.start();
+        if (mAppOptInDefaultNetworkController != null) {
+            mAppOptInDefaultNetworkController.start();
         }
 
         if (mCarrierPrivilegeAuthenticator != null) {
@@ -4496,6 +4543,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (mSatisfiedByLocalNetworkMetrics != null) {
             mSatisfiedByLocalNetworkMetrics.start();
         }
+
+        // Clear all clsact stubs on all interfaces.
+        mHandler.post(() -> maybeClearTcQdiscClsact());
+
         // Wait PermissionMonitor to finish the permission update. Then MultipathPolicyTracker won't
         // have permission problem. While CV#block() is unbounded in time and can in principle block
         // forever, this replaces a synchronous call to PermissionMonitor#initialize, which
@@ -4828,8 +4879,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
         pw.decreaseIndent();
 
         pw.println();
-        if (mSatelliteAccessController != null) {
-            mSatelliteAccessController.dump(pw);
+        if (mAppOptInDefaultNetworkController != null) {
+            mAppOptInDefaultNetworkController.dump(pw);
         }
         if (mConstrainedDataSatelliteMetrics) {
             mSatelliteCoarseUsageMetricsCollector.dump(pw);
@@ -8199,8 +8250,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (mPermissionMonitor.useBroadcastReceiveHelper()) {
             mPermissionMonitor.onUserAddedWithInstalledPackageList(user, apps);
         }
-        if (mSatelliteAccessController != null) {
-            mSatelliteAccessController.onUserAddedWithInstalledPackageList(user, apps);
+        if (mAppOptInDefaultNetworkController != null) {
+            mAppOptInDefaultNetworkController.onUserAddedWithInstalledPackageList(user, apps);
         }
         mSettingsObserver.onUsersChanged();
     }
@@ -8218,8 +8269,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (mPermissionMonitor.useBroadcastReceiveHelper()) {
             mPermissionMonitor.onUserRemoved(user);
         }
-        if (mSatelliteAccessController != null) {
-            mSatelliteAccessController.onUserRemoved(user);
+        if (mAppOptInDefaultNetworkController != null) {
+            mAppOptInDefaultNetworkController.onUserRemoved(user);
         }
         mSettingsObserver.onUsersChanged();
     }
@@ -8230,8 +8281,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (mPermissionMonitor.useBroadcastReceiveHelper()) {
             mPermissionMonitor.onPackageAdded(packageName, uid);
         }
-        if (mSatelliteAccessController != null) {
-            mSatelliteAccessController.onPackageAdded(packageName, uid);
+        if (mAppOptInDefaultNetworkController != null) {
+            mAppOptInDefaultNetworkController.onPackageAdded(packageName, uid);
         }
     }
 
@@ -8241,8 +8292,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (mPermissionMonitor.useBroadcastReceiveHelper()) {
             mPermissionMonitor.onPackageRemoved(packageName, uid);
         }
-        if (mSatelliteAccessController != null) {
-            mSatelliteAccessController.onPackageRemoved(packageName, uid);
+        if (mAppOptInDefaultNetworkController != null) {
+            mAppOptInDefaultNetworkController.onPackageRemoved(packageName, uid);
         }
     }
 
@@ -8256,8 +8307,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (mPermissionMonitor.useBroadcastReceiveHelper()) {
             mPermissionMonitor.onExternalApplicationsAvailable(pkgList);
         }
-        if (mSatelliteAccessController != null) {
-            mSatelliteAccessController.onExternalApplicationsAvailable((pkgList));
+        if (mAppOptInDefaultNetworkController != null) {
+            mAppOptInDefaultNetworkController.onExternalApplicationsAvailable((pkgList));
         }
     }
 
@@ -9254,7 +9305,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
         return networkCapabilities.hasCapability(
                 NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
                 || networkCapabilities.hasCapability(
-                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY);
+                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
+                || networkCapabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS);
     }
 
     private void enforceRequestCapabilitiesDeclaration(@NonNull final String callerPackageName,
@@ -10480,6 +10533,32 @@ public class ConnectivityService extends IConnectivityManager.Stub
         updateLinkProperties(nai, new LinkProperties(nai.linkProperties), null);
     }
 
+    private void maybeModifyQdiscClsact(
+            @NonNull String iface, @NonNull NetworkAgentInfo nai, Boolean add) {
+        if (!mDeps.flagConnectivityServiceModifyQdiscClsact()) return;
+        // The clsact attaching of v4- tun interface is triggered by ClatdCoordinator::maybeStartBpf
+        // because the clat is started before the v4- interface is added to the network and the
+        // clat startup needs to add {in, e}gress filters.
+        // TODO: remove this workaround once v4- tun interface clsact attaching is moved out from
+        // ClatdCoordinator::maybeStartBpf.
+        if (iface.startsWith("v4-") && add) return;
+        if (nai.isVPN()) return;
+
+        final int ifIndex = mDeps.if_nametoindex(iface);
+        if (ifIndex == 0) {
+            if (add) {
+                Log.e(TAG, "Failed to get interface index for " + iface);
+            }
+            return;
+        }
+
+        if (add) {
+            mDeps.sendNewRtmQdiscClsactRequest(ifIndex);
+        } else {
+            mDeps.sendDelRtmQdiscClsactRequest(ifIndex);
+        }
+    }
+
     /**
      * @param naData captive portal data from NetworkAgent
      * @param apiData captive portal data from capport API
@@ -10581,6 +10660,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 try {
                     if (DBG) log("Adding iface " + iface + " to network " + netId);
                     mRoutingCoordinatorService.addInterfaceToNetwork(netId, iface);
+                    maybeModifyQdiscClsact(iface, nai, true /* add */);
                     wakeupModifyInterface(iface, nai, true);
                     mDeps.reportNetworkInterfaceForTransports(mContext, iface,
                             nai.networkCapabilities.getTransportTypes());
@@ -10600,6 +10680,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 if (DBG) log("Removing iface " + iface + " from network " + netId);
                 wakeupModifyInterface(iface, nai, false);
                 mRoutingCoordinatorService.removeInterfaceFromNetwork(netId, iface);
+                maybeModifyQdiscClsact(iface, nai, false /* add */);
                 mInterfaceTracker.removeInterface(iface);
             } catch (Exception e) {
                 loge("Exception removing interface: " + e);
@@ -15160,12 +15241,41 @@ public class ConnectivityService extends IConnectivityManager.Stub
         return createNrisForPreferenceOrder(uids, requests, preferenceOrder);
     }
 
-    ArraySet<NetworkRequestInfo> createMultiLayerNrisFromSatelliteNetworkFallbackUids(
-            @NonNull final Set<Integer> messagingRoleUids,
-            @NonNull final Set<Integer> optinUids
-    ) {
-        // The messaging role UIDs should use any Internet-providing satellite network as
-        // a fallback, even if it is restricted.
+    /**
+     * Creates a set of NetworkRequestInfo objects from a list of arbitrated policies.
+     * This is the central, generic method for building requests based on policies from the
+     * AppOptInDefaultNetworkController.
+     *
+     * @param policies The list of arbitrated policies.
+     * @return An ArraySet of NetworkRequestInfo objects to be applied.
+     */
+    @VisibleForTesting
+    ArraySet<NetworkRequestInfo> createNrisFromAppOptInPolicies(
+            @NonNull List<AppOptInDefaultNetworkPolicy> policies) {
+        final ArraySet<NetworkRequestInfo> allNris = new ArraySet<>();
+        for (AppOptInDefaultNetworkPolicy policy : policies) {
+            final List<NetworkRequest> mlRequests = new ArrayList<>();
+
+            // System default network
+            mlRequests.add(createDefaultInternetRequestForTransport(
+                    TYPE_NONE, NetworkRequest.Type.TRACK_DEFAULT));
+
+            // Fallback Networks
+            if (policy.isSatelliteRoleSms()) {
+                mlRequests.add(getSatelliteRoleSmsRequest());
+            }
+
+            if (policy.isSatelliteOptIn()) {
+                mlRequests.add(getSatelliteOptInRequest());
+            }
+
+            allNris.addAll(createNrisForPreferenceOrder(policy.uids(), mlRequests,
+                    PREFERENCE_ORDER_APP_OPT_IN));
+        }
+        return allNris;
+    }
+
+    private NetworkRequest getSatelliteRoleSmsRequest() {
         final NetworkCapabilities messagingCap = new NetworkCapabilities.Builder()
                 .addCapability(NET_CAPABILITY_INTERNET)
                 .addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
@@ -15173,20 +15283,17 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 .removeCapability(NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED)
                 .addTransportType(NetworkCapabilities.TRANSPORT_SATELLITE)
                 .build();
-        final ArraySet<NetworkRequestInfo> requests = createNrisForFallbackDefault(
-                messagingRoleUids, messagingCap, PREFERENCE_ORDER_SATELLITE_FALLBACK);
+        return createNetworkRequest(NetworkRequest.Type.REQUEST, messagingCap);
+    }
 
-        // The apps that have opt-in should use any Internet-providing satellite network
-        // as a fallback, but not if it is restricted.
+    private NetworkRequest getSatelliteOptInRequest() {
         final NetworkCapabilities optinCap = new NetworkCapabilities.Builder()
                 .addCapability(NET_CAPABILITY_INTERNET)
                 .addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
                 .removeCapability(NET_CAPABILITY_NOT_BANDWIDTH_CONSTRAINED)
                 .addTransportType(NetworkCapabilities.TRANSPORT_SATELLITE)
                 .build();
-        requests.addAll(createNrisForFallbackDefault(
-                optinUids, optinCap, PREFERENCE_ORDER_SATELLITE_FALLBACK));
-        return requests;
+        return createNetworkRequest(NetworkRequest.Type.REQUEST, optinCap);
     }
 
     private Set<Integer> getMobileDataPreferredUids() {
@@ -15207,14 +15314,17 @@ public class ConnectivityService extends IConnectivityManager.Stub
         rematchAllNetworksAndRequests();
     }
 
-    private void handleSetSatelliteNetworkPreference(
-            @NonNull final Set<Integer> messagingRoleUids,
-            @NonNull final Set<Integer> optinUids
-    ) {
-        removeDefaultNetworkRequestsForPreference(PREFERENCE_ORDER_SATELLITE_FALLBACK);
-        addPerAppDefaultNetworkRequests(
-                createMultiLayerNrisFromSatelliteNetworkFallbackUids(messagingRoleUids, optinUids)
-        );
+    /**
+     * The callback method that receives the list of arbitrated network policies
+     * from the AppOptInDefaultNetworkController.
+     */
+    private void handleUpdateAppOptInDefaultNetworkPolicies(
+            @NonNull List<AppOptInDefaultNetworkPolicy> policies) {
+        ensureRunningOnConnectivityServiceThread();
+        if (DBG) Log.i(TAG, "handleUpdateAppOptInDefaultNetworkPolicies received: "
+                + policies);
+        removeDefaultNetworkRequestsForPreference(PREFERENCE_ORDER_APP_OPT_IN);
+        addPerAppDefaultNetworkRequests(createNrisFromAppOptInPolicies(policies));
         // Finally, rematch.
         rematchAllNetworksAndRequests();
     }

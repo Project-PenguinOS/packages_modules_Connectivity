@@ -118,12 +118,10 @@ public final class ConnectivityCompatChanges {
      * network access from apps without {@link android.Manifest.permission#INTERNET} permission is
      * considered not blocked even though apps cannot access any networks.
      *
-     * TODO: b/400903101 - Update the target SDK version once it's finalized.
-     *
      * @hide
      */
     @ChangeId
-    @EnabledAfter(targetSdkVersion = 36)
+    @EnabledAfter(targetSdkVersion = Build.VERSION_CODES.CINNAMON_BUN)
     public static final long NETWORK_BLOCKED_WITHOUT_INTERNET_PERMISSION = 333340911L;
 
     /**

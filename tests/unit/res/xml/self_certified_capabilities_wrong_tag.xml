@@ -18,4 +18,5 @@
     <uses-network-capability1 android:name="NET_CAPABILITY_PRIORITIZE_LATENCY"/>
     <uses-network-capability android:name="NET_CAPABILITY_PRIORITIZE_LATENCY"/>
     <uses-network-capability android:name="NET_CAPABILITY_PRIORITIZE_BANDWIDTH"/>
+    <uses-network-capability android:name="NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS"/>
 </network-capabilities-declaration>

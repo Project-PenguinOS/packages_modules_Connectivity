@@ -408,6 +408,7 @@ import com.android.server.ConnectivityService.ConnectivityDiagnosticsCallbackInf
 import com.android.server.ConnectivityService.NetworkRequestInfo;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.DestroySocketsWrapper;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.ReportedInterfaces;
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy;
 import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabilities;
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker;
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator;
@@ -426,7 +427,7 @@ import com.android.server.connectivity.PermissionMonitor;
 import com.android.server.connectivity.ProxyTracker;
 import com.android.server.connectivity.QosCallbackTracker;
 import com.android.server.connectivity.QuicConnectionCloser;
-import com.android.server.connectivity.SatelliteAccessController;
+import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.TcpKeepaliveController;
 import com.android.server.connectivity.UidRangeUtils;
 import com.android.server.net.NetworkPinner;
@@ -654,7 +655,8 @@ public class ConnectivityServiceTest {
     @Mock DestroySocketsWrapper mDestroySocketsWrapper;
     @Mock SubscriptionManager mSubscriptionManager;
     @Mock KeepaliveTracker.Dependencies mMockKeepaliveTrackerDependencies;
-    @Mock SatelliteAccessController mSatelliteAccessController;
+    @Mock
+    AppOptInDefaultNetworkController mAppOptInDefaultNetworkController;
     @Mock SatelliteCoarseUsageMetricsCollector mSatelliteCoarseUsageMetricsCollector;
     @Mock DefaultNetworkRematchMetrics mDefaultNetworkRematchMetrics;
     @Mock SatisfiedByLocalNetworkMetrics mSatisfiedByLocalNetworkMetrics;
@@ -2112,11 +2114,11 @@ public class ConnectivityServiceTest {
         }
 
         @Override
-        public SatelliteAccessController makeSatelliteAccessController(
+        public AppOptInDefaultNetworkController makeAppOptInDefaultNetworkController(
                 @NonNull final Context context,
-                BiConsumer<Set<Integer>, Set<Integer>> updateSatelliteNetworkFallbackUidCallback,
+                Consumer<List<AppOptInDefaultNetworkPolicy>> updateAppOptInDefaultNetworkPolicies,
                 @NonNull final Handler connectivityServiceInternalHandler) {
-            return mSatelliteAccessController;
+            return mAppOptInDefaultNetworkController;
         }
 
         @Override
@@ -2244,7 +2246,6 @@ public class ConnectivityServiceTest {
                 case ConnectivityFlags.INGRESS_TO_VPN_ADDRESS_FILTERING:
                 case ConnectivityFlags.BACKGROUND_FIREWALL_CHAIN:
                 case ConnectivityFlags.DELAY_DESTROY_SOCKETS:
-                case ConnectivityFlags.REQUEST_RESTRICTED_WIFI:
                 case ConnectivityFlags.USE_DECLARED_METHODS_FOR_CALLBACKS:
                 case ConnectivityFlags.QUEUE_CALLBACKS_FOR_FROZEN_APPS:
                 case ConnectivityFlags.QUEUE_NETWORK_AGENT_EVENTS_AFTER_B:
@@ -6988,6 +6989,8 @@ public class ConnectivityServiceTest {
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .addCapability(NetworkCapabilities
+                        .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                 .build();
         final TestNetworkCallback cb = new TestNetworkCallback();
         mCm.requestNetwork(networkRequest, cb);
@@ -7062,6 +7065,8 @@ public class ConnectivityServiceTest {
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .addCapability(NetworkCapabilities
+                        .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                 .build();
         final TestNetworkCallback cb = new TestNetworkCallback();
         final Exception e = assertThrows(SecurityException.class,
@@ -7076,11 +7081,13 @@ public class ConnectivityServiceTest {
     public void requestNetwork_withNetworkSliceDeclaration_shouldSucceed() throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_both);
+                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_all);
 
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .addCapability(NetworkCapabilities
+                        .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                 .build();
         final TestNetworkCallback cb = new TestNetworkCallback();
         mCm.requestNetwork(networkRequest, cb);
@@ -7093,11 +7100,13 @@ public class ConnectivityServiceTest {
     public void requestNetwork_withNetworkSliceDeclaration_shouldUseCache() throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_both);
+                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_all);
 
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
+                .addCapability(NetworkCapabilities
+                        .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                 .build();
         final TestNetworkCallback cb = new TestNetworkCallback();
         mCm.requestNetwork(networkRequest, cb);

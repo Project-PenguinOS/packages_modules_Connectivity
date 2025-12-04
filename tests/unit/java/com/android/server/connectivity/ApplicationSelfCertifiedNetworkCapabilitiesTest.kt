@@ -39,10 +39,14 @@ class ApplicationSelfCertifiedNetworkCapabilitiesTest {
     private val latencyCapability = NetworkCapabilities.Builder().apply {
         addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
     }.build()
+    private val unifiedCommunicationsCapability = NetworkCapabilities.Builder().apply {
+        addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
+    }.build()
     private val emptyCapability = NetworkCapabilities.Builder().build()
-    private val bothCapabilities = NetworkCapabilities.Builder().apply {
+    private val allCapabilities  = NetworkCapabilities.Builder().apply {
         addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
         addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
+        addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
     }.build()
 
     @Test
@@ -53,6 +57,8 @@ class ApplicationSelfCertifiedNetworkCapabilitiesTest {
         val selfDeclaredCaps = ApplicationSelfCertifiedNetworkCapabilities.createFromXml(parser)
         selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(latencyCapability)
         selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(bandwidthCapability)
+        selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(
+                unifiedCommunicationsCapability)
     }
 
     @Test
@@ -82,15 +88,24 @@ class ApplicationSelfCertifiedNetworkCapabilitiesTest {
         assertThat(exception2.message).contains(
             ApplicationSelfCertifiedNetworkCapabilities.PRIORITIZE_BANDWIDTH
         )
+        val exception3 = assertFailsWith<SecurityException> {
+            selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(
+                    unifiedCommunicationsCapability)
+        }
+        assertThat(exception3.message).contains(
+                ApplicationSelfCertifiedNetworkCapabilities.PRIORITIZE_UNIFIED_COMMUNICATIONS
+        )
     }
 
     @Test
     fun checkIfSelfCertifiedNetworkCapabilitiesDeclared_shouldPassIfDeclarationExist() {
-        val parser = mResource.getXml(R.xml.self_certified_capabilities_both)
+        val parser = mResource.getXml(R.xml.self_certified_capabilities_all)
         val selfDeclaredCaps = ApplicationSelfCertifiedNetworkCapabilities.createFromXml(parser)
         selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(latencyCapability)
         selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(bandwidthCapability)
-        selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(bothCapabilities)
         selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(emptyCapability)
+        selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(
+                unifiedCommunicationsCapability)
+        selfDeclaredCaps.enforceSelfCertifiedNetworkCapabilitiesDeclared(allCapabilities)
     }
 }

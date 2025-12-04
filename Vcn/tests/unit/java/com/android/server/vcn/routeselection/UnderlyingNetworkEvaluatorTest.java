@@ -239,7 +239,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
         assertFalse(mNetworkEvaluator.isPenalized());
 
         // Validation failed
-        when(mIpSecPacketLossDetector.isValidationFailed()).thenReturn(true);
+        when(mIpSecPacketLossDetector.isValidationSucceeded()).thenReturn(false);
         getMetricMonitorCbCaptor().onValidationResultReceived();
 
         // Verify the evaluator is penalized
@@ -265,7 +265,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
         checkPenalizeNetwork();
 
         // Validation passed
-        when(mIpSecPacketLossDetector.isValidationFailed()).thenReturn(false);
+        when(mIpSecPacketLossDetector.isValidationSucceeded()).thenReturn(true);
         getMetricMonitorCbCaptor().onValidationResultReceived();
 
         // Verify the evaluator is not penalized and penalty timeout is canceled
@@ -291,7 +291,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
         assertFalse(mNetworkEvaluator.isPenalized());
 
         // Validation passed
-        when(mIpSecPacketLossDetector.isValidationFailed()).thenReturn(false);
+        when(mIpSecPacketLossDetector.isValidationSucceeded()).thenReturn(true);
         getMetricMonitorCbCaptor().onValidationResultReceived();
 
         // Verifications
@@ -326,7 +326,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
 
     @Test
     public void testCompare() throws Exception {
-        when(mIpSecPacketLossDetector.isValidationFailed()).thenReturn(true);
+        when(mIpSecPacketLossDetector.isValidationSucceeded()).thenReturn(false);
         getMetricMonitorCbCaptor().onValidationResultReceived();
 
         final UnderlyingNetworkEvaluator penalized = mNetworkEvaluator;

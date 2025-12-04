@@ -213,13 +213,13 @@ public class NetworkDiagnostics {
         // TODO: we could use mLinkProperties.isReachable(TEST_DNS6) here, because we won't set any
         // DNS servers for which isReachable() is false, but since this is diagnostic code, be extra
         // careful.
-        if (mLinkProperties.hasGlobalIpv6Address() || mLinkProperties.hasIpv6DefaultRoute()) {
+        if (mLinkProperties.hasGlobalIpv6Address() && mLinkProperties.hasIpv6DefaultRoute()) {
             mLinkProperties.addDnsServer(TEST_DNS6);
         }
 
         for (RouteInfo route : mLinkProperties.getRoutes()) {
             if (route.getType() == RouteInfo.RTN_UNICAST && route.hasGateway()) {
-                final InetAddress gateway = route.getGateway();
+                final InetAddress gateway = getAddressWithScopeIdIfNecessary(route.getGateway());
                 prepareIcmpMeasurements(gateway);
                 if (route.isIPv6Default()) {
                     prepareExplicitSourceIcmpMeasurements(gateway);
@@ -291,6 +291,21 @@ public class NetworkDiagnostics {
         } catch (UnknownHostException e) {
             throw new AssertionError("Create InetAddress fail(" + target + ")", e);
         }
+    }
+
+    private InetAddress getAddressWithScopeIdIfNecessary(@NonNull InetAddress target) {
+        if (target instanceof Inet6Address && target.isLinkLocalAddress()
+                && mInterfaceIndex != null) {
+            try {
+                // This constructor does not check the scope ID, and will not fail even if it's
+                // invalid (e.g., interface no longer exists).
+                return Inet6Address.getByAddress(
+                        null, target.getAddress(), mInterfaceIndex);
+            } catch (UnknownHostException e) {
+                throw new AssertionError("Creating address with scopeId failed(" + target + ")", e);
+            }
+        }
+        return target;
     }
 
     private void prepareIcmpMeasurements(@NonNull InetAddress target) {
@@ -505,22 +520,8 @@ public class NetworkDiagnostics {
                 InetAddress source, InetAddress target, Measurement measurement) {
             mMeasurement = measurement;
 
-            if (target instanceof Inet6Address) {
-                Inet6Address targetWithScopeId = null;
-                if (target.isLinkLocalAddress() && mInterfaceIndex != null) {
-                    try {
-                        targetWithScopeId = Inet6Address.getByAddress(
-                                null, target.getAddress(), mInterfaceIndex);
-                    } catch (UnknownHostException e) {
-                        mMeasurement.recordFailure(e.toString());
-                    }
-                }
-                mTarget = (targetWithScopeId != null) ? targetWithScopeId : target;
-                mAddressFamily = AF_INET6;
-            } else {
-                mTarget = target;
-                mAddressFamily = AF_INET;
-            }
+            mTarget = getAddressWithScopeIdIfNecessary(target);
+            mAddressFamily = (mTarget instanceof Inet6Address) ? AF_INET6 : AF_INET;
 
             // We don't need to check the scope ID here because we currently only do explicit-source
             // measurements from global IPv6 addresses.

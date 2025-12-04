@@ -53,6 +53,7 @@ import android.net.PacProxyManager
 import android.net.Uri
 import android.net.connectivity.ConnectivityCompatChanges.ENABLE_MATCH_LOCAL_NETWORK
 import android.net.networkstack.NetworkStackClientBase
+import android.net.platform.flags.Flags.FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT
 import android.os.BatteryStatsManager
 import android.os.Bundle
 import android.os.Handler
@@ -91,12 +92,15 @@ import com.android.server.connectivity.NetworkRequestStateStatsMetrics
 import com.android.server.connectivity.PermissionMonitor
 import com.android.server.connectivity.ProxyTracker
 import com.android.server.connectivity.QuicConnectionCloser
-import com.android.server.connectivity.SatelliteAccessController
+import com.android.server.connectivity.AppOptInDefaultNetworkController
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.testutils.ContentResolverWithFakeSettingsProvider
 import com.android.testutils.visibleOnHandlerThread
 import com.android.testutils.waitForIdle
 import com.android.tethering.mainline.beta.Flags.FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER
 import java.net.InetAddress
+import java.net.NetworkInterface
+import java.util.Enumeration
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -118,6 +122,7 @@ import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 
 internal const val HANDLER_TIMEOUT_MS = 2_000L
+internal const val HANDLER_SHORT_TIMEOUT_MS = 100L
 internal const val BROADCAST_TIMEOUT_MS = 3_000L
 internal const val TEST_PACKAGE_NAME = "com.android.test.package"
 internal const val WIFI_WOL_IFNAME = "test_wlan_wol"
@@ -186,7 +191,6 @@ open class CSTest {
     // permissions using static contexts.
     val enabledFeatures = HashMap<String, Boolean>().also {
         it[ConnectivityFlags.NO_REMATCH_ALL_REQUESTS_ON_REGISTER] = true
-        it[ConnectivityFlags.REQUEST_RESTRICTED_WIFI] = true
         it[ConnectivityService.KEY_DESTROY_FROZEN_SOCKETS_VERSION] = true
         it[ConnectivityService.ALLOW_SYSUI_CONNECTIVITY_REPORTS] = true
         it[ConnectivityService.ALLOW_SATALLITE_NETWORK_FALLBACK] = true
@@ -202,6 +206,7 @@ open class CSTest {
         it[ConnectivityFlags.CONSTRAINED_DATA_SATELLITE_METRICS] = true
         it[ConnectivityFlags.SATISFIED_BY_LOCAL_NETWORK_METRICS] = true
         it[ConnectivityFlags.USE_SATELLITE_REPORTED_SUSPENDED_AND_ROAMING] = true
+        it[FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT] = false
     }
     fun setFeatureEnabled(flag: String, enabled: Boolean) = enabledFeatures.set(flag, enabled)
 
@@ -254,7 +259,7 @@ open class CSTest {
     val bluetoothManager = mock<BluetoothManager>()
 
     val multicastRoutingCoordinatorService = mock<MulticastRoutingCoordinatorService>()
-    val satelliteAccessController = mock<SatelliteAccessController>()
+    val appOptInDefaultNetworkController = mock<AppOptInDefaultNetworkController>()
     val satelliteCoarseUsageMetricsCollector = mock<SatelliteCoarseUsageMetricsCollector>()
     val defaultNetworkRematchMetrics = mock<DefaultNetworkRematchMetrics>()
     val satisfiedByLocalNetworkMetrics = mock<SatisfiedByLocalNetworkMetrics>()
@@ -361,8 +366,13 @@ open class CSTest {
         ) =
             (cr as ContentResolverWithFakeSettingsProvider).registerContentObserver(uri, observer)
 
-        override fun registerContentObserverAsUser(cr: ContentResolver, uri: Uri,
-            notifyForDescendants: Boolean, observer: ContentObserver, userHandle: UserHandle) =
+        override fun registerContentObserverAsUser(
+            cr: ContentResolver,
+            uri: Uri,
+            notifyForDescendants: Boolean,
+            observer: ContentObserver,
+            userHandle: UserHandle
+        ) =
             context.getContentResolver().registerContentObserverAsUser(uri, observer, userHandle)
 
         override fun makeCarrierPrivilegeAuthenticator(
@@ -372,14 +382,15 @@ open class CSTest {
                 listener: BiConsumer<Int, Int>,
                 handler: Handler
         ) = if (SdkLevel.isAtLeastT()) mock<CarrierPrivilegeAuthenticator>() else null
-        var satelliteNetworkFallbackUidUpdate = BiConsumer<Set<Int>, Set<Int>> {_, _ -> }
-        override fun makeSatelliteAccessController(
-            context: Context,
-            updateSatelliteNetworkFallackUid: BiConsumer<Set<Int>, Set<Int>>,
-            csHandlerThread: Handler
-        ): SatelliteAccessController? {
-            satelliteNetworkFallbackUidUpdate = updateSatelliteNetworkFallackUid
-            return satelliteAccessController
+        var appOptInDefaultNetworkPoliciesUpdate =
+                Consumer<List<AppOptInDefaultNetworkPolicy>> { _ -> }
+        override fun makeAppOptInDefaultNetworkController(
+                context: Context,
+                updateAppOptInDefaultNetworkPolicies: Consumer<List<AppOptInDefaultNetworkPolicy>>,
+                csHandlerThread: Handler
+        ): AppOptInDefaultNetworkController? {
+            appOptInDefaultNetworkPoliciesUpdate = updateAppOptInDefaultNetworkPolicies
+            return appOptInDefaultNetworkController
         }
 
         override fun makeSatelliteCoarseUsageMetricsCollector(
@@ -575,6 +586,45 @@ open class CSTest {
                 enabledFeatures[FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER]
                         ?: fail("Unmocked FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER," +
                                 " see CSTest.enabledFeatures")
+
+        override fun flagConnectivityServiceModifyQdiscClsact() =
+                enabledFeatures[FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT]
+                        ?: fail("Unmocked FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT, " +
+                                " see CSTest.enableFeatures")
+
+        internal val ifnameToIndexMap = HashMap<String, Int>()
+        override fun if_nametoindex(ifname: String): Int =
+            ifnameToIndexMap[ifname]!!
+
+        override fun getNetworkInterfaces(): Enumeration<NetworkInterface?>? {
+            return null
+        }
+
+        internal var orderedRtmQdiscClsactHistory =
+            ArrayTrackRecord<Pair<Int, Boolean>>().newReadHead()
+
+        override fun sendNewRtmQdiscClsactRequest(ifIndex: Int): Boolean {
+            return orderedRtmQdiscClsactHistory.add(Pair(ifIndex, true))
+        }
+
+        override fun sendDelRtmQdiscClsactRequest(ifIndex: Int): Boolean {
+            return orderedRtmQdiscClsactHistory.add(Pair(ifIndex, false))
+        }
+
+        fun expectRtmQdiscClsactRequest(
+            ifIndex: Int,
+            add: Boolean,
+            timeoutMs: Long = HANDLER_TIMEOUT_MS
+        ) {
+            assertNotNull(
+                orderedRtmQdiscClsactHistory.poll(timeoutMs)
+                { it.first == ifIndex && it.second == add }
+            )
+        }
+
+        fun expectNoRtmQdiscClsactRequest(timeoutMs: Long = HANDLER_SHORT_TIMEOUT_MS) {
+            assertNull(orderedRtmQdiscClsactHistory.poll(timeoutMs))
+        }
     }
 
     inner class PermDeps : PermissionMonitor.Dependencies() {

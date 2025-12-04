@@ -75,6 +75,24 @@ cc_aconfig_library {
 }
 
 aconfig_declarations {
+    name: "com.android.tethering.flags-aconfig",
+    package: "com.android.tethering.flags",
+    container: "com.android.tethering",
+    srcs: ["flags.aconfig"],
+    visibility: ["//packages/modules/Connectivity:__subpackages__"],
+}
+
+java_aconfig_library {
+    name: "com.android.tethering.flags-aconfig-java",
+    aconfig_declarations: "com.android.tethering.flags-aconfig",
+    defaults: ["framework-minus-apex-aconfig-java-defaults"],
+    min_sdk_version: "30",
+    apex_available: [
+        "com.android.tethering",
+    ],
+}
+
+aconfig_declarations {
     name: "com.android.net.flags-aconfig-deprecated",
     package: "com.android.net.flags",
     exportable: true,

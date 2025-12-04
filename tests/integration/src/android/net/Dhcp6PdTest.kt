@@ -21,17 +21,19 @@ import android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET
 import android.net.NetworkCapabilities.NET_CAPABILITY_TRUSTED
 import android.net.NetworkCapabilities.TRANSPORT_ETHERNET
 import android.net.NetworkCapabilities.TRANSPORT_TEST
-import android.net.TestNetworkManager.TestInterfaceRequest
 import android.os.Build
-import android.os.Handler
-import android.os.HandlerThread
 import android.platform.test.annotations.AppModeFull
+import android.platform.test.annotations.RequiresFlagsEnabled
+import android.platform.test.flag.junit.DeviceFlagsValueProvider
 import android.provider.DeviceConfig.NAMESPACE_CONNECTIVITY
 import androidx.test.platform.app.InstrumentationRegistry
+import com.android.net.module.util.dhcp6.Dhcp6AddrRegInformPacket
 import com.android.net.module.util.dhcp6.Dhcp6Packet
 import com.android.net.module.util.dhcp6.Dhcp6RebindPacket
 import com.android.net.module.util.dhcp6.Dhcp6SolicitPacket
-import com.android.testutils.AutoCloseTestInterfaceRule
+import com.android.networkstack.mainline.beta.Flags
+import com.android.testutils.AutoCloseTestResourcesRule
+import com.android.testutils.AutoCloseableTestNetworkInterface
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.DeviceConfigRule
@@ -85,8 +87,6 @@ private val RA_WITH_PFLAG = RaPkt()
 class Dhcp6PdTest {
     private val context = InstrumentationRegistry.getInstrumentation().context
     private val cm = context.getSystemService(ConnectivityManager::class.java)!!
-    private val handlerThread = HandlerThread("$TAG thread").apply { start() }
-    private val handler = Handler(handlerThread.looper)
     private val networkCallback = TestableNetworkCallback().also {
         runAsShell(CHANGE_NETWORK_STATE) {
             val request = NetworkRequest.Builder()
@@ -95,8 +95,13 @@ class Dhcp6PdTest {
                     .removeCapability(NET_CAPABILITY_INTERNET)
                     .removeCapability(NET_CAPABILITY_TRUSTED)
                     .build()
-            cm.requestNetwork(request, it, handler)
+            cm.requestNetwork(request, it)
         }
+    }
+
+    private val iface = run {
+        val tap = AutoCloseableTestNetworkInterface.createTap(context)
+        EthernetTestInterface(context, tap)
     }
 
     @get:Rule(order = 1)
@@ -105,24 +110,19 @@ class Dhcp6PdTest {
     }
 
     @get:Rule(order = 2)
-    val testInterfaceRule = AutoCloseTestInterfaceRule(context)
-
-    private val iface: EthernetTestInterface
-    init {
-        val req = TestInterfaceRequest.Builder().setTap().build()
-        val tap = testInterfaceRule.createTestInterface(req)
-        iface = EthernetTestInterface(context, handler, tap)
+    val testResourcesRule = AutoCloseTestResourcesRule().apply {
+        add(iface)
     }
+
+    @get:Rule(order = 3)
+    val checkFlagsRule = DeviceFlagsValueProvider.createCheckFlagsRule()
+
     private val localMac = iface.testIface.macAddress!!
     private val ndResponder = NdResponder(iface.packetReader).apply { start() }
 
     @After
     fun tearDown() {
         cm.unregisterNetworkCallback(networkCallback)
-        // TODO: AutoCloseTestInterfaceRule should destroy associated EthernetTestInterface.
-        iface.destroy()
-        handlerThread.quitSafely()
-        handlerThread.join()
     }
 
     private fun eventuallyExpectPacket(predicate: (ByteArray) -> Boolean): ByteArray {
@@ -137,7 +137,7 @@ class Dhcp6PdTest {
         val p = iface.packetReader.poll(SHORT_TIMEOUT_MS) {
             it != null && predicate(it)
         }
-        assertNull(p)
+        assertNull(p, "got: " + p?.toHexString())
     }
 
     private fun assertNoDhcp6Packet() {
@@ -320,6 +320,101 @@ class Dhcp6PdTest {
         // Expect network Available to wait for RA arrival
         networkCallback.expect<Available>()
         // Ensure that no Solicit was sent.
+        assertNoDhcp6Packet()
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
+    fun testAddrReg_startedByOFlag() {
+        val prefix = "2001:db8:1::/64"
+        val ra = RaPkt(flags = "O")
+            .addPioOption(prefix, flags = "LA", valid = 900, preferred = 600)
+            .addRdnssOption(dns = "2001:4860::8888")
+        ndResponder.addRouterEntry(ROUTER_MAC, ROUTER_V6, ra)
+
+        val (srcAddr, inform) = expectDhcp6Packet<Dhcp6AddrRegInformPacket>()
+
+        assertThat(srcAddr).isEqualTo(inform.mIaAddress)
+        assertThat(IpPrefix(prefix).contains(inform.mIaAddress)).isTrue()
+
+        // Account for possible delays and minor rounding errors.
+        assertThat(inform.mValid).isAtLeast(895)
+        assertThat(inform.mValid).isAtMost(901)
+        assertThat(inform.mPreferred).isAtLeast(595)
+        assertThat(inform.mPreferred).isAtMost(601)
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
+    fun testAddrReg_retries() {
+        val ra = RaPkt(flags = "O")
+            .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")
+            .addRdnssOption(dns = "2001:4860::8888")
+        ndResponder.addRouterEntry(ROUTER_MAC, ROUTER_V6, ra)
+
+        // Account for initial transmission and 3 retries.
+        for (i in 0 until 4) {
+            expectDhcp6Packet<Dhcp6AddrRegInformPacket>()
+        }
+        assertNoDhcp6Packet()
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
+    fun testAddrReg_supportTimeout() {
+        run {
+            val ra = RaPkt(flags = "M")
+                .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")
+                .addRdnssOption(dns = "2001:4860::8888")
+            ndResponder.addRouterEntry(ROUTER_MAC, ROUTER_V6, ra)
+        }
+
+        // Account for all AddrRegInform packets (2 addresses * 4)
+        for (i in 0 until 8) {
+            expectDhcp6Packet<Dhcp6AddrRegInformPacket>()
+        }
+        assertNoDhcp6Packet()
+
+        // Wait >15 seconds.
+        Thread.sleep(15_100)
+        assertNoDhcp6Packet()
+
+        // Send another RA (from another router) with a new address
+        run {
+            val ether = EtherPkt(src = "f4:34:f0:64:52:fe", dst = "33:33:00:00:00:01")
+            val ipv6 = Ip6Pkt(src = "fe80::12", dst = "ff02::1")
+            val ra = RaPkt(flags = "M")
+                .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")
+                .addPioOption(prefix = "2001:db8:42::/64", flags = "LA")
+                .addRdnssOption(dns = "2001:4860::8888")
+            iface.sendPacket(ether / ipv6 / ra)
+        }
+        assertNoDhcp6Packet()
+    }
+
+    @Test
+    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
+    fun testAddrReg_success() {
+        val ra = RaPkt(flags = "MO")
+            .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")
+            .addRdnssOption(dns = "2001:4860::8888")
+        ndResponder.addRouterEntry(ROUTER_MAC, ROUTER_V6, ra)
+
+        // Expect 2 ADDR-REG-INFORM packets (EUI-64 and privacy address). Generate replies for
+        // both.
+        for (i in 0 until 2) {
+            val (srcAddr, info) = expectDhcp6Packet<Dhcp6AddrRegInformPacket>()
+
+            // Reply to the ADDR-REG-INFORM
+            val ether = EtherPkt(src = ROUTER_MAC, dst = localMac)
+            val ipv6 = Ip6Pkt(src = ROUTER_V6, dst = srcAddr)
+            val udp = UdpPkt(sport = 547, dport = 546)
+            val dhcp6 = Dhcp6Pkt(type = "ADDR-REG-REPLY", transId = info.transactionId)
+                .addClientIdentifierOption(info.clientDuid)
+                .addServerIdentifierOption(byteArrayOf(1, 2, 3, 4, 5, 6))
+                .addIaAddressOption(info.mIaAddress, info.mValid.toInt(), info.mPreferred.toInt())
+            iface.sendPacket(ether / ipv6 / udp / dhcp6)
+        }
         assertNoDhcp6Packet()
     }
 }

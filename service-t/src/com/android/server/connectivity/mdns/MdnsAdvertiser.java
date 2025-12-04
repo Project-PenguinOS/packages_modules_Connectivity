@@ -174,116 +174,154 @@ public class MdnsAdvertiser {
         return false;
     }
 
+    private void notifyOffloadStartOrUpdate(@NonNull MdnsInterfaceAdvertiser advertiser,
+            int serviceId, Registration registration, @OffloadEngine.OffloadType long offloadType) {
+        final String interfaceName = advertiser.getSocketInterfaceName();
+        final List<OffloadServiceInfoWrapper> existingOffloadServiceInfoWrappers =
+                mInterfaceOffloadServices.computeIfAbsent(interfaceName,
+                        k -> new ArrayList<>());
+        // Remove existing offload services from cache for update.
+        existingOffloadServiceInfoWrappers.removeIf(item -> item.mServiceId == serviceId);
+
+        byte[] rawOffloadPacket = advertiser.getRawOffloadPayload(serviceId);
+        final OffloadServiceInfoWrapper newOffloadServiceInfoWrapper =
+                createOffloadService(serviceId, registration, rawOffloadPacket,
+                        offloadType);
+        existingOffloadServiceInfoWrappers.add(newOffloadServiceInfoWrapper);
+        mOffloadCb.onOffloadStartOrUpdate(interfaceName,
+                newOffloadServiceInfoWrapper.mOffloadServiceInfo);
+    }
+
+    private void maybeStartOrUpdateOffload(@NonNull MdnsInterfaceAdvertiser advertiser, int id,
+            @NonNull Registration registration) {
+        if (!mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) return;
+
+        final String serviceType = registration.getServiceInfo().getServiceType();
+        if (isInOffloadDenyList(serviceType)) {
+            mSharedLog.i("Offload denied for service type: " + serviceType);
+        } else if (serviceType == null) {
+            mSharedLog.i("Ignore offload for custom host. id=" + id);
+        } else {
+            final long offloadType = advertiser.isProbing(id)
+                    ? OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES
+                    :OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES | OffloadEngine.OFFLOAD_TYPE_REPLY;
+            notifyOffloadStartOrUpdate(advertiser, id, registration, offloadType);
+        }
+    }
+
     private final MdnsInterfaceAdvertiser.Callback mInterfaceAdvertiserCb =
             new MdnsInterfaceAdvertiser.Callback() {
-        @Override
-        public void onServiceProbingSucceeded(
-                @NonNull MdnsInterfaceAdvertiser advertiser, int serviceId) {
-            final Registration registration = mRegistrations.get(serviceId);
-            if (registration == null) {
-                mSharedLog.w(
-                        "Register succeeded for unknown registration, serviceId: " + serviceId);
-                return;
-            }
-            if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled
-                    // TODO: Enable offload when the serviceInfo contains a custom host.
-                    && TextUtils.isEmpty(registration.getServiceInfo().getHostname())) {
-                final String serviceType = registration.getServiceInfo().getServiceType();
-                if (isInOffloadDenyList(serviceType)) {
-                    mSharedLog.i("Offload denied for service type: " + serviceType);
-                } else {
-                    final String interfaceName = advertiser.getSocketInterfaceName();
-                    final List<OffloadServiceInfoWrapper> existingOffloadServiceInfoWrappers =
-                            mInterfaceOffloadServices.computeIfAbsent(interfaceName,
-                                    k -> new ArrayList<>());
-                    // Remove existing offload services from cache for update.
-                    existingOffloadServiceInfoWrappers.removeIf(
-                            item -> item.mServiceId == serviceId);
-
-                    byte[] rawOffloadPacket = advertiser.getRawOffloadPayload(serviceId);
-                    final OffloadServiceInfoWrapper newOffloadServiceInfoWrapper =
-                            createOffloadService(serviceId, registration, rawOffloadPacket);
-                    existingOffloadServiceInfoWrappers.add(newOffloadServiceInfoWrapper);
-                    mOffloadCb.onOffloadStartOrUpdate(interfaceName,
-                            newOffloadServiceInfoWrapper.mOffloadServiceInfo);
-                }
-            }
-
-            // Wait for all current interfaces to be done probing before notifying of success.
-            if (any(mAllAdvertisers, (k, a) -> a.isProbing(serviceId))) return;
-            // The service may still be unregistered/renamed if a conflict is found on a later added
-            // interface, or if a conflicting announcement/reply is detected (RFC6762 9.)
-
-            if (!registration.mNotifiedRegistrationSuccess) {
-                mCb.onRegisterServiceSucceeded(serviceId, registration.getServiceInfo());
-                registration.mNotifiedRegistrationSuccess = true;
-            }
-        }
-
-        @Override
-        public void onServiceConflict(@NonNull MdnsInterfaceAdvertiser advertiser, int serviceId,
-                int conflictType) {
-            mSharedLog.i("Found conflict, restarted probing for service "
-                    + serviceId + " "
-                    + conflictType);
-
-            final Registration registration = mRegistrations.get(serviceId);
-            if (registration == null) return;
-            if (registration.mNotifiedRegistrationSuccess) {
-                // TODO: consider notifying clients that the service is no longer registered with
-                // the old name (back to probing). The legacy implementation did not send any
-                // callback though; it only sent onServiceRegistered after re-probing finishes
-                // (with the old, conflicting, actually not used name as argument... The new
-                // implementation will send callbacks with the new name).
-                registration.mNotifiedRegistrationSuccess = false;
-                registration.mConflictAfterProbingCount++;
-
-                // The service was done probing, just reset it to probing state (RFC6762 9.)
-                forAllAdvertisers(a -> {
-                    if (!a.maybeRestartProbingForConflict(serviceId)) {
+                @Override
+                public void onServiceProbingSucceeded(
+                        @NonNull MdnsInterfaceAdvertiser advertiser, int serviceId) {
+                    final Registration registration = mRegistrations.get(serviceId);
+                    if (registration == null) {
+                        mSharedLog.w("Register succeeded for unknown registration, serviceId: "
+                                + serviceId);
                         return;
                     }
-                    if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled) {
-                        maybeSendOffloadStop(a.getSocketInterfaceName(), serviceId);
+                    if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled
+                            // TODO: Enable offload when the serviceInfo contains a custom host.
+                            && TextUtils.isEmpty(registration.getServiceInfo().getHostname())) {
+                        final String serviceType = registration.getServiceInfo().getServiceType();
+                        if (isInOffloadDenyList(serviceType)) {
+                            mSharedLog.i("Offload denied for service type: " + serviceType);
+                        } else {
+                            long offloadType = OffloadEngine.OFFLOAD_TYPE_REPLY;
+                            if (mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) {
+                                offloadType |= OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
+                            }
+                            notifyOffloadStartOrUpdate(advertiser, serviceId, registration,
+                                    offloadType);
+                        }
                     }
-                });
-                return;
-            }
 
-            if ((conflictType & CONFLICT_SERVICE) != 0) {
-                // Service conflict was found during probing; rename once to find a name that has no
-                // conflict
-                registration.updateForServiceConflict(
-                        registration.makeNewServiceInfoForServiceConflict(1 /* renameCount */),
-                        1 /* renameCount */);
-            }
+                    // Wait for all current interfaces to be done probing before notifying of
+                    // success.
+                    if (any(mAllAdvertisers, (k, a) -> a.isProbing(serviceId))) return;
+                    // The service may still be unregistered/renamed if a conflict is found on a
+                    // later added interface, or if a conflicting announcement/reply is detected
+                    // (RFC6762 9.)
+                    if (!registration.mNotifiedRegistrationSuccess) {
+                        mCb.onRegisterServiceSucceeded(serviceId, registration.getServiceInfo());
+                        registration.mNotifiedRegistrationSuccess = true;
+                    }
+                }
 
-            if ((conflictType & CONFLICT_HOST) != 0) {
-                // Host conflict was found during probing; rename once to find a name that has no
-                // conflict
-                registration.updateForHostConflict(
-                        registration.makeNewServiceInfoForHostConflict(1 /* renameCount */),
-                        1 /* renameCount */);
-            }
+                @Override
+                public void onServiceConflict(@NonNull MdnsInterfaceAdvertiser advertiser,
+                        int serviceId, int conflictType) {
+                    mSharedLog.i("Found conflict, restarted probing for service " + serviceId
+                            + " " + conflictType);
 
-            registration.mConflictDuringProbingCount++;
+                    final Registration registration = mRegistrations.get(serviceId);
+                    if (registration == null) return;
+                    if (registration.mNotifiedRegistrationSuccess) {
+                        // TODO: consider notifying clients that the service is no longer
+                        //  registered with
+                        // the old name (back to probing). The legacy implementation did not send
+                        // any callback though; it only sent onServiceRegistered after re-probing
+                        // finishes (with the old, conflicting, actually not used name as argument.
+                        // The new implementation will send callbacks with the new name).
+                        registration.mNotifiedRegistrationSuccess = false;
+                        registration.mConflictAfterProbingCount++;
 
-            // Keep renaming if the new name conflicts in local registrations
-            updateRegistrationUntilNoConflict((net, adv) -> adv.hasRegistration(registration),
-                    registration);
+                        // The service was done probing, just reset it to probing state (RFC6762 9.)
+                        forAllAdvertisers(a -> {
+                            if (!a.maybeRestartProbingForConflict(serviceId)) {
+                                return;
+                            }
+                            if (mMdnsFeatureFlags.mIsMdnsOffloadFeatureEnabled) {
+                                if (mMdnsFeatureFlags.mIsSelectiveMdnsResponseOffloadEnabled) {
+                                    notifyOffloadStartOrUpdate(a, serviceId, registration,
+                                            OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES);
+                                } else {
+                                    maybeSendOffloadStop(a.getSocketInterfaceName(), serviceId);
+                                }
+                            }
+                        });
+                        return;
+                    }
 
-            // Update advertisers to use the new name
-            forAllAdvertisers(a -> a.renameServiceForConflict(
-                    serviceId, registration.getServiceInfo()));
-        }
+                    if ((conflictType & CONFLICT_SERVICE) != 0) {
+                        // Service conflict was found during probing; rename once to find a name
+                        // that has no conflict
+                        registration.updateForServiceConflict(
+                                registration.makeNewServiceInfoForServiceConflict(
+                                        1 /* renameCount */),
+                                1 /* renameCount */);
+                    }
 
-        @Override
-        public void onAllServicesRemoved(@NonNull MdnsInterfaceSocket socket) {
-            if (DBG) { mSharedLog.i("onAllServicesRemoved: " + socket); }
-            // Try destroying the advertiser if all services has been removed
-            destroyAdvertiser(socket, false /* interfaceDestroyed */);
-        }
-    };
+                    if ((conflictType & CONFLICT_HOST) != 0) {
+                        // Host conflict was found during probing; rename once to find a name
+                        // that has no conflict
+                        registration.updateForHostConflict(
+                                registration.makeNewServiceInfoForHostConflict(
+                                        1 /* renameCount */),
+                                1 /* renameCount */);
+                    }
+
+                    registration.mConflictDuringProbingCount++;
+
+                    // Keep renaming if the new name conflicts in local registrations
+                    updateRegistrationUntilNoConflict(
+                            (net, adv) -> adv.hasRegistration(registration),
+                            registration);
+
+                    // Update advertisers to use the new name
+                    forAllAdvertisers(a -> a.renameServiceForConflict(
+                            serviceId, registration.getServiceInfo()));
+                }
+
+                @Override
+                public void onAllServicesRemoved(@NonNull MdnsInterfaceSocket socket) {
+                    if (DBG) {
+                        mSharedLog.i("onAllServicesRemoved: " + socket);
+                    }
+                    // Try destroying the advertiser if all services has been removed
+                    destroyAdvertiser(socket, false /* interfaceDestroyed */);
+                }
+            };
 
     private boolean hasAnyServiceConflict(
             @NonNull BiPredicate<Network, InterfaceAdvertiserRequest> applicableAdvertiserFilter,
@@ -524,8 +562,10 @@ public class MdnsAdvertiser {
             mPendingRegistrations.put(id, registration);
             for (int i = 0; i < mAdvertisers.size(); i++) {
                 try {
-                    mAdvertisers.valueAt(i).addService(id, registration.getServiceInfo(),
+                    final MdnsInterfaceAdvertiser advertiser = mAdvertisers.valueAt(i);
+                    advertiser.addService(id, registration.getServiceInfo(),
                             registration.getAdvertisingOptions());
+                    maybeStartOrUpdateOffload(advertiser, id, registration);
                 } catch (NameConflictException e) {
                     mSharedLog.wtf("Name conflict adding services that should have unique names",
                             e);
@@ -540,8 +580,9 @@ public class MdnsAdvertiser {
         void updateService(int id, @NonNull Registration registration) {
             mPendingRegistrations.put(id, registration);
             for (int i = 0; i < mAdvertisers.size(); i++) {
-                mAdvertisers.valueAt(i).updateService(
-                        id, registration.getServiceInfo().getSubtypes());
+                final MdnsInterfaceAdvertiser advertiser = mAdvertisers.valueAt(i);
+                advertiser.updateService(id, registration.getServiceInfo().getSubtypes());
+                maybeStartOrUpdateOffload(advertiser, id, registration);
             }
         }
 
@@ -590,8 +631,10 @@ public class MdnsAdvertiser {
             for (int i = 0; i < mPendingRegistrations.size(); i++) {
                 final Registration registration = mPendingRegistrations.valueAt(i);
                 try {
-                    advertiser.addService(mPendingRegistrations.keyAt(i),
-                            registration.getServiceInfo(), registration.getAdvertisingOptions());
+                    final int id = mPendingRegistrations.keyAt(i);
+                    advertiser.addService(id, registration.getServiceInfo(),
+                            registration.getAdvertisingOptions());
+                    maybeStartOrUpdateOffload(advertiser, id, registration);
                 } catch (NameConflictException e) {
                     mSharedLog.wtf("Name conflict adding services that should have unique names",
                             e);
@@ -1025,7 +1068,8 @@ public class MdnsAdvertiser {
     }
 
     private OffloadServiceInfoWrapper createOffloadService(int serviceId,
-            @NonNull Registration registration, byte[] rawOffloadPacket) {
+            @NonNull Registration registration, byte[] rawOffloadPacket,
+            @OffloadEngine.OffloadType long offloadType) {
         final NsdServiceInfo nsdServiceInfo = registration.getServiceInfo();
         final Integer mapPriority = mServiceTypeToOffloadPriority.get(
                 DnsUtils.toDnsUpperCase(nsdServiceInfo.getServiceType()));
@@ -1038,8 +1082,7 @@ public class MdnsAdvertiser {
                 String.join(".", mDeviceHostName),
                 rawOffloadPacket,
                 priority,
-                // TODO: set the offloadType based on the callback timing.
-                OffloadEngine.OFFLOAD_TYPE_REPLY);
+                offloadType);
         return new OffloadServiceInfoWrapper(serviceId, offloadServiceInfo);
     }
 }

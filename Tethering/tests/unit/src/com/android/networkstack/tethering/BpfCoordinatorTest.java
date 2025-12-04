@@ -57,6 +57,9 @@ import static com.android.networkstack.tethering.BpfCoordinator.NON_OFFLOADED_UP
 import static com.android.networkstack.tethering.BpfCoordinator.StatsType;
 import static com.android.networkstack.tethering.BpfCoordinator.StatsType.STATS_PER_IFACE;
 import static com.android.networkstack.tethering.BpfCoordinator.StatsType.STATS_PER_UID;
+import static com.android.networkstack.tethering.BpfCoordinator.TETHER_KERNEL_STATS_MAP_TOTAL_OBJS_LOAD_TIME_KEY;
+import static com.android.networkstack.tethering.BpfCoordinator.TETHER_KERNEL_STATS_MAP_UBSAN_BUG_KEY;
+import static com.android.networkstack.tethering.BpfCoordinator.TETHER_KERNEL_STATS_MAP_UBSAN_BUG_VALUE_OK;
 import static com.android.networkstack.tethering.BpfUtils.DOWNSTREAM;
 import static com.android.networkstack.tethering.BpfUtils.UPSTREAM;
 import static com.android.networkstack.tethering.TetheringConfiguration.DEFAULT_TETHER_OFFLOAD_POLL_INTERVAL_MS;
@@ -122,6 +125,7 @@ import com.android.net.module.util.NetworkStackConstants;
 import com.android.net.module.util.SharedLog;
 import com.android.net.module.util.Struct.S32;
 import com.android.net.module.util.Struct.S64;
+import com.android.net.module.util.Struct.U32;
 import com.android.net.module.util.bpf.Tether4Key;
 import com.android.net.module.util.bpf.Tether4Value;
 import com.android.net.module.util.bpf.TetherStatsValue;
@@ -487,6 +491,8 @@ public class BpfCoordinatorTest {
             spy(new TestBpfMap<>(S32.class, S32.class));
     private final IBpfMap<S32, S32> mBpfErrorMap =
             spy(new TestBpfMap<>(S32.class, S32.class));
+    private final IBpfMap<U32, U32> mBpfKernelStatsMap =
+            spy(new TestBpfMap<>(U32.class, U32.class));
     private BpfCoordinator.Dependencies mDeps =
             spy(new BpfCoordinator.Dependencies() {
                     @NonNull
@@ -572,6 +578,11 @@ public class BpfCoordinatorTest {
                         return mBpfErrorMap;
                     }
 
+                    @Nullable
+                    public IBpfMap<U32, U32> getBpfKernelStatsMap() {
+                        return mBpfKernelStatsMap;
+                    }
+
                     @Override
                     public void sendTetheringActiveSessionsReported(int lastMaxSessionCount) {
                         // No-op.
@@ -583,11 +594,16 @@ public class BpfCoordinatorTest {
                     }
             });
 
-    @Before public void setUp() {
+    @Before public void setUp() throws Exception {
         MockitoAnnotations.initMocks(this);
         when(mTetherConfig.isBpfOffloadEnabled()).thenReturn(true /* default value */);
         when(mIpServer.getInterfaceParams()).thenReturn(DOWNSTREAM_IFACE_PARAMS);
         when(mIpServer2.getInterfaceParams()).thenReturn(DOWNSTREAM_IFACE_PARAMS2);
+
+        mBpfKernelStatsMap.insertEntry(
+                TETHER_KERNEL_STATS_MAP_TOTAL_OBJS_LOAD_TIME_KEY, new U32(0));
+        mBpfKernelStatsMap.insertEntry(
+                TETHER_KERNEL_STATS_MAP_UBSAN_BUG_KEY, new U32(0));
     }
 
     private void waitForIdle() {
@@ -3274,5 +3290,37 @@ public class BpfCoordinatorTest {
         recvDelNeigh(myIfindex, neighB, NUD_STALE, MAC_B);
         // When last client information is deleted, IpServer will be removed from mTetherClients
         assertNull(mTetherClients.get(mIpServer));
+    }
+
+    @Test
+    public void testSendKernelStatsMetricsReported() throws Exception {
+        mBpfKernelStatsMap.insertOrReplaceEntry(
+                TETHER_KERNEL_STATS_MAP_UBSAN_BUG_KEY, new U32(0));
+        final int loadTimeMs = 150;
+        mBpfKernelStatsMap.insertOrReplaceEntry(
+                TETHER_KERNEL_STATS_MAP_TOTAL_OBJS_LOAD_TIME_KEY, new U32(loadTimeMs));
+        makeBpfCoordinator();
+
+        waitForIdle();
+        verify(mDeps).sendBpfUbsanKernelBugError();
+        verify(mDeps).sendBpfTotalObjectsLoadTimeMilliseconds(loadTimeMs);
+
+
+    }
+
+    @Test
+    public void testSendKernelStatsMetricsPartialReported() throws Exception {
+        mBpfKernelStatsMap.insertOrReplaceEntry(
+                TETHER_KERNEL_STATS_MAP_UBSAN_BUG_KEY,
+                new U32(TETHER_KERNEL_STATS_MAP_UBSAN_BUG_VALUE_OK)
+        );
+        final int loadTimeMs = 150;
+        mBpfKernelStatsMap.insertOrReplaceEntry(
+                TETHER_KERNEL_STATS_MAP_TOTAL_OBJS_LOAD_TIME_KEY, new U32(loadTimeMs));
+        makeBpfCoordinator();
+
+        waitForIdle();
+        verify(mDeps, never()).sendBpfUbsanKernelBugError();
+        verify(mDeps).sendBpfTotalObjectsLoadTimeMilliseconds(loadTimeMs);
     }
 }

@@ -68,6 +68,8 @@ public class NetworkSelfDeclaredCapabilitiesTest {
                 new NetworkRequest.Builder()
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
+                        .addCapability(NetworkCapabilities
+                                .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                         .build();
         final ConnectivityManager.NetworkCallback callback =
                 new ConnectivityManager.NetworkCallback();
@@ -77,7 +79,7 @@ public class NetworkSelfDeclaredCapabilitiesTest {
 
     @Test
     @IgnoreUpTo(Build.VERSION_CODES.TIRAMISU)
-    public void requestNetwork_lackingRequiredSelfDeclaredCapabilities() {
+    public void requestNetwork_lackingRequiredSelfDeclaredCapabilities_all() {
         final ConnectivityManager cm =
                 (ConnectivityManager)
                         InstrumentationRegistry.getInstrumentation()
@@ -87,6 +89,29 @@ public class NetworkSelfDeclaredCapabilitiesTest {
                 new NetworkRequest.Builder()
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
                         .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
+                        .addCapability(NetworkCapabilities
+                                .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
+                        .build();
+        final ConnectivityManager.NetworkCallback callback =
+                new ConnectivityManager.NetworkCallback();
+        assertThrows(
+                SecurityException.class,
+                () -> cm.requestNetwork(request, callback));
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.TIRAMISU)
+    public void
+    requestNetwork_lackingRequiredSelfDeclaredCapabilities_unifiedCommunications() {
+        final ConnectivityManager cm =
+                (ConnectivityManager)
+                        InstrumentationRegistry.getInstrumentation()
+                                .getContext()
+                                .getSystemService(Context.CONNECTIVITY_SERVICE);
+        final NetworkRequest request =
+                new NetworkRequest.Builder()
+                        .addCapability(NetworkCapabilities
+                                .NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
                         .build();
         final ConnectivityManager.NetworkCallback callback =
                 new ConnectivityManager.NetworkCallback();

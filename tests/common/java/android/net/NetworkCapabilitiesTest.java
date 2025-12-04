@@ -38,6 +38,7 @@ import static android.net.NetworkCapabilities.NET_CAPABILITY_OEM_PRIVATE;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_PARTIAL_CONNECTIVITY;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_RCS;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_SUPL;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_TRUSTED;
@@ -1724,5 +1725,41 @@ public class NetworkCapabilitiesTest {
                         REDACT_FOR_ACCESS_FINE_LOCATION | REDACT_FOR_THREAD_NETWORK_PRIVILEGED);
         assertTrue(redactedSpecifier2.locationRedacted);
         assertTrue(redactedSpecifier2.threadNetworkRedacted);
+    }
+
+    @Test
+    public void testHasCapability_PrioritizeUnifiedCommunications() {
+        NetworkCapabilities nc = new NetworkCapabilities();
+        assertFalse(nc.hasCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS));
+
+        nc.addCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS);
+        assertTrue(nc.hasCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS));
+
+        nc.removeCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS);
+        assertFalse(nc.hasCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS));
+    }
+
+    @Test
+    public void testMarkCapabilitiesRestricted_PrioritizeUnifiedCommunications() {
+        NetworkCapabilities netCap = new NetworkCapabilities();
+        netCap.addCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS);
+        netCap.addCapability(NET_CAPABILITY_NOT_METERED);
+        netCap.maybeMarkCapabilitiesRestricted();
+        assertTrue(netCap.hasCapability(NET_CAPABILITY_NOT_RESTRICTED));
+
+        netCap = new NetworkCapabilities();
+        netCap.addCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS);
+        netCap.removeCapability(NET_CAPABILITY_NOT_METERED);
+        netCap.maybeMarkCapabilitiesRestricted();
+        assertTrue(netCap.hasCapability(NET_CAPABILITY_NOT_RESTRICTED));
+    }
+
+    @Test
+    public void testToString_PrioritizeUnifiedCommunications() {
+        NetworkCapabilities netCap = new NetworkCapabilities();
+        netCap.addCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS);
+
+        // The toString() method dynamically looks up capability names.
+        assertTrue(netCap.toString().contains("PRIORITIZE_UNIFIED_COMMUNICATIONS"));
     }
 }

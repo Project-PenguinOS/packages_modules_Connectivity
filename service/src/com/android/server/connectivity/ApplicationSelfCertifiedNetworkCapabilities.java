@@ -40,6 +40,8 @@ public final class ApplicationSelfCertifiedNetworkCapabilities {
 
     public static final String PRIORITIZE_LATENCY = "NET_CAPABILITY_PRIORITIZE_LATENCY";
     public static final String PRIORITIZE_BANDWIDTH = "NET_CAPABILITY_PRIORITIZE_BANDWIDTH";
+    public static final String PRIORITIZE_UNIFIED_COMMUNICATIONS =
+            "NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS";
 
     private static final String TAG =
             ApplicationSelfCertifiedNetworkCapabilities.class.getSimpleName();
@@ -60,6 +62,8 @@ public final class ApplicationSelfCertifiedNetworkCapabilities {
      *  <network-capabilities-declaration xmlns:android="http://schemas.android.com/apk/res/android">
      *     <uses-network-capability android:name="NET_CAPABILITY_PRIORITIZE_LATENCY"/>
      *     <uses-network-capability android:name="NET_CAPABILITY_PRIORITIZE_BANDWIDTH"/>
+     *     <uses-network-capability
+     *         android:name="NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS"/>
      * </network-capabilities-declaration>
      * }
      * </pre>
@@ -138,6 +142,8 @@ public final class ApplicationSelfCertifiedNetworkCapabilities {
                     return NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH;
                 case PRIORITIZE_LATENCY:
                     return NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY;
+                case PRIORITIZE_UNIFIED_COMMUNICATIONS:
+                    return NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS;
                 default:
                     Log.w(TAG, "Unknown capability declaration name: " + name);
             }
@@ -189,6 +195,14 @@ public final class ApplicationSelfCertifiedNetworkCapabilities {
                     "Missing " + ApplicationSelfCertifiedNetworkCapabilities.PRIORITIZE_LATENCY
                             + " declaration");
         }
+        if (networkCapabilities.hasCapability(
+                NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
+                && !hasPrioritizeUnifiedCommunications()) {
+            throw new SecurityException(
+                    "Missing " + ApplicationSelfCertifiedNetworkCapabilities
+                            .PRIORITIZE_UNIFIED_COMMUNICATIONS
+                            + " declaration");
+        }
     }
 
     /**
@@ -205,5 +219,13 @@ public final class ApplicationSelfCertifiedNetworkCapabilities {
     private boolean hasPrioritizeBandwidth() {
         return (mRequestedNetworkCapabilities & (1L
                 << NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)) != 0;
+    }
+
+    /**
+     * Checks if NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS is declared.
+     */
+    private boolean hasPrioritizeUnifiedCommunications() {
+        return (mRequestedNetworkCapabilities & (1L
+                << NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)) != 0;
     }
 }

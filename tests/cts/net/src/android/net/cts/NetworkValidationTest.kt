@@ -26,7 +26,6 @@ import android.net.NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL
 import android.net.NetworkCapabilities.NET_CAPABILITY_TRUSTED
 import android.net.NetworkCapabilities.TRANSPORT_TEST
 import android.net.NetworkRequest
-import android.net.TestNetworkInterface
 import android.net.TestNetworkManager
 import android.net.Uri
 import android.net.dhcp.DhcpDiscoverPacket
@@ -43,7 +42,8 @@ import androidx.test.runner.AndroidJUnit4
 import com.android.net.module.util.Inet4AddressUtils.getBroadcastAddress
 import com.android.net.module.util.Inet4AddressUtils.getPrefixMaskAsInet4Address
 import com.android.net.module.util.NetworkStackConstants.IPV4_ADDR_ANY
-import com.android.testutils.AutoCloseTestInterfaceRule
+import com.android.testutils.AutoCloseTestResourcesRule
+import com.android.testutils.AutoCloseableTestNetworkInterface
 import com.android.testutils.DhcpClientPacketFilter
 import com.android.testutils.DhcpOptionFilter
 import com.android.testutils.PollPacketReader
@@ -95,14 +95,17 @@ class NetworkValidationTest {
     private val ethRequestCb = TestableNetworkCallback()
 
     private var readerHandler: Handler? = null
-    private lateinit var iface: TestNetworkInterface
     private lateinit var reader: PollPacketReader
     private lateinit var capportUrl: Uri
 
     private var testSkipped = false
 
+    private val iface = AutoCloseableTestNetworkInterface.createTap(context)
+
     @get:Rule
-    val testInterfaceRule = AutoCloseTestInterfaceRule(context)
+    val testResourcesRule = AutoCloseTestResourcesRule().apply {
+        add(iface)
+    }
 
     @Before
     fun setUp() {
@@ -115,10 +118,6 @@ class NetworkValidationTest {
         runAsShell(NETWORK_SETTINGS, MANAGE_TEST_NETWORKS) {
             eth.setIncludeTestInterfaces(true)
         }
-        // Keeping a reference to the test interface also makes sure the ParcelFileDescriptor
-        // does not go out of scope, which would cause it to close the underlying FileDescriptor
-        // in its finalizer.
-        iface = testInterfaceRule.createTapInterface()
 
         handlerThread.start()
         readerHandler = Handler(handlerThread.looper)

@@ -53,6 +53,13 @@
     -->
     <string translatable="false" name="config_thread_vendor_name">ro.product.manufacturer</string>
 
+    <!-- Specifies the vendor software version of this device. If this value is not an empty string,
+    it will be included in the Vendor Software Version TLV for network diagnostic. A non-empty string
+    value must not exceed length of 16 UTF-8 bytes. A special value "ro.build.id" indicates this value
+    should be derived from the `ro.build.id` system property.
+    -->
+    <string translatable="false" name="config_thread_vendor_sw_version">ro.build.id</string>
+
     <!-- Specifies the 24 bits vendor OUI of this device. If this value is not an empty string, it
     will be included in TXT (key is 'vo') value of the "_meshcop._udp" mDNS service which is
     published by the Thread service. The OUI can be represented as a base-16 number of six

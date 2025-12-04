@@ -24,7 +24,7 @@ import static android.stats.connectivity.MeteredState.METERED_TEMPORARILY_UNMETE
 import static android.stats.connectivity.MeteredState.METERED_YES;
 
 import static com.android.net.module.util.FrameworkConnectivityStatsLog.DEFAULT_NETWORK_REMATCH;
-import static com.android.server.ConnectivityService.PREFERENCE_ORDER_SATELLITE_FALLBACK;
+import static com.android.server.ConnectivityService.PREFERENCE_ORDER_APP_OPT_IN;
 import static com.android.server.ConnectivityStatsLog.DEFAULT_NETWORK_REMATCH__REMATCH_REASON__RMR_UNKNOWN;
 
 import android.annotation.NonNull;
@@ -88,7 +88,7 @@ public class DefaultNetworkRematchMetrics {
         // TODO: Record event for network other than satellite after figuring out
         //  how to deal with the amount of data single device reports.
         // Only logs for satellite multilayer requests.
-        if (nri.getPreferenceOrderForNetd() != PREFERENCE_ORDER_SATELLITE_FALLBACK) {
+        if (nri.getPreferenceOrderForNetd() != PREFERENCE_ORDER_APP_OPT_IN) {
             return;
         }
         // Only logs when moving away from a satellite network to another network type.

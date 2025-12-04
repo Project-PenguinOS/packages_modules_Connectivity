@@ -237,7 +237,7 @@ public class UnderlyingNetworkEvaluator {
         final boolean wasPenalized = mIsPenalized;
         mIsPenalized = false;
         for (NetworkMetricMonitor monitor : mMetricMonitors) {
-            mIsPenalized |= monitor.isValidationFailed();
+            mIsPenalized |= !monitor.isValidationSucceeded();
         }
 
         if (wasPenalized == mIsPenalized) {

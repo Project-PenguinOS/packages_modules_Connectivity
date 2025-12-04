@@ -20,7 +20,6 @@ import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 import static android.telephony.TelephonyManager.ACTION_MULTI_SIM_CONFIG_CHANGED;
 
-import static com.android.server.connectivity.ConnectivityFlags.CARRIER_SERVICE_CHANGED_USE_CALLBACK;
 import static com.android.testutils.HandlerUtils.visibleOnHandlerThread;
 
 import static org.junit.Assert.assertEquals;
@@ -141,8 +140,6 @@ public class CarrierPrivilegeAuthenticatorTest {
         mHandlerThread = new HandlerThread(CarrierPrivilegeAuthenticatorTest.class.getSimpleName());
         mUseCallbacks = useCallbacks;
         final Dependencies deps = mock(Dependencies.class);
-        doReturn(useCallbacks).when(deps).isFeatureNotChickenedOut(any() /* context */,
-                eq(CARRIER_SERVICE_CHANGED_USE_CALLBACK));
         doReturn(mHandlerThread).when(deps).makeHandlerThread();
         doReturn(SUBSCRIPTION_COUNT).when(mTelephonyManager).getActiveModemCount();
         doReturn(mTestPkg).when(mTelephonyManagerShim)

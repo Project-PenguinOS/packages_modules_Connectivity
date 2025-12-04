@@ -37,6 +37,8 @@ import android.text.TextUtils;
 import android.util.ArraySet;
 import android.util.SparseArray;
 
+import androidx.annotation.IntDef;
+
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.net.module.util.CollectionUtils;
@@ -44,10 +46,13 @@ import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.HandlerUtils;
 import com.android.net.module.util.SharedLog;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.util.Set;
 import java.util.concurrent.Executor;
-import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import javax.annotation.CheckReturnValue;
 
@@ -59,8 +64,8 @@ import javax.annotation.CheckReturnValue;
  * Note that this class is not thread safe and should only be accessed on the handler
  * thread, except {@link #start()}.
  */
-public class SatelliteAccessController {
-    private static final String TAG = SatelliteAccessController.class.getSimpleName();
+public class AppOptInDefaultNetworkController {
+    private static final String TAG = AppOptInDefaultNetworkController.class.getSimpleName();
     // Shamelessly copied from telephony/satellite/SatelliteManager.java.
     // TODO: Import from SatelliteManager when it is available.
     @VisibleForTesting
@@ -73,7 +78,8 @@ public class SatelliteAccessController {
     private final Context mContext;
     private final Dependencies mDeps;
     private final DefaultMessageRoleListener mDefaultMessageRoleListener;
-    private final BiConsumer<Set<Integer>, Set<Integer>> mCallback;
+    // The callback is a Consumer that accepts a List of AppOptInDefaultNetworkPolicy objects.
+    private final Consumer<List<AppOptInDefaultNetworkPolicy>> mCallback;
     private final Handler mConnectivityServiceHandler;
     private final boolean mSupportConstrainedDataSatelliteOptIn;
     private final SharedLog mLog = new SharedLog(MAX_LOG_ENTRIES, TAG);
@@ -90,6 +96,36 @@ public class SatelliteAccessController {
     private final Set<Integer> mSatelliteDataOptInUids = new ArraySet<>();
 
     /**
+     * A bitmask of flags representing the network policies that can be applied to a UID.
+     *
+     * <p>These flags are used to create a unique integer key for each combination of
+     * policies, allowing for efficient grouping of UIDs that share the same network
+     * requirements.
+     */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(flag = true, value = {
+            POLICY_NONE,
+            POLICY_SATELLITE_ROLE_SMS,
+            POLICY_SATELLITE_OPT_IN,
+    })
+    public @interface Policy {}
+
+    /** No specific network policy applies. */
+    static final int POLICY_NONE = 0;
+
+    /**
+     * A policy flag indicating that the UID has the SMS role and is eligible for
+     * satellite fallback, including access to restricted networks.
+     */
+    static final int POLICY_SATELLITE_ROLE_SMS = 1 << 0;
+
+    /**
+     * A policy flag indicating that the UID belongs to an application that has
+     * opted-in for satellite network access via its manifest metadata.
+     */
+    static final int POLICY_SATELLITE_OPT_IN = 1 << 1;
+
+    /**
      *  Monitor {@link android.app.role.OnRoleHoldersChangedListener#onRoleHoldersChanged(String,
      *  UserHandle)},
      *
@@ -101,7 +137,7 @@ public class SatelliteAccessController {
             HandlerUtils.ensureRunningOnHandlerThread(mConnectivityServiceHandler);
             if (RoleManager.ROLE_SMS.equals(role) && updateSatelliteRoleSmsUids(userHandle)) {
                 mLog.i("ROLE_SMS Change detected ");
-                reportSatelliteNetworkFallbackUids();
+                reportAppOptInDefaultNetworkPolicies();
             }
         }
 
@@ -115,8 +151,8 @@ public class SatelliteAccessController {
         }
     }
 
-    public SatelliteAccessController(@NonNull final Context c,
-            BiConsumer<Set<Integer>, Set<Integer>> callback,
+    public AppOptInDefaultNetworkController(@NonNull final Context c,
+            Consumer<List<AppOptInDefaultNetworkPolicy>> callback,
             @NonNull final Handler connectivityServiceInternalHandler) {
         this(c, new Dependencies(c), callback, connectivityServiceInternalHandler);
     }
@@ -147,8 +183,8 @@ public class SatelliteAccessController {
     }
 
     @VisibleForTesting
-    SatelliteAccessController(@NonNull final Context c, @NonNull final Dependencies deps,
-            BiConsumer<Set<Integer>, Set<Integer>> callback,
+    AppOptInDefaultNetworkController(@NonNull final Context c, @NonNull final Dependencies deps,
+            Consumer<List<AppOptInDefaultNetworkPolicy>> callback,
             @NonNull final Handler connectivityServiceInternalHandler) {
         mContext = c;
         mDeps = deps;
@@ -229,8 +265,21 @@ public class SatelliteAccessController {
         return true;
     }
 
-    private void reportSatelliteNetworkFallbackUids() {
-        // Merge all uids of multiple users available
+    private void reportAppOptInDefaultNetworkPolicies() {
+        mCallback.accept(buildAppOptInDefaultNetworkPolicies());
+    }
+
+    /**
+     * Performs the core arbitration logic.
+     * This method groups all relevant UIDs by their unique combination of policies
+     * and creates a list of AppOptInDefaultNetworkPolicy objects representing the final,
+     * arbitrated state.
+     *
+     * @return A list of AppOptInDefaultNetworkPolicy objects.
+     */
+    private List<AppOptInDefaultNetworkPolicy> buildAppOptInDefaultNetworkPolicies() {
+
+        // Merge all uids of multiple users available for the SMS role.
         final Set<Integer> mergedSatelliteRoleSmsUids = new ArraySet<>();
         for (int i = 0; i < mSatelliteRoleSmsUids.size(); i++) {
             mergedSatelliteRoleSmsUids.addAll(mSatelliteRoleSmsUids.valueAt(i));
@@ -238,12 +287,40 @@ public class SatelliteAccessController {
         mLog.i("SmsRoleUids:" + mergedSatelliteRoleSmsUids
                 + " Opt-InUids:" + mSatelliteDataOptInUids);
 
-        // trigger multiple layer request for satellite network fallback of multi user uids
-        final ArraySet<Integer> optInUids = new ArraySet(mSatelliteDataOptInUids);
-        // If the same UID is in both sets, keep it only in the first one, which grant
-        // stronger privilege to access the satellite network.
-        optInUids.removeAll(mergedSatelliteRoleSmsUids);
-        mCallback.accept(mergedSatelliteRoleSmsUids, optInUids);
+        // Group UIDs by their unique combination of policies using a bitmask.
+        // SparseArray is efficient for integer keys. ArraySet for the UID values.
+        final SparseArray<ArraySet<Integer>> uidsByPolicyFlags = new SparseArray<>();
+        final ArraySet<Integer> allUids = new ArraySet<>();
+        allUids.addAll(mergedSatelliteRoleSmsUids);
+        allUids.addAll(mSatelliteDataOptInUids);
+
+        for (int uid : allUids) {
+            final boolean hasSmsRole = mergedSatelliteRoleSmsUids.contains(uid);
+            final boolean hasOptedIn = mSatelliteDataOptInUids.contains(uid);
+
+            int policyFlags = POLICY_NONE;
+            if (hasSmsRole) policyFlags |= POLICY_SATELLITE_ROLE_SMS;
+            if (hasOptedIn) policyFlags |= POLICY_SATELLITE_OPT_IN;
+
+            ArraySet<Integer> uidsForPolicyFlags = uidsByPolicyFlags.get(policyFlags);
+            if (uidsForPolicyFlags == null) {
+                uidsForPolicyFlags = new ArraySet<>();
+                uidsByPolicyFlags.put(policyFlags, uidsForPolicyFlags);
+            }
+            uidsForPolicyFlags.add(uid);
+        }
+
+        // Convert the grouped UIDs into a list of AppOptInDefaultNetworkPolicy objects.
+        final List<AppOptInDefaultNetworkPolicy> policies = new ArrayList<>();
+        for (int i = 0; i < uidsByPolicyFlags.size(); i++) {
+            final int policyFlags = uidsByPolicyFlags.keyAt(i);
+            final Set<Integer> uids = uidsByPolicyFlags.valueAt(i);
+            policies.add(new AppOptInDefaultNetworkPolicy(
+                    (policyFlags & POLICY_SATELLITE_OPT_IN) != 0,
+                    (policyFlags & POLICY_SATELLITE_ROLE_SMS) != 0,
+                    uids));
+        }
+        return policies;
     }
 
     public void start() {
@@ -291,7 +368,7 @@ public class SatelliteAccessController {
             }
         }
         if (roleSmsUidsChanged || optInUidsChanged) {
-            reportSatelliteNetworkFallbackUids();
+            reportAppOptInDefaultNetworkPolicies();
         }
     }
 
@@ -312,7 +389,7 @@ public class SatelliteAccessController {
             satelliteOptInUidsChanged = false;
         }
         if (smsRoleUidsChanged || satelliteOptInUidsChanged) {
-            reportSatelliteNetworkFallbackUids();
+            reportAppOptInDefaultNetworkPolicies();
         }
     }
 
@@ -326,7 +403,7 @@ public class SatelliteAccessController {
         HandlerUtils.ensureRunningOnHandlerThread(mConnectivityServiceHandler);
         if (!mSupportConstrainedDataSatelliteOptIn) return;
         if (addSatelliteDataOptInUid(getPackageManagerForUid(uid), packageName, uid)) {
-            reportSatelliteNetworkFallbackUids();
+            reportAppOptInDefaultNetworkPolicies();
         }
     }
 
@@ -371,7 +448,7 @@ public class SatelliteAccessController {
             }
         }
         if (added) {
-            reportSatelliteNetworkFallbackUids();
+            reportAppOptInDefaultNetworkPolicies();
         }
     }
 
@@ -404,7 +481,7 @@ public class SatelliteAccessController {
         // satellite-optimized app shares the UID.
         final boolean removed = mSatelliteDataOptInUids.remove(uid);
         if (removed) {
-            reportSatelliteNetworkFallbackUids();
+            reportAppOptInDefaultNetworkPolicies();
         }
     }
 
@@ -484,7 +561,7 @@ public class SatelliteAccessController {
     /** Dump info to dumpsys */
     public void dump(@NonNull IndentingPrintWriter pw) {
         HandlerUtils.ensureRunningOnHandlerThread(mConnectivityServiceHandler);
-        pw.println("SatelliteAccessController:");
+        pw.println("AppOptInDefaultNetworkController:");
         pw.increaseIndent();
         pw.println("SupportConstrainedDataSatelliteOptIn: "
                 + mSupportConstrainedDataSatelliteOptIn);
