@@ -15467,7 +15467,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void handleMobileDataPreferredUidsChanged() {
+        final Set<Integer> oldMobileDataPreferredUids = mMobileDataPreferredUids;
         mMobileDataPreferredUids = getMobileDataPreferredUids();
+        if (mMobileDataPreferredUids.equals(oldMobileDataPreferredUids)) return;
         removeDefaultNetworkRequestsForPreference(PREFERENCE_ORDER_MOBILE_DATA_PREFERERRED);
         addPerAppDefaultNetworkRequests(
                 createNrisFromMobileDataPreferredUids(mMobileDataPreferredUids));

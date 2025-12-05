@@ -219,6 +219,9 @@ public class VcnManager {
      *
      * <p>Defaults to [5], unless overridden by carrier config
      *
+     * <p>NOTE: Updating the penalty timeouts resets the backoff sequence. The next failure will
+     * trigger the first timeout from the new list.
+     *
      * @hide
      */
     @NonNull
