@@ -169,6 +169,12 @@ public class UnderlyingNetworkEvaluator {
 
             handleValidationResult();
         }
+
+        public void onIsPenalizedChanged() {
+            mVcnContext.ensureRunningOnLooperThread();
+
+            handleIsPenalizedChanged();
+        }
     }
 
     private void updatePriorityClass(
@@ -259,6 +265,19 @@ public class UnderlyingNetworkEvaluator {
             mHandler.removeCallbacksAndEqualMessages(mCancellationToken);
         }
         mEvaluatorCallback.onEvaluationResultChanged();
+    }
+
+    private void handleIsPenalizedChanged() {
+        final boolean wasPenalized = mIsPenalized;
+        mIsPenalized = false;
+
+        for (NetworkMetricMonitor monitor : mMetricMonitors) {
+            mIsPenalized |= monitor.isPenalized();
+        }
+
+        if (wasPenalized != mIsPenalized) {
+            mEvaluatorCallback.onEvaluationResultChanged();
+        }
     }
 
     public class ExitPenaltyBoxRunnable implements Runnable {
@@ -370,6 +389,12 @@ public class UnderlyingNetworkEvaluator {
         for (NetworkMetricMonitor monitor : mMetricMonitors) {
             monitor.setInboundTransform(transform);
         }
+    }
+
+    /** Inject a NetworkMetricMonitor for testing purposes */
+    @VisibleForTesting(visibility = Visibility.PRIVATE)
+    public void addMetricMonitor(@NonNull NetworkMetricMonitor monitor) {
+        mMetricMonitors.add(monitor);
     }
 
     /** Close the evaluator and stop all the underlying network metric monitors */

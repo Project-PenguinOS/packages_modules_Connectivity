@@ -936,11 +936,29 @@ static inline __always_inline bool block_bind_port(__u32 protocol, __be16 user_p
     return false;
 }
 
+static inline __always_inline bool is_netd() {
+    uint32_t uid = bpf_get_current_uid_gid();  // low 32 bits is uid
+    if (uid) return false;  // netd runs as root
+
+    const uint32_t key = 0;
+    uint32_t *pid = bpf_netd_pid_map_lookup_elem(&key);
+    if (!pid) return false;
+
+    // userspace system call 'getpid()' returns what kernel/ebpf calls 'tgid' (thread group id)
+    // (while what kernel/ebpf calls 'pid' is returned by linux specific system call 'gettid()')
+    uint32_t tgid = bpf_get_current_pid_tgid() >> 32;  // high 32 bits is tgid
+    return tgid == *pid;
+}
+
+// kernel's include/linux/bpf.h defines flag BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE as (1 << 0) == 1,
+// as a flag, it must be shifted up by 1 (making it == 2) and combined with 'generic' ALLOW (== 1)
+static const int BPF_ALLOW_IGNORING_CAP_NET_BIND = BPF_ALLOW + 2;
+
 static inline __always_inline int inet_bind(struct bpf_sock_addr *ctx,
                                             const struct kver_uint kver) {
     const bool is5_15 = KVER_IS_AT_LEAST(kver, 5, 15, 0);
     if (block_bind_port(ctx->protocol, ctx->user_port)) return BPF_DISALLOW;
-    if (is5_15) return BPF_ALLOW;
+    if (is5_15 && ctx->user_port == htons(53) && is_netd()) return BPF_ALLOW_IGNORING_CAP_NET_BIND;
     return BPF_ALLOW;
 }
 

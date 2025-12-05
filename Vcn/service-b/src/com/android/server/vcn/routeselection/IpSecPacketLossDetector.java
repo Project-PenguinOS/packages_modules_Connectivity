@@ -347,6 +347,8 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
 
     @Override
     public void setCarrierConfig(@NonNull VcnCarrierConfig carrierConfig) {
+        super.setCarrierConfig(carrierConfig);
+
         // The already scheduled event will not be affected. The followup events will be scheduled
         // with the new interval
         mPollIpSecStateIntervalSec = carrierConfig.getNwSelectIpSecLossDetectPollIntervalSec();
@@ -551,17 +553,17 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
                                 - mLastIpSecTransformState.getTimestampMillis())
                         + "ms";
 
-        if (shouldReportValidationResult(isLossy, packetLossResultType) && isLossy) {
-            logInfo(logMsg);
-        } else {
-            logV(logMsg);
-        }
-
         if (shouldUpdateLastTransformState(packetLossResultType)) {
             mLastIpSecTransformState = state;
         }
 
         if (shouldReportValidationResult(isLossy, packetLossResultType)) {
+            if (isLossy) {
+                logInfo(logMsg);
+            } else {
+                logV(logMsg);
+            }
+
             handleValidationResultReceivedInternal(isLossy);
         }
 
@@ -580,6 +582,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
                 mConsecutiveReportNotLossyCount = 0;
             } else {
                 mConsecutiveReportNotLossyCount++;
+
                 if (mDetectionMode == DETECTION_MODE_RAPID
                         && mConsecutiveReportNotLossyCount >= RAPID_MODE_EXIT_NOT_LOSSY_COUNT) {
                     mHandler.removeCallbacksAndEqualMessages(mCancelExitRapidModeToken);

@@ -75,6 +75,7 @@ import org.mockito.Spy;
 
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @EnableFlags(FLAG_IMPROVE_PACKET_LOSS_DETECTOR)
@@ -107,6 +108,10 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     private static final byte[] REPLAY_BITMAP_DEFAULT = newReplayBitmap(0);
     private static final int PACKET_COUNT_DEFAULT = 0;
 
+    private static final List<Long> PENALTY_TIMEOUT_MILLIS_LIST =
+            Arrays.asList(10_000L, 20_000L, 40_000L, 80_000L);
+    private static final long PENALTY_TIMEOUT_MS = PENALTY_TIMEOUT_MILLIS_LIST.get(0);
+
     @Mock private IpSecTransformWrapper mIpSecTransform;
     @Mock private NetworkMetricMonitorCallback mMetricMonitorCallback;
     @Mock private IpSecPacketLossDetector.Dependencies mDependencies;
@@ -137,6 +142,8 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 .thenReturn(RAPID_POLL_IPSEC_STATE_INTERVAL_SECONDS);
         when(mCarrierConfig.getNwSelectIpSecLossDetectRapidDurationSec())
                 .thenReturn(RAPID_MODE_EXIT_TIMER_RAPID_MODE_DISABLED);
+        when(mCarrierConfig.getNwSelectPenaltyTimeoutMillis())
+                .thenReturn(PENALTY_TIMEOUT_MILLIS_LIST);
 
         when(mDependencies.getPacketLossCalculator()).thenReturn(mPacketLossCalculator);
 
@@ -446,6 +453,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
 
     private void checkHandleLossRate(
             PacketLossCalculationResult mockPacketLossRate,
+            int expectedSucceedCount,
             boolean isLastStateExpectedToUpdate,
             boolean isCallbackExpected)
             throws Exception {
@@ -477,10 +485,13 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
             assertEquals(mTransformStateInitial, mIpSecPacketLossDetector.getLastTransformState());
         }
 
+        assertEquals(
+                expectedSucceedCount, mIpSecPacketLossDetector.getConsecutiveReportNotLossyCount());
+
         if (isCallbackExpected) {
-            verify(mMetricMonitorCallback).onValidationResultReceived();
+            verify(mMetricMonitorCallback).onIsPenalizedChanged();
         } else {
-            verify(mMetricMonitorCallback, never()).onValidationResultReceived();
+            verify(mMetricMonitorCallback, never()).onIsPenalizedChanged();
         }
     }
 
@@ -488,14 +499,16 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     public void testHandleLossRate_validationPass() throws Exception {
         checkHandleLossRate(
                 PacketLossCalculationResult.valid(2),
+                1 /* expectedSucceedCount */,
                 true /* isLastStateExpectedToUpdate */,
-                true /* isCallbackExpected */);
+                false /* isCallbackExpected */);
     }
 
     @Test
     public void testHandleLossRate_validationFail() throws Exception {
         checkHandleLossRate(
                 PacketLossCalculationResult.valid(22),
+                0 /* expectedSucceedCount */,
                 true /* isLastStateExpectedToUpdate */,
                 true /* isCallbackExpected */);
         verify(mConnectivityManager).reportNetworkConnectivity(mNetwork, false);
@@ -505,6 +518,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     public void testHandleLossRate_resultUnavalaible() throws Exception {
         checkHandleLossRate(
                 PacketLossCalculationResult.seqDiffTooSmall(),
+                0 /* expectedSucceedCount */,
                 false /* isLastStateExpectedToUpdate */,
                 false /* isCallbackExpected */);
     }
@@ -513,6 +527,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     public void testHandleLossRate_unusualSeqNumLeap_highLossRate() throws Exception {
         checkHandleLossRate(
                 PacketLossCalculationResult.unusualSeqNumLeap(22),
+                0 /* expectedSucceedCount */,
                 true /* isLastStateExpectedToUpdate */,
                 false /* isCallbackExpected */);
     }
@@ -521,8 +536,9 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     public void testHandleLossRate_unusualSeqNumLeap_lowLossRate() throws Exception {
         checkHandleLossRate(
                 PacketLossCalculationResult.unusualSeqNumLeap(2),
+                1 /* expectedSucceedCount */,
                 true /* isLastStateExpectedToUpdate */,
-                true /* isCallbackExpected */);
+                false /* isCallbackExpected */);
     }
 
     private void checkGetPacketLossRate(
@@ -877,5 +893,122 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
 
         mIpSecPacketLossDetector.setCarrierConfig(mCarrierConfig);
     }
+
+    @Test
+    public void testConsecutiveReportLossy() {
+        final int lossyCount = 5;
+        for (int i = 0; i < lossyCount; i++) {
+            mIpSecPacketLossDetector.handleValidationResultReceivedInternal(true /* isFailed */);
+        }
+
+        assertEquals(0, mIpSecPacketLossDetector.getConsecutiveReportNotLossyCount());
+    }
+
+    @Test
+    public void testConsecutiveReportNotLossy() {
+        final int notLossyCount = 5;
+        for (int i = 0; i < notLossyCount; i++) {
+            mIpSecPacketLossDetector.handleValidationResultReceivedInternal(false /* isFailed */);
+        }
+
+        assertEquals(notLossyCount, mIpSecPacketLossDetector.getConsecutiveReportNotLossyCount());
+    }
+
+    private void verifyPenaltyTimeout(long expectedTimeoutMillis) throws Exception {
+        mIpSecPacketLossDetector.handleValidationResultReceivedInternal(true /* isLossy */);
+        reset(mMetricMonitorCallback);
+
+        final long leftoverMillis = 1_000L;
+
+        // Before timeout
+        mTestLooper.moveTimeForward(expectedTimeoutMillis - leftoverMillis);
+        mTestLooper.dispatchAll();
+
+        // Still penalized
+        assertTrue(mIpSecPacketLossDetector.isPenalized());
+
+        // Penalty timeout
+        mTestLooper.moveTimeForward(leftoverMillis);
+        mTestLooper.dispatchAll();
+
+        // Verify the detector is not penalized
+        assertFalse(mIpSecPacketLossDetector.isPenalized());
+        verify(mMetricMonitorCallback).onIsPenalizedChanged();
+
+        // Reset
+        reset(mMetricMonitorCallback);
+    }
+
+    @Test
+    public void testRcvValidationResult_penalizeNetwork_penaltyTimeout() throws Exception {
+        final int len = PENALTY_TIMEOUT_MILLIS_LIST.size();
+        for (int i = 0; i < len; i++) {
+            verifyPenaltyTimeout(PENALTY_TIMEOUT_MILLIS_LIST.get(i));
+        }
+
+        verifyPenaltyTimeout(PENALTY_TIMEOUT_MILLIS_LIST.get(len - 1));
+    }
+
+    @Test
+    public void testRcvValidationResult_penalizeNetwork_restartBackoffAfterValidated()
+            throws Exception {
+        verifyPenaltyTimeout(PENALTY_TIMEOUT_MILLIS_LIST.get(0));
+        mIpSecPacketLossDetector.handleValidationResultReceivedInternal(false /* isLossy */);
+        verifyPenaltyTimeout(PENALTY_TIMEOUT_MILLIS_LIST.get(0));
+    }
+
+    private void penalizeDetector() throws Exception {
+        assertFalse(mIpSecPacketLossDetector.isPenalized());
+
+        // Validation failed
+        mIpSecPacketLossDetector.handleValidationResultReceivedInternal(true /* isLossy */);
+
+        // Verify the detector is penalized
+        assertTrue(mIpSecPacketLossDetector.isPenalized());
+        verify(mMetricMonitorCallback).onIsPenalizedChanged();
+        reset(mMetricMonitorCallback);
+    }
+
+    @Test
+    public void testRcvValidationResult_penalizeNetwork_ignoreNewFailure() throws Exception {
+        penalizeDetector();
+
+        verifyPenaltyTimeout(PENALTY_TIMEOUT_MILLIS_LIST.get(0));
+    }
+
+    @Test
+    public void testRcvValidationResult_penalizeNetwork_passValidation() throws Exception {
+        penalizeDetector();
+
+        // Validation passed
+        mIpSecPacketLossDetector.handleValidationResultReceivedInternal(false /* isLossy */);
+
+        // Verify the detector is not penalized and penalty timeout is canceled
+        assertFalse(mIpSecPacketLossDetector.isPenalized());
+        verify(mMetricMonitorCallback).onIsPenalizedChanged();
+        mTestLooper.moveTimeForward(PENALTY_TIMEOUT_MS);
+        assertNull(mTestLooper.nextMessage());
+    }
+
+    @Test
+    public void testRcvValidationResult_penalizeNetwork_closeDetector() throws Exception {
+        penalizeDetector();
+
+        mIpSecPacketLossDetector.close();
+
+        // Verify penalty timeout is canceled
+        mTestLooper.moveTimeForward(PENALTY_TIMEOUT_MS);
+        assertNull(mTestLooper.nextMessage());
+    }
+
+    @Test
+    public void testRcvValidationResult_PenaltyStateUnchanged() throws Exception {
+        assertFalse(mIpSecPacketLossDetector.isPenalized());
+
+        // Validation passed
+        mIpSecPacketLossDetector.handleValidationResultReceivedInternal(false /* isLossy */);
+        verify(mMetricMonitorCallback, never()).onIsPenalizedChanged();
+    }
 }
+
 
