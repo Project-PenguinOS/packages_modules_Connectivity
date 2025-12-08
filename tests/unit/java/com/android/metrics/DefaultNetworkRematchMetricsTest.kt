@@ -21,6 +21,7 @@ import android.net.NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL
 import android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED
 import android.net.NetworkCapabilities.NET_CAPABILITY_PARTIAL_CONNECTIVITY
 import android.net.NetworkCapabilities.NET_CAPABILITY_TEMPORARILY_NOT_METERED
+import android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS
 import android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED
 import android.net.NetworkCapabilities.TRANSPORT_SATELLITE
 import android.net.UidRange
@@ -248,5 +249,19 @@ class DefaultNetworkRematchMetricsTest {
         assertEquals(capsInternal, description.capabilities)
         assertEquals(scorePoliciesInternal, description.scorePolicies)
         assertEquals(enterpriseIds, description.enterpriseId)
+    }
+
+    @Test
+    fun testAddEvent_fromUnifiedCommunications_isAdded() {
+        val unifiedCommsCaps = mock(NetworkCapabilities::class.java)
+        doReturn(false).`when`(unifiedCommsCaps).hasTransport(TRANSPORT_SATELLITE)
+        doReturn(true).`when`(unifiedCommsCaps).hasCapability(
+                NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
+        doReturn(unifiedCommsCaps).`when`(oldNai).capsNoCopy
+
+        metrics.addEvent(nri, oldNai, newNai, 0L)
+        metrics.writeStatsAndClear()
+
+        verify(deps, times(1)).writeStats(anyLong(), anyInt(), any())
     }
 }

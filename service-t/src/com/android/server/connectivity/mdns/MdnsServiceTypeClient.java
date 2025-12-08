@@ -62,6 +62,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 
 /**
@@ -287,7 +288,11 @@ public class MdnsServiceTypeClient {
                             getAllDiscoverySubtypes(), needSendDiscoveryQueries(listeners),
                             getExistingServices(), searchOptions.onlyUseIpv6OnIpv6OnlyNetworks(),
                             socketKey);
-                    executor.submit(queryTask);
+                    try {
+                        executor.submit(queryTask);
+                    } catch (RejectedExecutionException exception) {
+                        sharedLog.e("Submit a query task after the executor service is shut down");
+                    }
                     break;
                 }
                 case EVENT_QUERY_RESULT: {

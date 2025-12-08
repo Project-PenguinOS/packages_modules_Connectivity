@@ -64,6 +64,7 @@ import java.util.Map;
  *
  * @hide
  */
+// All methods on this class are called on the same thread.
 @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
 @FlaggedApi(Flags.FLAG_ENABLE_INCALL_SERVICE_API)
 public class ConnectivityCallListenerService extends InCallService {

@@ -410,7 +410,6 @@ import com.android.server.ConnectivityService.ConnectivityDiagnosticsCallbackInf
 import com.android.server.ConnectivityService.NetworkRequestInfo;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.DestroySocketsWrapper;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.ReportedInterfaces;
-import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy;
 import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabilities;
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker;
@@ -430,6 +429,7 @@ import com.android.server.connectivity.PermissionMonitor;
 import com.android.server.connectivity.ProxyTracker;
 import com.android.server.connectivity.QosCallbackTracker;
 import com.android.server.connectivity.QuicConnectionCloser;
+import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.TcpKeepaliveController;
 import com.android.server.connectivity.UidRangeUtils;
 import com.android.server.net.NetworkPinner;
