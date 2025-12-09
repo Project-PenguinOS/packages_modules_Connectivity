@@ -38,6 +38,7 @@ cc_library_static {
     ],
     apex_available: [
         "com.android.resolv",
+        "com.android.tethering",
     ],
     min_sdk_version: "30",
 }
@@ -215,6 +216,7 @@ aidl_interface {
             apex_available: [
                 "//apex_available:platform",
                 "com.android.resolv",
+                "com.android.tethering",
             ],
             min_sdk_version: "30",
         },

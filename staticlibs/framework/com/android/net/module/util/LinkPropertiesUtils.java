@@ -37,6 +37,12 @@ import java.util.function.Function;
  */
 public final class LinkPropertiesUtils {
 
+    public static final int MIN_MTU    = 68;
+
+    public static final int MIN_MTU_V6 = 1280;
+
+    public static final int MAX_MTU    = 10000;
+
     /**
      * @param <T> The type of data to compare.
      */
@@ -261,5 +267,19 @@ public final class LinkPropertiesUtils {
         final Collection<RouteInfo> rightRoutes = right.getRoutes();
         return (leftRoutes.size() == rightRoutes.size())
                 ? leftRoutes.containsAll(rightRoutes) : false;
+    }
+
+    /**
+     * Check the valid MTU range based on IPv4 or IPv6.
+     * @param mtu The MTU value to be checked.
+     * @param ipv6 true if the MTU is for IPv6, false for IPv4.
+     * @return {@code true} if the MTU is valid, {@code false} otherwise.
+     */
+    public static boolean isValidMtu(int mtu, boolean ipv6) {
+        if (ipv6) {
+            return mtu >= MIN_MTU_V6 && mtu <= MAX_MTU;
+        } else {
+            return mtu >= MIN_MTU && mtu <= MAX_MTU;
+        }
     }
 }

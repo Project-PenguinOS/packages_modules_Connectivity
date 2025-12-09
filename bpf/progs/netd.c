@@ -331,6 +331,27 @@ get_chunk_permissions(const uint32_t uid) {
 
 #define NS_PER_MINUTE (60ULL * 1000ULL * 1000ULL * 1000ULL)
 
+static __always_inline inline bool is_local_network_access_blocked(const uint32_t uid) {
+    uint32_t mapKey = 0;
+    bool *permissionPropagationEnabled =
+        bpf_permission_propagation_enabled_map_lookup_elem(&mapKey);
+    if (permissionPropagationEnabled && *permissionPropagationEnabled) {
+        // TODO: stop exempting system uids once the test failure is fixed
+        if (is_system_uid(uid)) return false;
+        if (get_chunk_permissions(uid) & PERMISSION_BIT_ACCESS_LOCAL_NETWORK)
+            return false;
+    } else {
+        // System uid has access to restricted local network
+        if (is_system_uid(uid)) return false;
+
+        // Uid that is not in the blocked uid map has access to restricted local network
+        bool* block_local_net = bpf_local_net_blocked_uid_map_lookup_elem(&uid);
+        if (!block_local_net) return false; // uid not found in map
+        if (!*block_local_net) return false; // lookup returned 'bool false'
+    }
+    return true;
+}
+
 static __always_inline inline bool should_block_local_network_packets(struct __sk_buff *skb,
                                    const uint32_t uid, const struct egress_bool egress,
                                    const struct kver_uint kver) {
@@ -361,13 +382,9 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
         }
     }
 
-    // System uid has access to restricted local network
-    if (is_system_uid(uid)) return false;
-
-    // Uid that is not in the blocked uid map has access to restricted local network
-    bool* block_local_net = bpf_local_net_blocked_uid_map_lookup_elem(&uid);
-    if (!block_local_net) return false; // uid not found in map
-    if (!*block_local_net) return false; // lookup returned 'bool false'
+    if (!is_local_network_access_blocked(uid)) {
+        return false;
+    }
 
     if (!reportLocalAccess) {
         isRestricted = is_restricted_local_network(skb, egress, kver);

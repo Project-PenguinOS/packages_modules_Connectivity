@@ -154,6 +154,8 @@ import java.util.function.Consumer;
 @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.R)
 public class PermissionMonitorTest {
     @Rule
+    public final DevSdkIgnoreRule ignoreRule = new DevSdkIgnoreRule();
+    @Rule
     public TestRule compatChangeRule = new PlatformCompatChangeRule();
 
     final HashMap<String, Boolean> mFeatureFlags = new HashMap<>();
@@ -1435,6 +1437,47 @@ public class PermissionMonitorTest {
         assertFalse(mBpfMapMonitor.isUidPresentInLocalNetBlockMap(MOCK_UID11));
     }
 
+    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @Test
+    public void testLocalNetRestrictions_onUserChanged_skipBlockMap_lnpPermissionEnabled()
+            throws Exception {
+        when(mPermissionManager.checkPermissionForPreflight(
+                anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
+        final PackageInfo packageInfo = buildAndMockPackageInfoWithPermissions(
+                MOCK_PACKAGE1, MOCK_UID11, CHANGE_NETWORK_STATE);
+        onUserAddedWithInstalledPackageList(MOCK_USER1, List.of(packageInfo));
+
+        verify(mBpfNetMaps, never()).addUidToLocalNetBlockMap(anyInt());
+        verify(mBpfNetMaps, never()).removeUidFromLocalNetBlockMap(anyInt());
+
+        onUserRemoved(MOCK_USER1);
+
+        verify(mBpfNetMaps, never()).addUidToLocalNetBlockMap(anyInt());
+        verify(mBpfNetMaps, never()).removeUidFromLocalNetBlockMap(anyInt());
+    }
+
+    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @Test
+    public void testLocalNetRestrictions_onPackageChanged_skipBlockMap_lnpPermissionEnabled()
+            throws Exception {
+        when(mPermissionManager.checkPermissionForPreflight(
+                anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
+        addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET);
+
+        verify(mBpfNetMaps, never()).addUidToLocalNetBlockMap(anyInt());
+        verify(mBpfNetMaps, never()).removeUidFromLocalNetBlockMap(anyInt());
+
+        when(mPackageManager.getPackagesForUid(MOCK_UID11)).thenReturn(new String[]{});
+        onPackageRemoved(MOCK_PACKAGE1, MOCK_UID11);
+
+        verify(mBpfNetMaps, never()).addUidToLocalNetBlockMap(anyInt());
+        verify(mBpfNetMaps, never()).removeUidFromLocalNetBlockMap(anyInt());
+    }
+
     @Test
     @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testPackageRemoveThenAdd() throws Exception {
@@ -1877,6 +1920,35 @@ public class PermissionMonitorTest {
         assertFalse(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
         if (hasSdkSandbox(MOCK_UID12)) assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
                 mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+    }
+
+    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @Test
+    public void testLocalNetRestrictions_setPermChanges_skipBlockMap_lnpPermissionEnabled()
+            throws Exception {
+        when(mPermissionManager.checkPermissionForPreflight(
+                anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
+        addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET);
+
+        // Mock permission grant
+        when(mPermissionManager.checkPermissionForPreflight(
+                eq(ACCESS_LOCAL_NETWORK),
+                argThat(attributionSource -> attributionSource.getUid() == MOCK_UID11)))
+                .thenReturn(PERMISSION_GRANTED);
+        mPermissionMonitor.setLocalNetworkPermissions(MOCK_UID11, null);
+        verify(mBpfNetMaps, never()).addUidToLocalNetBlockMap(anyInt());
+        verify(mBpfNetMaps, never()).removeUidFromLocalNetBlockMap(anyInt());
+
+        // Mock permission denied
+        when(mPermissionManager.checkPermissionForPreflight(
+                eq(ACCESS_LOCAL_NETWORK),
+                argThat(attributionSource -> attributionSource.getUid() == MOCK_UID11)))
+                .thenReturn(PERMISSION_DENIED);
+        mPermissionMonitor.setLocalNetworkPermissions(MOCK_UID11, null);
+        verify(mBpfNetMaps, never()).addUidToLocalNetBlockMap(anyInt());
+        verify(mBpfNetMaps, never()).removeUidFromLocalNetBlockMap(anyInt());
     }
 
     private void addUserAndVerifyAppIdsPermissions(UserHandle user, List<PackageInfo> pkgs,

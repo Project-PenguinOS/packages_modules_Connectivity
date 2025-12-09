@@ -404,7 +404,7 @@ public class PermissionMonitor {
         mContext = context;
         mBpfNetMaps = bpfNetMaps;
         mThread = thread;
-        if (isAtLeastB()) {
+        if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
             // Local net restrictions is supported as a developer opt-in starting in Android B.
             // This listener should finish registration by the time the system has completed
             // boot setup such that any changes to runtime permissions for local network
@@ -467,7 +467,10 @@ public class PermissionMonitor {
 
     @VisibleForTesting
     void setLocalNetworkPermissions(final int uid, @Nullable final String packageName) {
-        if (!mDeps.shouldEnforceLocalNetRestrictions(uid)) return;
+        if (!mDeps.shouldEnforceLocalNetRestrictions(uid)
+                || mBpfNetMaps.isPermissionPropagationEnabled()) {
+            return;
+        }
 
         final AttributionSource attributionSource =
                 new AttributionSource.Builder(uid).setPackageName(packageName).build();
@@ -898,7 +901,8 @@ public class PermissionMonitor {
             final int uid = allUids.keyAt(i);
             if (user.equals(UserHandle.getUserHandleForUid(uid))) {
                 mUidToNetworkPerm.delete(uid);
-                if (mDeps.shouldEnforceLocalNetRestrictions(uid)) {
+                if (mDeps.shouldEnforceLocalNetRestrictions(uid)
+                        && !mBpfNetMaps.isPermissionPropagationEnabled()) {
                     mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
                     if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
                             sProcessShim.toSdkSandboxUid(uid));
@@ -1231,7 +1235,7 @@ public class PermissionMonitor {
                     + ", tPerm=" + permissionToString(trafficPermission));
         }
 
-        if (isAtLeastB()) {
+        if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
             mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
             if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
                     sProcessShim.toSdkSandboxUid(uid));

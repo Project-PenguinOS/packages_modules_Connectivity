@@ -17,6 +17,7 @@
 package com.android.metrics;
 
 import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_TEMPORARILY_NOT_METERED;
 import static android.net.NetworkCapabilities.TRANSPORT_SATELLITE;
 import static android.stats.connectivity.MeteredState.METERED_NO;
@@ -74,6 +75,27 @@ public class DefaultNetworkRematchMetrics {
         }
     }
 
+    private boolean shouldLogEvent(
+            @NonNull ConnectivityService.NetworkRequestInfo nri,
+            @Nullable NetworkAgentInfo oldNetwork) {
+
+        // Only logs for multilayer request managed by AppOptInDefaultNetworkController
+        if (nri.getPreferenceOrderForNetd() != PREFERENCE_ORDER_APP_OPT_IN) {
+            return false;
+        }
+
+        if (oldNetwork == null) return false;
+
+        // Log if moving away from Satellite
+        if (oldNetwork.getCapsNoCopy().hasTransport(TRANSPORT_SATELLITE)) return true;
+
+        // Log if moving away from OTT slicing network
+        if (oldNetwork.getCapsNoCopy().hasCapability(
+                NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)) return true;
+
+        return false;
+    }
+
     /**
      * Adds a default network reassignment event to the list of events to be logged.
      *
@@ -85,16 +107,13 @@ public class DefaultNetworkRematchMetrics {
             @Nullable NetworkAgentInfo oldNetwork,
             @Nullable NetworkAgentInfo newNetwork,
             long satisfiedDurationMs) {
-        // TODO: Record event for network other than satellite after figuring out
-        //  how to deal with the amount of data single device reports.
-        // Only logs for satellite multilayer requests.
-        if (nri.getPreferenceOrderForNetd() != PREFERENCE_ORDER_APP_OPT_IN) {
+
+        // TODO: Record event for network other than satellite/ufc slicing after figuring out
+        // how to deal with the amount of data single device reports.
+        if (!shouldLogEvent(nri, oldNetwork)) {
             return;
         }
-        // Only logs when moving away from a satellite network to another network type.
-        if (oldNetwork == null || !oldNetwork.getCapsNoCopy().hasTransport(TRANSPORT_SATELLITE)) {
-            return;
-        }
+
         mBuilder.addDefaultNetworkRematchInfo(
                 getDefaultNetworkRematchInfo(nri, oldNetwork, newNetwork, satisfiedDurationMs));
     }
