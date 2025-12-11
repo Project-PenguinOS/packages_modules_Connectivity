@@ -24,6 +24,7 @@ import android.os.Bundle;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.UiThread;
 import androidx.fragment.app.FragmentActivity;
 
 import com.android.connectivity.resources.aidl.NsdPickerConnector;
@@ -32,6 +33,7 @@ public class NsdPickerActivity extends FragmentActivity {
     private static final String TAG = NsdPickerActivity.class.getSimpleName();
     private static final String FRAGMENT_PICKER_DIALOG = "picker_dialog";
 
+    @UiThread
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -43,6 +45,7 @@ public class NsdPickerActivity extends FragmentActivity {
         }
     }
 
+    @UiThread
     private void addPickerFragment() {
         final Bundle intentBundle = getIntent().getExtras();
         final NsdPickerConnector connector = NsdPickerConnector.Stub.asInterface(

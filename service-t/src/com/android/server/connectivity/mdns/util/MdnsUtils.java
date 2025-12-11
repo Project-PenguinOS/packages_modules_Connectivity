@@ -437,7 +437,8 @@ public class MdnsUtils {
                 // would simply allow every mDNS reply to pass through if there are too many
                 // offloaded services, so there is no point in setting priorities.
                 0 /* priority */,
-                OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES);
+                OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES
+                                | OffloadEngine.OFFLOAD_TYPE_QUERY);
     }
 
     /**

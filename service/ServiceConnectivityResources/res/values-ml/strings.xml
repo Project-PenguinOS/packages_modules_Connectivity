@@ -43,4 +43,6 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"അജ്ഞാതമായ നെറ്റ്‌വർക്ക് തരം"</string>
+    <string name="connect_to_service_title" msgid="2417012530980077322">"സേവനത്തിലേക്ക് കണക്റ്റ് ചെയ്യുക"</string>
+    <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> എന്നതിന് ലോക്കൽ നെറ്റ്‌വർക്കിലെ മറ്റൊരു ഉപകരണത്തിലേക്ക് കണക്റ്റ് ചെയ്യണമെന്നുണ്ട്"</string>
 </resources>

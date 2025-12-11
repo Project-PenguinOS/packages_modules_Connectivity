@@ -1135,6 +1135,10 @@ public class NsdService extends INsdManager.Stub {
                         (OffloadEngineInfo) msg.obj);
                 case NsdManager.UNREGISTER_OFFLOAD_ENGINE -> handleUnregisterOffloadEngine(
                         (IOffloadEngine) msg.obj);
+                case NsdManager.INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE ->
+                        handleInjectProxyOffloadEngineResponse(
+                                (ProxyOffloadEngineResponse) msg.obj
+                        );
                 case NsdManager.REGISTER_CLIENT -> handleRegisterClient(clientRequestId,
                         (ConnectorArgs) msg.obj);
                 case NsdManager.UNREGISTER_CLIENT -> handleUnregisterClient(
@@ -1745,6 +1749,17 @@ public class NsdService extends INsdManager.Stub {
         } finally {
             mOffloadEngines.finishBroadcast();
         }
+    }
+
+    private void handleInjectProxyOffloadEngineResponse(
+            ProxyOffloadEngineResponse response) {
+        final NsdServiceInfo serviceInfo = response.serviceInfo;
+        final boolean isServiceLost = response.isServiceLost;
+        final String ifaceName = response.interfaceName;
+        mMdnsDiscoveryManager.handleProxyOffloadEngineResponse(
+                serviceInfo,
+                isServiceLost,
+                ifaceName);
     }
 
     private void handleRegisterClient(int clientRequestId, ConnectorArgs arg) {
@@ -2733,8 +2748,10 @@ public class NsdService extends INsdManager.Stub {
             }
         }
 
-        // Check if the engine supports OFFLOAD_TYPE_FILTER_REPLIES
-        if ((offloadEngineInfo.mOffloadType & OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES) != 0) {
+        // Check if the engine supports OFFLOAD_TYPE_FILTER_REPLIES or OFFLOAD_TYPE_QUERY
+        if ((offloadEngineInfo.mOffloadType
+                & (OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES
+                    | OffloadEngine.OFFLOAD_TYPE_QUERY)) != 0) {
             final List<FilterRepliesInfo> discoveryOffloadInfo =
                     mMdnsDiscoveryManager.notifyOffloadStart(targetInterface);
             for (FilterRepliesInfo info : discoveryOffloadInfo) {
@@ -2897,6 +2914,19 @@ public class NsdService extends INsdManager.Stub {
         }
     }
 
+    private static class ProxyOffloadEngineResponse {
+        public final NsdServiceInfo serviceInfo;
+        public final boolean isServiceLost;
+        public final String interfaceName;
+
+        ProxyOffloadEngineResponse(NsdServiceInfo serviceInfo,
+                boolean isServiceLost, String interfaceName) {
+            this.serviceInfo = serviceInfo;
+            this.isServiceLost = isServiceLost;
+            this.interfaceName = interfaceName;
+        }
+    }
+
     private static class AdvertisingArgs {
         public final NsdServiceConnector connector;
         public final AdvertisingRequest advertisingRequest;
@@ -3026,6 +3056,15 @@ public class NsdService extends INsdManager.Stub {
             checkOffloadEnginePermission(mContext);
             Objects.requireNonNull(cb);
             mHandler.sendMessage(mHandler.obtainMessage(NsdManager.UNREGISTER_OFFLOAD_ENGINE, cb));
+        }
+
+        @Override
+        public void injectOffloadEngineResponse(NsdServiceInfo serviceInfo,
+                boolean isServiceLost, String ifaceName) {
+            checkOffloadEnginePermission(mContext);
+            mHandler.sendMessage(
+                    mHandler.obtainMessage(NsdManager.INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE,
+                            new ProxyOffloadEngineResponse(serviceInfo, isServiceLost, ifaceName)));
         }
 
         private static void checkOffloadEnginePermission(Context context) {

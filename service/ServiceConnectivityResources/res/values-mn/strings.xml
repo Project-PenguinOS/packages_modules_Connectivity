@@ -43,4 +43,6 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"үл мэдэгдэх сүлжээний төрөл"</string>
+    <string name="connect_to_service_title" msgid="2417012530980077322">"Үйлчилгээнд холбогдох"</string>
+    <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> дотоод сүлжээн дээрх өөр төхөөрөмжид холбогдохыг хүсэж байна"</string>
 </resources>

@@ -21,8 +21,6 @@ import android.annotation.LongDef;
 import android.annotation.NonNull;
 import android.annotation.SystemApi;
 
-import com.android.net.flags.Flags;
-
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
@@ -36,7 +34,6 @@ import java.lang.annotation.RetentionPolicy;
  *
  * @hide
  */
-@FlaggedApi(Flags.FLAG_REGISTER_NSD_OFFLOAD_ENGINE_API)
 @SystemApi
 public interface OffloadEngine {
     /**
@@ -56,6 +53,12 @@ public interface OffloadEngine {
     int OFFLOAD_TYPE_FILTER_REPLIES = 1 << 2;
 
     /**
+     * Indicates that the OffloadEngine can handle sending the queries by itself.
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD)
+    int OFFLOAD_TYPE_QUERY = 1 << 3;
+
+    /**
      * Indicates that the OffloadEngine can bypass multicast lock.
      */
     int OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK = 1;
@@ -68,6 +71,7 @@ public interface OffloadEngine {
             OFFLOAD_TYPE_REPLY,
             OFFLOAD_TYPE_FILTER_QUERIES,
             OFFLOAD_TYPE_FILTER_REPLIES,
+            OFFLOAD_TYPE_QUERY
     })
     @interface OffloadType {}
 

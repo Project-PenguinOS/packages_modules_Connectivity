@@ -25,7 +25,8 @@
     <application
         android:label="@string/connectivityResourcesAppLabel"
         android:defaultToDeviceProtectedStorage="true"
-        android:directBootAware="true">
+        android:directBootAware="true"
+        android:supportsRtl="true">
         <!-- This is only used to identify this app by resolving the action.
              The activity is never actually triggered. -->
         <activity android:name="android.app.Activity" android:exported="true" android:enabled="true">

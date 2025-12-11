@@ -21,6 +21,10 @@ import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_NONE;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_REQUESTED;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_UNSPECIFIED;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_NOT_VALID;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_PENDING;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_UNSPECIFIED;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_VALID;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_CELLULAR;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_NONE;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_UNSPECIFIED;
@@ -57,6 +61,18 @@ public class VcnMetrics {
             })
     public @interface TransportMask {}
 
+    /** @hide */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(
+            prefix = {"VALIDATION_STATUS_"},
+            value = {
+                VALIDATION_STATUS_UNSPECIFIED,
+                VALIDATION_STATUS_PENDING,
+                VALIDATION_STATUS_VALID,
+                VALIDATION_STATUS_NOT_VALID
+            })
+    public @interface ValidationStatus {}
+
     public static final int GATEWAY_TEARDOWN_REASON_NONE =
             VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_NONE;
     public static final int GATEWAY_TEARDOWN_REASON_INTERNAL_ERROR =
@@ -75,6 +91,14 @@ public class VcnMetrics {
             VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_CELLULAR;
     public static final int TRANSPORT_MASK_WIFI =
             VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_WIFI;
+    public static final int VALIDATION_STATUS_UNSPECIFIED =
+            VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_UNSPECIFIED;
+    public static final int VALIDATION_STATUS_PENDING =
+            VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_PENDING;
+    public static final int VALIDATION_STATUS_VALID =
+            VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_VALID;
+    public static final int VALIDATION_STATUS_NOT_VALID =
+            VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_NOT_VALID;
 
     /** Log an atom when a VcnGatewayConnection has entered safe mode. */
     public void logEnterSafeMode(int gatewayConnectionId) {
@@ -147,6 +171,20 @@ public class VcnMetrics {
                 networkId,
                 true /* isConnected */,
                 false /* isValidated */);
+    }
+
+    /** Log an atom when VCN network validation status changes. */
+    public void logVcnNetworkValidationStatus(
+            int gatewayConnectionId,
+            int networkId,
+            @ValidationStatus int oldStatus,
+            @ValidationStatus int newStatus) {
+        VcnStatsLog.write(
+                VcnStatsLog.VCN_NETWORK_VALIDATION_STATUS_REPORTED,
+                gatewayConnectionId,
+                networkId,
+                oldStatus,
+                newStatus);
     }
 
     /**

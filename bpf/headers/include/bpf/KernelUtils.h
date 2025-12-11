@@ -101,7 +101,8 @@ static inline bool __unused isLtsKernel() {
            isKernelVersion(5, 15) ||  // first supported in Android T
            isKernelVersion(6,  1) ||  // first supported in Android U
            isKernelVersion(6,  6) ||  // first supported in Android V
-           isKernelVersion(6, 12);    // first supported in Android 25Q2
+           isKernelVersion(6, 12) ||  // first supported in Android 25Q2
+           isKernelVersion(6, 18);    // first supported in Android 26Q2
 }
 
 // Figure out the bitness of userspace.

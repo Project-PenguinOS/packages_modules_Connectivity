@@ -32,6 +32,7 @@ import static org.mockito.Mockito.when;
 
 import android.annotation.NonNull;
 import android.net.Network;
+import android.net.nsd.NsdServiceInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -68,6 +69,7 @@ import java.util.concurrent.ScheduledExecutorService;
 @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.S_V2)
 public class MdnsDiscoveryManagerTests {
     private static final long DEFAULT_TIMEOUT = 2000L;
+    private static final String SERVICE_NAME = "a_name";
     private static final String SERVICE_TYPE_1 = "_googlecast._tcp.local";
     private static final String SERVICE_TYPE_2 = "_test._tcp.local";
     private static final Network NETWORK_1 = Mockito.mock(Network.class);
@@ -224,6 +226,31 @@ public class MdnsDiscoveryManagerTests {
 
         runOnHandler(() -> callback.onSocketDestroyed(SOCKET_KEY_MULTICAST_DISABLED_NETWORK));
         verify(mockServiceTypeClientType1MulticastDisabledNetwork).notifySocketDestroyed();
+    }
+
+    @Test
+    public void testHandleProxyOffloadEngineResponse() throws IOException {
+        final MdnsSearchOptions options =
+                MdnsSearchOptions.newBuilder().setNetwork(null /* network */).build();
+        final SocketCreationCallback callback = expectSocketCreationCallback(
+                SERVICE_TYPE_1, mockListenerOne, options);
+        runOnHandler(() -> callback.onNoSocketCreated(SOCKET_KEY_MULTICAST_DISABLED_NETWORK));
+        verify(mockServiceTypeClientType1MulticastDisabledNetwork)
+                .startSendAndReceive(mockListenerOne, options);
+
+        NsdServiceInfo serviceInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE_1);
+        boolean isServiceLost = false;
+
+        runOnHandler(
+                () -> discoveryManager.handleProxyOffloadEngineResponse(
+                        serviceInfo,
+                        isServiceLost,
+                        SOCKET_KEY_MULTICAST_DISABLED_NETWORK.getInterfaceName()
+                )
+        );
+
+        verify(mockServiceTypeClientType1MulticastDisabledNetwork)
+                .processProxyOffloadEngineResponse(serviceInfo, isServiceLost);
     }
 
     @Test

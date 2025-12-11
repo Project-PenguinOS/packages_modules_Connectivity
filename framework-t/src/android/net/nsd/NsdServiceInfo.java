@@ -213,23 +213,19 @@ public final class NsdServiceInfo implements Parcelable {
 
     // TODO: if setHostname is made public, AdvertisingRequest#FLAG_SKIP_PROBING javadoc must be
     // updated to mention that hostnames must also be known unique to use that flag.
+    // Set a custom hostname for this service instance for registration.
+    // A hostname must be in ".local." domain. The ".local." must be omitted when calling this
+    // For example, you should call setHostname("MyHost") to use the hostname "MyHost.local.".
+    // If a hostname is set with this method, the addresses set with {@link #setHostAddresses}
+    // will be registered with the hostname. If the hostname is null (which is the default for a
+    // new {@link NsdServiceInfo}), a random hostname is used and the addresses of this device will
+    // be registered.
     /**
-     * Set a custom hostname for this service instance for registration.
+     * Sets the hostname.
      *
-     * <p>A hostname must be in ".local." domain. The ".local." must be omitted when calling this
-     * method.
-     *
-     * <p>For example, you should call setHostname("MyHost") to use the hostname "MyHost.local.".
-     *
-     * <p>If a hostname is set with this method, the addresses set with {@link #setHostAddresses}
-     * will be registered with the hostname.
-     *
-     * <p>If the hostname is null (which is the default for a new {@link NsdServiceInfo}), a random
-     * hostname is used and the addresses of this device will be registered.
-     *
-     * @hide
+     * @see #getHostname() for the usage.
      */
-//    @FlaggedApi(NsdManager.Flags.NSD_CUSTOM_HOSTNAME_ENABLED)
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD)
     public void setHostname(@Nullable String hostname) {
         mHostname = hostname;
     }

@@ -18,6 +18,7 @@ package com.android.server.connectivity.mdns.util
 
 import android.net.InetAddresses
 import android.net.nsd.NsdServiceInfo
+import android.net.nsd.OffloadEngine
 import android.os.Build
 import com.android.net.module.util.CollectionUtils
 import com.android.server.connectivity.mdns.MdnsConstants
@@ -34,6 +35,7 @@ import com.android.server.connectivity.mdns.MdnsRecord
 import com.android.server.connectivity.mdns.MdnsResponse
 import com.android.server.connectivity.mdns.MdnsServiceInfo
 import com.android.server.connectivity.mdns.MdnsServiceRecord
+import com.android.server.connectivity.mdns.MdnsServiceTypeClient
 import com.android.server.connectivity.mdns.MdnsTextRecord
 import com.android.server.connectivity.mdns.SocketKey
 import com.android.server.connectivity.mdns.util.MdnsUtils.createQueryDatagramPackets
@@ -43,6 +45,7 @@ import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.assertEmpty
 import com.android.testutils.assertSameElements
+import com.google.common.truth.Truth.assertThat
 import java.net.DatagramPacket
 import java.net.Inet4Address
 import kotlin.test.assertContentEquals
@@ -213,6 +216,31 @@ class MdnsUtilsTest {
             FAKE_RESPONSE_RECEIVE_TIME,
             null
         ))
+    }
+
+    @Test
+    fun testCreateOffloadServiceInfoFromFilterReplies() {
+        val filterRepliesInfo = MdnsServiceTypeClient.FilterRepliesInfo(
+            "MyService",
+            SERVICE_TYPE,
+            listOf("subtype0", "subtype1"),
+            "My.TestHost"
+        )
+
+        val result = MdnsUtils.createOffloadServiceInfoFromFilterReplies(filterRepliesInfo)
+
+        assertEquals(filterRepliesInfo.hostname, result.hostname)
+        assertEquals(filterRepliesInfo.serviceType, result.key.serviceType)
+        assertEquals(filterRepliesInfo.serviceName, result.key.serviceName)
+        assertSameElements(filterRepliesInfo.subtypes, result.subtypes)
+        assertThat(
+            result.offloadType
+                and (OffloadEngine.OFFLOAD_TYPE_QUERY.toLong())
+        ).isNotEqualTo(0L)
+        assertThat(
+            result.offloadType
+                and (OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong())
+        ).isNotEqualTo(0L)
     }
 
     @Test

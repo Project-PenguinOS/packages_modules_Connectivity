@@ -161,12 +161,28 @@ public class NetlinkUtils {
      * @param msg the raw bytes of netlink message to be sent.
      */
     public static void sendOneShotKernelMessage(int nlProto, byte[] msg) throws ErrnoException {
+        sendOneShotKernelMessage(nlProto, msg, IO_TIMEOUT_MS);
+    }
+
+    /**
+     * Send one netlink message to kernel via netlink socket.
+     *
+     * @param nlProto netlink protocol type.
+     * @param msg the raw bytes of netlink message to be sent.
+     * @param timeoutMs the timeout in milliseconds for send and receive operations.
+     *
+     * @deprecated The method will be removed after all netlink timeout usage are removed in all
+     * modules.
+     */
+    @Deprecated
+    public static void sendOneShotKernelMessage(int nlProto, byte[] msg, long timeoutMs)
+            throws ErrnoException {
         final String errPrefix = "Error in NetlinkSocket.sendOneShotKernelMessage";
         final FileDescriptor fd = netlinkSocketForProto(nlProto, SOCKET_RECV_BUFSIZE);
 
         try {
             connectToKernel(fd);
-            sendMessage(fd, msg, 0, msg.length, IO_TIMEOUT_MS);
+            sendMessage(fd, msg, 0, msg.length, timeoutMs);
             receiveNetlinkAck(fd);
         } catch (InterruptedIOException e) {
             Log.e(TAG, errPrefix, e);
@@ -287,7 +303,8 @@ public class NetlinkUtils {
      * netlink message of at most |bufsize| size.
      *
      * Multi-threaded calls with different timeouts will cause unexpected results.
-     * @deprecated Use {@link #recvMessage(FileDescriptor, ByteBuffer, long)} instead
+     * @deprecated Use {@link #recvMessage(FileDescriptor, ByteBuffer, long)} instead, the method
+     * will be removed after all netlink timeout usages are moved in all modules.
      */
     @Deprecated
     public static ByteBuffer recvMessage(FileDescriptor fd, int bufsize, long timeoutMs)
@@ -301,7 +318,10 @@ public class NetlinkUtils {
      * The message will be stored in |buffer| within its capacity.
      *
      * Multi-threaded calls with different timeouts will cause unexpected results.
+     * @deprecated  the method will be removed after all netlink timeout usages are moved in all
+     * modules.
      */
+    @Deprecated
     public static ByteBuffer recvMessage(FileDescriptor fd, ByteBuffer buffer, long timeoutMs)
             throws ErrnoException, IllegalArgumentException, InterruptedIOException {
         checkTimeout(timeoutMs);

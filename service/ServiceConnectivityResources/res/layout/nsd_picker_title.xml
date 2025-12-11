@@ -42,5 +42,5 @@
         android:layout_height="wrap_content"
         android:paddingTop="20dp"
         android:layout_gravity="center_horizontal"
-        android:text="Scanning for services"/>
+        android:text="@string/scanning_for_services_progress_description"/>
 </LinearLayout>
