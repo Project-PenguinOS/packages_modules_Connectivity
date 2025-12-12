@@ -52,8 +52,6 @@ android_test {
     platform_apis: true,
 
     // Tag this module as a cts test artifact
-    // TODO: b/375213246 Add "mcts-tethering" when VCN libs are
-    // built into Tethering module
     // TODO: b/379938062 Move CtsVcnTestCases to the Tethering
     // module folder (packages/modules/Connectivity)
     test_suites: [

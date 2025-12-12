@@ -88,6 +88,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeFalse;
+import static org.junit.Assume.assumeTrue;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
@@ -115,6 +116,7 @@ import androidx.test.filters.SmallTest;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.BpfBoolean;
 import com.android.net.module.util.IBpfMap;
+import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.Struct.Bool;
 import com.android.net.module.util.Struct.S32;
 import com.android.net.module.util.Struct.S64;
@@ -241,7 +243,6 @@ public final class BpfNetMapsTest {
         doReturn(TEST_IF_INDEX).when(mInterfaceTracker).getInterfaceIndex(TEST_IF_NAME);
         doReturn(TEST_IF_NAME).when(mDeps).getIfName(TEST_IF_INDEX);
         doReturn(0).when(mDeps).synchronizeKernelRCU();
-        doReturn(false).when(mDeps).isL4SSupported();
         doAnswer(invocation -> mFeatureFlags.getOrDefault(FLAG_PERMISSION_MAP_UID_MIGRATION, false))
                 .when(mDeps).isPermissionMapUidMigrationEnabled();
         doAnswer(invocation -> mFeatureFlags.getOrDefault(
@@ -2083,21 +2084,16 @@ public final class BpfNetMapsTest {
             TEST_UID + " PERMISSION_NONE");
     }
 
-    public void testL4SDisabledIfNotSupported() {
-        doReturn(false).when(mDeps).isL4SSupported();
-        assertFalse(mBpfNetMaps.isL4sEnabled());
-    }
-
     @Test
     public void testSetL4SDisabled() {
-        doReturn(true).when(mDeps).isL4SSupported();
+        assumeTrue(SdkUtil.isAtLeast26Q2());
         mBpfNetMaps.setL4sEnabled(false);
         assertFalse(mBpfNetMaps.isL4sEnabled());
     }
 
     @Test
     public void testSetL4SEnabled() {
-        doReturn(true).when(mDeps).isL4SSupported();
+        assumeTrue(SdkUtil.isAtLeast26Q2());
         mBpfNetMaps.setL4sEnabled(true);
         assertTrue(mBpfNetMaps.isL4sEnabled());
     }
