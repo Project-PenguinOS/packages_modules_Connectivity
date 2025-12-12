@@ -1,0 +1,31 @@
+package {
+    default_team: "trendy_team_fwk_core_networking",
+    // See: http://go/android-license-faq
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+android_test {
+    name: "ServiceConnectivityResourcesTests",
+    sdk_version: "module_current",
+    min_sdk_version: "31",
+    srcs: [
+        "src/**/*.java",
+        "src/**/*.kt",
+    ],
+    libs: [
+        "framework-connectivity.stubs.module_lib",
+        "framework-connectivity-t.stubs.module_lib",
+    ],
+    static_libs: [
+        "androidx.test.espresso.core",
+        "androidx.test.rules",
+        "androidx.test.uiautomator_uiautomator",
+        "mockito-target-minus-junit4",
+        "net-tests-utils",
+        "ServiceConnectivityResourcesLib",
+    ],
+    test_suites: [
+        "general-tests",
+        "mts-tethering",
+    ],
+}

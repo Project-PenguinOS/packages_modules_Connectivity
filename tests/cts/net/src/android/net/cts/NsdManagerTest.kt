@@ -999,7 +999,8 @@ class NsdManagerTest {
             hostName,
             null /* offloadPayload */,
             0 /* priority */,
-            OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong()
+            OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong() or
+                    OffloadEngine.OFFLOAD_TYPE_QUERY.toLong()
         )
         assertEquals(expected, serviceInfo)
     }

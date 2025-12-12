@@ -26,8 +26,10 @@ import static libcore.junit.util.compat.CoreCompatChangeRule.DisableCompatChange
 import static libcore.junit.util.compat.CoreCompatChangeRule.EnableCompatChanges;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.doReturn;
@@ -43,6 +45,7 @@ import android.content.Context;
 import android.net.connectivity.ConnectivityCompatChanges;
 import android.os.Build;
 
+import androidx.annotation.NonNull;
 import androidx.test.filters.SmallTest;
 
 import com.android.modules.utils.build.SdkLevel;
@@ -251,6 +254,40 @@ public class NsdManagerTest {
         AdvertisingRequest capturedRequest = getAdvertisingRequest(
                 req -> verify(mServiceConn).registerService(anyInt(), req.capture()));
         assertEquals(request.getTtl(), capturedRequest.getTtl());
+    }
+
+    @Test
+    public void testOffloadSessionRegistration() throws Exception {
+        final NsdManager manager = mManager;
+        String interfaceName = "lo";
+        long offloadType = OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
+        OffloadEngine offloadEngine = new OffloadEngine() {
+            @Override
+            public void onOffloadServiceUpdated(@NonNull OffloadServiceInfo info) {
+
+            }
+
+            @Override
+            public void onOffloadServiceRemoved(@NonNull OffloadServiceInfo info) {
+
+            }
+        };
+
+        OffloadSession offloadSession = manager.registerOffloadSession(
+                interfaceName,
+                offloadType,
+                1L,
+                Runnable::run,
+                offloadEngine
+        );
+
+        verify(mServiceConn).registerOffloadEngine(
+                eq(interfaceName),
+                any(),
+                eq(1L),
+                eq(offloadType)
+        );
+        assertNotNull(offloadSession);
     }
 
     private void doTestRegisterService() throws Exception {

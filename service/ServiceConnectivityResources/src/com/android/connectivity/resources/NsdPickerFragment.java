@@ -16,25 +16,42 @@
 
 package com.android.connectivity.resources;
 
+import android.annotation.RequiresNoPermission;
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.DialogInterface;
+import android.net.nsd.NsdServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.RemoteException;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.UiThread;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.DialogFragment;
 
 import com.android.connectivity.resources.aidl.NsdPickerConnector;
+import com.android.connectivity.resources.aidl.NsdServiceReceiver;
+
+import java.lang.ref.WeakReference;
+import java.util.Comparator;
+import java.util.Set;
+import java.util.TreeSet;
 
 @TargetApi(Build.VERSION_CODES.TIRAMISU)
 public class NsdPickerFragment extends DialogFragment {
@@ -43,6 +60,12 @@ public class NsdPickerFragment extends DialogFragment {
     private static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
     private static final String KEY_STATE = "state";
 
+    // Accessed only on the main looper
+    private static final SparseArray<ServiceReceiver> sActiveReceivers = new SparseArray<>();
+    private static int sNextReceiverId = 0;
+
+    @Nullable
+    private ServiceAdapter mAdapter;
     private State mState;
 
     public NsdPickerFragment() {
@@ -54,24 +77,27 @@ public class NsdPickerFragment extends DialogFragment {
         mState = state;
     }
 
+    @UiThread
     static NsdPickerFragment newInstance(
             @NonNull NsdPickerConnector connector, @NonNull String appName) {
-        return new NsdPickerFragment(new State(connector, appName));
+        return new NsdPickerFragment(new State(sNextReceiverId++, connector, appName));
     }
 
     public static class State implements Parcelable {
+        private final int mReceiverId;
         @NonNull
         private final NsdPickerConnector mConnector;
         @NonNull
         private final String mAppName;
-        // TODO: add more state used by the fragment once it has logic to receive services
 
-        public State(@NonNull NsdPickerConnector conn, @NonNull String appName) {
+        public State(int receiverId, @NonNull NsdPickerConnector conn, @NonNull String appName) {
+            mReceiverId = receiverId;
             mConnector = conn;
             mAppName = appName;
         }
 
         private State(Parcel parcel) {
+            mReceiverId = parcel.readInt();
             mConnector = NsdPickerConnector.Stub.asInterface(parcel.readStrongBinder());
             mAppName = parcel.readString();
         }
@@ -83,6 +109,7 @@ public class NsdPickerFragment extends DialogFragment {
 
         @Override
         public void writeToParcel(Parcel dest, int flags) {
+            dest.writeInt(mReceiverId);
             dest.writeStrongInterface(mConnector);
             dest.writeString(mAppName);
         }
@@ -100,6 +127,42 @@ public class NsdPickerFragment extends DialogFragment {
         };
     }
 
+    /**
+     * Adapter used to display services in a list.
+     */
+    private static class ServiceAdapter extends ArrayAdapter<NsdServiceInfo> {
+        private final LayoutInflater mInflater = LayoutInflater.from(getContext());
+
+        ServiceAdapter(Context context) {
+            super(context, R.layout.nsd_service_list_item);
+        }
+
+        @UiThread
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            if (convertView == null) {
+                convertView = mInflater.inflate(R.layout.nsd_service_list_item, parent, false);
+            }
+
+            final NsdServiceInfo service = getItem(position);
+            final TextView titleView = convertView.findViewById(android.R.id.title);
+            // If the name is too long the title TextView is configured to handle it with
+            // android:ellipsize="marquee".
+            // TODO: also provide APIs to configure how the name is shown (for example using TXT
+            // attributes or extract a portion of the service name).
+            titleView.setText(service.getServiceName());
+
+            convertView.findViewById(android.R.id.summary).setVisibility(View.GONE);
+
+            final ImageView imageView = convertView.findViewById(android.R.id.icon);
+            // TODO: set icon based on transport
+            imageView.setImageResource(R.drawable.ic_wifi);
+
+            return convertView;
+        }
+    }
+
+    @UiThread
     @Override
     public Dialog onCreateDialog(@Nullable Bundle savedInstanceState) {
         if (mState == null && savedInstanceState != null) {
@@ -109,18 +172,24 @@ public class NsdPickerFragment extends DialogFragment {
         if (mState == null) {
             throw new IllegalStateException("Missing state");
         }
+        mAdapter = new ServiceAdapter(getContext());
         final LayoutInflater inflater = LayoutInflater.from(getContext());
         final View customTitle = inflater.inflate(R.layout.nsd_picker_title, null);
         customTitle.<TextView>findViewById(android.R.id.summary).setText(
                 getString(R.string.connect_to_service_summary, mState.mAppName));
 
+        final DialogInterface.OnClickListener serviceSelectedListener =
+                (dialogInterface, itemPosition) -> onServiceSelected(itemPosition);
         final AlertDialog dialog = new AlertDialog.Builder(getContext())
                 .setCustomTitle(customTitle)
-                // TODO: add adapter to display services
-                // .setAdapter( ... )
+                .setAdapter(mAdapter, serviceSelectedListener)
                 .setNegativeButton(android.R.string.cancel, (d, which) -> onCancel(d))
                 .create();
-        // TODO: call mState.mConnector.setServiceReceiver and handle services
+
+        final ServiceReceiver receiver = makeOrGetServiceReceiver(
+                mState.mReceiverId, mState.mConnector);
+        receiver.setParent(this);
+
         return dialog;
     }
 
@@ -132,14 +201,162 @@ public class NsdPickerFragment extends DialogFragment {
         }
     }
 
+    @UiThread
+    private void onServiceSelected(int position) {
+        if (mState != null) {
+            try {
+                final NsdServiceInfo service = mAdapter.getItem(position);
+                if (DBG) Log.d(TAG, "Notify service selected for " + service);
+                mState.mConnector.notifyServiceSelected(service);
+            } catch (RemoteException e) {
+                Log.e(TAG, "Failed to notify of selected service", e);
+            }
+        }
+        dismiss();
+    }
+
+    @UiThread
     @Override
-    public void onCancel(@NonNull DialogInterface dialog) {
-        super.onCancel(dialog);
-        if (DBG) Log.d(TAG, "Dialog cancelled");
+    public void onDismiss(@NonNull DialogInterface dialog) {
+        super.onDismiss(dialog);
+        if (DBG) Log.d(TAG, "Dialog dismissed");
         final Activity activity = getActivity();
         if (activity != null) {
             activity.finish();
         }
+        removeReceiver();
+    }
+
+    @UiThread
+    @Override
+    public void onCancel(@NonNull DialogInterface dialog) {
+        super.onCancel(dialog);
+        if (DBG) Log.d(TAG, "Dialog cancelled");
         // TODO: stop discovery, don't wait for the requesting app to time out and unregister
+    }
+
+    @UiThread
+    void removeReceiver() {
+        if (mState != null) {
+            sActiveReceivers.remove(mState.mReceiverId);
+        }
+    }
+
+    @UiThread
+    private void updateProgressSpinner(boolean hasItems) {
+        final Dialog dialog = getDialog();
+        if (dialog == null) return;
+        final View progressSpinner = dialog.findViewById(android.R.id.progress);
+        if (progressSpinner == null) {
+            return;
+        }
+        progressSpinner.setVisibility(hasItems ? View.GONE : View.VISIBLE);
+    }
+
+    @UiThread
+    void onServicesUpdated(Set<NsdServiceInfo> services) {
+        if (DBG) Log.d(TAG, "Services updated to " + services);
+        updateProgressSpinner(!services.isEmpty());
+        mAdapter.setNotifyOnChange(false);
+        mAdapter.clear();
+        mAdapter.addAll(services);
+        mAdapter.notifyDataSetChanged();
+    }
+
+    @UiThread
+    private static ServiceReceiver makeOrGetServiceReceiver(
+            int id, NsdPickerConnector connector) {
+        ServiceReceiver receiver = sActiveReceivers.get(id, null);
+        if (receiver != null) {
+            return receiver;
+        }
+
+        receiver = new ServiceReceiver(Looper.getMainLooper());
+        sActiveReceivers.put(id, receiver);
+        try {
+            connector.setServiceReceiver(receiver);
+        } catch (RemoteException e) {
+            // The other end of the connector (NsdService) is in the system_server.
+            throw e.rethrowFromSystemServer();
+        }
+        return receiver;
+    }
+
+    /**
+     * A receiver registered with NsdService.
+     *
+     * <p>This receiver stays alive until unregistered, including if the fragment/activity are
+     * destroyed/recreated. {@link ServiceReceiver#setParent(NsdPickerFragment)} is used to update
+     * the fragment that gets service updates.
+     */
+    private static class ServiceReceiver extends NsdServiceReceiver.Stub {
+        // Services are keyed by (serviceName, Network). The dialog only handles one service type
+        // since each discovery request has a given service type, so it is always the same.
+        @NonNull
+        private final Set<NsdServiceInfo> mKnownServices = new TreeSet<>(
+                Comparator.comparing(NsdServiceInfo::getServiceName)
+                        .thenComparing(info ->
+                                info.getNetwork() == null
+                                        ? 0L
+                                        : info.getNetwork().getNetworkHandle()
+                        )
+        );
+        private final Handler mHandler;
+        private WeakReference<NsdPickerFragment> mParent;
+
+        @UiThread
+        ServiceReceiver(Looper looper) {
+            mHandler = new Handler(looper);
+        }
+
+        @UiThread
+        void setParent(NsdPickerFragment fragment) {
+            mParent = new WeakReference<>(fragment);
+            // Notify the parent of existing services in the next handler loop, as the parent may
+            // be initializing.
+            mHandler.post(this::notifyServicesUpdated);
+        }
+
+        // The receiver is only registered on the connector, so no permission checks are necessary
+        @RequiresNoPermission
+        @Override
+        public void onServiceFound(NsdServiceInfo service) {
+            if (DBG) Log.d(TAG, "Service found: " + service);
+            mHandler.post(() -> {
+                mKnownServices.add(service);
+                notifyServicesUpdated();
+            });
+        }
+
+        @RequiresNoPermission
+        @Override
+        public void onServiceLost(NsdServiceInfo service) {
+            if (DBG) Log.d(TAG, "Service lost: " + service);
+            mHandler.post(() -> {
+                mKnownServices.remove(service);
+                notifyServicesUpdated();
+            });
+        }
+
+        @UiThread
+        private void notifyServicesUpdated() {
+            final NsdPickerFragment parent = mParent.get();
+            if (parent != null) {
+                parent.onServicesUpdated(mKnownServices);
+            }
+            // If the parent was null, no update is necessary: this method will be triggered again
+            // in setParent.
+        }
+
+        @RequiresNoPermission
+        @Override
+        public void onCancelled() {
+            if (DBG) Log.d(TAG, "Service discovery cancelled");
+            mHandler.post(() -> {
+                final NsdPickerFragment parent = mParent.get();
+                if (parent == null) return;
+                parent.dismiss();
+            });
+        }
     }
 }

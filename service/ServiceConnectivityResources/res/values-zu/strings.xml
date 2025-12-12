@@ -43,4 +43,6 @@
     <item msgid="5734728378097476003">"I-VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"uhlobo olungaziwa lwenethiwekhi"</string>
+    <string name="connect_to_service_title" msgid="2417012530980077322">"Xhuma kusevisi"</string>
+    <string name="connect_to_service_summary" msgid="8059566528115046359">"I-<xliff:g id="APP_NAME">%1$s</xliff:g> ifuna ukuxhuma kwenye idivayisi kunethiwekhi yendawo"</string>
 </resources>

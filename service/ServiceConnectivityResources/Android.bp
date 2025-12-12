@@ -20,8 +20,8 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-android_app {
-    name: "ServiceConnectivityResources",
+java_defaults {
+    name: "ServiceConnectivityResourcesDefaults",
     sdk_version: "module_current",
     min_sdk_version: "30",
     resource_dirs: [
@@ -31,6 +31,7 @@ android_app {
         "src/**/*.java",
     ],
     libs: [
+        "framework-annotations-lib",
         "framework-connectivity.stubs.module_lib",
         "framework-connectivity-t.stubs.module_lib",
     ],
@@ -39,13 +40,24 @@ android_app {
         "androidx.fragment_fragment",
         "service-connectivity-resources-aidl",
     ],
+}
+
+android_library {
+    name: "ServiceConnectivityResourcesLib",
+    defaults: ["ServiceConnectivityResourcesDefaults"],
+    visibility: ["//packages/modules/Connectivity:__subpackages__"],
+}
+
+android_app {
+    name: "ServiceConnectivityResources",
+    defaults: ["ServiceConnectivityResourcesDefaults"],
     privileged: true,
     export_package_resources: true,
+    updatable: true,
+    certificate: ":com.android.connectivity.resources.certificate",
     apex_available: [
         "com.android.tethering",
     ],
-    certificate: ":com.android.connectivity.resources.certificate",
-    updatable: true,
 }
 
 java_library {

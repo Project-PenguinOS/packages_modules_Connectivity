@@ -3969,10 +3969,6 @@ public class ConnectivityManager {
         }
     }
 
-    // TODO: Use android.Manifest.permission.CREATE_APP_SPECIFIC_NETWORK once it's available.
-    private static final String PERMISSION_CREATE_APP_SPECIFIC_NETWORK =
-            "android.permission.CREATE_APP_SPECIFIC_NETWORK";
-
     /**
      * @hide
      * Register a NetworkAgent with ConnectivityService.
@@ -3981,7 +3977,7 @@ public class ConnectivityManager {
     @RequiresPermission(anyOf = {
             NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK,
             android.Manifest.permission.NETWORK_FACTORY,
-            PERMISSION_CREATE_APP_SPECIFIC_NETWORK})
+            android.Manifest.permission.CREATE_APP_SPECIFIC_NETWORK})
     public NetworkAndAgentRegistryParcelable registerNetworkAgent(
             @NonNull INetworkAgent na, @NonNull NetworkInfo ni,
             @NonNull LinkProperties lp, @NonNull NetworkCapabilities nc,
@@ -3998,7 +3994,7 @@ public class ConnectivityManager {
     @RequiresPermission(anyOf = {
             NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK,
             android.Manifest.permission.NETWORK_FACTORY,
-            PERMISSION_CREATE_APP_SPECIFIC_NETWORK})
+            android.Manifest.permission.CREATE_APP_SPECIFIC_NETWORK})
     public NetworkAndAgentRegistryParcelable registerNetworkAgent(
             @NonNull INetworkAgent na, @NonNull NetworkInfo ni,
             @NonNull LinkProperties lp, @NonNull NetworkCapabilities nc,

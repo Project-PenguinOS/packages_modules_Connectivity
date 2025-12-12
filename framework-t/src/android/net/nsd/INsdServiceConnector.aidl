@@ -40,4 +40,5 @@ interface INsdServiceConnector {
     void unregisterServiceInfoCallback(int listenerKey);
     void registerOffloadEngine(String ifaceName, in IOffloadEngine cb, long offloadCapabilities, long offloadType);
     void unregisterOffloadEngine(in IOffloadEngine cb);
+    void injectOffloadEngineResponse(in NsdServiceInfo serviceInfo, boolean isServiceLost, String ifaceName);
 }

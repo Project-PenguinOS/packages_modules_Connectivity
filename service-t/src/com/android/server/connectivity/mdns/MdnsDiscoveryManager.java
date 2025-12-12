@@ -20,6 +20,7 @@ import android.Manifest.permission;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.RequiresPermission;
+import android.net.nsd.NsdServiceInfo;
 import android.os.Looper;
 import android.util.ArrayMap;
 import android.util.Log;
@@ -104,6 +105,21 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
 
         public List<MdnsServiceTypeClient> getAllMdnsServiceTypeClient() {
             return new ArrayList<>(clients.values());
+        }
+
+        @Nullable
+        private MdnsServiceTypeClient getByServiceTypeAndInterfaceName(
+                @NonNull String serviceType, String interfaceName) {
+            final List<MdnsServiceTypeClient> list = new ArrayList<>();
+            final String dnsUpperServiceType = DnsUtils.toDnsUpperCase(serviceType);
+            for (int i = 0; i < clients.size(); i++) {
+                final Pair<String, SocketKey> perSocketServiceType = clients.keyAt(i);
+                if (dnsUpperServiceType.equals(perSocketServiceType.first)
+                        && perSocketServiceType.second.getInterfaceName().equals(interfaceName)) {
+                    return clients.valueAt(i);
+                }
+            }
+            return null;
         }
 
         public List<MdnsServiceTypeClient> getByInterfaceName(@NonNull String interfaceName) {
@@ -360,6 +376,28 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
     public void onResponseReceived(@NonNull MdnsPacket packet, @NonNull SocketKey socketKey) {
         discoveryExecutor.checkAndRunOnHandlerThread(() ->
                 handleOnResponseReceived(packet, socketKey));
+    }
+
+    /**
+     * Handles {@code NsdServiceInfo} injected by OffloadEngine.
+     *
+     * @param serviceInfo The {@link NsdServiceInfo} object
+     * @param interfaceName  The interface name where client originally requested the service.
+     */
+    public void handleProxyOffloadEngineResponse(@NonNull NsdServiceInfo serviceInfo,
+            boolean isServiceLost,
+            @NonNull String interfaceName) {
+        MdnsServiceTypeClient serviceTypeClient =
+                perSocketServiceTypeClients.getByServiceTypeAndInterfaceName(
+                        serviceInfo.getServiceType(),
+                        interfaceName
+                );
+        if (serviceTypeClient == null) {
+            sharedLog.w("No Client Found for service type: "
+                    + serviceInfo.getServiceType() + " and interface: " + interfaceName);
+        } else {
+            serviceTypeClient.processProxyOffloadEngineResponse(serviceInfo, isServiceLost);
+        }
     }
 
     private void handleOnResponseReceived(@NonNull MdnsPacket packet,
