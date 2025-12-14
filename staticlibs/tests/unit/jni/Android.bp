@@ -19,7 +19,7 @@ package {
 }
 
 cc_library_shared {
-    name: "libcom_android_net_moduletests_util_jni",
+    name: "libcom_android_net_moduletests_util_jni_CommonConnectivityJni",
     cflags: [
         "-Wall",
         "-Werror",
@@ -30,9 +30,10 @@ cc_library_shared {
         "com_android_net_moduletests_util/onload.cpp",
     ],
     static_libs: [
-        "libserviceconnectivityjni",
+        "libcommonconnectivityjni",
     ],
     shared_libs: [
+        "libbinder_ndk",
         "liblog",
         "libnativehelper",
     ],

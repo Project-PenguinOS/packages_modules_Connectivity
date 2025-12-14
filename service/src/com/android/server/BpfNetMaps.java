@@ -100,6 +100,7 @@ import com.android.net.module.util.BpfMap;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.IBpfMap;
 import com.android.net.module.util.IBpfMap.ThrowingBiConsumer;
+import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.SingleWriterBpfMap;
 import com.android.net.module.util.Struct;
 import com.android.net.module.util.Struct.Bool;
@@ -114,7 +115,6 @@ import com.android.net.module.util.bpf.LocalNetAccessKey;
 import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 
-import java.io.File;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -504,7 +504,7 @@ public class BpfNetMaps {
             }
         }
 
-        if (deps.isL4SSupported()) {
+        if (SdkUtil.isAtLeast26Q2()) {
             if (sL4sEnabledMap == null) {
                 sL4sEnabledMap = getL4sEnabledMap();
             }
@@ -621,14 +621,6 @@ public class BpfNetMaps {
         }
 
         /**
-         * Checks if L4S is potentially supported by verifying the existence of the BPF map.
-         */
-        public boolean isL4SSupported() {
-            final File file = new File(L4S_ENABLED_MAP_PATH);
-            return file.exists();
-        }
-
-        /**
          * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than lnp
          * permission propagation. Wrapper around accessLocalNetworkPermissionEnabled() so
          * that it can be mocked in unit test.
@@ -679,6 +671,12 @@ public class BpfNetMaps {
 
     private void throwIfPre25Q2(final String msg) {
         if (!isAtLeastB()) {
+            throw new UnsupportedOperationException(msg);
+        }
+    }
+
+    private void throwIfPre26Q2(final String msg) {
+        if (!SdkUtil.isAtLeast26Q2()) {
             throw new UnsupportedOperationException(msg);
         }
     }
@@ -1511,7 +1509,7 @@ public class BpfNetMaps {
      */
     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     public void setL4sEnabled(boolean enabled) {
-        if (!mDeps.isL4SSupported()) return;
+        throwIfPre26Q2("setL4sEnabled is not available on pre-C devices");
 
         try {
             sL4sEnabledMap.set(enabled);
@@ -1527,7 +1525,7 @@ public class BpfNetMaps {
      */
     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     public boolean isL4sEnabled() {
-        if (!mDeps.isL4SSupported()) return false;
+        throwIfPre26Q2("isL4sEnabled is not available on pre-C devices");
 
         try {
             return sL4sEnabledMap.get();

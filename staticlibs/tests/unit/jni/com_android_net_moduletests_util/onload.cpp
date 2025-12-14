@@ -22,8 +22,7 @@
 
 namespace android {
 
-int register_com_android_net_module_util_ServiceConnectivityJni(JNIEnv *env,
-                                                      char const *class_name);
+int register_CommonConnectivityJni(JNIEnv *env, char const *class_name);
 
 extern "C" jint JNI_OnLoad(JavaVM *vm, void *) {
   JNIEnv *env;
@@ -32,9 +31,9 @@ extern "C" jint JNI_OnLoad(JavaVM *vm, void *) {
     return JNI_ERR;
   }
 
-  if (register_com_android_net_module_util_ServiceConnectivityJni(
-          env, "com/android/net/moduletests/util/ServiceConnectivityJni") < 0)
-    return JNI_ERR;
+  if (register_CommonConnectivityJni(
+          env, "com/android/net/moduletests/util/CommonConnectivityJni") < 0)
+      return JNI_ERR;
 
   return JNI_VERSION_1_6;
 }

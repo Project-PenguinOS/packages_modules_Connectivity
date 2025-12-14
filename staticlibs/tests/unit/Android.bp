@@ -57,7 +57,7 @@ android_test {
         // For mockito extended
         "libdexmakerjvmtiagent",
         "libstaticjvmtiagent",
-        "libcom_android_net_moduletests_util_jni",
+        "libcom_android_net_moduletests_util_jni_CommonConnectivityJni",
     ],
     jarjar_rules: "jarjar-rules.txt",
     test_suites: ["device-tests"],
