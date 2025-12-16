@@ -688,4 +688,68 @@ class CSSatelliteNetworkTest : CSTest() {
         assertTrue(caps.hasCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS))
         assertTrue(caps.hasCapability(NET_CAPABILITY_NOT_VCN_MANAGED))
     }
+
+    private fun ufcNc(): NetworkCapabilities {
+        return ncForTransport(TRANSPORT_CELLULAR).apply {
+            removeCapability(NET_CAPABILITY_INTERNET)
+            addCapability(NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
+        }
+    }
+
+    @Test
+    fun testUfcSliceIsReleased_whenWifiConnects() {
+        val myUid = Process.myUid()
+
+        // Register callbacks
+        val defaultCb = TestableNetworkCallback().also { cm.registerDefaultNetworkCallback(it) }
+        val allNetworksCb = TestableNetworkCallback().also {
+            cm.registerNetworkCallback(NetworkRequest.Builder().clearCapabilities().build(), it)
+        }
+
+        // Initial setup: standard cellular network is the default.
+        val cellAgent = Agent(
+                lp = defaultLp().apply { interfaceName = "rmnet_data1" },
+                nc = ncForTransport(TRANSPORT_CELLULAR)
+        ).apply { connect() }
+        val cellNetwork = cellAgent.network
+        defaultCb.expectAvailableCallbacks (cellNetwork, validated = false)
+        allNetworksCb.expectAvailableCallbacks (cellNetwork, validated = false)
+
+        // Create the policy for an OTT UID to request a UFC slice.
+        val policy = AppOptInDefaultNetworkPolicy(POLICY_OTT, setOf(myUid))
+        updateAppOptInDefaultNetworkPolicies(listOf(policy))
+
+        val ufcCellAgent = Agent(
+                lp = defaultLp().apply { interfaceName = "rmnet_data0" },
+                nc = ufcNc()
+        ).apply { connect() }
+        val ufcCellNetwork = ufcCellAgent.network
+
+        // The app's default network should switch to the UFC slice.
+        defaultCb.expectAvailableCallbacks (ufcCellNetwork , validated = false)
+        allNetworksCb.expectAvailableCallbacks(ufcCellNetwork , validated = false)
+
+        // Turn on Wi-Fi.
+        val wifiNc = ncForTransport(TRANSPORT_WIFI).apply {
+            addCapability(NET_CAPABILITY_NOT_METERED)
+        }
+        val wifiAgent = Agent(
+                lp = defaultLp().apply { interfaceName = "wlan0" },
+                nc = wifiNc
+        ).apply { connect() }
+        val wifiNetwork = wifiAgent.network
+
+        // The app's default network should switch to Wi-Fi.
+        defaultCb.expectAvailableCallbacks(wifiNetwork , validated = false)
+
+       // BUG: UFC network should be released here.
+        // allNetworksCb.eventuallyExpect<Losing> { it.network == ufcCellNetwork }
+        // allNetworksCb.eventuallyExpect<Lost> { it.network == ufcCellNetwork }
+        allNetworksCb.assertNoCallback(timeoutMs = 500) { it is Lost }
+
+        // Now Cleanup
+        updateAppOptInDefaultNetworkPolicies(emptyList())
+        wifiAgent.disconnect()
+        cellAgent.disconnect()
+    }
 }

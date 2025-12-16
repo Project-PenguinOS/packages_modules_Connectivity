@@ -21,6 +21,7 @@ import android.net.NetworkCapabilities.TRANSPORT_WIFI
 import android.net.NetworkRequest
 import android.os.Build
 import android.os.IBinder
+import android.os.RemoteException
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRunner
 import kotlin.test.assertFalse
@@ -31,7 +32,9 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.Mockito.atLeastOnce
 import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.timeout
 import org.mockito.Mockito.verify
 
@@ -76,6 +79,41 @@ class CSConnectivityDiagnosticsTest : CSTest() {
             )
         assertFalse(service.mConnectivityDiagnosticsCallbacks.containsKey(mIBinder))
         verify(mConnectivityDiagnosticsCallback, atLeastOnce()).asBinder()
+    }
+
+    @Test
+    fun testRegisterConnectivityDiagnosticsCallbackOnLinkToDeathRemoteException() {
+        val wifiRequest = NetworkRequest.Builder().addTransportType(TRANSPORT_WIFI).build()
+        doReturn(mIBinder).`when`(mConnectivityDiagnosticsCallback).asBinder()
+        doThrow(RemoteException()).`when`(mIBinder)
+            .linkToDeath(
+                any(ConnectivityService.ConnectivityDiagnosticsCallbackInfo::class.java),
+                anyInt()
+            )
+
+        service.registerConnectivityDiagnosticsCallback(
+            mConnectivityDiagnosticsCallback,
+            wifiRequest,
+            context.packageName
+        )
+
+        // Block until all other events are done processing.
+        waitForIdle()
+
+        verify(
+            mIBinder
+        ).linkToDeath(
+            any(ConnectivityService.ConnectivityDiagnosticsCallbackInfo::class.java),
+            anyInt()
+        )
+        assertFalse(service.mConnectivityDiagnosticsCallbacks.containsKey(mIBinder))
+
+        service.unregisterConnectivityDiagnosticsCallback(mConnectivityDiagnosticsCallback)
+        verify(mIBinder, never())
+            .unlinkToDeath(
+                any(ConnectivityService.ConnectivityDiagnosticsCallbackInfo::class.java),
+                anyInt()
+            )
     }
 
     @Test

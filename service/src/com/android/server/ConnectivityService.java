@@ -14190,6 +14190,27 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
     }
 
+    private boolean addConnectivityDiagnosticsCallback(
+            @NonNull ConnectivityDiagnosticsCallbackInfo cbInfo, @NonNull IBinder iCb) {
+        ensureRunningOnConnectivityServiceThread();
+
+        // This means that the client registered the same callback multiple times. Do
+        // not override the previous entry, and exit silently.
+        if (mConnectivityDiagnosticsCallbacks.containsKey(iCb)) {
+            if (VDBG) log("Diagnostics callback is already registered");
+            return false;
+        }
+
+        try {
+            iCb.linkToDeath(cbInfo, 0);
+        } catch (RemoteException e) {
+            return false;
+        }
+
+        mConnectivityDiagnosticsCallbacks.put(iCb, cbInfo);
+        return true;
+    }
+
     private void handleRegisterConnectivityDiagnosticsCallback(
             @NonNull ConnectivityDiagnosticsCallbackInfo cbInfo) {
         ensureRunningOnConnectivityServiceThread();
@@ -14205,24 +14226,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 + "network requests.");
         }
 
-        // This means that the client registered the same callback multiple times. Do
-        // not override the previous entry, and exit silently.
-        if (mConnectivityDiagnosticsCallbacks.containsKey(iCb)) {
-            if (VDBG) log("Diagnostics callback is already registered");
+        if (!addConnectivityDiagnosticsCallback(cbInfo, iCb)) {
+            if (VDBG) log("Fail to register the diagnostics callback");
 
             // Decrement the reference count for this NetworkRequestInfo. The reference count is
             // incremented when the NetworkRequestInfo is created as part of
             // enforceRequestCountLimit().
             nri.mPerUidCounter.decrementCount(nri.mUid);
-            return;
-        }
-
-        mConnectivityDiagnosticsCallbacks.put(iCb, cbInfo);
-
-        try {
-            iCb.linkToDeath(cbInfo, 0);
-        } catch (RemoteException e) {
-            cbInfo.binderDied();
             return;
         }
 

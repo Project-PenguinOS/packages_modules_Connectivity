@@ -98,6 +98,16 @@ public class NetlinkUtils {
     }
 
     /**
+     * Get the IO timeout value in milliseconds for netlink socket operations.
+     *
+     * @return the IO timeout value in milliseconds.
+     */
+    public static long getIoTimeoutMs() {
+        // TODO: Adding a flag to change the timeout value to zero.
+        return IO_TIMEOUT_MS;
+    }
+
+    /**
      * Parse netlink error message
      *
      * @param bytes byteBuffer to parse netlink error message
@@ -128,7 +138,7 @@ public class NetlinkUtils {
      */
     public static void receiveNetlinkAck(final FileDescriptor fd)
             throws InterruptedIOException, ErrnoException {
-        final ByteBuffer bytes = recvMessage(fd, DEFAULT_RECV_BUFSIZE, IO_TIMEOUT_MS);
+        final ByteBuffer bytes = recvMessage(fd, DEFAULT_RECV_BUFSIZE, getIoTimeoutMs());
         // recvMessage() guaranteed to not return null if it did not throw.
         final NetlinkErrorMessage response = parseNetlinkErrorMessage(bytes);
         if (response != null && response.getNlMsgError() != null) {
@@ -161,7 +171,7 @@ public class NetlinkUtils {
      * @param msg the raw bytes of netlink message to be sent.
      */
     public static void sendOneShotKernelMessage(int nlProto, byte[] msg) throws ErrnoException {
-        sendOneShotKernelMessage(nlProto, msg, IO_TIMEOUT_MS);
+        sendOneShotKernelMessage(nlProto, msg, getIoTimeoutMs());
     }
 
     /**
@@ -375,7 +385,7 @@ public class NetlinkUtils {
 
         // sendMessage throws InterruptedIOException and ErrnoException,
         // should be handled by caller
-        sendMessage(fd, dumpRequestMessage, 0, dumpRequestMessage.length, IO_TIMEOUT_MS);
+        sendMessage(fd, dumpRequestMessage, 0, dumpRequestMessage.length, getIoTimeoutMs());
 
         final ByteBuffer buf = ByteBuffer.allocate(NetlinkUtils.DEFAULT_RECV_BUFSIZE);
         while (true) {
@@ -385,7 +395,7 @@ public class NetlinkUtils {
 
             // recvMessage throws ErrnoException, InterruptedIOException
             // should be handled by caller
-            recvMessage(fd, buf, IO_TIMEOUT_MS);
+            recvMessage(fd, buf, getIoTimeoutMs());
 
             while (buf.remaining() > 0) {
                 final int position = buf.position();

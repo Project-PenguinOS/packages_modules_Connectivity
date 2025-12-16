@@ -26,7 +26,7 @@ import static android.system.OsConstants.SOL_SOCKET;
 import static android.system.OsConstants.SO_SNDTIMEO;
 
 import static com.android.net.module.util.HandlerUtils.ensureRunningOnHandlerThread;
-import static com.android.net.module.util.netlink.NetlinkUtils.IO_TIMEOUT_MS;
+import static com.android.net.module.util.netlink.NetlinkUtils.getIoTimeoutMs;
 
 import android.annotation.IntDef;
 import android.annotation.NonNull;
@@ -885,7 +885,7 @@ public class AutomaticOnOffKeepaliveTracker {
             final FileDescriptor fd = NetlinkUtils.createNetLinkInetDiagSocket();
             NetlinkUtils.connectToKernel(fd);
             Os.setsockoptTimeval(fd, SOL_SOCKET, SO_SNDTIMEO,
-                    StructTimeval.fromMillis(IO_TIMEOUT_MS));
+                    StructTimeval.fromMillis(getIoTimeoutMs()));
             return fd;
         }
 
@@ -930,13 +930,12 @@ public class AutomaticOnOffKeepaliveTracker {
          * large chunks of linearly physically contiguous memory. The usage should iterate the
          * call of this method until the end of the overall message.
          *
-         * The default receiving buffer size should be small enough that it is always
-         * processed within the {@link NetlinkUtils#IO_TIMEOUT_MS} timeout.
+         * The default receiving buffer size should be small enough.
          */
         public ByteBuffer recvSockDiagResponse(@NonNull final FileDescriptor fd)
                 throws ErrnoException, InterruptedIOException {
             return NetlinkUtils.recvMessage(
-                    fd, NetlinkUtils.DEFAULT_RECV_BUFSIZE, NetlinkUtils.IO_TIMEOUT_MS);
+                    fd, NetlinkUtils.DEFAULT_RECV_BUFSIZE, getIoTimeoutMs());
         }
 
         /**
