@@ -406,10 +406,10 @@ import com.android.networkstack.apishim.ConstantsShim;
 import com.android.networkstack.apishim.NetworkAgentConfigShimImpl;
 import com.android.networkstack.apishim.common.BroadcastOptionsShim;
 import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
-import com.android.server.ConnectivityService.ConnectivityDiagnosticsCallbackInfo;
 import com.android.server.ConnectivityService.NetworkRequestInfo;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.DestroySocketsWrapper;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.ReportedInterfaces;
+import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy;
 import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabilities;
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker;
@@ -429,7 +429,6 @@ import com.android.server.connectivity.PermissionMonitor;
 import com.android.server.connectivity.ProxyTracker;
 import com.android.server.connectivity.QosCallbackTracker;
 import com.android.server.connectivity.QuicConnectionCloser;
-import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.TcpKeepaliveController;
 import com.android.server.connectivity.UidRangeUtils;
 import com.android.server.net.NetworkPinner;
@@ -13195,79 +13194,6 @@ public class ConnectivityServiceTest {
         }
     }
 
-    @Test
-    public void testRegisterUnregisterConnectivityDiagnosticsCallback() throws Exception {
-        final NetworkRequest wifiRequest =
-                new NetworkRequest.Builder().addTransportType(TRANSPORT_WIFI).build();
-        doReturn(mIBinder).when(mConnectivityDiagnosticsCallback).asBinder();
-
-        mService.registerConnectivityDiagnosticsCallback(
-                mConnectivityDiagnosticsCallback, wifiRequest, mContext.getPackageName());
-
-        // Block until all other events are done processing.
-        HandlerUtils.waitForIdle(mCsHandlerThread, TIMEOUT_MS);
-
-        verify(mIBinder).linkToDeath(any(ConnectivityDiagnosticsCallbackInfo.class), anyInt());
-        verify(mConnectivityDiagnosticsCallback).asBinder();
-        assertTrue(mService.mConnectivityDiagnosticsCallbacks.containsKey(mIBinder));
-
-        mService.unregisterConnectivityDiagnosticsCallback(mConnectivityDiagnosticsCallback);
-        verify(mIBinder, timeout(TIMEOUT_MS))
-                .unlinkToDeath(any(ConnectivityDiagnosticsCallbackInfo.class), anyInt());
-        assertFalse(mService.mConnectivityDiagnosticsCallbacks.containsKey(mIBinder));
-        verify(mConnectivityDiagnosticsCallback, atLeastOnce()).asBinder();
-    }
-
-    @Test
-    public void testRegisterDuplicateConnectivityDiagnosticsCallback() throws Exception {
-        final NetworkRequest wifiRequest =
-                new NetworkRequest.Builder().addTransportType(TRANSPORT_WIFI).build();
-        doReturn(mIBinder).when(mConnectivityDiagnosticsCallback).asBinder();
-
-        mService.registerConnectivityDiagnosticsCallback(
-                mConnectivityDiagnosticsCallback, wifiRequest, mContext.getPackageName());
-
-        // Block until all other events are done processing.
-        HandlerUtils.waitForIdle(mCsHandlerThread, TIMEOUT_MS);
-
-        verify(mIBinder).linkToDeath(any(ConnectivityDiagnosticsCallbackInfo.class), anyInt());
-        verify(mConnectivityDiagnosticsCallback).asBinder();
-        assertTrue(mService.mConnectivityDiagnosticsCallbacks.containsKey(mIBinder));
-
-        // Register the same callback again
-        mService.registerConnectivityDiagnosticsCallback(
-                mConnectivityDiagnosticsCallback, wifiRequest, mContext.getPackageName());
-
-        // Block until all other events are done processing.
-        HandlerUtils.waitForIdle(mCsHandlerThread, TIMEOUT_MS);
-
-        assertTrue(mService.mConnectivityDiagnosticsCallbacks.containsKey(mIBinder));
-    }
-
-    @Test(expected = NullPointerException.class)
-    public void testRegisterConnectivityDiagnosticsCallbackNullCallback() {
-        mService.registerConnectivityDiagnosticsCallback(
-                null /* callback */,
-                new NetworkRequest.Builder().build(),
-                mContext.getPackageName());
-    }
-
-    @Test(expected = NullPointerException.class)
-    public void testRegisterConnectivityDiagnosticsCallbackNullNetworkRequest() {
-        mService.registerConnectivityDiagnosticsCallback(
-                mConnectivityDiagnosticsCallback,
-                null /* request */,
-                mContext.getPackageName());
-    }
-
-    @Test(expected = NullPointerException.class)
-    public void testRegisterConnectivityDiagnosticsCallbackNullPackageName() {
-        mService.registerConnectivityDiagnosticsCallback(
-                mConnectivityDiagnosticsCallback,
-                new NetworkRequest.Builder().build(),
-                null /* callingPackageName */);
-    }
-
     @Test(expected = NullPointerException.class)
     public void testUnregisterConnectivityDiagnosticsCallbackNullPackageName() {
         mService.unregisterConnectivityDiagnosticsCallback(null /* callback */);
@@ -19576,7 +19502,7 @@ public class ConnectivityServiceTest {
     }
 
     // TODO(yuyanghuang): reduce this number after move all CaptivePortal related tests to CSTest.
-    private static final int EXPECTED_TEST_METHOD_COUNT = 334;
+    private static final int EXPECTED_TEST_METHOD_COUNT = 329;
 
     @Test
     public void testTestMethodCount() {

@@ -26,6 +26,7 @@ import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI_AWARE;
 import static android.net.NetworkStats.DEFAULT_NETWORK_YES;
 import static android.net.NetworkStats.METERED_NO;
+import static android.net.NetworkStats.METERED_YES;
 import static android.net.NetworkStats.ROAMING_NO;
 import static android.net.NetworkStats.SET_DEFAULT;
 import static android.net.NetworkStats.UID_TETHERING;
@@ -68,8 +69,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 
 import android.app.usage.NetworkStatsManager;
@@ -474,26 +475,39 @@ public final class TetheringMetricsTest {
     }
 
     private void runBuildNetworkTemplateForUpstreamType(final UpstreamType upstreamType,
-            final int matchRule)  {
+            final int matchRule, final int meteredness, final int defaultNetworkStatus) {
         final NetworkTemplate template =
                 TetheringMetrics.buildNetworkTemplateForUpstreamType(upstreamType);
         if (matchRule == MATCH_NONE) {
             assertNull(template);
         } else {
             assertEquals(matchRule, template.getMatchRule());
+            assertEquals(meteredness, template.getMeteredness());
+            assertEquals(defaultNetworkStatus, template.getDefaultNetworkStatus());
         }
     }
 
     @Test
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testBuildNetworkTemplateForUpstreamType() {
-        runBuildNetworkTemplateForUpstreamType(UT_CELLULAR, MATCH_MOBILE);
-        runBuildNetworkTemplateForUpstreamType(UT_WIFI, MATCH_WIFI);
-        runBuildNetworkTemplateForUpstreamType(UT_BLUETOOTH, MATCH_BLUETOOTH);
-        runBuildNetworkTemplateForUpstreamType(UT_ETHERNET, MATCH_ETHERNET);
-        runBuildNetworkTemplateForUpstreamType(UpstreamType.UT_WIFI_AWARE, MATCH_NONE);
-        runBuildNetworkTemplateForUpstreamType(UpstreamType.UT_LOWPAN, MATCH_NONE);
-        runBuildNetworkTemplateForUpstreamType(UpstreamType.UT_UNKNOWN, MATCH_NONE);
+        // NetworkTemplate.METERED_ANY and NetworkTemplate.DEFAULT_NETWORK_STATUS_ANY are hidden.
+        final int METERED_ANY = -1;
+        final int DEFAULT_NETWORK_ANY = -1;
+
+        runBuildNetworkTemplateForUpstreamType(UT_CELLULAR, MATCH_MOBILE, METERED_YES,
+                DEFAULT_NETWORK_ANY);
+        runBuildNetworkTemplateForUpstreamType(UT_WIFI, MATCH_WIFI, METERED_ANY,
+                DEFAULT_NETWORK_YES);
+        runBuildNetworkTemplateForUpstreamType(UT_BLUETOOTH, MATCH_BLUETOOTH, METERED_ANY,
+                DEFAULT_NETWORK_YES);
+        runBuildNetworkTemplateForUpstreamType(UT_ETHERNET, MATCH_ETHERNET, METERED_ANY,
+                DEFAULT_NETWORK_YES);
+        runBuildNetworkTemplateForUpstreamType(UpstreamType.UT_WIFI_AWARE, MATCH_NONE,
+                METERED_ANY, DEFAULT_NETWORK_ANY);
+        runBuildNetworkTemplateForUpstreamType(UpstreamType.UT_LOWPAN, MATCH_NONE,
+                METERED_ANY, DEFAULT_NETWORK_ANY);
+        runBuildNetworkTemplateForUpstreamType(UpstreamType.UT_UNKNOWN, MATCH_NONE,
+                METERED_ANY, DEFAULT_NETWORK_ANY);
     }
 
     private void verifyEmptyUsageForAllUpstreamTypes() {

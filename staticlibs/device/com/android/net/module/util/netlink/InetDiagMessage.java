@@ -30,10 +30,10 @@ import static com.android.net.module.util.netlink.NetlinkConstants.SOCK_DIAG_BY_
 import static com.android.net.module.util.netlink.NetlinkConstants.stringForAddressFamily;
 import static com.android.net.module.util.netlink.NetlinkConstants.stringForProtocol;
 import static com.android.net.module.util.netlink.NetlinkUtils.DEFAULT_RECV_BUFSIZE;
-import static com.android.net.module.util.netlink.NetlinkUtils.IO_TIMEOUT_MS;
 import static com.android.net.module.util.netlink.NetlinkUtils.SOCKET_RECV_BUFSIZE;
 import static com.android.net.module.util.netlink.NetlinkUtils.TCP_ALIVE_STATE_FILTER;
 import static com.android.net.module.util.netlink.NetlinkUtils.connectToKernel;
+import static com.android.net.module.util.netlink.NetlinkUtils.getIoTimeoutMs;
 import static com.android.net.module.util.netlink.StructNlMsgHdr.NLM_F_DUMP;
 import static com.android.net.module.util.netlink.StructNlMsgHdr.NLM_F_REQUEST;
 
@@ -334,7 +334,7 @@ public class InetDiagMessage extends NetlinkMessage {
                 0 /* idiagExt */,
                 state
         );
-        NetlinkUtils.sendMessage(fd, destroyMsg, 0, destroyMsg.length, IO_TIMEOUT_MS);
+        NetlinkUtils.sendMessage(fd, destroyMsg, 0, destroyMsg.length, getIoTimeoutMs());
         NetlinkUtils.receiveNetlinkAck(fd);
     }
 

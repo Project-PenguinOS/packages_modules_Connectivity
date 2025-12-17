@@ -70,3 +70,10 @@ flag {
   description: "Enable metrics collection from beta users"
   bug: "462217324"
 }
+
+flag {
+  name: "loopback_access_metrics"
+  namespace: "com_android_tethering"
+  description: "Enable collection of loopback access metrics"
+  bug: "441592715"
+}
