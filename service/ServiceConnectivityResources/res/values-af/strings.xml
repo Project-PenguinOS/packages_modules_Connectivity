@@ -45,4 +45,6 @@
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"\'n onbekende netwerktipe"</string>
     <string name="connect_to_service_title" msgid="2417012530980077322">"Koppel aan diens"</string>
     <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> wil aan ’n ander toestel op ’n plaaslike netwerk koppel"</string>
+    <!-- no translation found for scanning_for_services_progress_description (2231669717305529286) -->
+    <skip />
 </resources>

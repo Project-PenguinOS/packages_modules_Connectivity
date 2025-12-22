@@ -30,13 +30,14 @@ import static android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK;
 import static android.net.connectivity.ConnectivityCompatChanges.RESTRICT_LOCAL_NETWORK;
 import static android.os.Process.INVALID_UID;
 import static android.os.Process.SYSTEM_UID;
+import static android.permission.flags.Flags.accessLocalNetworkPermissionEnabled;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.CollectionUtils.toIntArray;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.server.ConnectivityStatsLog.CONNECTIVITY_PERMISSION_CHANGE_LISTENER_LATENCY_REPORTED;
 import static com.android.server.connectivity.ConnectivityFlags.USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR;
 import static com.android.server.connectivity.NetworkPermissions.PERMISSION_NETWORK;
@@ -92,11 +93,11 @@ import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.SharedLog;
 import com.android.networkstack.apishim.ProcessShimImpl;
 import com.android.networkstack.apishim.common.ProcessShim;
-import com.android.server.permission.PermissionBpfMap;
-import com.android.server.permission.PermissionManagerLocal;
 import com.android.server.BpfNetMaps;
 import com.android.server.ConnectivityStatsLog;
 import com.android.server.LocalManagerRegistry;
+import com.android.server.permission.PermissionBpfMap;
+import com.android.server.permission.PermissionManagerLocal;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -293,7 +294,10 @@ public class PermissionMonitor {
                     uri, notifyForDescendants, observer);
         }
 
-        public boolean shouldEnforceLocalNetRestrictions(int uid) {
+        /**
+         * Check whether the UID is opted-in to the RESTRICT_LOCAL_NETWORK compat flag.
+         */
+        public boolean isOptedInToLocalNetworkRestrictions(int uid) {
             // TODO(b/394567896): Update compat change checks for enforcement
             return isAtLeastB()
                     && CompatChanges.isChangeEnabled(RESTRICT_LOCAL_NETWORK, uid);
@@ -351,6 +355,18 @@ public class PermissionMonitor {
                 }
             }, permissionNames);
         }
+
+        /**
+         * @see android.permission.flags.Flags#accessLocalNetworkPermissionEnabled()
+         */
+        public boolean isAccessLocalNetworkPermissionEnabled() {
+            return accessLocalNetworkPermissionEnabled();
+        }
+    }
+
+    private boolean shouldEnforceLocalNetRestrictions(int uid) {
+        return mDeps.isOptedInToLocalNetworkRestrictions(uid)
+            || mDeps.isAccessLocalNetworkPermissionEnabled();
     }
 
     private static class MultiSet<T> {
@@ -467,15 +483,18 @@ public class PermissionMonitor {
 
     @VisibleForTesting
     void setLocalNetworkPermissions(final int uid, @Nullable final String packageName) {
-        if (!mDeps.shouldEnforceLocalNetRestrictions(uid)
+        if (!shouldEnforceLocalNetRestrictions(uid)
                 || mBpfNetMaps.isPermissionPropagationEnabled()) {
             return;
         }
 
         final AttributionSource attributionSource =
                 new AttributionSource.Builder(uid).setPackageName(packageName).build();
+        final String permission = mDeps.isAccessLocalNetworkPermissionEnabled()
+                ? ACCESS_LOCAL_NETWORK
+                : NEARBY_WIFI_DEVICES;
         final int permissionState = mPermissionManager.checkPermissionForPreflight(
-                NEARBY_WIFI_DEVICES, attributionSource);
+                permission, attributionSource);
         if (permissionState == PermissionManager.PERMISSION_GRANTED) {
             mBpfNetMaps.removeUidFromLocalNetBlockMap(attributionSource.getUid());
         } else {
@@ -901,7 +920,7 @@ public class PermissionMonitor {
             final int uid = allUids.keyAt(i);
             if (user.equals(UserHandle.getUserHandleForUid(uid))) {
                 mUidToNetworkPerm.delete(uid);
-                if (mDeps.shouldEnforceLocalNetRestrictions(uid)
+                if (shouldEnforceLocalNetRestrictions(uid)
                         && !mBpfNetMaps.isPermissionPropagationEnabled()) {
                     mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
                     if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(

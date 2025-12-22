@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import inspect
 import time
 from android.platform.test.annotations import CddTest, VsrTest
 from mobly import asserts
@@ -72,6 +73,24 @@ class ApfV6Test(apf_test_base.ApfTestBase):
       pass
     super().teardown_class()
 
+  def send_and_assert_packet_reply(
+      self, sent_packet, tag, expected_reply, test_case_name=''
+  ):
+    unexpected_behavior_error = None
+    try:
+      self._send_packet_and_expect_reply_received(
+          sent_packet, tag, expected_reply
+      )
+    except assert_utils.UnexpectedBehaviorError as e:
+      unexpected_behavior_error = e
+
+    if unexpected_behavior_error:
+      asserts.fail(
+          f'{test_case_name} failed. Sent packet: {sent_packet}, '
+          f'Expected reply: {expected_reply}. Original error: '
+          f'{unexpected_behavior_error}'
+      )
+
   def test_unicast_arp_request_offload(self):
     self.get_and_expect_ipv4_addresses_exist()
 
@@ -103,8 +122,11 @@ class ApfV6Test(apf_test_base.ApfTestBase):
         ARP_OFFLOAD_REPLY_LEN * 2, '0'
     )
 
-    self.send_packet_and_expect_reply_received(
-        arp_request, 'DROPPED_ARP_REQUEST_REPLIED', expected_arp_reply
+    self.send_and_assert_packet_reply(
+        arp_request,
+        'DROPPED_ARP_REQUEST_REPLIED',
+        expected_arp_reply,
+        test_case_name=inspect.currentframe().f_code.co_name,
     )
 
   def test_non_dad_ipv6_neighbor_solicitation_offload(self):
@@ -129,10 +151,11 @@ class ApfV6Test(apf_test_base.ApfTestBase):
     icmpv6 = ICMPv6ND_NA(tgt=self.client_ipv6_addresses[0], R=1, S=1, O=1)
     opt = ICMPv6NDOptDstLLAddr(lladdr=self.client_mac_address)
     expected_neighbor_advertisement = bytes(eth / ip / icmpv6 / opt).hex()
-    self.send_packet_and_expect_reply_received(
+    self.send_and_assert_packet_reply(
         neighbor_solicitation,
         'DROPPED_IPV6_NS_REPLIED_NON_DAD',
         expected_neighbor_advertisement,
+        test_case_name=inspect.currentframe().f_code.co_name,
     )
 
   @apf_utils.at_least_B()
@@ -156,8 +179,11 @@ class ApfV6Test(apf_test_base.ApfTestBase):
     )
     icmp = ICMP(type=0, id=1, seq=123)
     expected_echo_reply = bytes(eth / ip / icmp / b'hello').hex()
-    self.send_packet_and_expect_reply_received(
-        echo_request, 'DROPPED_IPV4_PING_REQUEST_REPLIED', expected_echo_reply
+    self.send_and_assert_packet_reply(
+        echo_request,
+        'DROPPED_IPV4_PING_REQUEST_REPLIED',
+        expected_echo_reply,
+        test_case_name=inspect.currentframe().f_code.co_name,
     )
 
   @apf_utils.at_least_B()
@@ -183,10 +209,11 @@ class ApfV6Test(apf_test_base.ApfTestBase):
     icmp = ICMPv6EchoReply(id=1, seq=123)
     expected_echo_reply = bytes(eth / ip / icmp / b'hello').hex()
 
-    self.send_packet_and_expect_reply_received(
+    self.send_and_assert_packet_reply(
         echo_request,
         'DROPPED_IPV6_ICMP6_ECHO_REQUEST_REPLIED',
         expected_echo_reply,
+        test_case_name=inspect.currentframe().f_code.co_name,
     )
 
   @apf_utils.at_least_B()
@@ -228,10 +255,11 @@ class ApfV6Test(apf_test_base.ApfTestBase):
     igmp = IGMPv3mr(records=mcast_records)
     expected_igmpv3_report = bytes(ether / ip / igmpv3_hdr / igmp).hex()
     try:
-      self.send_packet_and_expect_reply_received(
+      self.send_and_assert_packet_reply(
           igmpv3_general_query,
           'DROPPED_IGMP_V3_GENERAL_QUERY_REPLIED',
           expected_igmpv3_report,
+          test_case_name=inspect.currentframe().f_code.co_name,
       )
     finally:
       for addr in mcast_addrs:
@@ -266,8 +294,9 @@ class ApfV6Test(apf_test_base.ApfTestBase):
       mld_records.append(ICMPv6MLDMultAddrRec(dst=addr, rtype=2))
     mld = ICMPv6MLReport2(records=mld_records)
     expected_mldv2_report = bytes(ether / ip / hopOpts / mld).hex()
-    self.send_packet_and_expect_reply_received(
+    self.send_and_assert_packet_reply(
         mldv2_general_query,
         'DROPPED_IPV6_MLD_V2_GENERAL_QUERY_REPLIED',
         expected_mldv2_report,
+        test_case_name=inspect.currentframe().f_code.co_name,
     )

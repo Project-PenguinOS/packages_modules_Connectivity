@@ -335,6 +335,15 @@ public final class NetworkStackConstants {
      */
     public static final String TEST_CAPTIVE_PORTAL_HTTP_URL = "test_captive_portal_http_url";
     /**
+     * A test URL used to override configuration settings and overlays for the network validation
+     * fallback URL, when set in {@link android.provider.DeviceConfig} configuration.
+     *
+     * <p>This URL will be ignored if the host is not "localhost", and {@link
+     * #TEST_URL_EXPIRATION_TIME} must also be set to use this setting.
+     */
+    public static final String TEST_CAPTIVE_PORTAL_FALLBACK_URL =
+            "test_captive_portal_fallback_url";
+    /**
      * Expiration time of the test URL, in ms, relative to {@link System#currentTimeMillis()}.
      *
      * <p>After this expiration time, test URLs will be ignored. They will also be ignored if

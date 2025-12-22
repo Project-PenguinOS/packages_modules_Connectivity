@@ -23,12 +23,14 @@ import android.os.Process
 import com.android.net.module.util.ArrayTrackRecord
 import com.android.net.module.util.DnsPacket
 import com.android.net.module.util.NetworkStackConstants.ETHER_HEADER_LEN
+import com.android.net.module.util.NetworkStackConstants.IPV4_ADDR_LEN
+import com.android.net.module.util.NetworkStackConstants.IPV4_DST_ADDR_OFFSET
+import com.android.net.module.util.NetworkStackConstants.IPV4_HEADER_MIN_LEN
 import com.android.net.module.util.NetworkStackConstants.IPV6_ADDR_LEN
 import com.android.net.module.util.NetworkStackConstants.IPV6_DST_ADDR_OFFSET
 import com.android.net.module.util.NetworkStackConstants.IPV6_HEADER_LEN
 import com.android.net.module.util.NetworkStackConstants.UDP_HEADER_LEN
 import com.android.net.module.util.TrackRecord
-import java.net.Inet6Address
 import java.net.InetAddress
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -235,20 +237,32 @@ class NsdServiceInfoCallbackRecord : NsdManager.ServiceInfoCallback,
     }
 }
 
-private fun getMdnsPayload(packet: ByteArray) = packet.copyOfRange(
-    ETHER_HEADER_LEN + IPV6_HEADER_LEN + UDP_HEADER_LEN, packet.size)
+private fun getIpVersion(packet: ByteArray) =
+    (packet[ETHER_HEADER_LEN].toInt() shr 4) and 0xF
 
-private fun getDstAddr(packet: ByteArray): Inet6Address {
-    val v6AddrPos = ETHER_HEADER_LEN + IPV6_DST_ADDR_OFFSET
-    return Inet6Address.getByAddress(packet.copyOfRange(v6AddrPos, v6AddrPos + IPV6_ADDR_LEN))
-            as Inet6Address
+private fun getMdnsPayload(packet: ByteArray): ByteArray {
+    val ipHeaderLen = if (getIpVersion(packet) == 4) IPV4_HEADER_MIN_LEN else IPV6_HEADER_LEN
+    return packet.copyOfRange(ETHER_HEADER_LEN + ipHeaderLen + UDP_HEADER_LEN, packet.size)
+}
+
+private fun getDstAddr(packet: ByteArray): InetAddress {
+    return if (getIpVersion(packet) == 4) {
+        val dstAddrPos = ETHER_HEADER_LEN + IPV4_DST_ADDR_OFFSET
+        InetAddress.getByAddress(
+                packet.copyOfRange(dstAddrPos, dstAddrPos + IPV4_ADDR_LEN))
+    } else { // ipVersion == 6
+        val dstAddrPos = ETHER_HEADER_LEN + IPV6_DST_ADDR_OFFSET
+        InetAddress.getByAddress(
+                packet.copyOfRange(dstAddrPos, dstAddrPos + IPV6_ADDR_LEN))
+    }
 }
 
 fun PollPacketReader.pollForMdnsPacket(
     timeoutMs: Long = MDNS_REGISTRATION_TIMEOUT_MS,
     predicate: (TestDnsPacket) -> Boolean
 ): TestDnsPacket? {
-    val mdnsProbeFilter = IPv6UdpFilter(srcPort = MDNS_PORT, dstPort = MDNS_PORT).and {
+    val mdnsProbeFilter = IPv4UdpFilter(srcPort = MDNS_PORT, dstPort = MDNS_PORT)
+            .or(IPv6UdpFilter(srcPort = MDNS_PORT, dstPort = MDNS_PORT)).and {
         val dst = getDstAddr(it)
         val mdnsPayload = getMdnsPayload(it)
         try {

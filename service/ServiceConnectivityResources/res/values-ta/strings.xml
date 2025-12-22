@@ -45,4 +45,6 @@
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"தெரியாத நெட்வொர்க் வகை"</string>
     <string name="connect_to_service_title" msgid="2417012530980077322">"சேவையுடன் இணையுங்கள்"</string>
     <string name="connect_to_service_summary" msgid="8059566528115046359">"லோக்கல் நெட்வொர்க்கில் உள்ள மற்றொரு சாதனத்துடன் <xliff:g id="APP_NAME">%1$s</xliff:g> இணைக்க விரும்புகிறது"</string>
+    <!-- no translation found for scanning_for_services_progress_description (2231669717305529286) -->
+    <skip />
 </resources>

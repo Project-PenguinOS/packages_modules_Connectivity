@@ -2475,7 +2475,7 @@ public class ConnectivityServiceTest {
 
     static class PermissionMonitorDependencies extends PermissionMonitor.Dependencies {
         @Override
-        public boolean shouldEnforceLocalNetRestrictions(int uid) {
+        public boolean isOptedInToLocalNetworkRestrictions(int uid) {
             return false;
         }
 

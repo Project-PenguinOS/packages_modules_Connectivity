@@ -16,6 +16,7 @@
 
 package com.android.server.connectivity;
 
+import static android.Manifest.permission.ACCESS_LOCAL_NETWORK;
 import static android.Manifest.permission.CHANGE_NETWORK_STATE;
 import static android.Manifest.permission.CHANGE_WIFI_STATE;
 import static android.Manifest.permission.CONNECTIVITY_INTERNAL;
@@ -168,6 +169,9 @@ public class PermissionMonitorTest {
                 return null;
             }, (name) -> mFeatureFlags.getOrDefault(name, false));
 
+    @Rule
+    public final DevSdkIgnoreRule mDevSdkIgnoreRule = new DevSdkIgnoreRule();
+
     private static final int MOCK_USER_ID1 = 0;
     private static final int MOCK_USER_ID2 = 1;
     private static final int MOCK_USER_ID3 = 2;
@@ -210,10 +214,6 @@ public class PermissionMonitorTest {
     private static final int PERMISSION_TRAFFIC_ALL =
             PERMISSION_INTERNET | PERMISSION_UPDATE_DEVICE_STATS;
     private static final int TIMEOUT_MS = 2_000;
-    // The ACCESS_LOCAL_NETWORK permission is not available yet. For the time being, use
-    // NEARBY_WIFI_DEVICES as a means to develop, for expediency.
-    // TODO(b/375236298): remove this constant when the ACCESS_LOCAL_NETWORK permission is defined.
-    private static final String ACCESS_LOCAL_NETWORK = NEARBY_WIFI_DEVICES;
 
     @Mock private Context mContext;
     @Mock private PackageManager mPackageManager;
@@ -263,6 +263,8 @@ public class PermissionMonitorTest {
         doAnswer(invocation -> mFeatureFlags.getOrDefault(
                         FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, false))
                 .when(mBpfNetMaps).isPermissionPropagationEnabled();
+        // BPF maps for local network restrictions are only supported on B+
+        doReturn(isAtLeastB()).when(mDeps).isAccessLocalNetworkPermissionEnabled();
 
         mHandlerThread = new HandlerThread("PermissionMonitorTest");
         mPermissionMonitor = new PermissionMonitor(
@@ -671,7 +673,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testHasUseBackgroundNetworksPermission() throws Exception {
         assertFalse(mPermissionMonitor.hasUseBackgroundNetworksPermission(SYSTEM_UID));
         assertBackgroundPermission(false, SYSTEM_PACKAGE1, SYSTEM_UID);
@@ -857,7 +858,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUserAndPackageAddRemove() throws Exception {
         // MOCK_UID11: MOCK_PACKAGE1 only has network permission.
         // SYSTEM_APP_UID11: SYSTEM_PACKAGE1 has system permission.
@@ -947,10 +947,9 @@ public class PermissionMonitorTest {
 
     @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onUserAdded() throws Exception {
         assumeTrue(isAtLeastB());
-        doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
+        doReturn(true).when(mDeps).isAccessLocalNetworkPermissionEnabled();
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
         final PackageInfo packageInfo = buildAndMockPackageInfoWithPermissions(
@@ -967,10 +966,9 @@ public class PermissionMonitorTest {
 
     @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onUserRemoved() throws Exception {
         assumeTrue(isAtLeastB());
-        doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
+        doReturn(true).when(mDeps).isAccessLocalNetworkPermissionEnabled();
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
         final PackageInfo packageInfo = buildAndMockPackageInfoWithPermissions(
@@ -1028,13 +1026,11 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUidFilteringDuringVpnConnectDisconnectAndUidUpdates() throws Exception {
         doTestUidFilteringDuringVpnConnectDisconnectAndUidUpdates("tun0");
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUidFilteringDuringVpnConnectDisconnectAndUidUpdatesWithWildcard()
             throws Exception {
         doTestUidFilteringDuringVpnConnectDisconnectAndUidUpdates(null /* ifName */);
@@ -1065,13 +1061,11 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUidFilteringDuringPackageInstallAndUninstall() throws Exception {
         doTestUidFilteringDuringPackageInstallAndUninstall("tun0");
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUidFilteringDuringPackageInstallAndUninstallWithWildcard() throws Exception {
         doTestUidFilteringDuringPackageInstallAndUninstall(null /* ifName */);
     }
@@ -1107,7 +1101,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLockdownUidFilteringWithLockdownEnableDisable() {
         final List<PackageInfo> pkgs = List.of(
                 buildPackageInfo(SYSTEM_PACKAGE1, SYSTEM_APP_UID11, CHANGE_NETWORK_STATE,
@@ -1139,7 +1132,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLockdownUidFilteringWithLockdownEnableDisableWithMultiAdd() {
         final List<PackageInfo> pkgs = List.of(
                 buildPackageInfo(SYSTEM_PACKAGE1, SYSTEM_APP_UID11, CHANGE_NETWORK_STATE,
@@ -1181,7 +1173,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLockdownUidFilteringWithLockdownEnableDisableWithMultiAddAndOverlap() {
         final List<PackageInfo> pkgs = List.of(
                 buildPackageInfo(SYSTEM_PACKAGE1, SYSTEM_APP_UID11, CHANGE_NETWORK_STATE,
@@ -1243,7 +1234,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLockdownUidFilteringWithLockdownEnableDisableWithDuplicates() {
         final List<PackageInfo> pkgs = List.of(
                 buildPackageInfo(SYSTEM_PACKAGE1, SYSTEM_APP_UID11, CHANGE_NETWORK_STATE,
@@ -1278,7 +1268,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLockdownUidFilteringWithInstallAndUnInstall() {
         final List<PackageInfo> pkgs = List.of(
                 buildPackageInfo(SYSTEM_PACKAGE1, SYSTEM_APP_UID11, CHANGE_NETWORK_STATE,
@@ -1369,7 +1358,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testPackageInstall() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
         addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET, UPDATE_DEVICE_STATS);
@@ -1381,10 +1369,9 @@ public class PermissionMonitorTest {
 
     @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onPackageInstall() throws Exception {
         assumeTrue(isAtLeastB());
-        doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
+        doReturn(true).when(mDeps).isAccessLocalNetworkPermissionEnabled();
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
         addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET);
@@ -1397,7 +1384,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testPackageInstallSharedUid() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
         addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET, UPDATE_DEVICE_STATS);
@@ -1410,7 +1396,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testPackageUninstallBasic() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
         addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET, UPDATE_DEVICE_STATS);
@@ -1423,10 +1408,9 @@ public class PermissionMonitorTest {
 
     @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onPackageUninstall() throws Exception {
         assumeTrue(isAtLeastB());
-        doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
+        doReturn(true).when(mDeps).isAccessLocalNetworkPermissionEnabled();
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
         addPackage(MOCK_PACKAGE1, MOCK_UID11, ACCESS_LOCAL_NETWORK);
@@ -1479,7 +1463,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testPackageRemoveThenAdd() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
         addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET, UPDATE_DEVICE_STATS);
@@ -1495,20 +1478,19 @@ public class PermissionMonitorTest {
 
     @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testLocalNetRestrictions_onPackageRemoveThenAdd() throws Exception {
         assumeTrue(isAtLeastB());
-        doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
+        doReturn(true).when(mDeps).isAccessLocalNetworkPermissionEnabled();
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
         addPackage(MOCK_PACKAGE1, MOCK_UID11, ACCESS_LOCAL_NETWORK);
+
         assertTrue(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
         if (hasSdkSandbox(MOCK_UID12)) assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
                 mProcessShim.toSdkSandboxUid(MOCK_UID11)));
 
         removePackage(MOCK_PACKAGE1, MOCK_UID11);
         assertFalse(mBpfMapMonitor.isUidPresentInLocalNetBlockMap(MOCK_UID11));
-
         addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET);
         assertFalse(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
         if (hasSdkSandbox(MOCK_UID12)) assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
@@ -1516,7 +1498,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testPackageUpdate() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
         addPackage(MOCK_PACKAGE1, MOCK_UID11);
@@ -1527,7 +1508,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testPackageUninstallWithMultiplePackages() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
         addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET, UPDATE_DEVICE_STATS);
@@ -1561,7 +1541,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUpdateUidPermissionsFromSystemConfig() throws Exception {
         when(mSystemConfigManager.getSystemPermissionUids(eq(INTERNET)))
                 .thenReturn(new int[]{ MOCK_UID11, MOCK_UID12 });
@@ -1598,11 +1577,10 @@ public class PermissionMonitorTest {
     private void processOnHandlerThread(Runnable function) {
         final Handler handler = mHandlerThread.getThreadHandler();
         handler.post(() -> function.run());
-        HandlerUtils.waitForIdle(mHandlerThread, TIMEOUT_MS);
+        HandlerUtils.waitForIdle(mHandlerThread, 300_000L);
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR, enabled = false)
     public void testUidPermissionWhenPackageAddedRemovedWithIntent() throws Exception {
         doReturn(List.of(MOCK_USER1)).when(mUserManager).getUserHandles(eq(true));
@@ -1629,7 +1607,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUidPermissionWhenPackageAddedRemoved() throws Exception {
         assertTrue(mPermissionMonitor.useBroadcastReceiveHelper());
         initialize();
@@ -1657,7 +1634,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUidsAllowedOnRestrictedNetworksChanged() throws Exception {
         initialize();
         final ContentObserver contentObserver = expectRegisterContentObserver(
@@ -1690,7 +1666,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUidsAllowedOnRestrictedNetworksChangedWithSharedUid() throws Exception {
         initialize();
         final ContentObserver contentObserver = expectRegisterContentObserver(
@@ -1724,7 +1699,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testUidsAllowedOnRestrictedNetworksChangedWithMultipleUsers() throws Exception {
         initialize();
         final ContentObserver contentObserver = expectRegisterContentObserver(
@@ -1777,7 +1751,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testOnExternalApplicationsAvailable() throws Exception {
         // Initial the permission state. MOCK_PACKAGE1 and MOCK_PACKAGE2 are installed on external
         // and have different uids. There has no permission for both uids.
@@ -1804,7 +1777,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testOnExternalApplicationsAvailable_AppsNotRegisteredOnInitialize()
             throws Exception {
         initialize();
@@ -1828,7 +1800,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testOnExternalApplicationsAvailableWithSharedUid()
             throws Exception {
         // Initial the permission state. MOCK_PACKAGE1 and MOCK_PACKAGE2 are installed on external
@@ -1851,7 +1822,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testOnExternalApplicationsAvailableWithSharedUid_DifferentStorage()
             throws Exception {
         // Initial the permission state. MOCK_PACKAGE1 is installed on external storage and
@@ -1890,36 +1860,83 @@ public class PermissionMonitorTest {
         assertFalse(isHigherNetworkPermission(PERMISSION_SYSTEM, PERMISSION_SYSTEM));
     }
 
-    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
-    public void testLocalNetRestrictions_setPermChanges() throws Exception {
-        assumeTrue(isAtLeastB());
-        doReturn(true).when(mDeps).shouldEnforceLocalNetRestrictions(anyInt());
+    private void mockCheckPermissionForPreflight(String permission, int uid, int result) {
         when(mPermissionManager.checkPermissionForPreflight(
-                anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
+                eq(permission),
+                argThat(attributionSource -> attributionSource.getUid() == uid)))
+                .thenReturn(result);
+    }
+
+    private PackageManager.OnPermissionsChangedListener getPermissionsChangedListener() {
+        ArgumentCaptor<PackageManager.OnPermissionsChangedListener> listenerCaptor =
+                ArgumentCaptor.forClass(PackageManager.OnPermissionsChangedListener.class);
+        verify(mPackageManager).addOnPermissionsChangeListener(listenerCaptor.capture());
+        return listenerCaptor.getValue();
+    }
+
+    private void doTestLocalNetRestrictionsPermGrant(String permission) throws Exception {
+        onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
+        mockCheckPermissionForPreflight(permission, MOCK_UID11, PERMISSION_DENIED);
         addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET);
         assertFalse(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
 
-        // Mock permission grant
-        when(mPermissionManager.checkPermissionForPreflight(
-                eq(ACCESS_LOCAL_NETWORK),
-                argThat(attributionSource -> attributionSource.getUid() == MOCK_UID11)))
-                .thenReturn(PERMISSION_GRANTED);
-        mPermissionMonitor.setLocalNetworkPermissions(MOCK_UID11, null);
-        assertTrue(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
-        if (hasSdkSandbox(MOCK_UID12)) assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
-                mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+        mockCheckPermissionForPreflight(permission, MOCK_UID11, PERMISSION_GRANTED);
+        getPermissionsChangedListener().onPermissionsChanged(MOCK_UID11);
 
-        // Mock permission denied
-        when(mPermissionManager.checkPermissionForPreflight(
-                eq(ACCESS_LOCAL_NETWORK),
-                argThat(attributionSource -> attributionSource.getUid() == MOCK_UID11)))
-                .thenReturn(PERMISSION_DENIED);
-        mPermissionMonitor.setLocalNetworkPermissions(MOCK_UID11, null);
+        assertTrue(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
+        if (hasSdkSandbox(MOCK_UID11)) {
+            // The SDK sandbox never gets runtime permissions
+            assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
+                    mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+        }
+    }
+
+    private void doTestLocalNetRestrictionsPermDeny(String permission) throws Exception {
+        onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
+        mockCheckPermissionForPreflight(permission, MOCK_UID11, PERMISSION_GRANTED);
+        addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET);
+        assertTrue(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
+
+        mockCheckPermissionForPreflight(permission, MOCK_UID11, PERMISSION_DENIED);
+        getPermissionsChangedListener().onPermissionsChanged(MOCK_UID11);
+
         assertFalse(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
-        if (hasSdkSandbox(MOCK_UID12)) assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
-                mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+        if (hasSdkSandbox(MOCK_UID11)) {
+            assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
+                    mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+        }
+    }
+
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @Test
+    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
+    public void testLocalNetRestrictions_nearbyWifiDevicesPermGrant() throws Exception {
+        doReturn(false).when(mDeps).isAccessLocalNetworkPermissionEnabled();
+        doReturn(true).when(mDeps).isOptedInToLocalNetworkRestrictions(anyInt());
+        doTestLocalNetRestrictionsPermGrant(NEARBY_WIFI_DEVICES);
+    }
+
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @Test
+    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
+    public void testLocalNetRestrictions_nearbyWifiDevicesPermDeny() throws Exception {
+        doReturn(false).when(mDeps).isAccessLocalNetworkPermissionEnabled();
+        doReturn(true).when(mDeps).isOptedInToLocalNetworkRestrictions(anyInt());
+        doTestLocalNetRestrictionsPermDeny(NEARBY_WIFI_DEVICES);
+    }
+
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @Test
+    public void testLocalNetRestrictions_restrictLocalNetworkPermGrant() throws Exception {
+        doReturn(true).when(mDeps).isAccessLocalNetworkPermissionEnabled();
+        doTestLocalNetRestrictionsPermGrant(ACCESS_LOCAL_NETWORK);
+    }
+
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @Test
+    public void testLocalNetRestrictions_restrictLocalNetworkPermDeny() throws Exception {
+        doReturn(true).when(mDeps).isAccessLocalNetworkPermissionEnabled();
+        doTestLocalNetRestrictionsPermDeny(ACCESS_LOCAL_NETWORK);
     }
 
     @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
@@ -1984,7 +2001,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testOnPermissionsChanged_logsLatency_lnpDeveloperOptInEnabled() {
         PackageManager.OnPermissionsChangedListener listener =
                 setupMocksAndCaptureRegisteredListener(/* isLnpDeveloperOptInEnabled */ true);
@@ -1995,7 +2011,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testOnPermissionsChanged_logsLatency_lnpDeveloperOptInDisabled() {
         PackageManager.OnPermissionsChangedListener listener =
                 setupMocksAndCaptureRegisteredListener(/* isLnpDeveloperOptInEnabled */ false);
@@ -2017,7 +2032,7 @@ public class PermissionMonitorTest {
         verify(mPackageManager).addOnPermissionsChangeListener(listenerCaptor.capture());
         PackageManager.OnPermissionsChangedListener listener = listenerCaptor.getValue();
 
-        when(mDeps.shouldEnforceLocalNetRestrictions(anyInt())).thenReturn(true);
+        when(mDeps.isOptedInToLocalNetworkRestrictions(anyInt())).thenReturn(true);
         when(mDeps.isLnpDeveloperOptInEnabled()).thenReturn(isLnpDeveloperOptInEnabled);
         when(mPermissionManager.checkPermissionForPreflight(
                 anyString(), any(AttributionSource.class))).thenReturn(PERMISSION_DENIED);
@@ -2165,7 +2180,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testAppIdsTrafficPermission_UserAddedRemoved() {
         // MOCK_USER1 has installed 3 packages
         // mockApp1 has no permission and share MOCK_APPID1.
@@ -2218,7 +2232,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testAppIdsTrafficPermission_Multiuser_PackageAdded() throws Exception {
         // Add two users with empty package list.
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
@@ -2289,7 +2302,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testAppIdsTrafficPermission_Multiuser_PackageRemoved() throws Exception {
         // Add two users with empty package list.
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
@@ -2402,7 +2414,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testPackageInstall_UidMigrationEnabled() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
@@ -2415,7 +2426,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testPackageInstall_SharedUid_UidMigrationEnabled() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
@@ -2431,7 +2441,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testPackageInstall_Uninstall_Reinstall_UidMigrationEnabled() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
@@ -2448,7 +2457,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testPackageInstall_Uninstall_SharedUid_UidMigrationEnabled() throws Exception {
         onUserAddedWithInstalledPackageList(MOCK_USER1, List.of());
@@ -2469,7 +2477,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testOnExternalApplicationsAvailable_UidMigrationEnabled() throws Exception {
         // Initial the permission state. MOCK_PACKAGE1 and MOCK_PACKAGE2 are installed on external
@@ -2497,7 +2504,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void
             testOnExternalApplicationsAvailable_AppsNotRegisteredOnInitialize_UidMigrationEnabled()
@@ -2523,7 +2529,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testOnExternalApplicationsAvailable_SharedUid_UidMigrationEnabled()
             throws Exception {
@@ -2547,7 +2552,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testOnExternalApplicationsAvailable_SharedUid_DifferentStorage_UidMigrationEnabled()
             throws Exception {
@@ -2576,7 +2580,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testUserAdded_SystemAppUid_UidMigrationEnabled() throws Exception {
         when(mSystemConfigManager.getSystemPermissionUids(eq(INTERNET)))
@@ -2592,7 +2595,6 @@ public class PermissionMonitorTest {
     }
 
     @Test
-    @EnableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testUserAdded_Removed_Added_UidMigrationEnabled() {
         final List<PackageInfo> pkgs1 = List.of(
