@@ -574,10 +574,6 @@ public final class TetheringTester {
             }
         }
 
-        public DnsHeader getHeader() {
-            return mHeader;
-        }
-
         public List<DnsRecord> getRecordList(int secType) {
             return mRecords[secType];
         }

@@ -202,9 +202,14 @@ class ApfV6Test(apf_test_base.ApfTestBase):
     icmp = ICMPv6EchoRequest(id=1, seq=123)
     echo_request = bytes(eth / ip / icmp / b'hello').hex()
 
+    hop_limit = apf_utils.get_hop_limit(
+        self.clientDevice, self.client_iface_name
+    )
     eth = Ether(src=self.client_mac_address, dst=self.server_mac_address)
     ip = IPv6(
-        src=self.client_ipv6_addresses[0], dst=self.server_ipv6_addresses[0]
+        src=self.client_ipv6_addresses[0],
+        dst=self.server_ipv6_addresses[0],
+        hlim=hop_limit,
     )
     icmp = ICMPv6EchoReply(id=1, seq=123)
     expected_echo_reply = bytes(eth / ip / icmp / b'hello').hex()
