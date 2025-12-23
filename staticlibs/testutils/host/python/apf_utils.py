@@ -183,6 +183,31 @@ def get_exclude_all_host_ipv6_multicast_addresses(
     return []
 
 
+def get_hop_limit(ad: android_device.AndroidDevice, iface_name: str) -> int:
+  """Retrieves the hop limit of a given interface on an Android device.
+
+  This function executes an ADB shell command (`cat
+  /proc/sys/net/ipv6/conf/{iface_name}/hop_limit`)
+  to get the hop limit.
+
+  Args:
+      ad: The Android device object.
+      iface_name: The name of the network interface (e.g., "wlan0").
+
+  Returns:
+      The hop limit of the interface as an integer.
+  """
+  output = adb_utils.adb_shell(
+      ad, f'cat /proc/sys/net/ipv6/conf/{iface_name}/hop_limit'
+  )
+  try:
+    return int(output.strip())
+  except ValueError:
+    raise assert_utils.UnexpectedBehaviorError(
+        f'Got unexpected output: {output}.'
+    )
+
+
 def get_hardware_address(
     ad: android_device.AndroidDevice, iface_name: str
 ) -> str:

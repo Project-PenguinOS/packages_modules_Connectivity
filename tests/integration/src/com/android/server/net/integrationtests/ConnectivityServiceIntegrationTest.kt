@@ -60,6 +60,8 @@ import com.android.server.BpfNetMaps
 import com.android.server.ConnectivityService
 import com.android.server.NetworkAgentWrapper
 import com.android.server.TestNetIdManager
+import com.android.server.connectivity.AppOptInDefaultNetworkController
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator
 import com.android.server.connectivity.ConnectivityResources
 import com.android.server.connectivity.InterfaceTracker
@@ -67,8 +69,6 @@ import com.android.server.connectivity.MockableSystemProperties
 import com.android.server.connectivity.MultinetworkPolicyTracker
 import com.android.server.connectivity.PermissionMonitor
 import com.android.server.connectivity.ProxyTracker
-import com.android.server.connectivity.AppOptInDefaultNetworkController
-import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.DeviceInfoUtils
 import com.android.testutils.TestableNetworkCallback
@@ -76,6 +76,7 @@ import com.android.testutils.TestableNetworkCallback.Event.LinkPropertiesChanged
 import com.android.testutils.runAsShell
 import com.android.testutils.tryTest
 import java.util.function.BiConsumer
+import java.util.function.Consumer
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -97,7 +98,6 @@ import org.mockito.Mockito.eq
 import org.mockito.Mockito.mock
 import org.mockito.MockitoAnnotations
 import org.mockito.Spy
-import java.util.function.Consumer
 
 const val SERVICE_BIND_TIMEOUT_MS = 5_000L
 const val TEST_TIMEOUT_MS = 10_000L
@@ -317,7 +317,7 @@ class ConnectivityServiceIntegrationTest {
     }
 
     private inner class PermissionMonitorDependencies : PermissionMonitor.Dependencies() {
-        override fun shouldEnforceLocalNetRestrictions(uid: Int) = false
+        override fun isOptedInToLocalNetworkRestrictions(uid: Int) = false
     }
 
     @After

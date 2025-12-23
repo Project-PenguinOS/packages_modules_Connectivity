@@ -56,7 +56,6 @@ class TestDnsServer(
             an: List<DnsRecord>,
         ) : super(header, qd, an) {}
 
-        val header = super.mHeader
         val records = super.mRecords
     }
 

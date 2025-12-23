@@ -630,7 +630,7 @@ open class CSTest {
     }
 
     inner class PermDeps : PermissionMonitor.Dependencies() {
-        override fun shouldEnforceLocalNetRestrictions(uid: Int) = false
+        override fun isOptedInToLocalNetworkRestrictions(uid: Int) = false
         override fun isFeatureNotChickenedOut(context: Context?, name: String?) = true
     }
 

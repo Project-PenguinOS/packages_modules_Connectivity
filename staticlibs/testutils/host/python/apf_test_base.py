@@ -136,7 +136,7 @@ class ApfTestBase(multi_devices_test_base.MultiDevicesTestBase):
         > count_before_test
     )
 
-  def send_packet_and_expect_reply_received(
+  def _send_packet_and_expect_reply_received(
       self, send_packet: str, counter_name: str, receive_packet: str
   ) -> None:
     try:

@@ -521,6 +521,13 @@ public class DnsPacket {
     protected final List<DnsRecord>[] mRecords;
 
     /**
+     * Returns the DNS header.
+     */
+    public DnsHeader getHeader() {
+        return mHeader;
+    }
+
+    /**
      * Returns the list of DNS records for a given section.
      */
     public List<DnsRecord> getRecords(@RecordType int section) {
