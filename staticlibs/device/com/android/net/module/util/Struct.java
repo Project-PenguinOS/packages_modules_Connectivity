@@ -115,6 +115,7 @@ public class Struct {
         S16,         // signed short,   size = 2 bytes
         S32,         // signed int,     size = 4 bytes
         S64,         // signed long,    size = 8 bytes
+        S64Array,    // signed long array,    size = 8 bytes * arraySize
         UBE16,       // unsigned short in network order, size = 2 bytes
         UBE32,       // unsigned int in network order,   size = 4 bytes
         UBE63,       // unsigned long(MSB: 0) in network order, size = 8 bytes
@@ -192,6 +193,13 @@ public class Struct {
             case UBE63:
                 if (fieldType == Long.TYPE) return;
                 break;
+            case S64Array:
+                if (fieldType != long[].class) break;
+                if (annotation.arraysize() <= 0) {
+                    throw new IllegalArgumentException("Invalid S64Array size: "
+                            + annotation.arraysize());
+                }
+                return;
             case U64:
             case UBE64:
                 if (fieldType == BigInteger.class) return;
@@ -249,6 +257,9 @@ public class Struct {
             case UBE63:
             case UBE64:
                 length = 8;
+                break;
+            case S64Array:
+                length = annotation.arraysize() * 8;
                 break;
             case ByteArray:
                 length = annotation.arraysize();
@@ -323,6 +334,21 @@ public class Struct {
     }
 
     /**
+     * Read S64Array type data from ByteBuffer and output a long array.
+     *
+     * @param buf The byte buffer to read.
+     * @param arraySize The size of the long array to output.
+     */
+    private static long[] readLongArray(
+            final ByteBuffer buf, final int arraySize) {
+        final long[] longArray = new long[arraySize];
+        for (int i = 0 ; i < longArray.length; i++) {
+            longArray[i] = buf.getLong();
+        }
+        return longArray;
+    }
+
+    /**
      * Get the last 8 bytes of a byte array. If there are less than 8 bytes,
      * the first bytes are replaced with zeroes.
      */
@@ -364,6 +390,21 @@ public class Struct {
         return output;
     }
 
+    /**
+     * Convert S64Array type long array to bytes, and write to output.
+     *
+     * @param output ByteBuffer passed-in from the caller.
+     * @param longArray The long array to convert and write.
+     */
+    private static void writeLongArrayToOutput(
+        final ByteBuffer output,
+        final long[] longArray
+    ) {
+        for (long value : longArray) {
+            output.putLong(value);
+        }
+    }
+
     private static Object getFieldValue(final ByteBuffer buf, final FieldInfo fieldInfo)
             throws BufferUnderflowException {
         final Object value;
@@ -396,6 +437,9 @@ public class Struct {
             case U63:
             case S64:
                 value = buf.getLong();
+                break;
+            case S64Array:
+                value = readLongArray(buf, fieldInfo.annotation.arraysize());
                 break;
             case UBE16:
                 if (buf.order() == ByteOrder.LITTLE_ENDIAN) {
@@ -512,6 +556,9 @@ public class Struct {
                 break;
             case S64:
                 output.putLong((long) value);
+                break;
+            case S64Array:
+                writeLongArrayToOutput(output, (long[]) value);
                 break;
             case UBE16:
                 if (output.order() == ByteOrder.LITTLE_ENDIAN) {

@@ -98,6 +98,7 @@ static const set<string> MAINLINE_FOR_T_PLUS = {
     NETD "map_netd_uid_counterset_map",
     NETD "map_netd_uid_migration_enabled_map",
     NETD "map_netd_uid_owner_map",
+    NETD "map_netd_uid_permission_chunk_map",
     NETD "map_netd_uid_permission_map",
     SHARED "prog_clatd_schedcls_egress4_clat_rawip",
     SHARED "prog_clatd_schedcls_ingress6_clat_ether",
@@ -169,6 +170,7 @@ static const set<string> MAINLINE_FOR_26Q2_PLUS = {
     NETD "map_netd_l4s_accecn_byte_map",
     NETD "map_netd_l4s_accecn_ce_map",
     NETD "map_netd_l4s_accecn_mss_map",
+    NETD "map_netd_l4s_accecn_enabled_map",
 };
 
 // Provided by *current* mainline module for 26Q2+ devices with 6.1+ kernels

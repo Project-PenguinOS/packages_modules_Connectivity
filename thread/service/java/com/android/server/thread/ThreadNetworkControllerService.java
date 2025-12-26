@@ -371,6 +371,16 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
                 mOtDaemonCallbackProxy);
         otDaemon.asBinder().linkToDeath(() -> mHandler.post(this::onOtDaemonDied), 0);
         mOtDaemon = otDaemon;
+
+        // The Border Router features depend on the infra link state. When ot-daemon is re-started,
+        // ensure the latest infra link state is set to prevent Border Router features from being
+        // disabled until the next upstream network link properties change.
+        if (mNetworkToLinkProperties.containsKey(mUpstreamNetwork)) {
+            setInfraLinkState(
+                newInfraLinkStateBuilder(
+                    mNetworkToLinkProperties.get(mUpstreamNetwork)).build());
+        }
+
         mHandler.post(mNat64CidrController::maybeUpdateNat64Cidr);
         return mOtDaemon;
     }
@@ -390,11 +400,11 @@ final class ThreadNetworkControllerService extends IThreadNetworkController.Stub
 
     static String getVendorSwVersion(Resources resources,
             MockableSystemProperties systemProperties) {
-        final String PROP_SW_VERSION = "ro.build.id";
+        final String PROP_SW_VERSION = "ro.build.version.incremental";
         String vendorSwVersion = resources.getString(R.string.config_thread_vendor_sw_version);
         if (vendorSwVersion.equalsIgnoreCase(PROP_SW_VERSION)) {
             vendorSwVersion = systemProperties.get(PROP_SW_VERSION);
-            // Assume it's always ASCII chars in ro.build.id
+            // Assume it's always ASCII chars in ro.build.version.incremental
             if (vendorSwVersion.length() > MAX_VENDOR_SW_VERSION_UTF8_BYTES) {
                 vendorSwVersion = vendorSwVersion.substring(0, MAX_VENDOR_SW_VERSION_UTF8_BYTES);
             }

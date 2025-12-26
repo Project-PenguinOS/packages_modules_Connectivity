@@ -2,9 +2,53 @@
 <issues format="6" by="lint 8.4.0-alpha08" type="baseline" client="" dependencies="true" name="" variant="all" version="8.4.0-alpha08">
 
     <issue
+        id="NewApi"
+        message="Call requires API level 23 (current min is 21): `new android.util.ArraySet`"
+        errorLine1="        final Set&lt;String&gt; combinedSubtypes = new ArraySet&lt;&gt;();"
+        errorLine2="                                             ~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/connectivity/mdns/MdnsServiceTypeClient.java"
+            line="512"
+            column="46"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Cast from `ArraySet` to `Set` requires API level 23 (current min is 21)"
+        errorLine1="        final Set&lt;String&gt; combinedSubtypes = new ArraySet&lt;&gt;();"
+        errorLine2="                                             ~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/connectivity/mdns/MdnsServiceTypeClient.java"
+            line="512"
+            column="46"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 23 (current min is 21): `new android.util.ArraySet`"
+        errorLine1="        final Set&lt;FilterRepliesInfo&gt; info = new ArraySet&lt;&gt;();"
+        errorLine2="                                            ~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/connectivity/mdns/MdnsServiceTypeClient.java"
+            line="1085"
+            column="45"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Cast from `ArraySet` to `Set` requires API level 23 (current min is 21)"
+        errorLine1="        final Set&lt;FilterRepliesInfo&gt; info = new ArraySet&lt;&gt;();"
+        errorLine2="                                            ~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/connectivity/mdns/MdnsServiceTypeClient.java"
+            line="1085"
+            column="45"/>
+    </issue>
+
+    <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadEngine.java"
@@ -15,7 +59,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadEngine.java"
@@ -26,7 +70,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadEngine.java"
@@ -37,7 +81,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadEngine.java"
@@ -48,7 +92,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadEngine.java"
@@ -59,7 +103,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -70,7 +114,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -81,7 +125,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -92,7 +136,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -103,7 +147,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -114,7 +158,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -125,7 +169,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -136,7 +180,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -147,7 +191,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -158,7 +202,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -169,7 +213,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -180,7 +224,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -191,7 +235,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -202,7 +246,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -213,7 +257,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -224,7 +268,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -235,7 +279,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -246,7 +290,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -257,7 +301,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -268,7 +312,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -279,7 +323,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -290,7 +334,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -301,7 +345,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -312,7 +356,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -323,7 +367,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -334,7 +378,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -345,7 +389,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -356,7 +400,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -367,7 +411,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -378,7 +422,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -389,7 +433,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -400,7 +444,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -411,7 +455,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -422,7 +466,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -433,7 +477,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -444,7 +488,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -455,7 +499,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -466,7 +510,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -477,7 +521,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -488,7 +532,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -499,7 +543,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -510,7 +554,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -521,7 +565,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -532,7 +576,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -543,7 +587,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -554,7 +598,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -565,7 +609,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -576,7 +620,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -587,7 +631,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -598,7 +642,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -609,7 +653,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -620,7 +664,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -631,7 +675,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -642,7 +686,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -653,7 +697,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -664,7 +708,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -675,7 +719,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -686,7 +730,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -697,7 +741,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -708,7 +752,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -719,7 +763,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -730,7 +774,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -741,7 +785,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -752,7 +796,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -763,7 +807,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -774,7 +818,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -785,7 +829,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -796,7 +840,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -807,7 +851,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -818,7 +862,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -829,7 +873,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -840,7 +884,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -851,7 +895,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -862,7 +906,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -873,7 +917,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -884,7 +928,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -895,7 +939,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -906,7 +950,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -917,7 +961,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -928,7 +972,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -939,7 +983,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -950,7 +994,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"
@@ -961,7 +1005,7 @@
     <issue
         id="FlaggedApi"
         message="@FlaggedApi should specify an actual flag constant; raw strings are discouraged (and more importantly, **not enforced**)"
-        errorLine1="@FlaggedApi(&quot;com.android.net.flags.register_nsd_offload_engine_api&quot;)"
+        errorLine1='@FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api")'
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/framework-t/src/android/net/nsd/OffloadServiceInfo.java"

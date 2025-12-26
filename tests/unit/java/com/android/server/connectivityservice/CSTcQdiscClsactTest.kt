@@ -89,6 +89,23 @@ class CSTcQdiscClsactTest : CSTest() {
 
     @Test
     @FeatureFlags([Flag(FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT, true)])
+    fun testCsApplyTcQdiscClsactOnNormalIfaceWithoutLinkPropertiesChange() {
+        // Adding an interface is triggered when connecting an agent with
+        // LinkProperties that contain an interface name.
+        // This calls updateInterfaces() as part of the connection process.
+        val lp = makeLp(TEST_CELL_IFACE)
+        val agent = Agent(nc = cellNc(), lp = lp)
+        agent.connect()
+        deps.expectRtmQdiscClsactRequest(TEST_CELL_IFACE_INDEX, true)
+
+        // When a network disconnects, it will destroyNetwork without any
+        // link properties change
+        agent.disconnect()
+        deps.expectRtmQdiscClsactRequest(TEST_CELL_IFACE_INDEX, false)
+    }
+
+    @Test
+    @FeatureFlags([Flag(FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT, true)])
     fun testCsApplyTcQdiscClsactOnClatIface() {
         // The implementation in ConnectivityService should skip adding
         // clsact for "v4-" interfaces.

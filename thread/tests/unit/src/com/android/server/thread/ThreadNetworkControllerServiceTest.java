@@ -934,6 +934,34 @@ public final class ThreadNetworkControllerServiceTest {
     }
 
     @Test
+    public void onOtDaemonDied_infraLinkStateSentToOtDaemon() throws Exception {
+        final String testInfraNetworkInterfaceName = "test_network";
+
+        mService.initialize();
+
+        mService.join(DEFAULT_ACTIVE_DATASET,  mock(IOperationReceiver.class));
+        mTestLooper.dispatchAll();
+        mTestLooper.moveTimeForward(FakeOtDaemon.JOIN_DELAY.toMillis() + 100);
+        mTestLooper.dispatchAll();
+
+        when(mMockNetworkToLinkProperties.containsKey(any())).thenReturn(true);
+        final LinkProperties testLinkProperties = new LinkProperties();
+        testLinkProperties.setInterfaceName(testInfraNetworkInterfaceName);
+        when(mMockNetworkToLinkProperties.get(any())).thenReturn(testLinkProperties);
+
+        // After ot-daemon restarts, the cached infra link state should be sent to the new ot-daemon
+        // instance
+        clearInvocations(mFakeOtDaemon);
+        mService.forceStopOtDaemonForTest(true, mock(IOperationReceiver.class));
+        mTestLooper.dispatchAll();
+        mService.forceStopOtDaemonForTest(false, mock(IOperationReceiver.class));
+        mTestLooper.dispatchAll();
+
+        assertThat(mFakeOtDaemon.getInfraLinkInterfaceName())
+                .isEqualTo(testInfraNetworkInterfaceName);
+    }
+
+    @Test
     public void setConfiguration_configurationUpdated() throws Exception {
         mService.initialize();
         final IOperationReceiver mockReceiver1 = mock(IOperationReceiver.class);

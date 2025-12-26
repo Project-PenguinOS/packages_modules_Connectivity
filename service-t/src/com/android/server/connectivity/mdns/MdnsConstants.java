@@ -25,6 +25,7 @@ import java.nio.charset.Charset;
 
 /** mDNS-related constants. */
 public final class MdnsConstants {
+    public static final long EMPTY_NETWORK_CAPABILITIES = 0L;
     public static final int MDNS_PORT = 5353;
     // Flags word format is:
     // 15 14 13 12 11 10 09 08 07 06 05 04 03 02 01 00

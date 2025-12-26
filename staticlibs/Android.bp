@@ -109,27 +109,6 @@ java_library {
     ],
 }
 
-java_library {
-    name: "net-utils-dnspacket-common",
-    srcs: [
-        "framework/**/DnsPacket.java",
-        "framework/**/DnsPacketUtils.java",
-        "framework/**/DnsSvcbPacket.java",
-        "framework/**/DnsSvcbRecord.java",
-        "framework/**/HexDump.java",
-        "framework/**/NetworkStackConstants.java",
-    ],
-    sdk_version: "module_current",
-    visibility: [
-        "//packages/services/Iwlan:__subpackages__",
-    ],
-    libs: [
-        "androidx.annotation_annotation",
-        "framework-annotations-lib",
-        "framework-connectivity.stubs.module_lib",
-    ],
-}
-
 filegroup {
     name: "net-utils-framework-common-srcs",
     srcs: ["framework/**/*.java"],
@@ -305,6 +284,9 @@ java_library {
     },
 }
 
+// DO NOT try to add any static_libs to the below target, as it is used widely,
+// would require extensive jarjar'ing, and result in places like telephony
+// having duplicate copies of the included static_libs classes.
 java_library {
     name: "net-utils-framework-common",
     srcs: [
@@ -460,6 +442,7 @@ java_library {
         "device/com/android/net/module/util/FdEventsReader.java",
         "device/com/android/net/module/util/HandlerUtils.java",
         "device/com/android/net/module/util/SharedLog.java",
+        "framework/com/android/net/module/util/BitUtils.java",
         "framework/com/android/net/module/util/ByteUtils.java",
         "framework/com/android/net/module/util/CollectionUtils.java",
         "framework/com/android/net/module/util/DnsUtils.java",

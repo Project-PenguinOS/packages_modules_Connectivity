@@ -1,5 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<issues format="6" by="lint 8.4.0-alpha01" type="baseline" client="" dependencies="true" name="" variant="all" version="8.4.0-alpha01">
+<issues format="6" by="lint 8.4.0-alpha08" type="baseline" client="" dependencies="true" name="" variant="all" version="8.4.0-alpha08">
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 31 (current min is 30): `new android.net.EthernetNetworkSpecifier`"
+        errorLine1="                .setNetworkSpecifier(new EthernetNetworkSpecifier(ifaceName))"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernetlegacy/EthernetNetworkFactory.java"
+            line="156"
+            column="38"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Implicit cast from `EthernetNetworkSpecifier` to `NetworkSpecifier` requires API level 31 (current min is 30)"
+        errorLine1="                .setNetworkSpecifier(new EthernetNetworkSpecifier(ifaceName))"
+        errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernetlegacy/EthernetNetworkFactory.java"
+            line="156"
+            column="38"/>
+    </issue>
 
     <issue
         id="NewApi"
@@ -8,18 +30,18 @@
         errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetNetworkFactory.java"
-            line="156"
+            line="183"
             column="38"/>
     </issue>
 
     <issue
         id="NewApi"
-        message="Cast from `EthernetNetworkSpecifier` to `NetworkSpecifier` requires API level 31 (current min is 30)"
+        message="Implicit cast from `EthernetNetworkSpecifier` to `NetworkSpecifier` requires API level 31 (current min is 30)"
         errorLine1="                .setNetworkSpecifier(new EthernetNetworkSpecifier(ifaceName))"
         errorLine2="                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetNetworkFactory.java"
-            line="156"
+            line="183"
             column="38"/>
     </issue>
 
@@ -29,19 +51,74 @@
         errorLine1="            nc.setNetworkSpecifier(new EthernetNetworkSpecifier(iface));"
         errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java"
-            line="218"
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernetlegacy/EthernetServiceImpl.java"
+            line="224"
             column="36"/>
     </issue>
 
     <issue
         id="NewApi"
-        message="Cast from `EthernetNetworkSpecifier` to `NetworkSpecifier` requires API level 31 (current min is 30)"
+        message="Implicit cast from `EthernetNetworkSpecifier` to `NetworkSpecifier` requires API level 31 (current min is 30)"
+        errorLine1="            nc.setNetworkSpecifier(new EthernetNetworkSpecifier(iface));"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernetlegacy/EthernetServiceImpl.java"
+            line="224"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Class requires API level 31 (current min is 30): `android.net.EthernetNetworkSpecifier`"
+        errorLine1="        if (!(spec instanceof EthernetNetworkSpecifier)) {"
+        errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernetlegacy/EthernetServiceImpl.java"
+            line="227"
+            column="31"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 31 (current min is 30): `android.net.EthernetNetworkSpecifier#getInterfaceName`"
+        errorLine1="        if (!((EthernetNetworkSpecifier) spec).getInterfaceName().matches(iface)) {"
+        errorLine2="                                               ~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernetlegacy/EthernetServiceImpl.java"
+            line="230"
+            column="48"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Class requires API level 31 (current min is 30): `android.net.EthernetNetworkSpecifier`"
+        errorLine1="        if (!((EthernetNetworkSpecifier) spec).getInterfaceName().matches(iface)) {"
+        errorLine2="               ~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernetlegacy/EthernetServiceImpl.java"
+            line="230"
+            column="16"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 31 (current min is 30): `new android.net.EthernetNetworkSpecifier`"
+        errorLine1="            nc.setNetworkSpecifier(new EthernetNetworkSpecifier(iface));"
+        errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java"
+            line="283"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Implicit cast from `EthernetNetworkSpecifier` to `NetworkSpecifier` requires API level 31 (current min is 30)"
         errorLine1="            nc.setNetworkSpecifier(new EthernetNetworkSpecifier(iface));"
         errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java"
-            line="218"
+            line="283"
             column="36"/>
     </issue>
 
@@ -52,7 +129,7 @@
         errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java"
-            line="221"
+            line="286"
             column="31"/>
     </issue>
 
@@ -63,7 +140,7 @@
         errorLine2="                                               ~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java"
-            line="224"
+            line="289"
             column="48"/>
     </issue>
 
@@ -74,30 +151,52 @@
         errorLine2="               ~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetServiceImpl.java"
-            line="224"
+            line="289"
             column="16"/>
     </issue>
 
     <issue
         id="NewApi"
         message="Call requires API level 31 (current min is 30): `java.net.InetAddress#parseNumericAddress`"
-        errorLine1="                    staticIpConfigBuilder.setGateway(InetAddress.parseNumericAddress(value));"
-        errorLine2="                                                                 ~~~~~~~~~~~~~~~~~~~">
+        errorLine1="                        staticIpConfigBuilder.setGateway(InetAddress.parseNumericAddress(value));"
+        errorLine2="                                                                     ~~~~~~~~~~~~~~~~~~~">
         <location
-            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetTracker.java"
-            line="885"
-            column="66"/>
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernetlegacy/EthernetTracker.java"
+            line="1014"
+            column="70"/>
     </issue>
 
     <issue
         id="NewApi"
         message="Call requires API level 31 (current min is 30): `java.net.InetAddress#parseNumericAddress`"
-        errorLine1="                        dnsAddresses.add(InetAddress.parseNumericAddress(address));"
-        errorLine2="                                                     ~~~~~~~~~~~~~~~~~~~">
+        errorLine1="                            dnsAddresses.add(InetAddress.parseNumericAddress(address));"
+        errorLine2="                                                         ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernetlegacy/EthernetTracker.java"
+            line="1019"
+            column="58"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 31 (current min is 30): `java.net.InetAddress#parseNumericAddress`"
+        errorLine1="                        staticIpConfigBuilder.setGateway(InetAddress.parseNumericAddress(value));"
+        errorLine2="                                                                     ~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetTracker.java"
-            line="890"
-            column="54"/>
+            line="1114"
+            column="70"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 31 (current min is 30): `java.net.InetAddress#parseNumericAddress`"
+        errorLine1="                            dnsAddresses.add(InetAddress.parseNumericAddress(address));"
+        errorLine2="                                                         ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/ethernet/EthernetTracker.java"
+            line="1119"
+            column="58"/>
     </issue>
 
     <issue
@@ -146,12 +245,23 @@
 
     <issue
         id="NewApi"
+        message="Call requires API level 36 (current min is 33): `android.os.Handler#removeEqualMessages`"
+        errorLine1="            handler.removeEqualMessages(what, object);"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/connectivity/mdns/MdnsReplySender.java"
+            line="106"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="NewApi"
         message="Call requires API level 33 (current min is 30): `BpfNetMaps`"
-        errorLine1="            return new BpfNetMaps(ctx);"
+        errorLine1="            return new BpfNetMaps(ctx, new InterfaceTracker(ctx));"
         errorLine2="                   ~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/net/NetworkStatsFactory.java"
-            line="111"
+            line="135"
             column="20"/>
     </issue>
 
@@ -162,41 +272,41 @@
         errorLine2="                        ~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/net/NetworkStatsFactory.java"
-            line="185"
+            line="233"
             column="25"/>
     </issue>
 
     <issue
         id="NewApi"
         message="Call requires API level 31 (current min is 30): `android.net.UnderlyingNetworkInfo#getInterface`"
-        errorLine1="            delta.migrateTun(info.getOwnerUid(), info.getInterface(),"
-        errorLine2="                                                      ~~~~~~~~~~~~">
+        errorLine1="                filteredDiff.migrateTun(info.getOwnerUid(), info.getInterface(),"
+        errorLine2="                                                                 ~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/net/NetworkStatsFactory.java"
-            line="240"
-            column="55"/>
+            line="276"
+            column="66"/>
     </issue>
 
     <issue
         id="NewApi"
         message="Call requires API level 31 (current min is 30): `android.net.UnderlyingNetworkInfo#getOwnerUid`"
-        errorLine1="            delta.migrateTun(info.getOwnerUid(), info.getInterface(),"
-        errorLine2="                                  ~~~~~~~~~~~">
+        errorLine1="                filteredDiff.migrateTun(info.getOwnerUid(), info.getInterface(),"
+        errorLine2="                                             ~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/net/NetworkStatsFactory.java"
-            line="240"
-            column="35"/>
+            line="276"
+            column="46"/>
     </issue>
 
     <issue
         id="NewApi"
         message="Call requires API level 31 (current min is 30): `android.net.UnderlyingNetworkInfo#getUnderlyingInterfaces`"
-        errorLine1="                    info.getUnderlyingInterfaces());"
-        errorLine2="                         ~~~~~~~~~~~~~~~~~~~~~~~">
+        errorLine1="                        info.getUnderlyingInterfaces());"
+        errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/net/NetworkStatsFactory.java"
-            line="241"
-            column="26"/>
+            line="277"
+            column="30"/>
     </issue>
 
     <issue
@@ -206,19 +316,30 @@
         errorLine2="                        ~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/net/NetworkStatsRecorder.java"
-            line="580"
+            line="594"
             column="25"/>
     </issue>
 
     <issue
         id="NewApi"
-        message="Call requires API level 35 (current min is 34): `newInstance`"
+        message="Call requires API level 37 (current min is 34): `newInstance`"
         errorLine1="                            opts = BroadcastOptionsShimImpl.newInstance("
         errorLine2="                                                            ~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service-t/src/com/android/server/net/NetworkStatsService.java"
-            line="562"
+            line="612"
             column="61"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Field requires API level 37 (current min is 35): `REGISTER_NSD_OFFLOAD_ENGINE`"
+        errorLine1="                permissionsList.add(REGISTER_NSD_OFFLOAD_ENGINE);"
+        errorLine2="                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service-t/src/com/android/server/NsdService.java"
+            line="2613"
+            column="37"/>
     </issue>
 
     <issue

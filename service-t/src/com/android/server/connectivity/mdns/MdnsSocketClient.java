@@ -16,6 +16,8 @@
 
 package com.android.server.connectivity.mdns;
 
+import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
+
 import android.Manifest.permission;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -241,6 +243,7 @@ public class MdnsSocketClient implements MdnsSocketClientBase {
             throw new IllegalArgumentException("This socket client does not support requesting "
                     + "specific networks");
         }
+        // This class is only used by gmscore, network capabilities is not used and supported.
         socketCreationCallback.onSocketCreated(new SocketKey(
                 multicastSocket.getInterfaceIndex(), multicastSocket.getInterfaceName()));
     }
@@ -515,8 +518,12 @@ public class MdnsSocketClient implements MdnsSocketClientBase {
             sharedLog.w(String.format("Error while decoding %s packet (%d): %d",
                     responseType, packetNumber, e.code));
             if (callback != null) {
+                // This class is only used by gmscore, network capabilities is not
+                // used and supported. The network capabilities is not used for SocketKey,
+                // set to 0L.
                 callback.onFailedToParseMdnsResponse(packetNumber, e.code,
-                        new SocketKey(network, interfaceIndex, interfaceName));
+                        new SocketKey(network, interfaceIndex, interfaceName,
+                        EMPTY_NETWORK_CAPABILITIES));
             }
             return e.code;
         }
@@ -526,8 +533,11 @@ public class MdnsSocketClient implements MdnsSocketClientBase {
         }
 
         if (callback != null) {
+            // This class is only used by gmscore, network capabilities is not used and supported.
+            // The network capabilities is not used for SocketKey, set to 0L.
             callback.onResponseReceived(
-                    response, new SocketKey(network, interfaceIndex, interfaceName));
+                    response, new SocketKey(network, interfaceIndex, interfaceName,
+                    EMPTY_NETWORK_CAPABILITIES));
         }
 
         return MdnsResponseErrorCode.SUCCESS;

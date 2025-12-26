@@ -23,8 +23,8 @@ import static android.system.OsConstants.EACCES;
 import static android.system.OsConstants.NETLINK_ROUTE;
 import static android.system.OsConstants.SOL_SOCKET;
 import static android.system.OsConstants.SO_RCVBUF;
-
 import static com.android.net.module.util.netlink.NetlinkConstants.RTNL_FAMILY_IP6MR;
+import static com.android.net.module.util.netlink.NetlinkUtils.DEFAULT_RECV_BUFSIZE;
 import static com.android.net.module.util.netlink.StructNlMsgHdr.NLM_F_DUMP;
 import static com.android.net.module.util.netlink.StructNlMsgHdr.NLM_F_REQUEST;
 
@@ -38,6 +38,7 @@ import android.content.Context;
 import android.net.util.SocketUtils;
 import android.os.Build;
 import android.system.ErrnoException;
+import android.system.NetlinkSocketAddress;
 import android.system.Os;
 
 import androidx.test.filters.SmallTest;
@@ -47,6 +48,8 @@ import androidx.test.runner.AndroidJUnit4;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.Struct;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
+
+import libcore.io.IoUtils;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -224,24 +227,5 @@ public class NetlinkUtilsTest {
 
         assertEquals(8000, bufferSize);
         SocketUtils.closeSocket(fd);
-    }
-
-    @Test
-    public void testGetInterfaceMtu() {
-        final StructNlMsgHdr hdr = new StructNlMsgHdr();
-        hdr.nlmsg_type = NetlinkConstants.RTM_NEWLINK;
-        final StructIfinfoMsg ifinfo = new StructIfinfoMsg((short) AF_UNSPEC, (short) 0, 1, 0, 0);
-        final RtNetlinkLinkMessage msg = RtNetlinkLinkMessage.build(hdr, ifinfo, 1500, null, "lo");
-        final ByteBuffer buffer = ByteBuffer.allocate(msg.getHeader().nlmsg_len);
-        buffer.order(ByteOrder.nativeOrder());
-        msg.pack(buffer);
-        buffer.flip();
-
-        final NetlinkMessage parsedMsg = NetlinkMessage.parse(buffer, NETLINK_ROUTE);
-        assertTrue(parsedMsg instanceof RtNetlinkLinkMessage);
-        final RtNetlinkLinkMessage parsedLinkMsg = (RtNetlinkLinkMessage) parsedMsg;
-        assertEquals(1500, parsedLinkMsg.getMtu());
-        assertEquals("lo", parsedLinkMsg.getInterfaceName());
-        assertEquals(1, parsedLinkMsg.getIfinfoHeader().index);
     }
 }

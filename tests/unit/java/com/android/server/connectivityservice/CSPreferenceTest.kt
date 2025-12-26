@@ -42,6 +42,8 @@ import android.os.Process
 import android.os.UserHandle
 import androidx.test.filters.SmallTest
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_OPT_IN
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_ROLE_SMS
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
@@ -166,17 +168,8 @@ class CSPreferenceTest : CSTest() {
 
         // Now file the preference and make sure no callbacks are sent.
         val policies = listOf(
-                AppOptInDefaultNetworkPolicy(
-                        false /* isSatelliteOptIn */,
-                        true /* isSatelliteRoleSms */,
-                        setOf(SMSUID)
-                ),
-                AppOptInDefaultNetworkPolicy(
-                        true /* isSatelliteOptIn */,
-                        false /* isSatelliteRoleSms */,
-                        setOf(UID1, UID2)
-                )
-        )
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, setOf(SMSUID)),
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN, setOf(UID1, UID2)))
         updateAppOptInDefaultNetworkPolicies(policies)
         callbacks.eachValue { it.assertNoCallback() }
 
@@ -243,16 +236,8 @@ class CSPreferenceTest : CSTest() {
         // Now file the preference and make sure no callbacks are sent because there
         // is a wifi agent.
         val policies = listOf(
-                AppOptInDefaultNetworkPolicy(
-                        false /* isSatelliteOptIn */,
-                        true /* isSatelliteRoleSms */,
-                        setOf(SMSUID)
-                ),
-                AppOptInDefaultNetworkPolicy(
-                        true /* isSatelliteOptIn */,
-                        false /* isSatelliteRoleSms */,
-                        setOf(UID1, UID2)
-                )
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, setOf(SMSUID)),
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN, setOf(UID1, UID2))
         )
         updateAppOptInDefaultNetworkPolicies(policies)
         callbacks.eachValue { it.assertNoCallback() }
@@ -350,11 +335,7 @@ class CSPreferenceTest : CSTest() {
         satelliteCallback.assertNoCallback()
 
         val policies = listOf(
-                AppOptInDefaultNetworkPolicy(
-                        true /* isSatelliteOptIn */,
-                        false /* isSatelliteRoleSms */,
-                        setOf(UID1)
-                )
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN, setOf(UID1))
         )
         updateAppOptInDefaultNetworkPolicies(policies)
         satelliteCallback.expect<Needed>()
@@ -367,11 +348,7 @@ class CSPreferenceTest : CSTest() {
         restrictedSatelliteCallback.assertNoCallback()
 
         val policies1 = listOf(
-                AppOptInDefaultNetworkPolicy(
-                        false /* isSatelliteOptIn */,
-                        true /* isSatelliteRoleSms */,
-                        setOf(SMSUID)
-                ),
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, setOf(SMSUID))
         )
         updateAppOptInDefaultNetworkPolicies(policies1)
         satelliteCallback.expect<Needed> { it.isRestricted }
@@ -380,16 +357,8 @@ class CSPreferenceTest : CSTest() {
         restrictedSatelliteCallback.assertNoCallback()
 
         val policies2 = listOf(
-                AppOptInDefaultNetworkPolicy(
-                        false /* isSatelliteOptIn */,
-                        true /* isSatelliteRoleSms */,
-                        setOf(SMSUID)
-                ),
-                AppOptInDefaultNetworkPolicy(
-                        true /* isSatelliteOptIn */,
-                        false /* isSatelliteRoleSms */,
-                        setOf(UID1)
-                )
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS, setOf(SMSUID)),
+                AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN, setOf(UID1))
         )
         updateAppOptInDefaultNetworkPolicies(policies2)
         // TODO : ideally ConnectivityService would not send unneeded then needed. This is

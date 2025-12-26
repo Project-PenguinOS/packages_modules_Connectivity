@@ -345,7 +345,7 @@ class NetworkPriorityClassifier {
     static int getWifiEntryRssiThreshold(@Nullable PersistableBundleWrapper carrierConfig) {
         if (carrierConfig != null) {
             return carrierConfig.getInt(
-                    VcnManager.VCN_NETWORK_SELECTION_WIFI_ENTRY_RSSI_THRESHOLD_KEY,
+                    VcnManager.KEY_NETWORK_SELECTION_WIFI_ENTRY_RSSI_INT,
                     WIFI_ENTRY_RSSI_THRESHOLD_DEFAULT);
         }
         return WIFI_ENTRY_RSSI_THRESHOLD_DEFAULT;
@@ -354,7 +354,7 @@ class NetworkPriorityClassifier {
     static int getWifiExitRssiThreshold(@Nullable PersistableBundleWrapper carrierConfig) {
         if (carrierConfig != null) {
             return carrierConfig.getInt(
-                    VcnManager.VCN_NETWORK_SELECTION_WIFI_EXIT_RSSI_THRESHOLD_KEY,
+                    VcnManager.KEY_NETWORK_SELECTION_WIFI_EXIT_RSSI_INT,
                     WIFI_EXIT_RSSI_THRESHOLD_DEFAULT);
         }
         return WIFI_EXIT_RSSI_THRESHOLD_DEFAULT;

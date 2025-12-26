@@ -19,6 +19,7 @@ package android.net.nsd;
 import static android.Manifest.permission.NETWORK_SETTINGS;
 import static android.Manifest.permission.NETWORK_STACK;
 import static android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK;
+import static android.net.connectivity.ConnectivityCompatChanges.ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS;
 import static android.net.connectivity.ConnectivityCompatChanges.ENABLE_PLATFORM_MDNS_BACKEND;
 import static android.net.connectivity.ConnectivityCompatChanges.RUN_NATIVE_NSD_ONLY_IF_LEGACY_APPS_T_AND_LATER;
 
@@ -889,6 +890,18 @@ public final class NsdManager {
      */
     public static final int FAILURE_BAD_PARAMETERS              = 6;
 
+    /**
+     * Indicates that the operation failed because the caller did not have the required permissions.
+     * This can happen when trying to perform resolution, discovery, or callback registration
+     * without the {@link android.Manifest.permission.ACCESS_LOCAL_NETWORK} permission.
+     *
+     * This failure is passed with {@link ResolveListener#onResolveFailed},
+     * {@link DiscoveryListener#onStartDiscoveryFailed}, or
+     * {@link ServiceInfoCallback#onServiceInfoCallbackRegistrationFailed}.
+     */
+    @FlaggedApi(android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    public static final int FAILURE_PERMISSION_DENIED = 7;
+
     /** @hide */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(value = {
@@ -1196,7 +1209,7 @@ public final class NsdManager {
     private int updateRegisteredListener(Object listener, Executor e, NsdServiceInfo s) {
         final int key;
         synchronized (mMapLock) {
-            key = getListenerKey(listener);
+            key = getListenerKey(listener, /* ignoreNotFound= */false);
             mServiceMap.put(key, s);
             mExecutorMap.put(key, e);
         }
@@ -1212,11 +1225,15 @@ public final class NsdManager {
         }
     }
 
-    private int getListenerKey(Object listener) {
+    private int getListenerKey(Object listener, boolean ignoreNotFound) {
         checkListener(listener);
         synchronized (mMapLock) {
             int valueIndex = mListenerMap.indexOfValue(listener);
             if (valueIndex == -1) {
+                if (ignoreNotFound && CompatChanges.isChangeEnabled(
+                        ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS)) {
+                    return -1;
+                }
                 throw new IllegalArgumentException("listener not registered");
             }
             return mListenerMap.keyAt(valueIndex);
@@ -1389,9 +1406,14 @@ public final class NsdManager {
      * another service registration once the callback has been called.  In API versions <= 19,
      * there is no entirely reliable way to know when a listener may be re-used, and a new
      * listener should be created for each service registration request.
+     *
+     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
+     * running on devices with T SDK extension < 21, this will throw with
+     * {@link IllegalArgumentException}.
      */
     public void unregisterService(RegistrationListener listener) {
-        int id = getListenerKey(listener);
+        int id = getListenerKey(listener, /* ignoreNotFound= */true);
+        if (id == -1) return;
         try {
             mService.unregisterService(id);
         } catch (RemoteException e) {
@@ -1576,6 +1598,10 @@ public final class NsdManager {
      * <p> Upon failure to stop service discovery, application is notified through
      * {@link DiscoveryListener#onStopDiscoveryFailed}.
      *
+     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
+     * running on devices with T SDK extension < 21, this will throw with
+     * {@link IllegalArgumentException}.
+     *
      * @param listener This should be the listener object that was passed to {@link #discoverServices}.
      * It identifies the discovery that should be stopped and notifies of a successful or
      * unsuccessful stop.  In API versions 20 and above, the listener object may be used for
@@ -1584,7 +1610,8 @@ public final class NsdManager {
      * listener should be created for each service discovery request.
      */
     public void stopServiceDiscovery(DiscoveryListener listener) {
-        int id = getListenerKey(listener);
+        int id = getListenerKey(listener, /* ignoreNotFound= */true);
+        if (id == -1) return;
         // If this is a PerNetworkDiscovery request, handle it as such
         synchronized (mPerNetworkDiscoveryMap) {
             final PerNetworkDiscoveryTracker info = mPerNetworkDiscoveryMap.get(id);
@@ -1655,13 +1682,17 @@ public final class NsdManager {
      * requester stops resolution repeatedly, the application is notified
      * {@link ResolveListener#onStopResolutionFailed} with {@link #FAILURE_OPERATION_NOT_RUNNING}
      *
+     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
+     * running on devices with T SDK extension < 21, this will throw with
+     * {@link IllegalArgumentException}.
+     *
      * @param listener This should be a listener object that was passed to {@link #resolveService}.
      *                 It identifies the resolution that should be stopped and notifies of a
-     *                 successful or unsuccessful stop. Throws {@code IllegalArgumentException} if
-     *                 the listener was not passed to resolveService before.
+     *                 successful or unsuccessful stop.
      */
     public void stopServiceResolution(@NonNull ResolveListener listener) {
-        int id = getListenerKey(listener);
+        int id = getListenerKey(listener, /* ignoreNotFound= */true);
+        if (id == -1) return;
         try {
             mService.stopResolution(id);
         } catch (RemoteException e) {
@@ -1707,18 +1738,18 @@ public final class NsdManager {
      * {@link ServiceInfoCallback#onServiceInfoCallbackUnregistered}. The same callback can only be
      * reused after this is called.
      *
-     * <p>If the callback is not already registered, this will throw with
+     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
+     * running on devices with T SDK extension < 21, this will throw with
      * {@link IllegalArgumentException}.
      *
      * @param listener This should be a listener object that was passed to
      *                 {@link #registerServiceInfoCallback}. It identifies the registration that
      *                 should be unregistered and notifies of a successful or unsuccessful stop.
-     *                 Throws {@code IllegalArgumentException} if the listener was not passed to
-     *                 {@link #registerServiceInfoCallback} before.
      */
     public void unregisterServiceInfoCallback(@NonNull ServiceInfoCallback listener) {
         // Will throw IllegalArgumentException if the listener is not known
-        int id = getListenerKey(listener);
+        int id = getListenerKey(listener, /* ignoreNotFound= */true);
+        if (id == -1) return;
         try {
             mService.unregisterServiceInfoCallback(id);
         } catch (RemoteException e) {

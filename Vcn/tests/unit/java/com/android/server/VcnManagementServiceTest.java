@@ -24,7 +24,7 @@ import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VCN_MANAGED;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
-import static android.net.vcn.VcnManager.VCN_RESTRICTED_TRANSPORTS_INT_ARRAY_KEY;
+import static android.net.vcn.VcnManager.KEY_RESTRICTED_TRANSPORTS_INT_ARRAY;
 import static android.net.vcn.VcnManager.VCN_STATUS_CODE_ACTIVE;
 import static android.net.vcn.VcnManager.VCN_STATUS_CODE_SAFE_MODE;
 import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
@@ -1095,7 +1095,7 @@ public class VcnManagementServiceTest {
 
         PersistableBundle carrierConfigBundle = new PersistableBundle();
         carrierConfigBundle.putIntArray(
-                VCN_RESTRICTED_TRANSPORTS_INT_ARRAY_KEY,
+                KEY_RESTRICTED_TRANSPORTS_INT_ARRAY,
                 restrictedTransports.stream().mapToInt(i -> i).toArray());
         final PersistableBundleWrapper carrierConfig =
                 new PersistableBundleWrapper(carrierConfigBundle);
@@ -1153,7 +1153,7 @@ public class VcnManagementServiceTest {
 
         PersistableBundle carrierConfigBundle = new PersistableBundle();
         carrierConfigBundle.putIntArray(
-                VCN_RESTRICTED_TRANSPORTS_INT_ARRAY_KEY,
+                KEY_RESTRICTED_TRANSPORTS_INT_ARRAY,
                 restrictedTransportInCarrierConfig.stream().mapToInt(i -> i).toArray());
         final PersistableBundleWrapper carrierConfig =
                 new PersistableBundleWrapper(carrierConfigBundle);

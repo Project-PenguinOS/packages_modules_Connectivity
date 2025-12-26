@@ -42,7 +42,6 @@ java_library {
         "framework-statsd.stubs.module_lib",
     ],
     static_libs: [
-        "androidx.core_core",
         "android.hardware.bluetooth.finder-V1-java",
         "guava",
         "libprotobuf-java-lite",

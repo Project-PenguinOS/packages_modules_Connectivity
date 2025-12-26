@@ -21,6 +21,10 @@ import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_NONE;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_REQUESTED;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_UNSPECIFIED;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_CELLULAR;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_NONE;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_UNSPECIFIED;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_WIFI;
 
 import android.annotation.IntDef;
 
@@ -41,6 +45,18 @@ public class VcnMetrics {
             })
     public @interface GatewayTeardownReason {}
 
+    /** @hide */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(
+            prefix = {"TRANSPORT_MASK_"},
+            value = {
+                TRANSPORT_MASK_UNSPECIFIED,
+                TRANSPORT_MASK_NONE,
+                TRANSPORT_MASK_CELLULAR,
+                TRANSPORT_MASK_WIFI
+            })
+    public @interface TransportMask {}
+
     public static final int GATEWAY_TEARDOWN_REASON_NONE =
             VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_NONE;
     public static final int GATEWAY_TEARDOWN_REASON_INTERNAL_ERROR =
@@ -51,6 +67,14 @@ public class VcnMetrics {
             VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_REQUESTED;
     public static final int GATEWAY_TEARDOWN_REASON_UNSPECIFIED =
             VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_UNSPECIFIED;
+    public static final int TRANSPORT_MASK_UNSPECIFIED =
+            VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_UNSPECIFIED;
+    public static final int TRANSPORT_MASK_NONE =
+            VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_NONE;
+    public static final int TRANSPORT_MASK_CELLULAR =
+            VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_CELLULAR;
+    public static final int TRANSPORT_MASK_WIFI =
+            VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_WIFI;
 
     /** Log an atom when a VcnGatewayConnection has entered safe mode. */
     public void logEnterSafeMode(int gatewayConnectionId) {
@@ -131,5 +155,17 @@ public class VcnMetrics {
     public void logValidatedUnderlyingNetworkCount(int gatewayConnectionId, int count) {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_UNDERLYING_NETWORKS_STATE_CHANGED, gatewayConnectionId, count);
+    }
+
+    /** Log an atom whenever we switch VCN's underlying network. */
+    public void logUnderlyingNetworkSwitched(
+            int gatewayConnectionId,
+            @TransportMask int oldNetworkType,
+            @TransportMask int newNetworkType) {
+        VcnStatsLog.write(
+                VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED,
+                gatewayConnectionId,
+                oldNetworkType,
+                newNetworkType);
     }
 }

@@ -16,6 +16,7 @@
 
 package com.android.server.connectivity.mdns;
 
+import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
 import static android.net.InetAddresses.parseNumericAddress;
 import static android.net.RouteInfo.RTN_UNICAST;
 
@@ -171,7 +172,7 @@ public class ConnectivityMonitorWithConnectivityManagerTests {
         callback.onLinkPropertiesChanged(testNetwork1, lp1);
         callback.onLinkPropertiesChanged(testNetwork2, lp2);
 
-        assertEquals(new SocketKey(testNetwork1, ifIndex1, ifName1),
+        assertEquals(new SocketKey(testNetwork1, ifIndex1, ifName1, EMPTY_NETWORK_CAPABILITIES),
                 monitor.guessNetworkOfRemoteHost(
                         List.of(iface1, iface2), parseNumericAddress("192.0.1.124")));
     }
@@ -195,8 +196,10 @@ public class ConnectivityMonitorWithConnectivityManagerTests {
 
         callback.onLinkPropertiesChanged(testNetwork, lp);
 
-        assertEquals(new SocketKey(testNetwork, ifIndex, ifName), monitor.guessNetworkOfRemoteHost(
-                List.of(iface), parseNumericAddress("169.254.1.2")));
+        assertEquals(new SocketKey(testNetwork, ifIndex, ifName,
+                EMPTY_NETWORK_CAPABILITIES),
+                monitor.guessNetworkOfRemoteHost(
+                        List.of(iface), parseNumericAddress("169.254.1.2")));
     }
 
     @Test
@@ -225,7 +228,8 @@ public class ConnectivityMonitorWithConnectivityManagerTests {
         callback.onLinkPropertiesChanged(testNetwork1, lp1);
         callback.onLinkPropertiesChanged(testNetwork2, lp2);
 
-        assertEquals(new SocketKey(testNetwork2, loIface.getIndex(), interfaceName),
+        assertEquals(new SocketKey(testNetwork2, loIface.getIndex(), interfaceName,
+                        EMPTY_NETWORK_CAPABILITIES),
                 monitor.guessNetworkOfRemoteHost(List.of(wrongIface, loIface),
                         parseNumericAddress("fe80::124%lo")));
     }

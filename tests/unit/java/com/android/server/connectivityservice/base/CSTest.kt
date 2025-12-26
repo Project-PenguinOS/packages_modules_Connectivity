@@ -79,6 +79,8 @@ import com.android.net.module.util.ArrayTrackRecord
 import com.android.net.module.util.SharedLog
 import com.android.net.module.util.netlink.NetlinkMessage
 import com.android.networkstack.apishim.common.UnsupportedApiLevelException
+import com.android.server.connectivity.AppOptInDefaultNetworkController
+import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator
 import com.android.server.connectivity.ClatCoordinator
@@ -92,8 +94,6 @@ import com.android.server.connectivity.NetworkRequestStateStatsMetrics
 import com.android.server.connectivity.PermissionMonitor
 import com.android.server.connectivity.ProxyTracker
 import com.android.server.connectivity.QuicConnectionCloser
-import com.android.server.connectivity.AppOptInDefaultNetworkController
-import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.testutils.ContentResolverWithFakeSettingsProvider
 import com.android.testutils.visibleOnHandlerThread
 import com.android.testutils.waitForIdle
@@ -207,6 +207,7 @@ open class CSTest {
         it[ConnectivityFlags.SATISFIED_BY_LOCAL_NETWORK_METRICS] = true
         it[ConnectivityFlags.USE_SATELLITE_REPORTED_SUSPENDED_AND_ROAMING] = true
         it[FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT] = false
+        it[ConnectivityFlags.OTT_NETWORK_SLICING] = true
     }
     fun setFeatureEnabled(flag: String, enabled: Boolean) = enabledFeatures.set(flag, enabled)
 
@@ -625,6 +626,7 @@ open class CSTest {
         fun expectNoRtmQdiscClsactRequest(timeoutMs: Long = HANDLER_SHORT_TIMEOUT_MS) {
             assertNull(orderedRtmQdiscClsactHistory.poll(timeoutMs))
         }
+        override fun isLnpDeveloperOptInEnabled() = true
     }
 
     inner class PermDeps : PermissionMonitor.Dependencies() {

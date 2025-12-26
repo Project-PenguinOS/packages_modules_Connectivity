@@ -95,6 +95,8 @@ public final class ConnectivityFlags {
     public static final String USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR =
             "use_broadcast_receive_helper_for_permission_monitor";
 
+    public static final String OTT_NETWORK_SLICING = "ott_network_slicing";
+
     private boolean mNoRematchAllRequestsOnRegister;
 
     /**

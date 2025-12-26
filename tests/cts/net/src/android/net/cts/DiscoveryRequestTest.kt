@@ -18,6 +18,7 @@ package android.net.cts
 
 import android.net.Network
 import android.net.nsd.DiscoveryRequest
+import android.net.nsd.DiscoveryRequest.FLAG_NO_PICKER
 import android.os.Build
 import androidx.test.filters.SmallTest
 import com.android.testutils.ConnectivityModuleTest
@@ -44,6 +45,7 @@ class DiscoveryRequestTest {
                 DiscoveryRequest.Builder("_ipps._tcp")
                                 .setSubtype("_xyz")
                                 .setNetwork(Network(1))
+                                .setFlags(FLAG_NO_PICKER)
                                 .build()
 
         assertParcelingIsLossless(requestWithNullFields)
@@ -55,11 +57,13 @@ class DiscoveryRequestTest {
         val request = DiscoveryRequest.Builder("_ipps._tcp")
                                       .setSubtype("_xyz")
                                       .setNetwork(Network(1))
+                                      .setFlags(FLAG_NO_PICKER)
                                       .build()
 
         assertEquals("_ipps._tcp", request.serviceType)
         assertEquals("_xyz", request.subtype)
         assertEquals(Network(1), request.network)
+        assertEquals(FLAG_NO_PICKER, request.flags)
     }
 
     @Test
@@ -76,15 +80,35 @@ class DiscoveryRequestTest {
         val request3 = DiscoveryRequest.Builder("_ipps._tcp")
                 .setSubtype("_xyz")
                 .setNetwork(Network(1))
+                .setFlags(FLAG_NO_PICKER)
                 .build()
         val request4 = DiscoveryRequest.Builder("_ipps._tcp")
                 .setSubtype("_xyz")
                 .setNetwork(Network(1))
+                .setFlags(FLAG_NO_PICKER)
                 .build()
 
         assertEquals(request1, request2)
         assertEquals(request3, request4)
         assertNotEquals(request1, request3)
         assertNotEquals(request2, request4)
+    }
+
+    @Test
+    fun testEquality_differentFlags_notEqual() {
+        val request1 = DiscoveryRequest.Builder("_ipps._tcp").setFlags(0L).build()
+        val request2 = DiscoveryRequest.Builder("_ipps._tcp").setFlags(FLAG_NO_PICKER).build()
+
+        assertNotEquals(request1, request2)
+    }
+
+    @Test
+    fun testSetFlags_useMask_selectedBitsModified() {
+        val request = DiscoveryRequest.Builder("_ipps._tcp")
+            .setFlags(0b10101)
+            .setFlags(/* flags=*/0b01000L, /* mask=*/0b11000L)
+            .build()
+
+        assertEquals(0b01101, request.flags)
     }
 }

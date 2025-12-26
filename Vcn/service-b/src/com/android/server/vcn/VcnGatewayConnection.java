@@ -1318,8 +1318,7 @@ public class VcnGatewayConnection extends StateMachine {
 
         if (carrierConfig != null) {
             resultSeconds =
-                    carrierConfig.getInt(
-                            VcnManager.VCN_SAFE_MODE_TIMEOUT_SECONDS_KEY, defaultSeconds);
+                    carrierConfig.getInt(VcnManager.KEY_SAFE_MODE_TIMEOUT_SEC_INT, defaultSeconds);
         }
 
         return TimeUnit.SECONDS.toMillis(resultSeconds);
@@ -2176,6 +2175,8 @@ public class VcnGatewayConnection extends StateMachine {
             // If network changed, migrate. Otherwise, update any existing networkAgent.
             if (oldUnderlying == null || !oldUnderlying.network.equals(mUnderlying.network)) {
                 logInfo("Migrating to new network: " + mUnderlying.network);
+                mVcnMetrics.logUnderlyingNetworkSwitched(
+                        mId, getTransportMask(oldUnderlying), getTransportMask(mUnderlying));
                 mIkeSession.setNetwork(mUnderlying.network);
             } else {
                 // oldUnderlying is non-null & underlying network itself has not changed
@@ -2188,6 +2189,18 @@ public class VcnGatewayConnection extends StateMachine {
                             mTunnelIface, mNetworkAgent, mChildConfig, mIkeConnectionInfo);
                 }
             }
+        }
+
+        @VcnMetrics.TransportMask
+        private int getTransportMask(UnderlyingNetworkRecord network) {
+            if (network == null) {
+                return VcnMetrics.TRANSPORT_MASK_NONE;
+            }
+            int transportMask = 0;
+            for (int transport : network.networkCapabilities.getTransportTypes()) {
+                transportMask |= 1 << transport;
+            }
+            return transportMask;
         }
 
         private void handleDataStallSuspected(Network networkWithDataStall) {
@@ -2921,7 +2934,7 @@ public class VcnGatewayConnection extends StateMachine {
             if (carrierConfig != null) {
                 result =
                         carrierConfig.getInt(
-                                VcnManager.VCN_TUNNEL_AGGREGATION_SA_COUNT_MAX_KEY,
+                                VcnManager.KEY_TUNNEL_AGGREGATION_SA_COUNT_MAX_INT,
                                 TUNNEL_AGGREGATION_SA_COUNT_MAX_DEFAULT);
             }
 

@@ -16,6 +16,8 @@
 
 package com.android.server.connectivity.mdns;
 
+import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -70,13 +72,20 @@ public class MdnsDiscoveryManagerTests {
     private static final String SERVICE_TYPE_2 = "_test._tcp.local";
     private static final Network NETWORK_1 = Mockito.mock(Network.class);
     private static final Network NETWORK_2 = Mockito.mock(Network.class);
+
+    private static final Network MULTICAST_DISABLED_NETWORK = Mockito.mock(Network.class);
     private static final int INTERFACE_INDEX_NULL_NETWORK = 123;
     private static final SocketKey SOCKET_KEY_NULL_NETWORK =
             new SocketKey(INTERFACE_INDEX_NULL_NETWORK, "interface");
     private static final SocketKey SOCKET_KEY_NETWORK_1 =
-            new SocketKey(NETWORK_1, 998 /* interfaceIndex */, "interface1");
+            new SocketKey(NETWORK_1, 998 /* interfaceIndex */, "interface1",
+            EMPTY_NETWORK_CAPABILITIES);
     private static final SocketKey SOCKET_KEY_NETWORK_2 =
-            new SocketKey(NETWORK_2, 997 /* interfaceIndex */, "interface2");
+            new SocketKey(NETWORK_2, 997 /* interfaceIndex */, "interface2",
+            EMPTY_NETWORK_CAPABILITIES);
+    private static final SocketKey SOCKET_KEY_MULTICAST_DISABLED_NETWORK =
+            new SocketKey(MULTICAST_DISABLED_NETWORK, 999, "interface3",
+                    EMPTY_NETWORK_CAPABILITIES);
     private static final Pair<String, SocketKey> PER_SOCKET_SERVICE_TYPE_1_NULL_NETWORK =
             Pair.create(SERVICE_TYPE_1, SOCKET_KEY_NULL_NETWORK);
     private static final Pair<String, SocketKey> PER_SOCKET_SERVICE_TYPE_2_NULL_NETWORK =
@@ -95,6 +104,7 @@ public class MdnsDiscoveryManagerTests {
     @Mock private MdnsServiceTypeClient mockServiceTypeClientType2NullNetwork;
     @Mock private MdnsServiceTypeClient mockServiceTypeClientType2Network1;
     @Mock private MdnsServiceTypeClient mockServiceTypeClientType2Network2;
+    @Mock private MdnsServiceTypeClient mockServiceTypeClientType1MulticastDisabledNetwork;
 
     @Mock MdnsServiceBrowserListener mockListenerOne;
     @Mock MdnsServiceBrowserListener mockListenerTwo;
@@ -117,33 +127,6 @@ public class MdnsDiscoveryManagerTests {
         doReturn(thread.getLooper()).when(socketClient).getLooper();
         doReturn(true).when(socketClient).supportsRequestingSpecificNetworks();
         createdServiceTypeClientCount = 0;
-        discoveryManager = new MdnsDiscoveryManager(executorProvider, socketClient,
-                sharedLog, MdnsFeatureFlags.newBuilder().build(), mockCallback) {
-                    @Override
-                    MdnsServiceTypeClient createServiceTypeClient(@NonNull String serviceType,
-                            @NonNull SocketKey socketKey) {
-                        createdServiceTypeClientCount++;
-                        final Pair<String, SocketKey> perSocketServiceType =
-                                Pair.create(serviceType, socketKey);
-                        if (perSocketServiceType.equals(PER_SOCKET_SERVICE_TYPE_1_NULL_NETWORK)) {
-                            return mockServiceTypeClientType1NullNetwork;
-                        } else if (perSocketServiceType.equals(
-                                PER_SOCKET_SERVICE_TYPE_1_NETWORK_1)) {
-                            return mockServiceTypeClientType1Network1;
-                        } else if (perSocketServiceType.equals(
-                                PER_SOCKET_SERVICE_TYPE_2_NULL_NETWORK)) {
-                            return mockServiceTypeClientType2NullNetwork;
-                        } else if (perSocketServiceType.equals(
-                                PER_SOCKET_SERVICE_TYPE_2_NETWORK_1)) {
-                            return mockServiceTypeClientType2Network1;
-                        } else if (perSocketServiceType.equals(
-                                PER_SOCKET_SERVICE_TYPE_2_NETWORK_2)) {
-                            return mockServiceTypeClientType2Network2;
-                        }
-                        fail("Unexpected perSocketServiceType: " + perSocketServiceType);
-                        return null;
-                    }
-                };
         discoveryManager = makeDiscoveryManager(MdnsFeatureFlags.newBuilder().build());
         doReturn(mockExecutorService).when(mockServiceTypeClientType1NullNetwork).getExecutor();
         doReturn(mockExecutorService).when(mockServiceTypeClientType1Network1).getExecutor();
@@ -162,11 +145,13 @@ public class MdnsDiscoveryManagerTests {
                 mockCallback) {
             @Override
             MdnsServiceTypeClient createServiceTypeClient(@NonNull String serviceType,
-                    @NonNull SocketKey socketKey) {
+                    @NonNull SocketKey socketKey, boolean isReceiveOnly) {
                 createdServiceTypeClientCount++;
                 final Pair<String, SocketKey> perSocketServiceType =
                         Pair.create(serviceType, socketKey);
-                if (perSocketServiceType.equals(PER_SOCKET_SERVICE_TYPE_1_NULL_NETWORK)) {
+                if (isReceiveOnly) {
+                    return mockServiceTypeClientType1MulticastDisabledNetwork;
+                } else if (perSocketServiceType.equals(PER_SOCKET_SERVICE_TYPE_1_NULL_NETWORK)) {
                     return mockServiceTypeClientType1NullNetwork;
                 } else if (perSocketServiceType.equals(
                         PER_SOCKET_SERVICE_TYPE_1_NETWORK_1)) {
@@ -223,6 +208,21 @@ public class MdnsDiscoveryManagerTests {
         verify(executorProvider).shutdownExecutorService(mockExecutorService);
         verify(mockServiceTypeClientType1NullNetwork).stopSendAndReceive(mockListenerOne);
         verify(socketClient).stopDiscovery();
+    }
+
+    @Test
+    public void testSocketKeyCreatedAndDestroyedForReceiveOnlyServiceTypeClient()
+            throws IOException {
+        final MdnsSearchOptions options =
+                MdnsSearchOptions.newBuilder().setNetwork(null /* network */).build();
+        final SocketCreationCallback callback = expectSocketCreationCallback(
+                SERVICE_TYPE_1, mockListenerOne, options);
+        runOnHandler(() -> callback.onNoSocketCreated(SOCKET_KEY_MULTICAST_DISABLED_NETWORK));
+        verify(mockServiceTypeClientType1MulticastDisabledNetwork)
+                .startSendAndReceive(mockListenerOne, options);
+
+        runOnHandler(() -> callback.onSocketDestroyed(SOCKET_KEY_MULTICAST_DISABLED_NETWORK));
+        verify(mockServiceTypeClientType1MulticastDisabledNetwork).notifySocketDestroyed();
     }
 
     @Test
@@ -410,9 +410,11 @@ public class MdnsDiscoveryManagerTests {
         final SocketCreationCallback callback = expectSocketCreationCallback(
                 SERVICE_TYPE_1, mockListenerOne, searchOptions);
         final SocketKey unusedIfaceKey = new SocketKey(
-                INTERFACE_INDEX_NULL_NETWORK + 1,  "interfaceOther");
+                null, INTERFACE_INDEX_NULL_NETWORK + 1,  "interfaceOther",
+                EMPTY_NETWORK_CAPABILITIES);
         final SocketKey matchingIfaceWithNetworkKey = new SocketKey(
-                Mockito.mock(Network.class), INTERFACE_INDEX_NULL_NETWORK, "interface");
+                Mockito.mock(Network.class), INTERFACE_INDEX_NULL_NETWORK, "interface",
+                EMPTY_NETWORK_CAPABILITIES);
         runOnHandler(() -> {
             callback.onSocketCreated(unusedIfaceKey);
             callback.onSocketCreated(matchingIfaceWithNetworkKey);
@@ -485,6 +487,13 @@ public class MdnsDiscoveryManagerTests {
     }
 
     @Test
+    public void testNotifyOffloadStop() throws IOException {
+        discoveryManager.notifyOffloadStop("interface1");
+
+        verify(socketClient).notifyOffloadStop("interface1");
+    }
+
+    @Test
     public void testNotifyOffloadStart() throws IOException {
         final MdnsFeatureFlags mdnsFeatureFlags = MdnsFeatureFlags.newBuilder()
                 .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
@@ -514,6 +523,7 @@ public class MdnsDiscoveryManagerTests {
                     discoveryManager.notifyOffloadStart("interface1");
             assertEquals(2, offloadInfo1.size());
             assertTrue(offloadInfo1.containsAll(List.of(info1, info2)));
+            verify(socketClient).notifyOffloadStart("interface1");
 
             // Verify that no data is present if the target interface is not discovered.
             final List<FilterRepliesInfo> offloadInfo2 =

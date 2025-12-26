@@ -17,6 +17,7 @@
 package android.net.nsd;
 
 import android.annotation.FlaggedApi;
+import android.annotation.LongDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.Network;
@@ -26,6 +27,8 @@ import android.text.TextUtils;
 
 import com.android.net.flags.Flags;
 
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.util.Objects;
 
 /**
@@ -33,6 +36,37 @@ import java.util.Objects;
  */
 @FlaggedApi(Flags.FLAG_NSD_SUBTYPES_SUPPORT_ENABLED)
 public final class DiscoveryRequest implements Parcelable {
+
+    /**
+     * Flags for {@link DiscoveryRequest#getFlags()}.
+     *
+     * @hide
+     */
+    @LongDef(flag = true, prefix = { "FLAG_" }, value = {
+            FLAG_NO_PICKER,
+    })
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface DiscoveryFlags {}
+
+    /**
+     * Indicates that a UI service picker should never be shown to the user for this request.
+     *
+     * <p>If the caller does not have {@link android.Manifest.permission.ACCESS_LOCAL_NETWORK},
+     * this will cause the request to fail with
+     * {@link android.net.nsd.NsdManager.DiscoveryListener#onStartDiscoveryFailed(String, int)} and
+     * {@link NsdManager#FAILURE_PERMISSION_DENIED}.
+     * @hide
+     */
+    @DiscoveryFlags
+    public static final long FLAG_NO_PICKER = 1L << 0;
+
+    // TODO: consider a FLAG_INCLUDE_USER_APPROVED which would allow the caller to discover
+    // any services that were previously allow-listed for the app (through the picker).
+    // FLAG_NO_PICKER | FLAG_INCLUDE_USER_APPROVED would only discover these services and not
+    // send an error callback if the caller doesn't have permissions.
+    // FLAG_SHOW_PICKER | FLAG_INCLUDE_USER_APPROVED would discover both services that the user
+    // previously approved, plus the additional service the user may choose in the picker.
+
     private final int mProtocolType;
 
     @NonNull
@@ -44,7 +78,7 @@ public final class DiscoveryRequest implements Parcelable {
     @Nullable
     private final Network mNetwork;
 
-    // TODO: add mDiscoveryConfig for more fine-grained discovery behavior control
+    private final long mFlags;
 
     @NonNull
     public static final Creator<DiscoveryRequest> CREATOR =
@@ -56,7 +90,8 @@ public final class DiscoveryRequest implements Parcelable {
                     String subtype = in.readString();
                     Network network =
                             in.readParcelable(Network.class.getClassLoader(), Network.class);
-                    return new DiscoveryRequest(protocolType, serviceType, subtype, network);
+                    long flags = in.readLong();
+                    return new DiscoveryRequest(protocolType, serviceType, subtype, network, flags);
                 }
 
                 @Override
@@ -66,11 +101,12 @@ public final class DiscoveryRequest implements Parcelable {
             };
 
     private DiscoveryRequest(int protocolType, @NonNull String serviceType,
-            @Nullable String subtype, @Nullable Network network) {
+            @Nullable String subtype, @Nullable Network network, @DiscoveryFlags long flags) {
         mProtocolType = protocolType;
         mServiceType = serviceType;
         mSubtype = subtype;
         mNetwork = network;
+        mFlags = flags;
     }
 
     /**
@@ -113,13 +149,24 @@ public final class DiscoveryRequest implements Parcelable {
         return mNetwork;
     }
 
+    /**
+     * Returns the discovery flags.
+     *
+     * @hide
+     */
+    @DiscoveryFlags
+    public long getFlags() {
+        return mFlags;
+    }
+
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder();
         sb.append(", protocolType: ").append(mProtocolType)
             .append(", serviceType: ").append(mServiceType)
             .append(", subtype: ").append(mSubtype)
-            .append(", network: ").append(mNetwork);
+            .append(", network: ").append(mNetwork)
+            .append(", flags: 0x").append(Long.toHexString(mFlags));
         return sb.toString();
     }
 
@@ -134,13 +181,14 @@ public final class DiscoveryRequest implements Parcelable {
             return mProtocolType == otherRequest.mProtocolType
                     && Objects.equals(mServiceType, otherRequest.mServiceType)
                     && Objects.equals(mSubtype, otherRequest.mSubtype)
-                    && Objects.equals(mNetwork, otherRequest.mNetwork);
+                    && Objects.equals(mNetwork, otherRequest.mNetwork)
+                    && mFlags == otherRequest.mFlags;
         }
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(mProtocolType, mServiceType, mSubtype, mNetwork);
+        return Objects.hash(mProtocolType, mServiceType, mSubtype, mNetwork, mFlags);
     }
 
     @Override
@@ -154,6 +202,7 @@ public final class DiscoveryRequest implements Parcelable {
         dest.writeString(mServiceType);
         dest.writeString(mSubtype);
         dest.writeParcelable(mNetwork, flags);
+        dest.writeLong(mFlags);
     }
 
     /** The builder for creating new {@link DiscoveryRequest} objects. */
@@ -168,6 +217,8 @@ public final class DiscoveryRequest implements Parcelable {
 
         @Nullable
         private Network mNetwork;
+
+        private long mFlags;
 
         /**
          * Creates a new default {@link Builder} object with given service type.
@@ -239,11 +290,42 @@ public final class DiscoveryRequest implements Parcelable {
         }
 
         /**
+         * Set all the discovery flags.
+         *
+         * @param flags A bitmask of flags that should be enabled, or {@code 0} to disable all flags
+         * @see #setFlags(long, long)
+         * @hide
+         */
+        public Builder setFlags(@DiscoveryFlags long flags) {
+            mFlags = flags;
+            return this;
+        }
+
+        /**
+         * Sets the discovery flags.
+         *
+         * <p>Multiple flags may be enabled or disabled by passing the logical OR of the flags.
+         *
+         * <p>For example, to set {@link #FLAG_NO_PICKER}:
+         * {@code setFlags(FLAG_NO_PICKER, FLAG_NO_PICKER)}
+         *
+         * <p>To disable {@link #FLAG_NO_PICKER}: {@code setFlags(0, FLAG_NO_PICKER)}
+         * @param flags a bitmask of values to set; may be a single flag,
+         *              the logical OR of multiple flags, or 0 to clear
+         * @param mask a bitmask indicating which flags to modify
+         * @hide
+         */
+        public Builder setFlags(@DiscoveryFlags long flags, @DiscoveryFlags long mask) {
+            mFlags = (mFlags & ~mask) | (flags & mask);
+            return this;
+        }
+
+        /**
          * Creates a new {@link DiscoveryRequest} object.
          */
         @NonNull
         public DiscoveryRequest build() {
-            return new DiscoveryRequest(mProtocolType, mServiceType, mSubtype, mNetwork);
+            return new DiscoveryRequest(mProtocolType, mServiceType, mSubtype, mNetwork, mFlags);
         }
     }
 }

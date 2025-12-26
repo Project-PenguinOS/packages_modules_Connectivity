@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<issues format="6" by="lint 8.4.0-alpha08" type="baseline" client="" dependencies="true" name="" variant="all" version="8.4.0-alpha08">
+
+    <issue
+        id="NewApi"
+        message="Class requires API level 31 (current min is 30): `android.os.OutcomeReceiver`"
+        errorLine1="                new OutcomeReceiver&lt;Void, ThreadNetworkException&gt;() {"
+        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/thread/service/java/com/android/server/thread/ThreadNetworkFactory.java"
+            line="111"
+            column="21"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 35 (current min is 30): `java.util.SequencedCollection#getLast`"
+        errorLine1="        NetworkRequest lastRequest = mActiveRequests.getLast();"
+        errorLine2="                                                     ~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/thread/service/java/com/android/server/thread/ThreadNetworkFactory.java"
+            line="133"
+            column="54"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 35 (current min is 30): `java.util.SequencedCollection#getLast`"
+        errorLine1="        } else if (!Objects.equals(mActiveRequests.getLast(), lastRequest)) {"
+        errorLine2="                                                   ~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/thread/service/java/com/android/server/thread/ThreadNetworkFactory.java"
+            line="138"
+            column="52"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 35 (current min is 30): `java.util.SequencedCollection#getLast`"
+        errorLine1="            join((ThreadNetworkSpecifier) mActiveRequests.getLast().getNetworkSpecifier());"
+        errorLine2="                                                          ~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/thread/service/java/com/android/server/thread/ThreadNetworkFactory.java"
+            line="141"
+            column="59"/>
+    </issue>
+
+</issues>

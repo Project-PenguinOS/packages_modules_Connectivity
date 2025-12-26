@@ -23,17 +23,20 @@ import static com.android.server.connectivity.mdns.MdnsServiceCache.findMatchedR
 import static com.android.server.connectivity.mdns.MdnsQueryScheduler.ScheduledQueryTaskArgs;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.Clock;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.buildMdnsServiceInfoFromResponse;
+import static com.android.server.connectivity.mdns.util.MdnsUtils.convertNsdServiceInfoToMdnsResponse;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.createOffloadServiceInfoFromFilterReplies;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.responseMatchesInstanceNameAndSubtypes;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.net.nsd.NsdServiceInfo;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
+import android.util.Log;
 import android.util.Pair;
 
 import androidx.annotation.VisibleForTesting;
@@ -82,7 +85,7 @@ public class MdnsServiceTypeClient {
     @NonNull private final SocketKey socketKey;
     @NonNull private final SharedLog sharedLog;
     @NonNull private final Handler handler;
-    @NonNull private final MdnsQueryScheduler mdnsQueryScheduler;
+    @Nullable private final MdnsQueryScheduler mdnsQueryScheduler;
     @NonNull private final Dependencies dependencies;
     /**
      * The service caches for each socket. It should be accessed from looper thread only.
@@ -265,6 +268,10 @@ public class MdnsServiceTypeClient {
         public void handleMessage(Message msg) {
             switch (msg.what) {
                 case EVENT_START_QUERYTASK: {
+                    if (mdnsQueryScheduler == null) {
+                        Log.wtf(TAG, "Query task should not be triggered in receive-only mode");
+                        return;
+                    }
                     final ScheduledQueryTaskArgs taskArgs = (ScheduledQueryTaskArgs) msg.obj;
                     // QueryTask should be run immediately after being created (not be scheduled in
                     // advance). Because the result of "makeResponsesForResolve" depends on answers
@@ -279,6 +286,10 @@ public class MdnsServiceTypeClient {
                     break;
                 }
                 case EVENT_QUERY_RESULT: {
+                    if (mdnsQueryScheduler == null) {
+                        Log.wtf(TAG, "Query result should not be triggered in receive-only mode");
+                        return;
+                    }
                     final QuerySentResult sentResult = (QuerySentResult) msg.obj;
                     // If a task is cancelled while the Executor is running it, EVENT_QUERY_RESULT
                     // will still be sent when it ends. So use session ID to check if this task
@@ -447,9 +458,10 @@ public class MdnsServiceTypeClient {
             @NonNull Looper looper,
             @NonNull MdnsServiceCache serviceCache,
             @NonNull MdnsFeatureFlags featureFlags,
-            @NonNull OffloadCallback offloadCallback) {
+            @NonNull OffloadCallback offloadCallback,
+            boolean isReceiveOnly) {
         this(serviceType, socketClient, executor, new Clock(), socketKey, sharedLog, looper,
-                new Dependencies(), serviceCache, featureFlags, offloadCallback);
+                new Dependencies(), serviceCache, featureFlags, offloadCallback, isReceiveOnly);
     }
 
     @VisibleForTesting
@@ -464,7 +476,8 @@ public class MdnsServiceTypeClient {
             @NonNull Dependencies dependencies,
             @NonNull MdnsServiceCache serviceCache,
             @NonNull MdnsFeatureFlags featureFlags,
-            @NonNull OffloadCallback offloadCallback) {
+            @NonNull OffloadCallback offloadCallback,
+            boolean isReceiveOnly) {
         this.serviceType = serviceType;
         this.socketClient = socketClient;
         this.executor = executor;
@@ -476,7 +489,7 @@ public class MdnsServiceTypeClient {
         this.handler = new QueryTaskHandler(looper);
         this.dependencies = dependencies;
         this.serviceCache = serviceCache;
-        this.mdnsQueryScheduler = new MdnsQueryScheduler();
+        this.mdnsQueryScheduler = !isReceiveOnly ? new MdnsQueryScheduler() : null;
         this.cacheKey = new MdnsServiceCache.CacheKey(serviceType, socketKey);
         this.featureFlags = featureFlags;
         this.scheduler = featureFlags.isAccurateDelayCallbackEnabled()
@@ -488,9 +501,11 @@ public class MdnsServiceTypeClient {
      * Do the cleanup of the MdnsServiceTypeClient
      */
     private void shutDown() {
-        removeScheduledTask();
-        mdnsQueryScheduler.cancelScheduledRun();
         serviceCache.unregisterServiceExpiredCallback(cacheKey);
+        if (mdnsQueryScheduler != null) {
+            removeScheduledTask();
+            mdnsQueryScheduler.cancelScheduledRun();
+        }
         if (scheduler != null) {
             scheduler.close();
         }
@@ -587,7 +602,7 @@ public class MdnsServiceTypeClient {
                     continue;
                 }
                 final MdnsServiceInfo info = buildMdnsServiceInfoFromResponse(
-                        existingResponse, serviceTypeLabels, clock.elapsedRealtime());
+                        existingResponse, serviceTypeLabels, clock.elapsedRealtime(), socketKey);
                 listener.onServiceNameDiscovered(info, true /* isServiceFromCache */);
                 listenerInfo.setServiceDiscovered(info.getServiceInstanceName());
                 if (existingResponse.isComplete()) {
@@ -598,6 +613,17 @@ public class MdnsServiceTypeClient {
                 }
             }
         }
+        serviceCache.registerServiceExpiredCallback(cacheKey, serviceExpiredCallback);
+        updateOffloadInfo(
+                listenerInfo.filterRepliesInfo.serviceName,
+                listenerInfo.filterRepliesInfo);
+        if (mdnsQueryScheduler != null) {
+            scheduleInitialQuery(searchOptions, hadReply);
+        }
+    }
+
+    private void scheduleInitialQuery(@androidx.annotation.NonNull MdnsSearchOptions searchOptions,
+            boolean hadReply) {
         // Remove the next scheduled periodical task.
         removeScheduledTask();
         final boolean forceEnableBackoff =
@@ -645,11 +671,6 @@ public class MdnsServiceTypeClient {
                     socketKey);
             executor.submit(queryTask);
         }
-
-        serviceCache.registerServiceExpiredCallback(cacheKey, serviceExpiredCallback);
-        updateOffloadInfo(
-                listenerInfo.filterRepliesInfo.serviceName,
-                listenerInfo.filterRepliesInfo);
     }
 
     private Set<String> getAllDiscoverySubtypes() {
@@ -705,6 +726,29 @@ public class MdnsServiceTypeClient {
             shutDown();
         }
         return listeners.isEmpty();
+    }
+
+    /**
+     * Process an incoming response from the proxy offload engine
+     * @param serviceInfo The {@link NsdServiceInfo} information for network service discovery
+     * @param isServiceLost If true, this indicates that service is no longer valid and
+     * should be removed
+     */
+    public void processProxyOffloadEngineResponse(
+            @NonNull NsdServiceInfo serviceInfo, boolean isServiceLost) {
+        ensureRunningOnHandlerThread(handler);
+        long responseReceiveTime = clock.elapsedRealtime();
+        MdnsResponse response = convertNsdServiceInfoToMdnsResponse(serviceInfo, isServiceLost,
+                socketKey, responseReceiveTime, featureFlags);
+
+        if (response == null) {
+            return;
+        }
+        if (response.isGoodbye()) {
+            onGoodbyeReceived(response.getServiceInstanceName());
+        } else {
+            onResponseModified(response);
+        }
     }
 
     /**
@@ -807,7 +851,7 @@ public class MdnsServiceTypeClient {
 
             final MdnsServiceBrowserListener listener = listeners.keyAt(i);
             final MdnsServiceInfo serviceInfo = buildMdnsServiceInfoFromResponse(
-                    response, serviceTypeLabels, clock.elapsedRealtime());
+                    response, serviceTypeLabels, clock.elapsedRealtime(), socketKey);
 
             if (response.isComplete()) {
                 sharedLog.log(message + ". onServiceRemoved: " + serviceInfo);
@@ -851,7 +895,7 @@ public class MdnsServiceTypeClient {
                 serviceInstanceName, newInCache, serviceBecomesComplete,
                 response.isComplete()));
         final MdnsServiceInfo serviceInfo = buildMdnsServiceInfoFromResponse(
-                response, serviceTypeLabels, clock.elapsedRealtime());
+                response, serviceTypeLabels, clock.elapsedRealtime(), socketKey);
 
         for (int i = 0; i < listeners.size(); i++) {
             // If a service stops matching the options (currently can only happen if it loses a

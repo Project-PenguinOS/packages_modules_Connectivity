@@ -21,3 +21,38 @@ flag {
     description: "Show entitlement UI to the requesters, instead of only admin users."
     bug: "376792293"
 }
+
+flag {
+  name: "enable_incall_service_api"
+  namespace: "com_android_tethering"
+  description: "Flag for supporting IncallService API"
+  bug: "430509489"
+}
+
+flag {
+  name: "nsd_query_with_known_answer"
+  namespace: "com_android_tethering"
+  description: "The querier should include its known answers within each query packet"
+  bug: "454491508"
+}
+
+flag {
+    name: "encrypted_client_hello_dns"
+    namespace: "com_android_tethering"
+    description: "Enable new ECH-related DNS resolver changes"
+    bug: "419020719"
+}
+
+flag {
+    name: "nsd_use_network_callback_for_local_networks"
+    namespace: "com_android_tethering"
+    description: "Use NetworkCallback to monitor local network changes for NSD."
+    bug: "452297472"
+}
+
+flag {
+    name: "nsd_mdns_scan_offload"
+    namespace: "com_android_tethering"
+    description: "A flag to control whether offload callbacks should be sent for interfaces that do not otherwise support mDNS."
+    bug: "395515556"
+}

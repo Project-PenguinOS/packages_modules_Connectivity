@@ -143,9 +143,11 @@ public class MdnsServiceInfoTest {
                         /* textEntries= */ null,
                         /* interfaceIndex= */ 20,
                         network,
-                        Instant.MAX /* expirationTime */);
+                        Instant.MAX /* expirationTime */,
+                        42L /* test capabilities */);
 
         assertEquals(network, info2.getNetwork());
+        assertEquals(42L, info2.getCreationCapabilitiesBits());
     }
 
     @Test
@@ -166,7 +168,8 @@ public class MdnsServiceInfoTest {
                                 MdnsServiceInfo.TextEntry.fromString("test=")),
                         20 /* interfaceIndex */,
                         new Network(123),
-                        Instant.MAX /* expirationTime */);
+                        Instant.MAX /* expirationTime */,
+                        42L /* test capabilities */);
 
         beforeParcel.writeToParcel(parcel, 0);
         parcel.setDataPosition(0);
@@ -184,6 +187,8 @@ public class MdnsServiceInfoTest {
         assertEquals(beforeParcel.getAttributes(), afterParcel.getAttributes());
         assertEquals(beforeParcel.getInterfaceIndex(), afterParcel.getInterfaceIndex());
         assertEquals(beforeParcel.getNetwork(), afterParcel.getNetwork());
+        assertEquals(beforeParcel.getCreationCapabilitiesBits(),
+                afterParcel.getCreationCapabilitiesBits());
     }
 
     @Test
