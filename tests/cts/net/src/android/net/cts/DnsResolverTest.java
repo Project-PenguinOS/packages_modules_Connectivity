@@ -16,6 +16,7 @@
 
 package android.net.cts;
 
+import static android.Manifest.permission.READ_DEVICE_CONFIG;
 import static android.net.DnsResolver.CLASS_IN;
 import static android.net.DnsResolver.FLAG_EMPTY;
 import static android.net.DnsResolver.FLAG_NO_CACHE_LOOKUP;
@@ -26,12 +27,15 @@ import static android.provider.DeviceConfig.NAMESPACE_CONNECTIVITY;
 import static android.system.OsConstants.ETIMEDOUT;
 
 import static com.android.testutils.Cleanup.testAndCleanup;
+import static com.android.testutils.TestPermissionUtil.runAsShell;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeTrue;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -43,11 +47,16 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.ParseException;
 import android.net.cts.util.CtsNetUtils;
+import android.net.dns.HttpsEndpoint;
+import android.net.dns.HttpsRecord;
 import android.os.Build;
 import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.Looper;
 import android.platform.test.annotations.AppModeFull;
+import android.platform.test.annotations.RequiresFlagsEnabled;
+import android.platform.test.flag.junit.CheckFlagsRule;
+import android.platform.test.flag.junit.DeviceFlagsValueProvider;
 import android.provider.Settings;
 import android.system.ErrnoException;
 import android.util.ArraySet;
@@ -57,6 +66,7 @@ import androidx.test.InstrumentationRegistry;
 import androidx.test.runner.AndroidJUnit4;
 
 import com.android.net.module.util.DnsPacket;
+import com.android.tethering.flags.Flags;
 import com.android.testutils.AutoReleaseNetworkCallbackRule;
 import com.android.testutils.ConnectivityDiagnosticsCollector;
 import com.android.testutils.DevSdkIgnoreRule;
@@ -94,6 +104,8 @@ public class DnsResolverTest {
     public final DevSdkIgnoreRule ignoreRule = new DevSdkIgnoreRule();
     @Rule
     public final AutoReleaseNetworkCallbackRule callbackRule = new AutoReleaseNetworkCallbackRule();
+    @Rule
+    public final CheckFlagsRule checkFlagsRule = DeviceFlagsValueProvider.createCheckFlagsRule();
 
     private static final String TAG = "DnsResolverTest";
     private static final char[] HEX_CHARS = {
@@ -101,6 +113,7 @@ public class DnsResolverTest {
     };
 
     static final String TEST_DOMAIN = "www.google.com";
+    static final String TEST_HTTPS_RECORD_DOMAIN = "tls-ech.dev";
     static final String TEST_NX_DOMAIN = "test1-nx.metric.gstatic.com";
     static final String INVALID_PRIVATE_DNS_SERVER = "invalid.google";
     static final String GOOGLE_PRIVATE_DNS_SERVER = "dns.google";
@@ -770,6 +783,114 @@ public class DnsResolverTest {
             callback.assertNoError();
             assertTrue(msg + " returned 0 results", !callback.isAnswerEmpty());
             assertTrue(msg + " returned Ipv4 results", !callback.hasIpv4Answer());
+        }
+    }
+
+    static class VerifyCancelHttpsEndpointInfoCallback
+            implements DnsResolver.Callback<HttpsEndpoint> {
+        private final CountDownLatch mLatch = new CountDownLatch(1);
+        private final String mMsg;
+        private final CancellationSignal mCancelSignal;
+        private HttpsEndpoint mAnswer;
+        private String mErrorMsg = null;
+
+        VerifyCancelHttpsEndpointInfoCallback(
+                @NonNull String msg, @Nullable CancellationSignal cancellationSignal) {
+            this.mMsg = msg;
+            this.mCancelSignal = cancellationSignal;
+        }
+
+        public boolean waitForAnswer() throws InterruptedException {
+            return mLatch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        }
+
+        public boolean isAnswerEmpty() {
+            return mAnswer.getHttpsRecords().isEmpty() && mAnswer.getIpAddresses().isEmpty();
+        }
+
+        public boolean hasHttpsAnswer() {
+            return !mAnswer.getHttpsRecords().isEmpty();
+        }
+
+        public void assertNoError() {
+            assertNull(mErrorMsg);
+        }
+
+        public void assertHasEchAnswer() throws Exception {
+            assertNotNull(mMsg + ": EchConfigList should not be null",
+                    mAnswer.getHttpsRecords().get(0).getEchConfigList());
+        }
+
+        public void assertHasHttpsAnswer() {
+            assertFalse(mMsg + ": HTTPS records should not be empty",
+                    mAnswer.getHttpsRecords().isEmpty());
+        }
+
+        public void assertHasIpAddressAnswer() {
+            assertFalse(mMsg + ": IP addresses should not be empty",
+                    mAnswer.getIpAddresses().isEmpty());
+        }
+
+        @Override
+        public void onAnswer(@NonNull HttpsEndpoint answer, int rcode) {
+            if (mCancelSignal != null && mCancelSignal.isCanceled()) {
+                mErrorMsg = mMsg + " should not have returned any answers";
+                mLatch.countDown();
+                return;
+            }
+
+            mAnswer = answer;
+
+            mLatch.countDown();
+        }
+
+        @Override
+        public void onError(@NonNull DnsResolver.DnsException error) {
+            mErrorMsg = mMsg + error.getMessage();
+            mLatch.countDown();
+        }
+    }
+
+    @Test
+    @DnsResolverModuleTest
+    public void testQueryForHttpsRecord() throws Exception {
+        // Because these tests also run on S & T, they require the READ_DEVICE_CONFIG permission
+        // to read flag values.
+        assumeTrue(runAsShell(READ_DEVICE_CONFIG, () -> Flags.encryptedClientHelloDns()));
+
+        doTestQueryForHttpsRecord(mExecutor);
+    }
+
+    @Test
+    @DnsResolverModuleTest
+    public void testQueryForHttpsRecordInline() throws Exception {
+        // Because these tests also run on S & T, they require the READ_DEVICE_CONFIG permission
+        // to read flag values.
+        assumeTrue(runAsShell(READ_DEVICE_CONFIG, () -> Flags.encryptedClientHelloDns()));
+
+        doTestQueryForHttpsRecord(mExecutorInline);
+    }
+
+    private void doTestQueryForHttpsRecord(Executor executor) throws Exception {
+        final String msg = "Test query for HTTPS record " + TEST_HTTPS_RECORD_DOMAIN;
+        mCtsNetUtils.setPrivateDnsStrictMode(GOOGLE_PRIVATE_DNS_SERVER);
+        for (Network network : getTestableNetworksAndNull()) {
+            final VerifyCancelHttpsEndpointInfoCallback callback =
+                    new VerifyCancelHttpsEndpointInfoCallback(msg, /* cancellationSignal= */ null);
+            mDns.query(network, TEST_HTTPS_RECORD_DOMAIN, FLAG_NO_CACHE_LOOKUP,
+                    executor, /* timeoutMillis= */ 0, /* cancellationSignal= */ null, callback);
+
+            assertTrue(msg + " but no answer after " + TIMEOUT_MS + "ms.",
+                    callback.waitForAnswer());
+            callback.assertNoError();
+            assertFalse(msg + " returned 0 results", callback.isAnswerEmpty());
+            callback.assertHasIpAddressAnswer();
+            callback.assertHasHttpsAnswer();
+            runAsShell(READ_DEVICE_CONFIG, () -> {
+                if (com.android.org.conscrypt.net.flags.Flags.encryptedClientHelloPlatform()) {
+                    callback.assertHasEchAnswer();
+                }
+            });
         }
     }
 

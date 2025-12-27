@@ -93,6 +93,7 @@ static const set<string> MAINLINE_FOR_T_PLUS = {
     NETD "map_netd_iface_index_name_map",
     NETD "map_netd_iface_stats_map",
     NETD "map_netd_ingress_discard_map",
+    NETD "map_netd_loopback_access_metrics_enabled_map",
     NETD "map_netd_netd_pid_map",
     NETD "map_netd_permission_propagation_enabled_map",
     NETD "map_netd_stats_map_A",
@@ -174,6 +175,12 @@ static const set<string> MAINLINE_FOR_25Q2_5_10_PLUS = {
     NETD "map_netd_local_net_note_op_ringbuf",
 };
 
+// Provided by *current* mainline module for 26Q1+ devices
+static const set<string> MAINLINE_FOR_25Q4_PLUS = {
+    NETD "map_netd_loopback_access_cache_map",
+    NETD "map_netd_loopback_access_ringbuf",
+};
+
 // Provided by *current* mainline module for 26Q2+ devices
 static const set<string> MAINLINE_FOR_26Q2_PLUS = {
     NETD "map_netd_l4s_accecn_byte_map",
@@ -246,6 +253,7 @@ TEST_F(BpfExistenceTest, TestPrograms) {
     DO_EXPECT(isAtLeast25Q2 && isAtLeastKernelVersion(5, 10), MAINLINE_FOR_25Q2_5_10_PLUS);
 
     if (isAtLeast25Q4) ASSERT_TRUE(isAtLeastKernelVersion(5, 10));
+    DO_EXPECT(isAtLeast25Q4, MAINLINE_FOR_25Q4_PLUS);
 
     DO_EXPECT(isAtLeast26Q2, MAINLINE_FOR_26Q2_PLUS);
     DO_EXPECT(isAtLeast26Q2 && isAtLeastKernelVersion(6, 1), MAINLINE_FOR_26Q2_6_1_PLUS);

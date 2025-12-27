@@ -23,6 +23,7 @@ import android.content.pm.PackageManager.FEATURE_PC
 import android.content.pm.PackageManager.FEATURE_TELEPHONY
 import android.content.pm.PackageManager.FEATURE_WIFI
 import android.net.ConnectivityManager
+import android.net.InetAddresses
 import android.net.Network
 import android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED
 import android.net.NetworkCapabilities.TRANSPORT_WIFI
@@ -37,6 +38,7 @@ import android.net.wifi.WifiManager
 import android.net.wifi.WifiSsid
 import android.os.Build.VERSION.CODENAME
 import android.os.Build.VERSION.SDK_INT
+import android.util.ArraySet
 import androidx.test.platform.app.InstrumentationRegistry
 import com.android.compatibility.common.util.PropertyUtil
 import com.android.modules.utils.build.SdkLevel
@@ -53,6 +55,7 @@ import java.net.InetSocketAddress
 import java.net.MulticastSocket
 import java.net.NetworkInterface
 import kotlin.test.fail
+import org.json.JSONArray
 import org.junit.Rule
 
 private const val MAX_CONNECT_RETRY = 3
@@ -285,5 +288,14 @@ class ConnectivityMultiDevicesSnippet : Snippet {
             InetSocketAddress(groupToLeave, 0),
             multicastSocket?.networkInterface
         )
+    }
+
+    @Rpc(description = "Sort multicast addresses")
+    fun sortMulticastAddresses(addresses: JSONArray): List<String> {
+        val addrSet = ArraySet<InetAddress>()
+        for (i in 0 until addresses.length()) {
+            addrSet.add(InetAddresses.parseNumericAddress(addresses.getString(i)))
+        }
+        return addrSet.mapNotNull { it.hostAddress }
     }
 }

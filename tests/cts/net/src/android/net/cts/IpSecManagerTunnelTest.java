@@ -80,7 +80,6 @@ import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 
-// TODO: b/268552823 Improve the readability of IpSecManagerTunnelTest
 @RunWith(AndroidJUnit4.class)
 @AppModeFull(reason = "MANAGE_TEST_NETWORKS permission can't be granted to instant apps")
 public class IpSecManagerTunnelTest extends IpSecBaseTest {

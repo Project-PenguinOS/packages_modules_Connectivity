@@ -124,6 +124,15 @@ DEFINE_BPF_MAP_EXT(local_net_note_op_enabled_map, ARRAY, uint32_t, bool, 1,
                    AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
                    BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
 
+// A ring buffer on which loopback access events are pushed.
+DEFINE_BPF_RINGBUF_EXT(loopback_access_ringbuf, LoopbackAccessEvent, 16 * 512,
+                       AID_ROOT, AID_SYSTEM, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
+                       BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER);
+DEFINE_BPF_MAP_EXT(loopback_access_cache_map, LRU_HASH, LoopbackAccessEvent, uint64_t, 100,
+                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
+                   BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, bool, 1)
+
 // iptables xt_bpf programs need to be usable by both netd and netutils_wrappers
 // selinux contexts, because even non-xt_bpf iptables mutations are implemented as
 // a full table dump, followed by an update in userspace, and then a reload into the kernel,

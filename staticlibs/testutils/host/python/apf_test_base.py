@@ -22,6 +22,22 @@ APF_ACTIVATION_WAIT_TIME_SEC = 5
 
 class ApfTestBase(multi_devices_test_base.MultiDevicesTestBase):
 
+  def _start_tcpdump(self, ad, iface_name, output_file):
+    if ad.is_rootable:
+      apf_utils.start_tcpdump_capture(ad, iface_name, output_file)
+
+  def _stop_tcpdump(self, ad, iface_name, file_name, src_path):
+    if ad.is_rootable:
+      apf_utils.stop_tcpdump_capture(ad, iface_name)
+      apf_utils.pull_file_from_device(
+          ad=ad,
+          file_name=file_name,
+          extension_name='pcap',
+          src_path=src_path,
+          dst_path=self.current_test_info.output_path,
+      )
+      adb_utils.adb_shell(ad, f'rm -f {src_path}')
+
   def setup_class(self):
     super().setup_class()
 
@@ -73,7 +89,30 @@ class ApfTestBase(multi_devices_test_base.MultiDevicesTestBase):
     # Enable doze mode to activate APF.
     adb_utils.set_doze_mode(self.clientDevice, True)
 
+    self._start_tcpdump(
+        self.clientDevice,
+        self.client_iface_name,
+        '/data/local/tmp/client_capture.pcap',
+    )
+    self._start_tcpdump(
+        self.serverDevice,
+        self.server_iface_name,
+        '/data/local/tmp/server_capture.pcap',
+    )
+
   def teardown_class(self):
+    self._stop_tcpdump(
+        self.clientDevice,
+        self.client_iface_name,
+        'client_capture',
+        '/data/local/tmp/client_capture.pcap',
+    )
+    self._stop_tcpdump(
+        self.serverDevice,
+        self.server_iface_name,
+        'server_capture',
+        '/data/local/tmp/server_capture.pcap',
+    )
     adb_utils.set_doze_mode(self.clientDevice, False)
     tether_utils.cleanup_tethering_for_upstream_type(
         self.serverDevice, UpstreamType.NONE

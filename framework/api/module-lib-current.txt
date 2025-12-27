@@ -94,6 +94,7 @@ package android.net {
     method public static int getDnsResolverSuccessThresholdPercent(@NonNull android.content.Context, int);
     method @Nullable public static android.net.ProxyInfo getGlobalProxy(@NonNull android.content.Context);
     method public static long getIngressRateLimitInBytesPerSecond(@NonNull android.content.Context);
+    method @FlaggedApi("com.android.tethering.flags.l4s_developer_option") public static int getL4sDeveloperOption(@NonNull android.content.Context);
     method @NonNull public static java.time.Duration getMobileDataActivityTimeout(@NonNull android.content.Context, @NonNull java.time.Duration);
     method public static boolean getMobileDataAlwaysOn(@NonNull android.content.Context, boolean);
     method @NonNull public static java.util.Set<java.lang.Integer> getMobileDataPreferredUids(@NonNull android.content.Context);
@@ -116,6 +117,7 @@ package android.net {
     method public static void setDnsResolverSuccessThresholdPercent(@NonNull android.content.Context, @IntRange(from=0, to=100) int);
     method public static void setGlobalProxy(@NonNull android.content.Context, @NonNull android.net.ProxyInfo);
     method public static void setIngressRateLimitInBytesPerSecond(@NonNull android.content.Context, @IntRange(from=-1L, to=4294967295L) long);
+    method @FlaggedApi("com.android.tethering.flags.l4s_developer_option") public static void setL4sDeveloperOption(@NonNull android.content.Context, int);
     method public static void setMobileDataActivityTimeout(@NonNull android.content.Context, @NonNull java.time.Duration);
     method public static void setMobileDataAlwaysOn(@NonNull android.content.Context, boolean);
     method public static void setMobileDataPreferredUids(@NonNull android.content.Context, @NonNull java.util.Set<java.lang.Integer>);
@@ -134,6 +136,9 @@ package android.net {
     field public static final int CAPTIVE_PORTAL_MODE_AVOID = 2; // 0x2
     field public static final int CAPTIVE_PORTAL_MODE_IGNORE = 0; // 0x0
     field public static final int CAPTIVE_PORTAL_MODE_PROMPT = 1; // 0x1
+    field @FlaggedApi("com.android.tethering.flags.l4s_developer_option") public static final int L4S_DEVELOPER_OPTION_AUTOMATIC = 2; // 0x2
+    field @FlaggedApi("com.android.tethering.flags.l4s_developer_option") public static final int L4S_DEVELOPER_OPTION_DISABLED = 0; // 0x0
+    field @FlaggedApi("com.android.tethering.flags.l4s_developer_option") public static final int L4S_DEVELOPER_OPTION_ENABLED = 1; // 0x1
     field public static final int NETWORK_AVOID_BAD_WIFI_AVOID = 2; // 0x2
     field public static final int NETWORK_AVOID_BAD_WIFI_IGNORE = 0; // 0x0
     field public static final int NETWORK_AVOID_BAD_WIFI_PROMPT = 1; // 0x1
