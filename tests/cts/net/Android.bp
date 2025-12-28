@@ -65,6 +65,8 @@ java_defaults {
         "ApfGeneratorLib",
         "bouncycastle-unbundled",
         "FrameworksNetCommonTests",
+        "com.android.tethering.flags-aconfig-java",
+        "conscrypt-exported-networksecurity-aconfig-flags-lib",
         "core-tests-support",
         "cts-net-utils",
         "CtsNetTestsNonUpdatableLib",

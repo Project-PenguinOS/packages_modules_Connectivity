@@ -98,17 +98,6 @@
 
     <issue
         id="NewApi"
-        message="Field requires API level 31 (current min is 30): `android.system.OsConstants#ENONET`"
-        errorLine1="                    new DnsException(ERROR_SYSTEM, new ErrnoException(&quot;resNetworkQuery&quot;, ENONET))));"
-        errorLine2="                                                                                         ~~~~~~">
-        <location
-            file="packages/modules/Connectivity/framework/src/android/net/DnsResolver.java"
-            line="367"
-            column="90"/>
-    </issue>
-
-    <issue
-        id="NewApi"
         message="Call requires API level 31 (current min is 30): `libcore.io.IoUtils#closeQuietly`"
         errorLine1="            IoUtils.closeQuietly(socket);"
         errorLine2="                    ~~~~~~~~~~~~">

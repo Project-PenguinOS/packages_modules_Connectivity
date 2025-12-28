@@ -179,6 +179,7 @@ package android.net {
     method @NonNull public static android.net.DnsResolver getInstance();
     method public void query(@Nullable android.net.Network, @NonNull String, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super java.util.List<java.net.InetAddress>>);
     method public void query(@Nullable android.net.Network, @NonNull String, int, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super java.util.List<java.net.InetAddress>>);
+    method @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public void query(@Nullable android.net.Network, @NonNull String, int, @NonNull java.util.concurrent.Executor, int, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<android.net.dns.HttpsEndpoint>);
     method public void rawQuery(@Nullable android.net.Network, @NonNull byte[], int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super byte[]>);
     method public void rawQuery(@Nullable android.net.Network, @NonNull String, int, int, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super byte[]>);
     field public static final int CLASS_IN = 1; // 0x1
@@ -188,8 +189,12 @@ package android.net {
     field public static final int FLAG_NO_CACHE_LOOKUP = 4; // 0x4
     field public static final int FLAG_NO_CACHE_STORE = 2; // 0x2
     field public static final int FLAG_NO_RETRY = 1; // 0x1
+    field @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public static final int HTTPS_QUERY_WAIT_AUTO = -1; // 0xffffffff
+    field @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public static final int HTTPS_QUERY_WAIT_NONE = 0; // 0x0
+    field @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public static final int HTTPS_QUERY_WAIT_UNTIL_TIMEOUT = -2; // 0xfffffffe
     field public static final int TYPE_A = 1; // 0x1
     field public static final int TYPE_AAAA = 28; // 0x1c
+    field @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public static final int TYPE_HTTPS = 65; // 0x41
   }
 
   public static interface DnsResolver.Callback<T> {
@@ -556,6 +561,25 @@ package android.net {
   }
 
   public interface TransportInfo {
+  }
+
+}
+
+package android.net.dns {
+
+  @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public class HttpsEndpoint {
+    method @NonNull public java.util.List<android.net.dns.HttpsRecord> getHttpsRecords();
+    method @NonNull public java.util.List<java.net.InetAddress> getIpAddresses();
+  }
+
+  @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public class HttpsRecord {
+    method @NonNull public java.util.List<java.lang.String> getAlpnIds();
+    method @FlaggedApi("com.android.org.conscrypt.net.flags.encrypted_client_hello_platform") @Nullable public android.net.ssl.EchConfigList getEchConfigList() throws android.net.ssl.InvalidEchDataException;
+    method @NonNull public java.util.List<java.net.InetAddress> getIpAddressHints();
+    method public int getPort();
+    method @IntRange(from=0, to=65535) public int getPriority();
+    method @NonNull public String getTargetName();
+    field public static final String DEFAULT_ALPN_ID = "http/1.1";
   }
 
 }

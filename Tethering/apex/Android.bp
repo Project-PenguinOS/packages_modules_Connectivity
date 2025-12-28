@@ -206,6 +206,7 @@ bootclasspath_fragment {
             "android.remoteauth",
             "android.net.apf",
             "android.net.connectivity",
+            "android.net.dns",
             "android.net.http.apihelpers",
             "android.net.netstats.provider",
             "android.net.nsd",

@@ -39,6 +39,7 @@ struct kver_uint { unsigned int kver; };
 #define KVER_6_1  KVER(6, 1, 0)
 #define KVER_6_6  KVER(6, 6, 0)
 #define KVER_6_12 KVER(6, 12, 0)
+#define KVER_6_18 KVER(6, 18, 0)
 #define KVER_INF KVER_(0xFFFFFFFFu)
 
 #define KVER_IS_AT_LEAST(kver, a, b, c) ((kver).kver >= KVER(a, b, c).kver)

@@ -253,8 +253,25 @@ class ApfV6Test(apf_test_base.ApfTestBase):
         flags='DF',
     )
     igmpv3_hdr = IGMPv3(type=0x22)
+    device_mcast_addrs = apf_utils.get_ipv4_multicast_addresses(
+        self.clientDevice, self.client_iface_name
+    )
+    # Check if all mcast_addrs are in device_mcast_addrs
+    missing_addrs = [
+        addr for addr in mcast_addrs if addr not in device_mcast_addrs
+    ]
+    if missing_addrs:
+      asserts.fail(
+          f'Expected multicast addresses {missing_addrs} not found in device '
+          f'multicast addresses: {device_mcast_addrs}'
+      )
+
     mcast_records = []
-    for addr in mcast_addrs:
+    # Sort multicast addresses
+    sorted_device_mcast_addrs = self.client.sortMulticastAddresses(
+        device_mcast_addrs
+    )
+    for addr in sorted_device_mcast_addrs:
       mcast_records.append(IGMPv3gr(rtype=2, maddr=addr))
 
     igmp = IGMPv3mr(records=mcast_records)
@@ -282,20 +299,28 @@ class ApfV6Test(apf_test_base.ApfTestBase):
 
     # use unicast to replace multicast ether dst to prevent flaky due to DTIM skip
     ether = Ether(src=self.server_mac_address, dst=self.client_mac_address)
-    ip = IPv6(src=self.server_ipv6_addresses[0], dst='ff02::1', hlim=1)
+    server_link_local_ip = next(
+        ip for ip in self.server_ipv6_addresses if ip.startswith('fe80')
+    )
+    ip = IPv6(src=server_link_local_ip, dst='ff02::1', hlim=1)
     hopOpts = IPv6ExtHdrHopByHop(options=[RouterAlert(otype=5)])
     mld = ICMPv6MLQuery2()
     mldv2_general_query = bytes(ether / ip / hopOpts / mld).hex()
 
     ether = Ether(src=self.client_mac_address, dst='33:33:00:00:00:16')
-    ip = IPv6(src=self.client_ipv6_addresses[0], dst='ff02::16', hlim=1)
+    client_link_local_ip = next(
+        ip for ip in self.client_ipv6_addresses if ip.startswith('fe80')
+    )
+    ip = IPv6(src=client_link_local_ip, dst='ff02::16', hlim=1)
 
     mcast_addrs = apf_utils.get_exclude_all_host_ipv6_multicast_addresses(
         self.clientDevice, self.client_iface_name
     )
 
     mld_records = []
-    for addr in mcast_addrs:
+    # Sort multicast addresses
+    sorted_mcast_addrs = self.client.sortMulticastAddresses(mcast_addrs)
+    for addr in sorted_mcast_addrs:
       mld_records.append(ICMPv6MLDMultAddrRec(dst=addr, rtype=2))
     mld = ICMPv6MLReport2(records=mld_records)
     expected_mldv2_report = bytes(ether / ip / hopOpts / mld).hex()

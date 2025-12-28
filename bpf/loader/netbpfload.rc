@@ -1,6 +1,25 @@
-# 2026 1 36 1 1 # 26q1 sdk/api level 36.1 - Android 16 QPR3
+# 2026 2 37 0 0 # 26q2 sdk/api level 37.0 - Android 17 Cinnamon Bun QPR0
 
+# The above line contains the following fields:
+#   y - year (ie. 2026)
+#   q - quarter (ie. 1, which means Q1)
+#       (together this gives '2026q1' or '26Q1')
+#   a - major Android sdk/api level (ie. 36)
+#   b - minor Android sdk/api level (ie. 1)
+#       (together this gives '36.1')
+#   c - subrelease (ie. 1)
+#       this goes up by 1 every quarter when major/minor sdk/api don't change
+#
+# Notes:
+# - 25q3 (as visible below) has a buggy quarter (2 instead of 3)...
+# - This is parsed in BpfUtils.h which ignores year/quarter:
+#   get_api_level_full() returns 100a + 10b + 2c + 1u
+#   where u means unreleased and is 1 if codename != 'REL'.
+# - There's some extra sanity checking in NetBpfLoad.cpp,
+#   which exists mostly to log this during bootup.
+#
 # Previous versions (for documentation)
+# 2026 1 36 1 1 # 26q1 sdk/api level 36.1 - Android 16 QPR3
 # 2025 4 36 1 0 # 25q4 sdk/api level 36.1 - Android 16 QPR2
 # 2025 2 36 0 1 # 25q3 sdk/api level 36.0 - Android 16 QPR1
 # 2025 2 36 0 0 # 25q2 sdk/api level 36.0 - Android 16 Baklava QPR0

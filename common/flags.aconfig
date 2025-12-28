@@ -41,6 +41,7 @@ flag {
     namespace: "com_android_tethering"
     description: "Enable new ECH-related DNS resolver changes"
     bug: "419020719"
+    is_exported: true
 }
 
 flag {
@@ -77,3 +78,12 @@ flag {
   description: "Enable collection of loopback access metrics"
   bug: "441592715"
 }
+
+flag {
+    name: "l4s_developer_option"
+    namespace: "com_android_tethering"
+    description: "Flag for supporting L4S global status API."
+    bug: "452488983"
+    is_exported: true
+}
+

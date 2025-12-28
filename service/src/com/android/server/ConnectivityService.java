@@ -80,6 +80,8 @@ import static android.net.ConnectivityManager.TYPE_WIFI;
 import static android.net.ConnectivityManager.TYPE_WIFI_P2P;
 import static android.net.ConnectivityManager.getNetworkTypeName;
 import static android.net.ConnectivityManager.isNetworkTypeValid;
+import static android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION;
+import static android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION_ENABLED;
 import static android.net.ConnectivitySettingsManager.PRIVATE_DNS_MODE_OPPORTUNISTIC;
 import static android.net.INetd.LOCAL_NET_ID;
 import static android.net.INetd.PERMISSION_INTERNET;
@@ -337,6 +339,8 @@ import android.util.SparseArray;
 import android.util.SparseIntArray;
 import android.util.StatsEvent;
 
+import androidx.annotation.ChecksSdkIntAtLeast;
+
 import com.android.connectivity.resources.R;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
@@ -362,6 +366,7 @@ import com.android.net.module.util.BinderUtils;
 import com.android.net.module.util.BitUtils;
 import com.android.net.module.util.BpfUtils;
 import com.android.net.module.util.CollectionUtils;
+import com.android.net.module.util.ConnectivitySettingsUtils;
 import com.android.net.module.util.ConnectivityUtils;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.HandlerUtils;
@@ -1016,6 +1021,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
     private static final int EVENT_TIMEOUT_NETWORK_SUSPENDED = 64;
 
     /**
+     * Event to update L4S developer option setting changes.
+     */
+    private static final int EVENT_L4S_DEVELOPER_OPTION_CHANGED = 65;
+
+    /**
      * Argument for {@link #EVENT_PROVISIONING_NOTIFICATION} to indicate that the notification
      * should be shown.
      */
@@ -1591,6 +1601,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         public boolean isAtLeast25Q4() {
             return SdkUtil.isAtLeast25Q4();
+        }
+
+        @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.CINNAMON_BUN)
+        public boolean isAtLeast26Q2() {
+            return SdkUtil.isAtLeast26Q2();
         }
 
         /** Get SystemClock.elapsedRealtime() */
@@ -2594,6 +2609,12 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 Settings.Global.getUriFor(
                         ConnectivitySettingsManager.INGRESS_RATE_LIMIT_BYTES_PER_SECOND),
                 EVENT_INGRESS_RATE_LIMIT_CHANGED);
+        if (mDeps.isAtLeast26Q2()) {
+            // Watch for L4S changes.
+            mSettingsObserver.observe(
+                    Settings.Global.getUriFor(L4S_DEVELOPER_OPTION),
+                    EVENT_L4S_DEVELOPER_OPTION_CHANGED);
+        }
     }
 
     private void registerPrivateDnsSettingsCallbacks() {
@@ -3872,6 +3893,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
         disconnectAndDestroyNetwork(nai);
     }
 
+    private void handleNetworkL4sChanged() {
+        if (!mDeps.isAtLeast26Q2()) return;
+        ensureRunningOnConnectivityServiceThread();
+        final int setValue = ConnectivitySettingsUtils.getL4sDeveloperOptionSetting(mContext);
+        mBpfNetMaps.setL4sEnabled((setValue == L4S_DEVELOPER_OPTION_ENABLED));
+    }
+
     private void handleFreezeNetworkCallbacks(int[] uids, int[] frozenStates) {
         if (!mQueueCallbacksForFrozenApps) {
             return;
@@ -4574,6 +4602,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         if (mConstrainedDataSatelliteMetrics) {
             mSatelliteCoarseUsageMetricsCollector.startMonitoring();
+        }
+
+        if (mDeps.isAtLeast26Q2()) {
+            mHandler.sendMessage(mHandler.obtainMessage(EVENT_L4S_DEVELOPER_OPTION_CHANGED));
         }
     }
 
@@ -7588,6 +7620,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
                     break;
                 case EVENT_TIMEOUT_NETWORK_SUSPENDED:
                     handleNetwokSuspendedTimeout((NetworkAgentInfo) msg.obj);
+                    break;
+                case EVENT_L4S_DEVELOPER_OPTION_CHANGED:
+                    handleNetworkL4sChanged();
                     break;
             }
         }

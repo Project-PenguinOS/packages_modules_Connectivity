@@ -80,6 +80,7 @@ java_defaults {
     },
     stub_only_libs: [
         "framework-connectivity-t.stubs.module_lib",
+        "conscrypt.module.public.api.stubs.module_lib",
     ],
     impl_only_libs: [
         // TODO: figure out why just using "framework-tethering" uses the stubs, even though both
@@ -92,6 +93,7 @@ java_defaults {
         "com.android.net.flags-aconfig-java-deprecated",
         "com.android.tethering.flags-aconfig-java",
         "android.net.platform.flags-aconfig-java-export",
+        "conscrypt-exported-networksecurity-aconfig-flags-lib",
         // Not using the latest stable version because all functions in the latest version of
         // mdns_aidl_interface are deprecated.
         "mdns_aidl_interface-V1-java",
