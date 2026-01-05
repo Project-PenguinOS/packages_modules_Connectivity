@@ -99,7 +99,7 @@ class MdnsInterfaceAdvertiserTest {
     private val announcer = mock(MdnsAnnouncer::class.java)
     private val prober = mock(MdnsProber::class.java)
     private val sharedlog = SharedLog("MdnsInterfaceAdvertiserTest")
-    private val flags = MdnsFeatureFlags.newBuilder()
+    private val flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
             .setIsKnownAnswerSuppressionEnabled(true).build()
     @Suppress("UNCHECKED_CAST")
     private val probeCbCaptor = ArgumentCaptor.forClass(PacketRepeaterCallback::class.java)

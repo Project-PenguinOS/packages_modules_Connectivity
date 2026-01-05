@@ -20,7 +20,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import androidx.test.InstrumentationRegistry
 import androidx.test.filters.SmallTest
-import com.android.frameworks.tests.net.R
+import com.android.connectivity.tests.lib.R
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRunner
 import com.google.common.truth.Truth.assertThat

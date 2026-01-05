@@ -68,8 +68,8 @@ static inline StatsValue& operator+=(StatsValue& lhs, const StatsValue& rhs) {
 
 typedef struct {
     char name[IFNAMSIZ];
-} IfaceValue;
-STRUCT_SIZE(IfaceValue, 16);
+} __attribute__((aligned(16))) IfaceValue;
+STRUCT_SIZE(IfaceValue, 16);  // 16 (aligned to 16 for atomicity)
 
 typedef struct {
   uint64_t timestampNs;
@@ -106,8 +106,8 @@ STRUCT_SIZE(SkStorageValue, 8 + 4 + 4);
 
 #define BPF_NETD_PATH "/sys/fs/bpf/netd_shared/"
 
-#define BPF_EGRESS_PROG_PATH BPF_NETD_PATH "prog_netd_cgroupskb_egress_stats"
-#define BPF_INGRESS_PROG_PATH BPF_NETD_PATH "prog_netd_cgroupskb_ingress_stats"
+#define BPF_EGRESS_PROG_PATH BPF_NETD_PATH "prog_netd_egress_stats"
+#define BPF_INGRESS_PROG_PATH BPF_NETD_PATH "prog_netd_ingress_stats"
 
 #define ASSERT_STRING_EQUAL(s1, s2) \
     static_assert(std::string_view(s1) == std::string_view(s2), "mismatch vs Android T netd")
@@ -154,8 +154,11 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define IFACE_STATS_MAP_PATH BPF_NETD_PATH "map_netd_iface_stats_map"
 #define CONFIGURATION_MAP_PATH BPF_NETD_PATH "map_netd_configuration_map"
 #define UID_OWNER_MAP_PATH BPF_NETD_PATH "map_netd_uid_owner_map"
+#define UID_PERMISSION_CHUNK_MAP_PATH                                          \
+    BPF_NETD_PATH "map_netd_uid_permission_chunk_map"
 #define UID_PERMISSION_MAP_PATH BPF_NETD_PATH "map_netd_uid_permission_map"
 #define INGRESS_DISCARD_MAP_PATH BPF_NETD_PATH "map_netd_ingress_discard_map"
+#define NETD_PID_MAP_PATH BPF_NETD_PATH "map_netd_netd_pid_map"
 #define PACKET_TRACE_RINGBUF_PATH BPF_NETD_PATH "map_netd_packet_trace_ringbuf"
 #define PACKET_TRACE_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_packet_trace_enabled_map"
 #define DATA_SAVER_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_data_saver_enabled_map"
@@ -163,6 +166,11 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define LOCAL_NET_BLOCKED_UID_MAP_PATH BPF_NETD_PATH "map_netd_local_net_blocked_uid_map"
 #define UID_MIGRATION_ENABLED_MAP_PATH                                         \
     BPF_NETD_PATH "map_netd_uid_migration_enabled_map"
+#define PERMISSION_PROPAGATION_ENABLED_MAP_PATH                                                 \
+    BPF_NETD_PATH "map_netd_permission_propagation_enabled_map"
+#define LOCAL_NET_NOTE_OP_RINGBUF_PATH BPF_NETD_PATH "map_netd_local_net_note_op_ringbuf"
+#define LOCAL_NET_NOTE_OP_CACHE_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_cache_map"
+#define LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_enabled_map"
 
 #define L4S_INGRESS_ETHER_PROG_PATH   BPF_NETD_PATH "prog_netd_schedcls_ingress_accecn_eth"
 #define L4S_EGRESS_ETHER_PROG_PATH    BPF_NETD_PATH "prog_netd_schedcls_egress_accecn_eth"
@@ -204,10 +212,9 @@ enum UidOwnerMatchType : uint32_t {
 };
 // LINT.ThenChange(../framework/src/android/net/BpfNetMapsConstants.java)
 
-// TODO(b/436242702): change BPF_PERMISSION_UPDATE_DEVICE_STATS to "1 << 1"
+// TODO(b/436242702): remove this permission masks once the uid migration flag is rolled out
+// The following are used in uid_permission_map
 enum BpfPermissionMatch : uint8_t {
-    BPF_PERMISSION_NONE = 0,
-    BPF_PERMISSION_ACCESS_LOCAL_NETWORK = 1,
     BPF_PERMISSION_INTERNET = 1 << 2,
     BPF_PERMISSION_UPDATE_DEVICE_STATS = 1 << 3,
 };
@@ -266,12 +273,23 @@ STRUCT_SIZE(LocalNetAccessKey, 4 + 4 + 16 + 2 + 2);  // 28
 // One chunk can store 128 * 21 = 2688 UIDs using 128 int64
 #define CHUNK_UID_COUNT 2688
 #define UID_PERMISSION_MASK 7
+#define PERMISSION_BIT_NONE 0
+#define PERMISSION_BIT_ACCESS_LOCAL_NETWORK 1
+#define PERMISSION_BIT_UPDATE_DEVICE_STATS 2
+#define PERMISSION_BIT_NO_INTERNET 4
 // LINT.ThenChange(../../common/src/com/android/net/module/util/bpf/UidPermissionChunk.java)
 
 typedef struct {
     uint64_t block[CHUNK_INT64_COUNT];
 } UidPermissionChunk;
 STRUCT_SIZE(UidPermissionChunk, 8 * CHUNK_INT64_COUNT); // 8 * 128 = 1024
+
+// Uid and Pid that have local network permission and access local network
+typedef struct {
+    uint32_t uid;
+    uint32_t pid;
+} LocalNetNoteOp;
+STRUCT_SIZE(LocalNetNoteOp, 4 + 4); // 8
 
 // Entry in the configuration map that stores which UID rules are enabled.
 #define UID_RULES_CONFIGURATION_KEY 0

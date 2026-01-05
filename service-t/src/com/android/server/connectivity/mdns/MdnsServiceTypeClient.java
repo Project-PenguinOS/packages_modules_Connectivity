@@ -17,10 +17,14 @@
 package com.android.server.connectivity.mdns;
 
 import static com.android.net.module.util.HandlerUtils.ensureRunningOnHandlerThread;
+import static com.android.server.connectivity.mdns.MdnsConstants.getServiceRemovedMessage;
 import static com.android.server.connectivity.mdns.MdnsSearchOptions.AGGRESSIVE_QUERY_MODE;
 import static com.android.server.connectivity.mdns.MdnsServiceCache.ServiceExpiredCallback;
 import static com.android.server.connectivity.mdns.MdnsServiceCache.findMatchedResponse;
 import static com.android.server.connectivity.mdns.MdnsQueryScheduler.ScheduledQueryTaskArgs;
+import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_GOODBYE_RECEIVED;
+import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_SOCKET_DESTROYED;
+import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_TTL_EXPIRED;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.Clock;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.buildMdnsServiceInfoFromResponse;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.convertNsdServiceInfoToMdnsResponse;
@@ -58,6 +62,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 
 /**
@@ -97,7 +102,8 @@ public class MdnsServiceTypeClient {
                 @Override
                 public void onServiceRecordExpired(@NonNull MdnsResponse previousResponse,
                         @Nullable MdnsResponse newResponse) {
-                    notifyRemovedServiceToListeners(previousResponse, "Service record expired");
+                    notifyRemovedServiceToListeners(
+                            previousResponse, SERVICE_REMOVED_BY_TTL_EXPIRED);
                 }
             };
     @NonNull private final MdnsFeatureFlags featureFlags;
@@ -282,7 +288,11 @@ public class MdnsServiceTypeClient {
                             getAllDiscoverySubtypes(), needSendDiscoveryQueries(listeners),
                             getExistingServices(), searchOptions.onlyUseIpv6OnIpv6OnlyNetworks(),
                             socketKey);
-                    executor.submit(queryTask);
+                    try {
+                        executor.submit(queryTask);
+                    } catch (RejectedExecutionException exception) {
+                        sharedLog.e("Submit a query task after the executor service is shut down");
+                    }
                     break;
                 }
                 case EVENT_QUERY_RESULT: {
@@ -830,7 +840,7 @@ public class MdnsServiceTypeClient {
     }
 
     private void notifyRemovedServiceToListeners(@NonNull MdnsResponse response,
-            @NonNull String message) {
+            int serviceRemovedReason) {
         final String serviceInstanceName = response.getServiceInstanceName();
         if (serviceInstanceName == null) {
             return;
@@ -854,11 +864,13 @@ public class MdnsServiceTypeClient {
                     response, serviceTypeLabels, clock.elapsedRealtime(), socketKey);
 
             if (response.isComplete()) {
-                sharedLog.log(message + ". onServiceRemoved: " + serviceInfo);
-                listener.onServiceRemoved(serviceInfo);
+                sharedLog.log(getServiceRemovedMessage(serviceRemovedReason)
+                        + ". onServiceRemoved: " + serviceInfo);
+                listener.onServiceRemoved(serviceInfo, serviceRemovedReason);
             }
-            sharedLog.log(message + ". onServiceNameRemoved: " + serviceInfo);
-            listener.onServiceNameRemoved(serviceInfo);
+            sharedLog.log(getServiceRemovedMessage(serviceRemovedReason)
+                    + ". onServiceNameRemoved: " + serviceInfo);
+            listener.onServiceNameRemoved(serviceInfo, serviceRemovedReason);
         }
     }
 
@@ -867,7 +879,12 @@ public class MdnsServiceTypeClient {
         ensureRunningOnHandlerThread(handler);
         for (MdnsResponse response : serviceCache.getCachedServices(
                 cacheKey, false /* excludeExpiredServices */)) {
-            notifyRemovedServiceToListeners(response, "Socket destroyed");
+            notifyRemovedServiceToListeners(response, SERVICE_REMOVED_BY_SOCKET_DESTROYED);
+        }
+        // Remove all listeners and update offload info.
+        while (!listeners.isEmpty()) {
+            final ListenerInfo listenerInfo = listeners.removeAt(listeners.size() - 1);
+            updateOffloadInfo(listenerInfo.filterRepliesInfo.serviceName, null /* newInfo */);
         }
         shutDown();
     }
@@ -938,7 +955,7 @@ public class MdnsServiceTypeClient {
         if (response == null) {
             return;
         }
-        notifyRemovedServiceToListeners(response, "Goodbye received");
+        notifyRemovedServiceToListeners(response, SERVICE_REMOVED_BY_GOODBYE_RECEIVED);
     }
 
     private boolean shouldRemoveServiceAfterTtlExpires() {
@@ -1001,7 +1018,7 @@ public class MdnsServiceTypeClient {
                     && existingResponse.getServiceRecord()
                     .getRemainingTTL(clock.elapsedRealtime()) == 0) {
                 serviceCache.removeService(existingResponse.getServiceInstanceName(), cacheKey);
-                notifyRemovedServiceToListeners(existingResponse, "TTL expired");
+                notifyRemovedServiceToListeners(existingResponse, SERVICE_REMOVED_BY_TTL_EXPIRED);
             }
         }
     }

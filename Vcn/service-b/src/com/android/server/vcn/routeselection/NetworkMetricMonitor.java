@@ -24,7 +24,9 @@ import android.annotation.TargetApi;
 import android.net.IpSecTransform;
 import android.net.IpSecTransformState;
 import android.net.Network;
+import android.net.vcn.Flags;
 import android.os.Build;
+import android.os.Handler;
 import android.os.OutcomeReceiver;
 import android.util.CloseGuard;
 import android.util.Slog;
@@ -34,6 +36,7 @@ import com.android.internal.annotations.VisibleForTesting.Visibility;
 import com.android.server.vcn.VcnCarrierConfig;
 import com.android.server.vcn.VcnContext;
 
+import java.util.ListIterator;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 
@@ -49,15 +52,23 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
 
     private static final boolean VDBG = false; // STOPSHIP: if true
 
+    public static final int[] PENALTY_TIMEOUT_MINUTES_DEFAULT = new int[] {2, 4, 8, 16};
+    private static final long PENALTY_TIMEOUT_MIN = 1;
+
     @NonNull private final CloseGuard mCloseGuard = new CloseGuard();
 
+    @NonNull private final Handler mHandler;
     @NonNull private final VcnContext mVcnContext;
     @NonNull private final Network mNetwork;
     @NonNull private final NetworkMetricMonitorCallback mCallback;
+    @NonNull private final Object mCancellationToken = new Object();
 
     private boolean mIsSelectedUnderlyingNetwork;
     private boolean mIsStarted;
     private boolean mIsValidationSucceeded;
+
+    private boolean mIsPenalized;
+    @NonNull private ListIterator<Long> mPenaltyTimeoutIterator;
 
     protected NetworkMetricMonitor(
             @NonNull VcnContext vcnContext,
@@ -69,17 +80,42 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
         mNetwork = Objects.requireNonNull(network, "Missing network");
         mCallback = Objects.requireNonNull(callback, "Missing callback");
 
+        mHandler = new Handler(getVcnContext().getLooper());
+
         mIsSelectedUnderlyingNetwork = false;
         mIsStarted = false;
 
         // Assume the network is good before running validation
         mIsValidationSucceeded = true;
+
+        mPenaltyTimeoutIterator = carrierConfig.getNwSelectPenaltyTimeoutMillis().listIterator();
+        mIsPenalized = false;
+
+        validate();
+    }
+
+    private void validate() {
+        if (!mPenaltyTimeoutIterator.hasNext()) {
+            throw new IllegalArgumentException("Penalty Timeout Millis list is empty");
+        }
+
+        while (mPenaltyTimeoutIterator.hasNext()) {
+            final long timeout = mPenaltyTimeoutIterator.next();
+            if (timeout < PENALTY_TIMEOUT_MIN) {
+                throw new IllegalArgumentException("Invalid penalty timeout " + timeout);
+            }
+        }
+
+        rewind(mPenaltyTimeoutIterator);
     }
 
     /** Callback to notify caller of the validation result */
     public interface NetworkMetricMonitorCallback {
         /** Called when there is a validation result is ready */
         void onValidationResultReceived();
+
+        /** Called when there the penalty state has changed */
+        void onIsPenalizedChanged();
     }
 
     /**
@@ -100,14 +136,67 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
      * <p>Subclasses MUST call super.stop() when overriding this method
      */
     public void stop() {
-        mIsValidationSucceeded = true;
         mIsStarted = false;
+    }
+
+    private static void rewind(ListIterator it) {
+        while (it.hasPrevious()) it.previous();
+    }
+
+    public class ExitPenaltyBoxRunnable implements Runnable {
+        @Override
+        public void run() {
+            if (!mIsPenalized) {
+                logWtf("Monitor not being penalized but ExitPenaltyBoxRunnable was scheduled");
+                return;
+            }
+
+            mIsPenalized = false;
+            mCallback.onIsPenalizedChanged();
+        }
     }
 
     /** Called by the subclasses when the validation result is ready */
     protected void onValidationResultReceivedInternal(boolean isSucceeded) {
-        mIsValidationSucceeded = isSucceeded;
-        mCallback.onValidationResultReceived();
+        if (Flags.improvePacketLossDetector()) {
+            final boolean oldIsPenalized = mIsPenalized;
+            mIsPenalized = !isSucceeded;
+
+            logV("#onValidationResultReceivedInternal: isSucceeded " + isSucceeded);
+
+            if (!mIsPenalized) {
+                // Regardless of the previous state, the network has affirmatively passed
+                // validation, so it is known to be good/working. Reset all monitor state.
+                rewind(mPenaltyTimeoutIterator);
+                mHandler.removeCallbacksAndEqualMessages(mCancellationToken);
+            } else if (!oldIsPenalized) {
+                // The network transitions either from "unknown" or from "successful validation" to
+                // "failing validation".
+
+                // When max penalty reached, call previous() to return the last item and move the
+                // cursor to immediately before the last item. This ensures the next call
+                // to .next() returns this last item again.
+                final long penaltyTimeoutMillis =
+                        mPenaltyTimeoutIterator.hasNext()
+                                ? mPenaltyTimeoutIterator.next()
+                                : mPenaltyTimeoutIterator.previous();
+
+                mHandler.postDelayed(
+                        new ExitPenaltyBoxRunnable(), mCancellationToken, penaltyTimeoutMillis);
+                logInfo(
+                        "#onValidationResultReceivedInternal: Penalize for "
+                                + penaltyTimeoutMillis
+                                + "ms");
+            }
+
+            // Notify the callback if penalty state has changed
+            if (oldIsPenalized != mIsPenalized) {
+                mCallback.onIsPenalizedChanged();
+            }
+        } else {
+            mIsValidationSucceeded = isSucceeded;
+            mCallback.onValidationResultReceived();
+        }
     }
 
     /** Called when the underlying network changes to selected or unselected */
@@ -182,7 +271,11 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
 
     /** Update the carrierconfig */
     public void setCarrierConfig(@NonNull VcnCarrierConfig carrierConfig) {
-        // Subclasses MUST override it if they care
+        // Updating the penalty timeout will also mean that the next timeout will start over from
+        // the first provided timeout in the new list even though the monitor might have been failed
+        // multiple times
+        mPenaltyTimeoutIterator = carrierConfig.getNwSelectPenaltyTimeoutMillis().listIterator();
+        validate();
     }
 
     /** Called when LinkProperties or NetworkCapabilities have changed */
@@ -192,6 +285,10 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
 
     public boolean isValidationSucceeded() {
         return mIsValidationSucceeded;
+    }
+
+    public boolean isPenalized() {
+        return mIsPenalized;
     }
 
     public boolean isSelectedUnderlyingNetwork() {
@@ -216,6 +313,7 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
     @Override
     public void close() {
         mCloseGuard.close();
+        mHandler.removeCallbacksAndEqualMessages(mCancellationToken);
 
         stop();
     }

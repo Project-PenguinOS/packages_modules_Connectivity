@@ -91,11 +91,11 @@ public class NsdManagerTest {
     public void setUp() throws Exception {
         MockitoAnnotations.initMocks(this);
 
-        doReturn(mServiceConn).when(mService).connect(any(), anyBoolean());
+        doReturn(mServiceConn).when(mService).connect(any(), anyBoolean(), any());
         mManager = new NsdManager(mContext, mService);
         final ArgumentCaptor<INsdManagerCallback> cbCaptor = ArgumentCaptor.forClass(
                 INsdManagerCallback.class);
-        verify(mService).connect(cbCaptor.capture(), anyBoolean());
+        verify(mService).connect(cbCaptor.capture(), anyBoolean(), any());
         mCallback = cbCaptor.getValue();
     }
 

@@ -45,6 +45,8 @@
     <!-- Permission required for CTS test - NetworkStatsIntegrationTest -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS"/>
+    <!-- ClatTest sends Multicast packets -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <application android:debuggable="true">
         <uses-library android:name="android.test.runner"/>
 

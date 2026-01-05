@@ -224,7 +224,9 @@ java_library {
         "networkstack-client",
         "PlatformProperties",
         "service-connectivity-protos",
+        "service-connectivity-resources-aidl",
         "service-connectivity-stats-protos",
+        "jsr305",
     ],
     apex_available: [
         "com.android.tethering",
@@ -294,7 +296,7 @@ java_defaults {
     libs: [
         "androidx.annotation_annotation",
         "framework-annotations-lib",
-        "framework-connectivity.impl",
+        "framework-connectivity-post-jarjar",
         "framework-connectivity-t.impl",
         "framework-tethering.impl",
         "framework-wifi.stubs.module_lib",

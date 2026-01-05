@@ -95,7 +95,8 @@ public class MdnsPacketReaderTests {
                         + "C006"); // PTR to second label.
         MdnsPacketReader packetReader = new MdnsPacketReader(
                 infinitePtrLoopData, infinitePtrLoopData.length,
-                MdnsFeatureFlags.newBuilder().setIsLabelCountLimitEnabled(true).build());
+                MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+                        .setIsLabelCountLimitEnabled(true).build());
         assertThrows(IOException.class, packetReader::readLabels);
     }
 }

@@ -20,6 +20,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.util.SparseArray;
 
+import com.android.internal.annotations.VisibleForTesting;
 import com.android.server.connectivity.mdns.MdnsServiceInfo.TextEntry;
 
 import java.io.EOFException;
@@ -43,9 +44,11 @@ public class MdnsPacketReader {
     private int pos;
     private int limit;
 
-    /** Constructs a reader for the given packet. */
-    public MdnsPacketReader(DatagramPacket packet) {
-        this(packet.getData(), packet.getLength(), MdnsFeatureFlags.newBuilder().build());
+    /** Constructs a reader for the given packet. For testing only. */
+    @VisibleForTesting
+    MdnsPacketReader(DatagramPacket packet) {
+        this(packet.getData(), packet.getLength(),
+                MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build());
     }
 
     /** Constructs a reader for the given packet. */

@@ -76,9 +76,10 @@ DEFINE_BPF_MAP_NO_NETD(iface_stats_map, HASH, uint32_t, StatsValue, 1000)
 DEFINE_BPF_MAP_RO_NETD(uid_owner_map, HASH, uint32_t, UidOwnerValue, 20000)
 DEFINE_BPF_MAP_RO_NETD(uid_permission_map, HASH, uint32_t, uint8_t, 6000)
 // Support up to 2688 * 400 = 1,075,200 UIDs
-DEFINE_BPF_MAP_NO_NETD(uid_permission_chunk_map, HASH, uint32_t, UidPermissionChunk, -400)
+DEFINE_BPF_MAP_RO_NETD(uid_permission_chunk_map, HASH, uint32_t, UidPermissionChunk, -400)
 DEFINE_BPF_MAP_NO_NETD(ingress_discard_map, HASH, IngressDiscardKey, IngressDiscardValue, 100)
 
+DEFINE_BPF_MAP_RW_NETD(netd_pid_map, ARRAY, uint32_t, uint32_t, 1)
 DEFINE_BPF_MAP_RW_NETD(lock_array_test_map, ARRAY, uint32_t, bool, 1)
 DEFINE_BPF_MAP_RW_NETD(lock_hash_test_map, HASH, uint32_t, bool, 1)
 
@@ -108,7 +109,20 @@ DEFINE_BPF_MAP_EXT(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000,
                    AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
                    BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
 
-DEFINE_BPF_MAP_NO_NETD(uid_migration_enabled_map, ARRAY, uint32_t, bool, 1)
+DEFINE_BPF_MAP_RO_NETD(uid_migration_enabled_map, ARRAY, uint32_t, bool, 1)
+
+DEFINE_BPF_MAP_NO_NETD(permission_propagation_enabled_map, ARRAY, uint32_t,
+                       bool, 1)
+// A ring buffer on which note op event of local network access is pushed.
+DEFINE_BPF_RINGBUF_EXT(local_net_note_op_ringbuf, LocalNetNoteOp, 8 * 512,
+                       AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
+                       BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER);
+DEFINE_BPF_MAP_EXT(local_net_note_op_cache_map, LRU_HASH, uint32_t, uint32_t, 100,
+                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
+                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_EXT(local_net_note_op_enabled_map, ARRAY, uint32_t, bool, 1,
+                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
+                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
 
 // iptables xt_bpf programs need to be usable by both netd and netutils_wrappers
 // selinux contexts, because even non-xt_bpf iptables mutations are implemented as
@@ -264,15 +278,8 @@ static inline __always_inline bool is_local_net_access_allowed(const uint32_t if
     return v ? *v : true;
 }
 
-static __always_inline inline bool should_block_local_network_packets(struct __sk_buff *skb,
-                                   const uint32_t uid, const struct egress_bool egress,
-                                   const struct kver_uint kver) {
-    if (is_system_uid(uid)) return false;
-
-    bool* block_local_net = bpf_local_net_blocked_uid_map_lookup_elem(&uid);
-    if (!block_local_net) return false; // uid not found in map
-    if (!*block_local_net) return false; // lookup returned 'bool false'
-
+static __always_inline inline bool is_restricted_local_network(struct __sk_buff *skb,
+                                   const struct egress_bool egress, const struct kver_uint kver) {
     struct in6_addr remote_ip6;
     uint8_t ip_proto;
     uint8_t L4_off;
@@ -307,6 +314,82 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
     }
 
     return !is_local_net_access_allowed(skb->ifindex, &remote_ip6, ip_proto, remote_port);
+}
+
+static __always_inline inline uint8_t
+get_chunk_permissions(const uint32_t uid) {
+    // All chunks has the same size CHUNK_INT64_COUNT
+    uint32_t chunkId = uid / CHUNK_UID_COUNT;
+    uint32_t index = uid / UIDS_PER_INT64 % CHUNK_INT64_COUNT;
+    int shift = (uid % UIDS_PER_INT64 * PERMISSION_COUNT) & 63;
+
+    UidPermissionChunk *chunk =
+        bpf_uid_permission_chunk_map_lookup_elem(&chunkId);
+    return chunk ? ((chunk->block[index] >> shift) & UID_PERMISSION_MASK)
+                 : PERMISSION_BIT_NONE;
+}
+
+#define NS_PER_MINUTE (60ULL * 1000ULL * 1000ULL * 1000ULL)
+
+static __always_inline inline bool is_local_network_access_blocked(const uint32_t uid) {
+    uint32_t mapKey = 0;
+    bool *permissionPropagationEnabled =
+        bpf_permission_propagation_enabled_map_lookup_elem(&mapKey);
+    if (permissionPropagationEnabled && *permissionPropagationEnabled) {
+        // TODO: stop exempting system uids once the test failure is fixed
+        if (is_system_uid(uid)) return false;
+        if (get_chunk_permissions(uid) & PERMISSION_BIT_ACCESS_LOCAL_NETWORK)
+            return false;
+    } else {
+        // System uid has access to restricted local network
+        if (is_system_uid(uid)) return false;
+
+        // Uid that is not in the blocked uid map has access to restricted local network
+        bool* block_local_net = bpf_local_net_blocked_uid_map_lookup_elem(&uid);
+        if (!block_local_net) return false; // uid not found in map
+        if (!*block_local_net) return false; // lookup returned 'bool false'
+    }
+    return true;
+}
+
+static __always_inline inline bool should_block_local_network_packets(struct __sk_buff *skb,
+                                   const uint32_t uid, const struct egress_bool egress,
+                                   const struct kver_uint kver) {
+    bool reportLocalAccess = false;
+    if (KVER_IS_AT_LEAST(kver, 5, 10, 0)) {
+        uint32_t key = 0;
+        bool *noteOpEnabled = bpf_local_net_note_op_enabled_map_lookup_elem(&key);
+        reportLocalAccess = noteOpEnabled && *noteOpEnabled;
+    }
+    bool isRestricted;
+    if (reportLocalAccess) {
+        isRestricted = is_restricted_local_network(skb, egress, kver);
+        // Currently, generate events for all local network access, regardless of the UID's
+        // permission status.
+        // This is to identify all UIDs that are accessing the local network.
+        if (isRestricted) {
+            // Cache to report only once per minute per UID.
+            uint32_t* lastReportMinutes = bpf_local_net_note_op_cache_map_lookup_elem(&uid);
+            uint32_t bootMinutes = (uint32_t) (bpf_ktime_get_boot_ns() / NS_PER_MINUTE);
+            if (!lastReportMinutes || *lastReportMinutes < bootMinutes) {
+                LocalNetNoteOp *noteOp = bpf_local_net_note_op_ringbuf_reserve();
+                if (noteOp != NULL) {
+                    noteOp->uid = uid;
+                    bpf_local_net_note_op_ringbuf_submit(noteOp);
+                    bpf_local_net_note_op_cache_map_update_elem(&uid, &bootMinutes, BPF_ANY);
+                }
+            }
+        }
+    }
+
+    if (!is_local_network_access_blocked(uid)) {
+        return false;
+    }
+
+    if (!reportLocalAccess) {
+        isRestricted = is_restricted_local_network(skb, egress, kver);
+    }
+    return isRestricted;
 }
 
 static __always_inline inline void do_packet_tracing(
@@ -610,84 +693,84 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 //
 // Not relevant for eBPF, but R can also run on 4.4
 
-// ----- cgroupskb/ingress/stats -----
+// ----- ingress/stats -----
 
 // Android 25Q2+ 5.10+ (localnet protection + tracing)
-DEFINE_NETD_BPF_PROG_RANGES(cgroupskb, ingress_stats, 5_10_25q2, 5_10, INF,
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_25q2, 5_10, INF,
                             BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_25Q2);
 }
 
 // Android 25Q2+ 5.4 (localnet protection)
-DEFINE_NETD_BPF_PROG_RANGES(cgroupskb, ingress_stats, 5_4_25q2, 5_4, 5_10,
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_4_25q2, 5_4, 5_10,
                             BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_4, SDK_LEVEL_25Q2);
 }
 
 // Android U/V 5.10+ (tracing)
-DEFINE_NETD_BPF_PROG_RANGES(cgroupskb, ingress_stats, 5_10_u, 5_10, INF,
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_u, 5_10, INF,
                             BPFLOADER_MAINLINE_U_VERSION, BPFLOADER_MAINLINE_25Q2_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_U);
 }
 
 // Android T/U/V/25Q2 5.4 & T 5.10/5.15
-DEFINE_NETD_BPF_PROG_KVER_RANGE(cgroupskb, ingress_stats, 5_4, 5_4, INF)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 5_4, 5_4, INF)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_4, SDK_LEVEL_T);
 }
 
 // Android T/U/V 4.19
-DEFINE_NETD_BPF_PROG_KVER_RANGE(cgroupskb, ingress_stats, 4_19, 4_19, 5_4)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_19, 4_19, 5_4)
 (struct __sk_buff* skb) {
 return bpf_traffic_account(skb, INGRESS, KVER_4_19, SDK_LEVEL_T);
 }
 
 // Android T 4.9 & T/U 4.14
-DEFINE_NETD_BPF_PROG_KVER_RANGE(cgroupskb, ingress_stats, 4_9, 4_9, 4_19)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_9, 4_9, 4_19)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_4_9, SDK_LEVEL_T);
 }
 
-// ----- cgroupskb/egress/stats -----
+// ----- egress/stats -----
 
 // Android 25Q2+ 5.10+ (localnet protection + tracing)
-DEFINE_NETD_BPF_PROG_RANGES(cgroupskb, egress_stats, 5_10_25q2, 5_10, INF,
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_25q2, 5_10, INF,
                             BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_25Q2);
 }
 
 // Android 25Q2+ 5.4 (localnet protection)
-DEFINE_NETD_BPF_PROG_RANGES(cgroupskb, egress_stats, 5_4_25q2, 5_4, 5_10,
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_4_25q2, 5_4, 5_10,
                             BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_4, SDK_LEVEL_25Q2);
 }
 
 // Android U/V 5.10+ (tracing)
-DEFINE_NETD_BPF_PROG_RANGES(cgroupskb, egress_stats, 5_10_u, 5_10, INF,
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_u, 5_10, INF,
                             BPFLOADER_MAINLINE_U_VERSION, BPFLOADER_MAINLINE_25Q2_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_U);
 }
 
 // Android T/U/V/25Q2 5.4 & T 5.10/5.15
-DEFINE_NETD_BPF_PROG_KVER_RANGE(cgroupskb, egress_stats, 5_4, 5_4, INF)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 5_4, 5_4, INF)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_4, SDK_LEVEL_T);
 }
 
 // Android T/U/V 4.19
-DEFINE_NETD_BPF_PROG_KVER_RANGE(cgroupskb, egress_stats, 4_19, 4_19, 5_4)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 4_19, 4_19, 5_4)
 (struct __sk_buff* skb) {
 return bpf_traffic_account(skb, EGRESS, KVER_4_19, SDK_LEVEL_T);
 }
 
 // Android T 4.9 & T/U 4.14
-DEFINE_NETD_BPF_PROG_KVER_RANGE(cgroupskb, egress_stats, 4_9, 4_9, 4_19)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 4_9, 4_9, 4_19)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_4_9, SDK_LEVEL_T);
 }
@@ -768,47 +851,40 @@ DEFINE_XTBPF_PROG(skfilter, denylist_xtbpf, )
 static __always_inline inline uint8_t get_app_permissions() {
     uint64_t gid_uid = bpf_get_current_uid_gid();
     uint32_t uid = (gid_uid & 0xffffffff);
-
-    uint32_t mapKey = 0;
-    bool *uidMigrationEnabled =
-        bpf_uid_migration_enabled_map_lookup_elem(&mapKey);
-    if (uidMigrationEnabled && *uidMigrationEnabled) {
-
-        uint32_t chunkId = uid / CHUNK_UID_COUNT;
-        // All chunks has the same size CHUNK_INT64_COUNT
-        uint32_t index = uid / UIDS_PER_INT64 % CHUNK_INT64_COUNT;
-        int shift = (uid % UIDS_PER_INT64 * PERMISSION_COUNT) & 63;
-        UidPermissionChunk *chunk =
-            bpf_uid_permission_chunk_map_lookup_elem(&chunkId);
-        return chunk
-                   ? ((chunk->block[index] >> shift) & UID_PERMISSION_MASK)
-                   : BPF_PERMISSION_NONE;
-    } else {
-        /*
-         * A given app is guaranteed to have the same app ID in all the profiles
-         * in which it is installed, and install permission is granted to app
-         * for all user at install time so we only check the appId part of a
-         * request uid at run time. See UserHandle#isSameApp for detail.
-         */
-        uint32_t appId = uid % AID_USER_OFFSET; // == PER_USER_RANGE == 100000
-        uint8_t *permissions = bpf_uid_permission_map_lookup_elem(&appId);
-        // if UID not in map, then default to just INTERNET permission.
-        return permissions ? *permissions : BPF_PERMISSION_INTERNET;
-    }
+    /*
+     * A given app is guaranteed to have the same app ID in all the profiles
+     * in which it is installed, and install permission is granted to app
+     * for all user at install time so we only check the appId part of a
+     * request uid at run time. See UserHandle#isSameApp for detail.
+     */
+    uint32_t appId = uid % AID_USER_OFFSET; // == PER_USER_RANGE == 100000
+    uint8_t *permissions = bpf_uid_permission_map_lookup_elem(&appId);
+    // if UID not in map, then default to just INTERNET permission.
+    return permissions ? *permissions : BPF_PERMISSION_INTERNET;
 }
 
 static __always_inline inline int inet_socket_create(struct bpf_sock* sk,
                                                      const struct kver_uint kver) {
+    uint64_t gid_uid = bpf_get_current_uid_gid();
     if (KVER_IS_AT_LEAST(kver, 5, 10, 0)) {
         SkStorageValue *v = bpf_sk_storage_get(sk, 0, BPF_SK_STORAGE_GET_F_CREATE);
         if (v) {
             v->cookie = bpf_get_sk_cookie(sk);
-            uint64_t gid_uid = bpf_get_current_uid_gid();
             v->uid = gid_uid;
             v->gid = (gid_uid >> 32);
         }
     }
-    return (get_app_permissions() & BPF_PERMISSION_INTERNET) ? BPF_ALLOW : BPF_DISALLOW;
+
+    uint32_t mapKey = 0;
+    bool *uidMigrationEnabled = bpf_uid_migration_enabled_map_lookup_elem(&mapKey);
+    if (uidMigrationEnabled && *uidMigrationEnabled) {
+        uint32_t uid = (gid_uid & 0xffffffff);
+        return (get_chunk_permissions(uid) & PERMISSION_BIT_NO_INTERNET)
+                   ? BPF_DISALLOW
+                   : BPF_ALLOW;
+    } else {
+        return (get_app_permissions() & BPF_PERMISSION_INTERNET) ? BPF_ALLOW : BPF_DISALLOW;
+    }
 }
 
 DEFINE_NETD_BPF_PROG_KVER(cgroupsock, inet_create, 5_10, 5_10)
@@ -847,10 +923,12 @@ static __always_inline inline int check_localhost(__unused struct bpf_sock_addr 
     return BPF_ALLOW;
 }
 
-static inline __always_inline int block_port(struct bpf_sock_addr *ctx) {
-    if (!ctx->user_port) return BPF_ALLOW;
+// --- BIND CGROUP HOOKS ---
 
-    switch (ctx->protocol) {
+static inline __always_inline bool block_bind_port(__u32 protocol, __be16 user_port) {
+    if (!user_port) return false;
+
+    switch (protocol) {
         case IPPROTO_TCP:
         case IPPROTO_MPTCP:
         case IPPROTO_UDP:
@@ -859,29 +937,73 @@ static inline __always_inline int block_port(struct bpf_sock_addr *ctx) {
         case IPPROTO_SCTP:
             break;
         default:
-            return BPF_ALLOW; // unknown protocols are allowed
+            return false; // unknown protocols are allowed
     }
 
-    int key = ctx->user_port >> 6;
-    int shift = ctx->user_port & 63;
+    // Note: user_port is in network byte order, so bitmap ordering is funky.
+    int key = user_port >> 6;
+    int shift = user_port & 63;
 
     uint64_t *val = bpf_blocked_ports_map_lookup_elem(&key);
     // Lookup should never fail in reality, but if it does return here to keep the
     // BPF verifier happy.
-    if (!val) return BPF_ALLOW;
+    if (!val) return false;
 
-    if ((*val >> shift) & 1) return BPF_DISALLOW;
+    if ((*val >> shift) & 1) return true;
+    return false;
+}
+
+static inline __always_inline bool is_netd() {
+    uint32_t uid = bpf_get_current_uid_gid();  // low 32 bits is uid
+    if (uid) return false;  // netd runs as root
+
+    const uint32_t key = 0;
+    uint32_t *pid = bpf_netd_pid_map_lookup_elem(&key);
+    if (!pid) return false;
+
+    // userspace system call 'getpid()' returns what kernel/ebpf calls 'tgid' (thread group id)
+    // (while what kernel/ebpf calls 'pid' is returned by linux specific system call 'gettid()')
+    uint32_t tgid = bpf_get_current_pid_tgid() >> 32;  // high 32 bits is tgid
+    return tgid == *pid;
+}
+
+// kernel's include/linux/bpf.h defines flag BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE as (1 << 0) == 1,
+// as a flag, it must be shifted up by 1 (making it == 2) and combined with 'generic' ALLOW (== 1)
+static const int BPF_ALLOW_IGNORING_CAP_NET_BIND = BPF_ALLOW + 2;
+
+static inline __always_inline int inet_bind(struct bpf_sock_addr *ctx,
+                                            const struct kver_uint kver) {
+    const bool is5_15 = KVER_IS_AT_LEAST(kver, 5, 15, 0);
+    if (block_bind_port(ctx->protocol, ctx->user_port)) return BPF_DISALLOW;
+    if (is5_15 && ctx->user_port == htons(53) && is_netd()) return BPF_ALLOW_IGNORING_CAP_NET_BIND;
     return BPF_ALLOW;
 }
 
-DEFINE_NETD_BPF_PROG_KVER(bind4, inet4_bind, , 4_19)
+DEFINE_NETD_BPF_PROG_KVER(bind4, inet4_bind, 5_15, 5_15)
 (struct bpf_sock_addr *ctx) {
-    return block_port(ctx);
+    return inet_bind(ctx, KVER_5_15);
 }
 
-DEFINE_NETD_BPF_PROG_KVER(bind6, inet6_bind, , 4_19)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(bind4, inet4_bind, 4_19, 4_19, 5_15)
 (struct bpf_sock_addr *ctx) {
-    return block_port(ctx);
+    return inet_bind(ctx, KVER_4_19);
+}
+
+DEFINE_NETD_BPF_PROG_KVER(bind6, inet6_bind, 5_15, 5_15)
+(struct bpf_sock_addr *ctx) {
+    return inet_bind(ctx, KVER_5_15);
+}
+
+DEFINE_NETD_BPF_PROG_KVER_RANGE(bind6, inet6_bind, 4_19, 4_19, 5_15)
+(struct bpf_sock_addr *ctx) {
+    return inet_bind(ctx, KVER_4_19);
+}
+
+// --- CONNECT CGROUP HOOKS ---
+
+DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, 5_10, 5_10)
+(struct bpf_sock_addr *ctx) {
+    return check_localhost(ctx);
 }
 
 DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect4, inet4_connect, 4_19, 4_19, 5_10)
@@ -889,7 +1011,7 @@ DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect4, inet4_connect, 4_19, 4_19, 5_10)
     return check_localhost(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, 5_10, 5_10)
+DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, 5_10, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
@@ -899,10 +1021,7 @@ DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect6, inet6_connect, 4_19, 4_19, 5_10)
     return check_localhost(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
+// --- UDP RECVMSG HOOKS ---
 
 DEFINE_NETD_V_BPF_PROG_KVER(recvmsg4, udp4_recvmsg, , 4_19)
 (struct bpf_sock_addr *ctx) {
@@ -914,18 +1033,14 @@ DEFINE_NETD_V_BPF_PROG_KVER(recvmsg6, udp6_recvmsg, , 4_19)
     return check_localhost(ctx);
 }
 
-
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg4, udp4_sendmsg, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
+// --- UDP SENDMSG HOOKS ---
 
 DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, 5_10, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg6, udp6_sendmsg, 4_19, 4_19, 5_10)
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg4, udp4_sendmsg, 4_19, 4_19, 5_10)
 (struct bpf_sock_addr *ctx) {
     return check_localhost(ctx);
 }
@@ -935,6 +1050,13 @@ DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, 5_10, 5_10)
     return check_localhost(ctx);
 }
 
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg6, udp6_sendmsg, 4_19, 4_19, 5_10)
+(struct bpf_sock_addr *ctx) {
+    return check_localhost(ctx);
+}
+
+// --- GETSOCKOPT HOOK ---
+
 DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, , 5_4)
 (struct bpf_sockopt *ctx) {
     // Tell kernel to return 'original' kernel reply (instead of the bpf modified buffer)
@@ -942,6 +1064,8 @@ DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, , 5_4)
     ctx->optlen = 0;
     return BPF_ALLOW;
 }
+
+// --- SETSOCKOPT HOOK ---
 
 DEFINE_NETD_V_BPF_PROG_KVER(setsockopt, prog, , 5_4)
 (struct bpf_sockopt *ctx) {

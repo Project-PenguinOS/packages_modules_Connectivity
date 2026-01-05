@@ -16,3 +16,13 @@ flag {
      is_exported: true
      bug: "376339506"
 }
+
+flag {
+     name: "improve_packet_loss_detector"
+     namespace: "vcn"
+     description: "Improve the IPsec packet loss detector"
+     bug: "430391135"
+     metadata {
+        purpose: PURPOSE_BUGFIX
+     }
+}

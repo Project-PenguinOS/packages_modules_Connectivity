@@ -127,7 +127,8 @@ public class MdnsDiscoveryManagerTests {
         doReturn(thread.getLooper()).when(socketClient).getLooper();
         doReturn(true).when(socketClient).supportsRequestingSpecificNetworks();
         createdServiceTypeClientCount = 0;
-        discoveryManager = makeDiscoveryManager(MdnsFeatureFlags.newBuilder().build());
+        discoveryManager = makeDiscoveryManager(
+                MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build());
         doReturn(mockExecutorService).when(mockServiceTypeClientType1NullNetwork).getExecutor();
         doReturn(mockExecutorService).when(mockServiceTypeClientType1Network1).getExecutor();
     }
@@ -438,6 +439,7 @@ public class MdnsDiscoveryManagerTests {
     @Test
     public void testRemoveServicesAfterAllListenersUnregistered() throws IOException {
         final MdnsFeatureFlags mdnsFeatureFlags = MdnsFeatureFlags.newBuilder()
+                .setAllFlagsForTesting()
                 .setIsCachedServicesRemovalEnabled(true)
                 .setCachedServicesRetentionTime(0L)
                 .build();
@@ -465,6 +467,7 @@ public class MdnsDiscoveryManagerTests {
     @Test
     public void testRemoveServicesAfterSocketDestroyed() throws IOException {
         final MdnsFeatureFlags mdnsFeatureFlags = MdnsFeatureFlags.newBuilder()
+                .setAllFlagsForTesting()
                 .setIsCachedServicesRemovalEnabled(true)
                 .setCachedServicesRetentionTime(0L)
                 .build();
@@ -496,6 +499,7 @@ public class MdnsDiscoveryManagerTests {
     @Test
     public void testNotifyOffloadStart() throws IOException {
         final MdnsFeatureFlags mdnsFeatureFlags = MdnsFeatureFlags.newBuilder()
+                .setAllFlagsForTesting()
                 .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
         discoveryManager = makeDiscoveryManager(mdnsFeatureFlags);
 

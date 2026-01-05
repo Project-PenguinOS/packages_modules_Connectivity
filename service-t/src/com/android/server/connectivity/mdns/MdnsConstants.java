@@ -40,6 +40,11 @@ public final class MdnsConstants {
     public static final int QCLASS_INTERNET = 0x0001;
     public static final int QCLASS_UNICAST = 0x8000;
     public static final int NO_PACKET = 0;
+    // This is a default state for service removal. It does not represent an actual removal event.
+    public static final int NO_SERVICE_REMOVED = 0;
+    public static final int SERVICE_REMOVED_BY_SOCKET_DESTROYED = 1;
+    public static final int SERVICE_REMOVED_BY_GOODBYE_RECEIVED = 2;
+    public static final int SERVICE_REMOVED_BY_TTL_EXPIRED = 3;
     public static final String SUBTYPE_LABEL = "_sub";
     public static final String SUBTYPE_PREFIX = "_";
     private static final String MDNS_IPV4_HOST_ADDRESS = "224.0.0.251";
@@ -80,5 +85,21 @@ public final class MdnsConstants {
 
     public static Charset getUtf8Charset() {
         return UTF_8;
+    }
+
+    /**
+     * Returns a human-readable string describing the reason for service removal.
+     *
+     * @param serviceRemovedReason The reason code for service removal.
+     * @return A descriptive string for the given reason code.
+     */
+    public static String getServiceRemovedMessage(int serviceRemovedReason) {
+        return switch (serviceRemovedReason) {
+            case NO_SERVICE_REMOVED -> "No service removed";
+            case SERVICE_REMOVED_BY_SOCKET_DESTROYED -> "Socket destroyed";
+            case SERVICE_REMOVED_BY_GOODBYE_RECEIVED -> "Goodbye received";
+            case SERVICE_REMOVED_BY_TTL_EXPIRED -> "TTL expired";
+            default -> "Unknown service removed reason: " + serviceRemovedReason;
+        };
     }
 }

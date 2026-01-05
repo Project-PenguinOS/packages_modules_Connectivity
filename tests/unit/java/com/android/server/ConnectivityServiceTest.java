@@ -31,6 +31,7 @@ import static android.Manifest.permission.NETWORK_SETUP_WIZARD;
 import static android.Manifest.permission.NETWORK_STACK;
 import static android.Manifest.permission.PACKET_KEEPALIVE_OFFLOAD;
 import static android.Manifest.permission.READ_DEVICE_CONFIG;
+import static android.Manifest.permission.SCHEDULE_PRIORITIZED_ALARM;
 import static android.Manifest.permission.STATUS_BAR_SERVICE;
 import static android.app.ActivityManager.UidFrozenStateChangedCallback.UID_FROZEN_STATE_FROZEN;
 import static android.app.ActivityManager.UidFrozenStateChangedCallback.UID_FROZEN_STATE_UNFROZEN;
@@ -400,6 +401,7 @@ import com.android.net.module.util.BaseNetdUnsolicitedEventListener;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.LocationPermissionChecker;
 import com.android.net.module.util.NetworkMonitorUtils;
+import com.android.net.module.util.SdkUtil;
 import com.android.networkstack.apishim.ConstantsShim;
 import com.android.networkstack.apishim.NetworkAgentConfigShimImpl;
 import com.android.networkstack.apishim.common.BroadcastOptionsShim;
@@ -1917,7 +1919,11 @@ public class ConnectivityServiceTest {
         mServiceContext.setPermission(NETWORK_FACTORY, PERMISSION_GRANTED);
         mServiceContext.setPermission(NETWORK_STACK, PERMISSION_GRANTED);
         mServiceContext.setPermission(CONTROL_OEM_PAID_NETWORK_PREFERENCE, PERMISSION_GRANTED);
-        mServiceContext.setPermission(PACKET_KEEPALIVE_OFFLOAD, PERMISSION_GRANTED);
+        if (SdkUtil.isAtLeast26Q2()) {
+            mServiceContext.setPermission(PACKET_KEEPALIVE_OFFLOAD, PERMISSION_GRANTED);
+        } else {
+            mServiceContext.setPermission(SCHEDULE_PRIORITIZED_ALARM, PERMISSION_GRANTED);
+        }
         mServiceContext.setPermission(CONNECTIVITY_USE_RESTRICTED_NETWORKS, PERMISSION_GRANTED);
         mServiceContext.setPermission(READ_DEVICE_CONFIG, PERMISSION_GRANTED);
 
@@ -7028,7 +7034,7 @@ public class ConnectivityServiceTest {
             throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_latency);
+                com.android.connectivity.tests.lib.R.xml.self_certified_capabilities_latency);
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH)
                 .build();
@@ -7046,7 +7052,7 @@ public class ConnectivityServiceTest {
             throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_bandwidth);
+                com.android.connectivity.tests.lib.R.xml.self_certified_capabilities_bandwidth);
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
                 .build();
@@ -7082,7 +7088,7 @@ public class ConnectivityServiceTest {
     public void requestNetwork_withNetworkSliceDeclaration_shouldSucceed() throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_all);
+                com.android.connectivity.tests.lib.R.xml.self_certified_capabilities_all);
 
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)
@@ -7101,7 +7107,7 @@ public class ConnectivityServiceTest {
     public void requestNetwork_withNetworkSliceDeclaration_shouldUseCache() throws Exception {
         mDeps.enableCompatChangeCheck();
         setupMockForNetworkCapabilitiesResources(
-                com.android.frameworks.tests.net.R.xml.self_certified_capabilities_all);
+                com.android.connectivity.tests.lib.R.xml.self_certified_capabilities_all);
 
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY)

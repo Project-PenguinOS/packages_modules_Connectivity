@@ -17,16 +17,31 @@
 package com.android.server.vcn;
 
 import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_TIME_DIFF_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MIN_SEQ_INC_INT;
 import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT;
 import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_POLL_INTERVAL_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_DURATION_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_POLL_INTERVAL_SEC_INT;
+import static android.net.vcn.VcnManager.KEY_NETWORK_SELECTION_PENALTY_TIMEOUT_MIN_INT_ARRAY;
 import static android.net.vcn.util.PersistableBundleUtils.PersistableBundleWrapper;
 
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_DEFAULT;
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.MAX_TIME_DIFF_SECONDS_DEFAULT;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.MIN_SEQ_NUM_INCREASE_DEFAULT;
 import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.RAPID_MODE_EXIT_TIMER_SECONDS_DEFAULT;
+import static com.android.server.vcn.routeselection.IpSecPacketLossDetector.RAPID_MODE_POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT;
+import static com.android.server.vcn.routeselection.NetworkMetricMonitor.PENALTY_TIMEOUT_MINUTES_DEFAULT;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * VcnCarrierConfig translates a carrier config bundle to VCN info that can be queried
@@ -37,6 +52,12 @@ public class VcnCarrierConfig {
     private final int mNwSelectIpSecLossDetectPollIntervalSec;
     private final int mNwSelectIpSecLossDetectPercentThreshold;
     private final int mNwSelectIpSecLossDetectMaxSeqIncPerSec;
+    private final int mNwSelectIpSecLossDetectMinSeqInc;
+    private final int mNwSelectIpSecLossDetectMaxTimeDiffSec;
+    private final int mNwSelectIpSecLossDetectRapidPollIntervalSec;
+    private final int mNwSelectIpSecLossDetectRapidDurationSec;
+
+    private final List<Long> mNwSelectPenaltyTimeoutMillis = new ArrayList<>();
 
     public VcnCarrierConfig(@Nullable PersistableBundleWrapper carrierConfig) {
         mNwSelectIpSecLossDetectPollIntervalSec =
@@ -56,6 +77,39 @@ public class VcnCarrierConfig {
                         carrierConfig,
                         KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT,
                         MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED);
+
+        mNwSelectIpSecLossDetectMinSeqInc =
+                getCarrierConfigInt(
+                        carrierConfig,
+                        KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MIN_SEQ_INC_INT,
+                        MIN_SEQ_NUM_INCREASE_DEFAULT);
+
+        mNwSelectIpSecLossDetectMaxTimeDiffSec =
+                getCarrierConfigInt(
+                        carrierConfig,
+                        KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_TIME_DIFF_SEC_INT,
+                        MAX_TIME_DIFF_SECONDS_DEFAULT);
+
+        mNwSelectIpSecLossDetectRapidPollIntervalSec =
+                getCarrierConfigInt(
+                        carrierConfig,
+                        KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_POLL_INTERVAL_SEC_INT,
+                        RAPID_MODE_POLL_IPSEC_STATE_INTERVAL_SECONDS_DEFAULT);
+
+        mNwSelectIpSecLossDetectRapidDurationSec =
+                getCarrierConfigInt(
+                        carrierConfig,
+                        KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_DURATION_SEC_INT,
+                        RAPID_MODE_EXIT_TIMER_SECONDS_DEFAULT);
+
+        final int[] penaltyTimeoutMinutes =
+                getCarrierConfigIntArray(
+                        carrierConfig,
+                        KEY_NETWORK_SELECTION_PENALTY_TIMEOUT_MIN_INT_ARRAY,
+                        PENALTY_TIMEOUT_MINUTES_DEFAULT);
+        for (int minutes : penaltyTimeoutMinutes) {
+            mNwSelectPenaltyTimeoutMillis.add(TimeUnit.MINUTES.toMillis(minutes));
+        }
     }
 
     private static int getCarrierConfigInt(
@@ -64,6 +118,16 @@ public class VcnCarrierConfig {
             int defaultValue) {
         if (carrierConfig != null) {
             return carrierConfig.getInt(key, defaultValue);
+        }
+        return defaultValue;
+    }
+
+    private static int[] getCarrierConfigIntArray(
+            @Nullable PersistableBundleWrapper carrierConfig,
+            @NonNull String key,
+            int[] defaultValue) {
+        if (carrierConfig != null) {
+            return carrierConfig.getIntArray(key, defaultValue);
         }
         return defaultValue;
     }
@@ -78,5 +142,26 @@ public class VcnCarrierConfig {
 
     public int getNwSelectIpSecLossDetectMaxSeqIncPerSec() {
         return mNwSelectIpSecLossDetectMaxSeqIncPerSec;
+    }
+
+    public int getNwSelectIpSecLossDetectMinSeqInc() {
+        return mNwSelectIpSecLossDetectMinSeqInc;
+    }
+
+    public int getNwSelectIpSecLossDetectMaxTimeDiffSec() {
+        return mNwSelectIpSecLossDetectMaxTimeDiffSec;
+    }
+
+    public int getNwSelectIpSecLossDetectRapidPollIntervalSec() {
+        return mNwSelectIpSecLossDetectRapidPollIntervalSec;
+    }
+
+    public int getNwSelectIpSecLossDetectRapidDurationSec() {
+        return mNwSelectIpSecLossDetectRapidDurationSec;
+    }
+
+    // Updated getter to return List<Integer>
+    public List<Long> getNwSelectPenaltyTimeoutMillis() {
+        return Collections.unmodifiableList(mNwSelectPenaltyTimeoutMillis);
     }
 }

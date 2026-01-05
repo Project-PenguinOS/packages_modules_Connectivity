@@ -193,7 +193,7 @@ class MdnsRecordRepositoryTest {
         isKnownAnswerSuppressionEnabled: Boolean = false,
         unicastReplyEnabled: Boolean = true,
         avoidAdvertisingEmptyTxtRecords: Boolean = true
-    ) = MdnsFeatureFlags.Builder()
+    ) = MdnsFeatureFlags.Builder().setAllFlagsForTesting()
         .setIncludeInetAddressRecordsInProbing(includeInetAddressesInProbing)
         .setIsKnownAnswerSuppressionEnabled(isKnownAnswerSuppressionEnabled)
         .setIsUnicastReplyEnabled(unicastReplyEnabled)

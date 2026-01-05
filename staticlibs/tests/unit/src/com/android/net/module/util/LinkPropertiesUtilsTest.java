@@ -323,4 +323,19 @@ public final class LinkPropertiesUtilsTest {
         result = new CompareOrUpdateResult<String, String>(null, null, extractPrefix);
         assertCompareOrUpdateResult(result, emptyList, emptyList, emptyList);
     }
+
+    @Test
+    public void testIsValidMtu() {
+        // IPv4 boundaries
+        assertFalse(LinkPropertiesUtils.isValidMtu(LinkPropertiesUtils.MIN_MTU - 1, false));
+        assertTrue(LinkPropertiesUtils.isValidMtu(LinkPropertiesUtils.MIN_MTU, false));
+        assertTrue(LinkPropertiesUtils.isValidMtu(LinkPropertiesUtils.MAX_MTU, false));
+        assertFalse(LinkPropertiesUtils.isValidMtu(LinkPropertiesUtils.MAX_MTU + 1, false));
+
+        // IPv6 boundaries
+        assertFalse(LinkPropertiesUtils.isValidMtu(LinkPropertiesUtils.MIN_MTU_V6 - 1, true));
+        assertTrue(LinkPropertiesUtils.isValidMtu(LinkPropertiesUtils.MIN_MTU_V6, true));
+        assertTrue(LinkPropertiesUtils.isValidMtu(LinkPropertiesUtils.MAX_MTU, true));
+        assertFalse(LinkPropertiesUtils.isValidMtu(LinkPropertiesUtils.MAX_MTU + 1, true));
+    }
 }

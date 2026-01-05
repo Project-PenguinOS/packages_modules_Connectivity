@@ -52,7 +52,6 @@ import android.net.ip.IpClientCallbacks;
 import android.net.ip.IpClientManager;
 import android.os.Build;
 import android.os.Handler;
-import android.os.Looper;
 import android.os.test.TestLooper;
 
 import androidx.test.filters.SmallTest;
@@ -113,11 +112,10 @@ public class EthernetNetworkFactoryTest {
     }
 
     private void setupNetworkAgentMock() {
-        when(mDeps.makeEthernetNetworkAgent(any(), any(), any(), any(), any(), any(), any()))
+        when(mDeps.makeEthernetNetworkAgent(any(), any(), any(), any(), any(), any()))
                 .thenAnswer(new AnswerWithArguments() {
                                        public EthernetNetworkAgent answer(
                                                Context context,
-                                               Looper looper,
                                                NetworkCapabilities nc,
                                                LinkProperties lp,
                                                NetworkAgentConfig config,
@@ -273,7 +271,7 @@ public class EthernetNetworkFactoryTest {
         // as connected and legacy type are correctly set.
         final ArgumentCaptor<NetworkCapabilities> ncCaptor = ArgumentCaptor.forClass(
                 NetworkCapabilities.class);
-        verify(mDeps).makeEthernetNetworkAgent(any(), any(), ncCaptor.capture(), any(),
+        verify(mDeps).makeEthernetNetworkAgent(any(), ncCaptor.capture(), any(),
                 argThat(x -> x.getLegacyType() == expectedLegacyType), any(), any());
         assertEquals(new EthernetNetworkSpecifier(port.getInterfaceName()),
                 ncCaptor.getValue().getNetworkSpecifier());
@@ -364,7 +362,7 @@ public class EthernetNetworkFactoryTest {
         verify(mDeps).makeIpClient(any(), any(), any());
 
         triggerOnProvisioningSuccess();
-        verify(mDeps).makeEthernetNetworkAgent(any(), any(), any(), any(), any(), any(), any());
+        verify(mDeps).makeEthernetNetworkAgent(any(), any(), any(), any(), any(), any());
 
         // verify that unwanted is ignored
         clearInvocations(mIpClient);
@@ -496,8 +494,7 @@ public class EthernetNetworkFactoryTest {
         mNetFactory.updateInterface(TEST_IFACE.getInterfaceName(), ipConfiguration, capabilities);
         triggerOnProvisioningSuccess();
 
-        verify(mDeps).makeEthernetNetworkAgent(any(), any(),
-                eq(capabilities), any(), any(), any(), any());
+        verify(mDeps).makeEthernetNetworkAgent(any(), eq(capabilities), any(), any(), any(), any());
         verifyRestart(ipConfiguration);
     }
 

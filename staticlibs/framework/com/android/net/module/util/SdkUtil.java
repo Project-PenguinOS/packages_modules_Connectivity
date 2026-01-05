@@ -16,10 +16,10 @@
 
 package com.android.net.module.util;
 
-import static android.os.Build.VERSION.SDK_INT;
-
 import android.annotation.Nullable;
 import android.os.Build;
+
+import java.util.Objects;
 
 /**
  * Utilities to deal with multiple SDKs in a single mainline module.
@@ -50,13 +50,29 @@ public class SdkUtil {
         }
     }
 
-    /** Checks if the device is running on a release version of Android Baklava or newer */
-    public static boolean isAtLeast25Q2() {
-        return SDK_INT >= 36 || (SDK_INT == 35 && "Baklava".equals(Build.VERSION.CODENAME));
-    }
-
     /** Checks if the device is running on a release version of Android 25Q4 or newer */
     public static boolean isAtLeast25Q4() {
         return Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1;
+    }
+
+    /**
+     * Checks if the full SDK version is at most the given version.
+     */
+    public static boolean isFullSdkVersionAtMost(int version) {
+        if (version == Build.VERSION.SDK_INT_FULL && !Objects.equals(Build.VERSION.CODENAME,
+                "REL")) {
+            return false;
+        }
+        return Build.VERSION.SDK_INT_FULL <= version;
+    }
+
+    /** Checks if the device is running on a release version of Android 17 or newer */
+    public static boolean isAtLeast26Q2() {
+        final int sdkIntFull = Build.VERSION.SDK_INT_FULL;
+        if (sdkIntFull == Build.VERSION_CODES_FULL.BAKLAVA_1 && !Objects.equals(
+                Build.VERSION.CODENAME, "REL")) {
+            return true;
+        }
+        return sdkIntFull >= Build.VERSION_CODES_FULL.CINNAMON_BUN;
     }
 }

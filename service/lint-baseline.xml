@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<issues format="6" by="lint 8.4.0-alpha08" type="baseline" client="" dependencies="true" name="" variant="all" version="8.4.0-alpha08">
-
+<issues
+    format="6"
+    by="lint 8.4.0-alpha08"
+    type="baseline"
+    client=""
+    dependencies="true"
+    name=""
+    variant="all"
+    version="8.4.0-alpha08">
     <issue
         id="NewApi"
         message="Call requires API level 33 (current min is 30): `java.util.concurrent.atomic.AtomicReference#getAcquire`"
-        errorLine1='        return "Autodestruct&lt;" + mHeld.getAcquire() + "&gt;";'
+        errorLine1="        return &quot;Autodestruct&lt;&quot; + mHeld.getAcquire() + &quot;&gt;&quot;;"
         errorLine2="                                       ~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service/src/com/android/server/connectivity/AutodestructReference.java"
@@ -356,7 +363,7 @@
     <issue
         id="NewApi"
         message="Call requires API level 31 (current min is 30): `java.net.InetAddress#parseNumericAddress`"
-        errorLine1='            InetAddress.parseNumericAddress("::").getAddress();'
+        errorLine1="            InetAddress.parseNumericAddress(&quot;::&quot;).getAddress();"
         errorLine2="                        ~~~~~~~~~~~~~~~~~~~">
         <location
             file="packages/modules/Connectivity/service/src/com/android/server/connectivity/DscpPolicyValue.java"
@@ -791,6 +798,61 @@
             file="packages/modules/Connectivity/service/src/com/android/server/connectivity/TcpKeepaliveController.java"
             line="411"
             column="31"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 31 (current min is 30): `com.android.server.LocalManagerRegistry#getManager`"
+        errorLine1="                    LocalManagerRegistry.getManager("
+        errorLine2="                                         ~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service/src/com/android/server/connectivity/PermissionMonitor.java"
+            line="334"
+            column="42"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Class requires API level CUR_DEVELOPMENT/10000 (current min is 30): `com.android.server.permission.PermissionManagerLocal`"
+        errorLine1="                            PermissionManagerLocal.class);"
+        errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service/src/com/android/server/connectivity/PermissionMonitor.java"
+            line="335"
+            column="29"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level CUR_DEVELOPMENT/10000 (current min is 30): `com.android.server.permission.PermissionManagerLocal#registerBpfMap`"
+        errorLine1="            permissionManagerLocal.registerBpfMap(new PermissionBpfMap() {"
+        errorLine2="                                   ~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service/src/com/android/server/connectivity/PermissionMonitor.java"
+            line="336"
+            column="36"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Class requires API level CUR_DEVELOPMENT/10000 (current min is 30): `com.android.server.permission.PermissionBpfMap`"
+        errorLine1="            permissionManagerLocal.registerBpfMap(new PermissionBpfMap() {"
+        errorLine2="                                                      ~~~~~~~~~~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/service/src/com/android/server/connectivity/PermissionMonitor.java"
+            line="336"
+            column="55"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Implicit cast to `PermissionBpfMap` requires API level 10000 (current min is 30)"
+        errorLine1="            permissionManagerLocal.registerBpfMap(new PermissionBpfMap() {"
+        errorLine2="                                                  ^">
+        <location
+            file="packages/modules/Connectivity/service/src/com/android/server/connectivity/PermissionMonitor.java"
+            line="336"
+            column="51"/>
     </issue>
 
 </issues>

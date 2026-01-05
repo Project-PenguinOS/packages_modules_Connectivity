@@ -79,6 +79,13 @@ message NetworkNsdReported {
 
   // UID uses the NSD functions.
   optional int32 uid = 17;
+
+  // Record the cached service expired count before discovery is stopped.
+  // Note: This is slightly different from `lost_callback_count` because lost_callback_count tracks
+  // three types of cases: service unregistration, socket destroyed, and service record expired.
+  // This field is only for the service record expired case, which is used for service loss
+  // classification and network problem analysis.
+  optional int32 cached_service_expired_count = 18;
 }
 
 /**

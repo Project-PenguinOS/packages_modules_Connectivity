@@ -29,7 +29,7 @@ import org.junit.runner.RunWith
 @RunWith(DevSdkIgnoreRunner::class)
 class MdnsPacketTest {
     private fun makeFlags(isLabelCountLimitEnabled: Boolean = false): MdnsFeatureFlags =
-            MdnsFeatureFlags.newBuilder()
+            MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                     .setIsLabelCountLimitEnabled(isLabelCountLimitEnabled).build()
     @Test
     fun testParseQuery() {

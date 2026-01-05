@@ -29,6 +29,7 @@ import static android.net.BpfNetMapsConstants.L4S_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
+import static android.net.BpfNetMapsConstants.PERMISSION_PROPAGATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_MIGRATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_OWNER_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_PERMISSION_MAP_PATH;
@@ -41,6 +42,7 @@ import static android.net.ConnectivityManager.BLOCKED_METERED_REASON_MASK;
 import static android.net.ConnectivityManager.BLOCKED_REASON_NONE;
 import static android.net.ConnectivityManager.FIREWALL_RULE_ALLOW;
 import static android.net.ConnectivityManager.FIREWALL_RULE_DENY;
+import static android.permission.flags.Flags.accessLocalNetworkPermissionEnabled;
 import static android.system.OsConstants.EINVAL;
 import static android.system.OsConstants.ENODEV;
 import static android.system.OsConstants.ENOENT;
@@ -53,7 +55,7 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.getShift;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_INT64_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_UID_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERNET;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_COUNT;
@@ -97,6 +99,7 @@ import com.android.net.module.util.BpfDump;
 import com.android.net.module.util.BpfMap;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.IBpfMap;
+import com.android.net.module.util.IBpfMap.ThrowingBiConsumer;
 import com.android.net.module.util.SingleWriterBpfMap;
 import com.android.net.module.util.Struct;
 import com.android.net.module.util.Struct.Bool;
@@ -117,6 +120,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.function.BiFunction;
+import java.util.function.Predicate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -154,6 +158,8 @@ public class BpfNetMaps {
     private static final long STATS_SELECT_MAP_A = 0;
     private static final long STATS_SELECT_MAP_B = 1;
 
+    private static final int AID_USER_OFFSET = 100000;
+
     private static IBpfMap<S32, U32> sConfigurationMap = null;
     // BpfMap for UID_OWNER_MAP_PATH. This map is not accessed by others.
     private static IBpfMap<S32, UidOwnerValue> sUidOwnerMap = null;
@@ -162,6 +168,7 @@ public class BpfNetMaps {
     private static IBpfMap<S64, CookieTagMapValue> sCookieTagMap = null;
     // TODO: Add BOOL class and replace U8?
     private static IBpfMap<S32, U8> sDataSaverEnabledMap = null;
+    private static BpfBoolean sPermissionPropagationEnabledBpfBoolean = null;
     private static BpfBoolean sUidMigrationEnabledBpfBoolean = null;
     private static IBpfMap<IngressDiscardKey, IngressDiscardValue> sIngressDiscardMap = null;
 
@@ -183,6 +190,13 @@ public class BpfNetMaps {
      */
     public boolean isUidMigrationEnabled() {
         return sPermissionMapUidMigrationEnabled;
+    }
+
+    /**
+     * Enable new permission propagation API when uid migration is enabled
+     */
+    public boolean isPermissionPropagationEnabled() {
+        return sPermissionMapUidMigrationEnabled && mDeps.isAccessLocalNetworkPermissionEnabled();
     }
 
     /**
@@ -242,6 +256,15 @@ public class BpfNetMaps {
     public static void setUidMigrationEnabledBpfBooleanForTest(
             BpfBoolean uidMigrationEnabledBpfBoolean) {
         sUidMigrationEnabledBpfBoolean = uidMigrationEnabledBpfBoolean;
+    }
+
+    /**
+     * Set permissionPropagationEnabledBpfBoolean for test.
+     */
+    @VisibleForTesting
+    public static void setPermissionPropagationEnabledBpfBooleanForTest(
+            BpfBoolean permissionPropagationEnabledBpfBoolean) {
+        sPermissionPropagationEnabledBpfBoolean = permissionPropagationEnabledBpfBoolean;
     }
 
     /**
@@ -378,6 +401,16 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private static BpfBoolean getPermissionPropagationEnabledBpfBoolean() {
+        try {
+            return new BpfBoolean(
+                    PERMISSION_PROPAGATION_ENABLED_MAP_PATH, true);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open permission propagation enabled map", e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     private static IBpfMap<LocalNetAccessKey, Bool> getLocalNetAccessMap() {
         try {
@@ -493,6 +526,24 @@ public class BpfNetMaps {
             throw new IllegalStateException("Failed to set uid migration enabled map", e);
         }
 
+        // Local network permission will be supported from Android C+, update this when
+        // isAtLeastC() is available.
+        if (SdkLevel.isAtLeastB()) {
+            if (sPermissionPropagationEnabledBpfBoolean == null) {
+                sPermissionPropagationEnabledBpfBoolean =
+                        getPermissionPropagationEnabledBpfBoolean();
+            }
+            try {
+                // Enable new permission propagation API when uid migration is enabled
+                sPermissionPropagationEnabledBpfBoolean.set(
+                    sPermissionMapUidMigrationEnabled
+                            && deps.isAccessLocalNetworkPermissionEnabled());
+            } catch (ErrnoException e) {
+                throw new IllegalStateException("Failed to set permission propagation enabled map",
+                        e);
+            }
+        }
+
         if (sUidPermissionChunkMap == null) {
             sUidPermissionChunkMap = getUidPermissionChunkMap();
         }
@@ -575,6 +626,19 @@ public class BpfNetMaps {
         public boolean isL4SSupported() {
             final File file = new File(L4S_ENABLED_MAP_PATH);
             return file.exists();
+        }
+
+        /**
+         * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than lnp
+         * permission propagation. Wrapper around accessLocalNetworkPermissionEnabled() so
+         * that it can be mocked in unit test.
+         *
+         * @see android.permission.flags.Flags#accessLocalNetworkPermissionEnabled()
+         */
+        public boolean isAccessLocalNetworkPermissionEnabled() {
+            // Local network permission will be supported from Android C+, update this when
+            // isAtLeastC() is available.
+            return SdkLevel.isAtLeastB() && accessLocalNetworkPermissionEnabled();
         }
     }
 
@@ -1197,8 +1261,8 @@ public class BpfNetMaps {
         if ((trafficPermissions & TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS) != 0) {
             chunkPermissions |= PERMISSION_BIT_UPDATE_DEVICE_STATS;
         }
-        if ((trafficPermissions & TRAFFIC_PERMISSION_INTERNET) != 0) {
-            chunkPermissions |= PERMISSION_BIT_INTERNET;
+        if ((trafficPermissions & TRAFFIC_PERMISSION_INTERNET) == 0) {
+            chunkPermissions |= PERMISSION_BIT_NO_INTERNET;
         }
         return chunkPermissions;
     }
@@ -1211,7 +1275,7 @@ public class BpfNetMaps {
         if ((chunkPermissions & PERMISSION_BIT_UPDATE_DEVICE_STATS) != 0) {
             trafficPermissions |= TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
         }
-        if ((chunkPermissions & PERMISSION_BIT_INTERNET) != 0) {
+        if ((chunkPermissions & PERMISSION_BIT_NO_INTERNET) == 0) {
             trafficPermissions |= TRAFFIC_PERMISSION_INTERNET;
         }
         return trafficPermissions;
@@ -1249,6 +1313,85 @@ public class BpfNetMaps {
             valueSet.add(valueFunction.apply(uid, permissions));
         }
         return groupByResult;
+    }
+
+    /**
+     * Remove permissions from the UidPermissionChunk bpf map for a given App ID.
+     * <p>
+     * <b>Note:</b> This method is not thread-safe and is intended to be called from
+     * PermissionManager thread.
+     * </p>
+     *
+     * @param appId App Id whose permissions should be removed from the UidPermissionChunk bpf map.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    public void removePermissionsForAppId(int appId) {
+        throwIfUidMigrationIsDisabled(
+            "removePermissionsForAppId is not available when flag permission_map_uid_migration" +
+            " is disabled");
+        try {
+            removePermissionsIf(uid -> uid % AID_USER_OFFSET == appId);
+        } catch (RemoteException | ErrnoException e) {
+            Log.e(TAG, "Failed to remove permission for App Id "
+                    + appId + ": " + e);
+        }
+    }
+
+    /**
+     * Remove permissions from the UidPermissionChunk bpf map for a given User ID.
+     * <p>
+     * <b>Note:</b> This method is not thread-safe and is intended to be called from
+     * PermissionManager thread.
+     * </p>
+     *
+     * @param userId User Id whose permissions should be removed from the UidPermissionChunk bpf
+     *               map.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    public void removePermissionsForUserId(int userId) {
+        throwIfUidMigrationIsDisabled(
+            "removePermissionsForUserId is not available when flag permission_map_uid_migration" +
+            " is disabled");
+        try {
+            removePermissionsIf(uid -> uid / AID_USER_OFFSET == userId);
+        } catch (RemoteException | ErrnoException e) {
+            Log.e(TAG, "Failed to remove permission for User Id "
+                    + userId + ": " + e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private void removePermissionsIf(
+        Predicate<Integer> function
+    ) throws ErrnoException, RemoteException {
+        final SparseIntArray permissionsUids = new SparseIntArray();
+        forEachUidPermission((uid, permissionBits) -> {
+            if (function.test(uid)) {
+                permissionsUids.put(uid, PERMISSION_BIT_NONE);
+            }
+        });
+        setChunkPermListForUids(permissionsUids);
+    }
+
+    private void forEachUidPermission(
+        ThrowingBiConsumer<Integer, Integer> action
+    ) throws ErrnoException {
+        sUidPermissionChunkMap.forEach((chunkId, chunk) -> {
+            for(int index = 0; index < chunk.val.length; index++) {
+                int shift = 0;
+                long currentValue = chunk.val[index];
+                while(currentValue != 0) {
+                    int permissionBits = (int) (currentValue & UID_PERMISSION_MASK);
+                    if (permissionBits > 0) {
+                        int uid = CHUNK_UID_COUNT * chunkId.val + index * UIDS_PER_INT64
+                                + shift / PERMISSION_COUNT;
+                        action.accept(uid, permissionBits);
+                    }
+                    currentValue = currentValue >>> PERMISSION_COUNT;
+                    shift += PERMISSION_COUNT;
+                }
+            }
+        });
     }
 
     /**
@@ -1617,6 +1760,14 @@ public class BpfNetMaps {
         return keySet.size();
     }
 
+    private int getAppidPermissionCount() throws ErrnoException {
+        // forEach could restart iteration from the beginning if there is a concurrent entry
+        // deletion. So using Set to count the number of entry in the map.
+        Set<Integer> keySet = new ArraySet<>();
+        forEachUidPermission((uid, permissionBits) -> keySet.add(UserHandle.getAppId(uid)));
+        return keySet.size();
+    }
+
     /** Callback for StatsManager#setPullAtomCallback */
     @VisibleForTesting
     public int pullBpfMapInfoAtom(final int atomTag, final List<StatsEvent> data) {
@@ -1627,7 +1778,8 @@ public class BpfNetMaps {
 
         try {
             data.add(mDeps.buildStatsEvent(getMapSize(sCookieTagMap), getMapSize(sUidOwnerMap),
-                    getMapSize(sUidPermissionMap)));
+                    isUidMigrationEnabled()
+                            ? getAppidPermissionCount() : getMapSize(sUidPermissionMap)));
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to pull NETWORK_BPF_MAP_INFO atom: " + e);
             return StatsManager.PULL_SKIP;
@@ -1663,9 +1815,6 @@ public class BpfNetMaps {
         if (permissions < 0 || permissions > UID_PERMISSION_MASK) {
             return "PERMISSION_UNKNOWN(" + permissions + ")";
         }
-        if (permissions == PERMISSION_BIT_NONE) {
-            return "PERMISSION_NONE";
-        }
         final StringJoiner sj = new StringJoiner(" ");
         if ((permissions & PERMISSION_BIT_ACCESS_LOCAL_NETWORK) != 0) {
             sj.add("PERMISSION_ACCESS_LOCAL_NETWORK");
@@ -1673,8 +1822,11 @@ public class BpfNetMaps {
         if ((permissions & PERMISSION_BIT_UPDATE_DEVICE_STATS) != 0) {
             sj.add("PERMISSION_UPDATE_DEVICE_STATS");
         }
-        if ((permissions & PERMISSION_BIT_INTERNET) != 0) {
+        if ((permissions & PERMISSION_BIT_NO_INTERNET) == 0) {
             sj.add("PERMISSION_INTERNET");
+        }
+        if (sj.length() == 0) {
+            return "PERMISSION_NONE";
         }
         return sj.toString();
     }
@@ -1710,6 +1862,16 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private void dumpPermissionPropagationConfig(final IndentingPrintWriter pw) {
+        try {
+            final boolean enabled = sPermissionPropagationEnabledBpfBoolean.get();
+            pw.println("sPermissionPropagationEnabledMap: " + enabled);
+        } catch (ErrnoException e) {
+            pw.println("Failed to read permission propagation configuration: " + e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private void dumpUidMigrationConfig(final IndentingPrintWriter pw) {
         try {
@@ -1725,21 +1887,8 @@ public class BpfNetMaps {
         pw.println("sUidPermissionChunkMap:" );
         pw.increaseIndent();
         try {
-            sUidPermissionChunkMap.forEach((chunkId, chunk) -> {
-                for(int index = 0; index < chunk.val.length; index++) {
-                    int shift = 0;
-                    long currentValue = chunk.val[index];
-                    while(currentValue != 0) {
-                        int permissionBits = (int) (currentValue & UID_PERMISSION_MASK);
-                        if (permissionBits > 0) {
-                            int uid = CHUNK_UID_COUNT * chunkId.val + index * UIDS_PER_INT64
-                                    + shift / PERMISSION_COUNT;
-                            pw.println(uid + " " + permissionsInChunkToString(permissionBits));
-                        }
-                        currentValue = currentValue >>> PERMISSION_COUNT;
-                        shift += PERMISSION_COUNT;
-                    }
-                }
+            forEachUidPermission((uid, permissionBits) -> {
+                pw.println(uid + " " + permissionsInChunkToString(permissionBits));
             });
         } catch (ErrnoException e) {
             pw.println("Failed to read uid permission chunk map: " + e);
@@ -1810,6 +1959,11 @@ public class BpfNetMaps {
             }
             dumpDataSaverConfig(pw);
             dumpUidMigrationConfig(pw);
+            // Local network permission will be supported from Android C+, update this when
+            // isAtLeastC() is available.
+            if (SdkLevel.isAtLeastB()) {
+                dumpPermissionPropagationConfig(pw);
+            }
             dumpUidPermissionChunkMap(pw);
             pw.decreaseIndent();
         }

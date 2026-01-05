@@ -64,6 +64,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
     @Mock private IpSecPacketLossDetector mIpSecPacketLossDetector;
     @Mock private Dependencies mDependencies;
     @Mock private NetworkEvaluatorCallback mEvaluatorCallback;
+    @Mock private NetworkMetricMonitor mMetricMonitor;
 
     @Captor private ArgumentCaptor<NetworkMetricMonitorCallback> mMetricMonitorCbCaptor;
 
@@ -370,5 +371,56 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
                 mCarrierConfig);
 
         verify(mIpSecPacketLossDetector).onLinkPropertiesOrCapabilitiesChanged();
+    }
+
+    @Test
+    public void testOnIsPenalizedChanged_startPenalty() throws Exception {
+        mNetworkEvaluator.addMetricMonitor(mMetricMonitor);
+
+        assertFalse(mNetworkEvaluator.isPenalized());
+
+        // One monitor is penalized
+        when(mMetricMonitor.isPenalized()).thenReturn(true);
+        getMetricMonitorCbCaptor().onIsPenalizedChanged();
+
+        assertTrue(mNetworkEvaluator.isPenalized());
+        verify(mEvaluatorCallback).onEvaluationResultChanged();
+
+        // The other monitor is penalized
+        when(mIpSecPacketLossDetector.isPenalized()).thenReturn(true);
+        getMetricMonitorCbCaptor().onIsPenalizedChanged();
+
+        assertTrue(mNetworkEvaluator.isPenalized());
+        verify(mEvaluatorCallback).onEvaluationResultChanged();
+    }
+
+    @Test
+    public void testOnIsPenalizedChanged_stopPenalty() throws Exception {
+        mNetworkEvaluator.addMetricMonitor(mMetricMonitor);
+
+        assertFalse(mNetworkEvaluator.isPenalized());
+
+        // Both monitors are penalized
+        when(mMetricMonitor.isPenalized()).thenReturn(true);
+        when(mIpSecPacketLossDetector.isPenalized()).thenReturn(true);
+        getMetricMonitorCbCaptor().onIsPenalizedChanged();
+
+        assertTrue(mNetworkEvaluator.isPenalized());
+        verify(mEvaluatorCallback).onEvaluationResultChanged();
+        reset(mEvaluatorCallback);
+
+        // One monitor stops being penalized and the evaluator is still being penalized
+        when(mMetricMonitor.isPenalized()).thenReturn(false);
+        getMetricMonitorCbCaptor().onIsPenalizedChanged();
+
+        assertTrue(mNetworkEvaluator.isPenalized());
+        verify(mEvaluatorCallback, never()).onEvaluationResultChanged();
+
+        // Both monitor stops being penalized and the evaluator is not penalized
+        when(mIpSecPacketLossDetector.isPenalized()).thenReturn(false);
+        getMetricMonitorCbCaptor().onIsPenalizedChanged();
+
+        assertFalse(mNetworkEvaluator.isPenalized());
+        verify(mEvaluatorCallback).onEvaluationResultChanged();
     }
 }

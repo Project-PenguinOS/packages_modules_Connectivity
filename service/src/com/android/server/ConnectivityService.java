@@ -1641,7 +1641,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
          * Get a reference to the ModuleNetworkStackClient.
          */
         public NetworkStackClientBase getNetworkStack() {
-            return ModuleNetworkStackClient.getInstance(null);
+            return ModuleNetworkStackClient.getInstance();
         }
 
         /**
@@ -4339,7 +4339,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void enforceKeepalivePermission() {
-        mContext.enforceCallingOrSelfPermission(KeepaliveTracker.PERMISSION, "ConnectivityService");
+        if (SdkUtil.isAtLeast26Q2()) {
+            mContext.enforceCallingOrSelfPermission(KeepaliveTracker.PERMISSION,
+                    "ConnectivityService");
+        } else {
+            PermissionUtils.enforceAnyPermissionOf(mContext, KeepaliveTracker.PERMISSION,
+                    Manifest.permission.SCHEDULE_PRIORITIZED_ALARM);
+        }
     }
 
     @CheckResult
@@ -10884,10 +10890,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
             }
         }
 
-        // Rule 2: Check if any route covers a device's own address.
+        // Rule 2: Check if any non-default route covers a device's own address.
         for (final RouteInfo route : routes) {
             for (LinkAddress linkAddress : lp.getLinkAddresses()) {
-                if (route.matches(linkAddress.getAddress())) {
+                if (!route.isDefaultRoute() && route.matches(linkAddress.getAddress())) {
                     localPrefixes.add(route.getDestination());
                 }
             }
@@ -15461,7 +15467,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void handleMobileDataPreferredUidsChanged() {
+        final Set<Integer> oldMobileDataPreferredUids = mMobileDataPreferredUids;
         mMobileDataPreferredUids = getMobileDataPreferredUids();
+        if (mMobileDataPreferredUids.equals(oldMobileDataPreferredUids)) return;
         removeDefaultNetworkRequestsForPreference(PREFERENCE_ORDER_MOBILE_DATA_PREFERERRED);
         addPerAppDefaultNetworkRequests(
                 createNrisFromMobileDataPreferredUids(mMobileDataPreferredUids));

@@ -27,6 +27,18 @@ android_app {
     resource_dirs: [
         "res",
     ],
+    srcs: [
+        "src/**/*.java",
+    ],
+    libs: [
+        "framework-connectivity.stubs.module_lib",
+        "framework-connectivity-t.stubs.module_lib",
+    ],
+    static_libs: [
+        "androidx.appcompat_appcompat",
+        "androidx.fragment_fragment",
+        "service-connectivity-resources-aidl",
+    ],
     privileged: true,
     export_package_resources: true,
     apex_available: [
@@ -34,6 +46,24 @@ android_app {
     ],
     certificate: ":com.android.connectivity.resources.certificate",
     updatable: true,
+}
+
+java_library {
+    name: "service-connectivity-resources-aidl",
+    sdk_version: "module_current",
+    min_sdk_version: "30",
+    srcs: ["aidl/**/*.aidl"],
+    aidl: {
+        include_dirs: [
+            "packages/modules/Connectivity/framework/aidl-export",
+        ],
+        local_include_dirs: ["aidl/"],
+    },
+    libs: [
+        "framework-connectivity-t.stubs.module_lib",
+    ],
+    visibility: ["//packages/modules/Connectivity:__subpackages__"],
+    apex_available: ["com.android.tethering"],
 }
 
 android_app_certificate {

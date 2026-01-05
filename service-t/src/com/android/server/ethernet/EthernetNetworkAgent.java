@@ -23,13 +23,19 @@ import android.net.NetworkAgentConfig;
 import android.net.NetworkCapabilities;
 import android.net.NetworkProvider;
 import android.net.NetworkScore;
-import android.os.Looper;
+import android.os.HandlerThread;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 
 public class EthernetNetworkAgent extends NetworkAgent {
-
     private static final String TAG = "EthernetNetworkAgent";
+
+    // Create a thread for all NetworkAgent interactions. This is useful because it allows awaiting
+    // NetworkAgent callbacks on the main thread.
+    private static final HandlerThread sHandlerThread = new HandlerThread(TAG + "-Thread");
+    static {
+        sHandlerThread.start();
+    }
 
     public interface Callbacks {
         void onNetworkUnwanted();
@@ -39,13 +45,13 @@ public class EthernetNetworkAgent extends NetworkAgent {
 
     EthernetNetworkAgent(
             @NonNull Context context,
-            @NonNull Looper looper,
             @NonNull NetworkCapabilities nc,
             @NonNull LinkProperties lp,
             @NonNull NetworkAgentConfig config,
             @Nullable NetworkProvider provider,
             @NonNull Callbacks cb) {
-        super(context, looper, TAG, nc, lp, new NetworkScore.Builder().build(), config, provider);
+        super(context, sHandlerThread.getLooper(), TAG, nc, lp, new NetworkScore.Builder().build(),
+                config, provider);
         mCallbacks = cb;
     }
 

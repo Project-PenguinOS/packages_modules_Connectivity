@@ -47,7 +47,6 @@ import android.net.ip.IpClientUtil;
 import android.net.shared.ProvisioningConfiguration;
 import android.os.ConditionVariable;
 import android.os.Handler;
-import android.os.Looper;
 import android.text.TextUtils;
 import android.util.AndroidRuntimeException;
 import android.util.ArraySet;
@@ -96,10 +95,10 @@ public class EthernetNetworkFactory {
             return new IpClientManager(ipClient, TAG);
         }
 
-        public EthernetNetworkAgent makeEthernetNetworkAgent(Context context, Looper looper,
+        public EthernetNetworkAgent makeEthernetNetworkAgent(Context context,
                 NetworkCapabilities nc, LinkProperties lp, NetworkAgentConfig config,
                 NetworkProvider provider, EthernetNetworkAgent.Callbacks cb) {
-            return new EthernetNetworkAgent(context, looper, nc, lp, config, provider, cb);
+            return new EthernetNetworkAgent(context, nc, lp, config, provider, cb);
         }
 
         public InterfaceParams getNetworkInterfaceByName(String name) {
@@ -417,14 +416,19 @@ public class EthernetNetworkFactory {
         }
 
         private class EthernetNetworkAgentCallback implements EthernetNetworkAgent.Callbacks {
-            private boolean isStale() {
-                return this != mNetworkAgentCallback;
+            private void safelyPostOnHandler(Runnable r) {
+                mHandler.post(() -> {
+                    if (this != mNetworkAgentCallback) {
+                        // Callback is stale. Ignore.
+                        return;
+                    }
+                    r.run();
+                });
             }
 
             @Override
             public void onNetworkUnwanted() {
-                if (isStale()) return;
-                stop();
+                safelyPostOnHandler(() -> stop());
             }
         }
 
@@ -688,9 +692,8 @@ public class EthernetNetworkFactory {
             }
 
             mNetworkAgentCallback = new EthernetNetworkAgentCallback();
-            mNetworkAgent = mDeps.makeEthernetNetworkAgent(mContext, mHandler.getLooper(),
-                    capabilities, mLinkProperties, networkAgentConfig, mNetworkProvider,
-                    mNetworkAgentCallback);
+            mNetworkAgent = mDeps.makeEthernetNetworkAgent(mContext, capabilities, mLinkProperties,
+                    networkAgentConfig, mNetworkProvider, mNetworkAgentCallback);
             mNetworkAgent.register();
             mNetworkAgent.markConnected();
         }

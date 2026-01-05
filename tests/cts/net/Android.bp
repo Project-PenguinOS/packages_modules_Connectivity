@@ -29,7 +29,7 @@ java_defaults {
     sdk_version: "module_current",
     libs: [
         "framework-annotations-lib",
-        "framework-connectivity.impl",
+        "framework-connectivity-post-jarjar",
         "framework-connectivity-b.impl",
         "framework-connectivity-t.impl",
         "framework-tethering.impl",

@@ -53,7 +53,7 @@ import android.os.SystemClock;
 import androidx.test.InstrumentationRegistry;
 import androidx.test.filters.SmallTest;
 
-import com.android.frameworks.tests.net.R;
+import com.android.connectivity.tests.lib.R;
 import com.android.internal.util.ProcFileReader;
 import com.android.server.BpfNetMaps;
 import com.android.testutils.DevSdkIgnoreRule;

@@ -78,12 +78,14 @@ android_library {
     defaults: [
         "framework-connectivity-internal-test-defaults",
     ],
+    manifest: "AndroidManifest_ConnectivityUnitTestsLib.xml",
     srcs: [
         "java/**/*.java",
         "java/**/*.kt",
     ],
     exclude_srcs: [":non-connectivity-module-test"],
     static_libs: [
+        "android.permission.flags-aconfig-java-export",
         "androidx.test.rules",
         "androidx.test.uiautomator_uiautomator",
         "bouncycastle-repackaged-unbundled",
@@ -153,6 +155,7 @@ android_test {
         "framework-connectivity-internal-test-defaults",
         "FrameworksNetTests-jni-defaults",
     ],
+    manifest: "AndroidManifest_FrameworksNetTests.xml",
     jarjar_rules: ":frameworks-net-tests-jarjar-rules",
     srcs: [":non-connectivity-module-test"],
     test_suites: ["device-tests"],

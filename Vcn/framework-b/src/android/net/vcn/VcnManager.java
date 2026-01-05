@@ -85,7 +85,7 @@ public class VcnManager {
     /** @hide */
     public static final String VCN_MANAGEMENT_SERVICE_STRING = "vcn_management";
 
-    private static final String CC_KEY_PREFIX = "android.net.vcn";
+    private static final String CC_KEY_PREFIX = "android.net.vcn.";
 
     /**
      * Key for WiFi entry RSSI thresholds
@@ -121,7 +121,7 @@ public class VcnManager {
      * <p>If the reported packet loss rate is equal to or larger than this threshold, VCN will
      * switch away to use a different underlying network.
      *
-     * <p>Defaults to 20, unless overridden by carrier config
+     * <p>Defaults to 10, unless overridden by carrier config
      *
      * @hide
      */
@@ -133,6 +133,8 @@ public class VcnManager {
      * Key for the threshold of IPSec packet loss rate
      *
      * <p>Defaults to 12, unless overridden by carrier config
+     *
+     * <p>Setting to -1 will disable the IPsec packet loss detector
      *
      * @hide
      */
@@ -147,8 +149,9 @@ public class VcnManager {
      * an intentional leap on the server's downlink. To avoid false positives, the packet loss
      * detector will suppress loss reporting.
      *
-     * <p>By default, there's no maximum limit enforced, prioritizing detection of lossy networks.
-     * To reduce false positives, consider setting an appropriate maximum threshold.
+     * <p>The default value is -1. It means there's no maximum limit enforced, prioritizing
+     * detection of lossy networks. To reduce false positives, consider setting an appropriate
+     * maximum threshold.
      *
      * @hide
      */
@@ -157,9 +160,67 @@ public class VcnManager {
             CC_KEY_PREFIX + "key_network_selection_ipsec_loss_detect_max_seq_inc_per_sec_int";
 
     /**
+     * Key for the minimum inbound sequence number increase required for a valid packet loss
+     * calculation.
+     *
+     * <p>This is to ensure that enough packets are received to make the calculation reliable.
+     *
+     * <p>Defaults to 100, unless overridden by carrier config
+     *
+     * @hide
+     */
+    @NonNull
+    public static final String KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MIN_SEQ_INC_INT =
+            CC_KEY_PREFIX + "key_network_selection_ipsec_loss_detect_min_seq_inc_int";
+
+    /**
+     * Key for the maximum time difference between two consecutive IpSecTransformState samples for a
+     * valid packet loss calculation.
+     *
+     * <p>This is to avoid using stale data.
+     *
+     * <p>Defaults to 20, unless overridden by carrier config
+     *
+     * @hide
+     */
+    @NonNull
+    public static final String KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_TIME_DIFF_SEC_INT =
+            CC_KEY_PREFIX + "key_network_selection_ipsec_loss_detect_max_time_diff_sec_int";
+
+    /**
+     * Key for the interval to poll IpSecTransformState for packet loss monitoring during rapid
+     * detection phase
+     *
+     * <p>The detector will enter rapid detection mode right after being started or after the device
+     * exit idle mode. The detector will exit rapid mode when being reported not lossy consistently
+     * or hitting a timeout
+     *
+     * <p>Defaults to 2 seconds, unless overridden by carrier config
+     *
+     * @hide
+     */
+    @NonNull
+    public static final String KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_POLL_INTERVAL_SEC_INT =
+            CC_KEY_PREFIX + "key_network_selection_ipsec_loss_detect_rapid_poll_interval_sec_int";
+
+    /**
+     * Key for the timer to exit the rapid packet loss detection mode.
+     *
+     * <p>Defaults to 30 seconds, unless overridden by carrier config
+     *
+     * @hide
+     */
+    @NonNull
+    public static final String KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_DURATION_SEC_INT =
+            CC_KEY_PREFIX + "key_network_selection_ipsec_loss_detect_rapid_duration_sec_int";
+
+    /**
      * Key for the list of timeouts in minute to stop penalizing an underlying network candidate
      *
      * <p>Defaults to [5], unless overridden by carrier config
+     *
+     * <p>NOTE: Updating the penalty timeouts resets the backoff sequence. The next failure will
+     * trigger the first timeout from the new list.
      *
      * @hide
      */
@@ -220,6 +281,10 @@ public class VcnManager {
                 KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_POLL_INTERVAL_SEC_INT,
                 KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_PERCENT_THD_INT,
                 KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_SEQ_INC_PER_SEC_INT,
+                KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MIN_SEQ_INC_INT,
+                KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_MAX_TIME_DIFF_SEC_INT,
+                KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_POLL_INTERVAL_SEC_INT,
+                KEY_NETWORK_SELECTION_IPSEC_LOSS_DETECT_RAPID_DURATION_SEC_INT,
                 KEY_NETWORK_SELECTION_PENALTY_TIMEOUT_MIN_INT_ARRAY,
                 KEY_RESTRICTED_TRANSPORTS_INT_ARRAY,
                 KEY_SAFE_MODE_TIMEOUT_SEC_INT,

@@ -30,7 +30,7 @@ cc_library_headers {
         "-Wall",
         "-Werror",
     ],
-    sdk_version: "30",
+    sdk_version: "current",
     min_sdk_version: "30",
     apex_available: [
         "//apex_available:platform",

@@ -19,6 +19,7 @@
 #include "DnsBpfHelper.h"
 
 #include <android-base/logging.h>
+#include <android-base/properties.h>
 #include <android-modules-utils/sdk_level.h>
 
 namespace android {

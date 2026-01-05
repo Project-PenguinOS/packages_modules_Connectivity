@@ -50,7 +50,7 @@ class DiscoveryExecutorTest {
     fun testCheckAndRunOnHandlerThread() {
         val executor = DiscoveryExecutor(
                 testableLooper.looper,
-                MdnsFeatureFlags.newBuilder().build()
+                MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build()
         )
         try {
             val future = CompletableFuture<Boolean>()
@@ -65,7 +65,7 @@ class DiscoveryExecutorTest {
         // normally.
         val executor2 = DiscoveryExecutor(
                 null /* defaultLooper */,
-                MdnsFeatureFlags.newBuilder().build()
+                MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build()
         )
         val future2 = CompletableFuture<Boolean>()
         executor2.checkAndRunOnHandlerThread { future2.complete(true) }
@@ -89,7 +89,7 @@ class DiscoveryExecutorTest {
     fun testExecute() {
         verifyExecute(DiscoveryExecutor(
                 testableLooper.looper,
-                MdnsFeatureFlags.newBuilder().build()
+                MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build()
         ))
     }
 
@@ -97,7 +97,8 @@ class DiscoveryExecutorTest {
     fun testExecute_RealtimeScheduler() {
         verifyExecute(DiscoveryExecutor(
                 testableLooper.looper,
-                MdnsFeatureFlags.newBuilder().setIsAccurateDelayCallbackEnabled(true).build()
+                MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+                    .setIsAccurateDelayCallbackEnabled(true).build()
         ))
     }
 
@@ -105,7 +106,7 @@ class DiscoveryExecutorTest {
     fun testExecuteDelayed() {
         val executor = DiscoveryExecutor(
                 testableLooper.looper,
-                MdnsFeatureFlags.newBuilder().build()
+                MdnsFeatureFlags.newBuilder().setAllFlagsForTesting().build()
         )
         try {
             // Verify the executeDelayed method
@@ -135,7 +136,8 @@ class DiscoveryExecutorTest {
     fun testExecuteDelayed_RealtimeScheduler() {
         val executor = DiscoveryExecutor(
                 thread.looper,
-                MdnsFeatureFlags.newBuilder().setIsAccurateDelayCallbackEnabled(true).build()
+                MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+                    .setIsAccurateDelayCallbackEnabled(true).build()
         )
         try {
             // Verify the executeDelayed method

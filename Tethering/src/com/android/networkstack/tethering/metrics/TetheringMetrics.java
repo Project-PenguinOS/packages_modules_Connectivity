@@ -642,24 +642,21 @@ public class TetheringMetrics {
 
         switch (type) {
             case UT_CELLULAR:
-                // TODO: Handle the DUN connection, which is not a default network.
+                // Default network status is not set to cover both default and DUN connections,
+                // as the query conditions are already limited by the tethering UID.
                 return new NetworkTemplate.Builder(MATCH_MOBILE)
                         .setMeteredness(METERED_YES)
-                        .setDefaultNetworkStatus(DEFAULT_NETWORK_YES)
                         .build();
             case UT_WIFI:
                 return new NetworkTemplate.Builder(MATCH_WIFI)
-                        .setMeteredness(METERED_YES)
                         .setDefaultNetworkStatus(DEFAULT_NETWORK_YES)
                         .build();
             case UT_BLUETOOTH:
                 return new NetworkTemplate.Builder(MATCH_BLUETOOTH)
-                        .setMeteredness(METERED_YES)
                         .setDefaultNetworkStatus(DEFAULT_NETWORK_YES)
                         .build();
             case UT_ETHERNET:
                 return new NetworkTemplate.Builder(MATCH_ETHERNET)
-                        .setMeteredness(METERED_YES)
                         .setDefaultNetworkStatus(DEFAULT_NETWORK_YES)
                         .build();
             default:

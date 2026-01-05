@@ -56,3 +56,17 @@ flag {
     description: "A flag to control whether offload callbacks should be sent for interfaces that do not otherwise support mDNS."
     bug: "395515556"
 }
+
+flag {
+  name: "nsd_service_picker"
+  namespace: "com_android_tethering"
+  description: "Enable usage of a service picker for mDNS discovery"
+  bug: "454248446"
+}
+
+flag {
+  name: "collect_beta_metrics"
+  namespace: "com_android_tethering"
+  description: "Enable metrics collection from beta users"
+  bug: "462217324"
+}
