@@ -403,11 +403,34 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
 }
 
 static __always_inline inline void
-add_loopback_access_event(__unused const uint32_t src_uid,
-                          __unused const uint32_t dst_uid,
-                          __unused const enum LoopbackAccessResult result) {
-    // TODO(b/431786207): check for cross-UID loopback and add events to ring
-    // buffer
+add_loopback_access_event(const uint32_t src_uid, const uint32_t dst_uid,
+                          const enum LoopbackAccessResult result) {
+    LoopbackAccessEvent key = {
+        .src_uid = src_uid,
+        .dst_uid = dst_uid,
+        .result = result,
+    };
+    uint64_t *lastReportNs = bpf_loopback_access_cache_map_lookup_elem(&key);
+    uint64_t currentBootNs = bpf_ktime_get_boot_ns();
+    if (lastReportNs && (currentBootNs - *lastReportNs) < NS_PER_MINUTE) return;
+
+    LoopbackAccessEvent *event = bpf_loopback_access_ringbuf_reserve();
+    if (!event) return;
+
+    if (lastReportNs) {
+        *lastReportNs = currentBootNs;
+    } else {
+        if (bpf_loopback_access_cache_map_update_elem(&key, &currentBootNs,
+                                                      BPF_NOEXIST) != 0) {
+            bpf_loopback_access_ringbuf_discard(event);
+            return;
+        }
+    }
+
+    event->src_uid = src_uid;
+    event->dst_uid = dst_uid;
+    event->result = result;
+    bpf_loopback_access_ringbuf_submit(event);
 }
 
 static __always_inline inline void
