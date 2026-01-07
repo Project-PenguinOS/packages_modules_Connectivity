@@ -14,7 +14,7 @@
  * limitations under the License
  */
 
-package com.android.server.connectivity.mdns;
+package com.android.server.connectivity.mdns.legacy;
 
 import static com.android.testutils.Cleanup.testAndCleanup;
 
@@ -49,6 +49,12 @@ import android.util.Log;
 
 import com.android.net.module.util.HexDump;
 import com.android.net.module.util.SharedLog;
+import com.android.server.connectivity.mdns.MdnsConfigs;
+import com.android.server.connectivity.mdns.MdnsConstants;
+import com.android.server.connectivity.mdns.MdnsFeatureFlags;
+import com.android.server.connectivity.mdns.MdnsPacket;
+import com.android.server.connectivity.mdns.MdnsResponseErrorCode;
+import com.android.server.connectivity.mdns.SocketKey;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
 

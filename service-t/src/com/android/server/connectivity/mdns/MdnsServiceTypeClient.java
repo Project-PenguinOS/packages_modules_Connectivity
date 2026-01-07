@@ -81,7 +81,7 @@ public class MdnsServiceTypeClient {
     static final long REMOVE_SERVICE_AFTER_QUERY_SENT_TIME = 2000L;
     static final String SERVICE_NAME_DISCOVERY = "";
     static final String NO_HOSTNAME = "";
-
+    static final String NO_SUBTYPE = "";
     private final String serviceType;
     private final String[] serviceTypeLabels;
     private final MdnsSocketClientBase socketClient;
@@ -539,12 +539,14 @@ public class MdnsServiceTypeClient {
             final FilterRepliesInfo info = listeners.valueAt(i).filterRepliesInfo;
             if (!info.serviceName.equals(SERVICE_NAME_DISCOVERY)) continue;
 
-            // If there is a discovery listener without subtype, then the FilterRepliesInfo should
-            // let through any response for the service type.
+            // The discovery requests for the base type are represented by an empty value in the
+            // subtype list.  This empty value in the subtype list means the offload engine should
+            // also offload queries for the base type.
             if (info.subtypes.isEmpty()) {
-                return info;
+                combinedSubtypes.add(NO_SUBTYPE);
+            } else {
+                combinedSubtypes.addAll(info.subtypes);
             }
-            combinedSubtypes.addAll(info.subtypes);
         }
 
         // Update the info with combined subtypes

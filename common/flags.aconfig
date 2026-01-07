@@ -13,6 +13,7 @@ flag {
   namespace: "com_android_tethering"
   description: "Flag for NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS API"
   bug: "430509489"
+  is_exported: true
 }
 
 flag {
@@ -27,6 +28,7 @@ flag {
   namespace: "com_android_tethering"
   description: "Flag for supporting IncallService API"
   bug: "430509489"
+  is_exported: true
 }
 
 flag {
@@ -56,6 +58,7 @@ flag {
     namespace: "com_android_tethering"
     description: "A flag to control whether offload callbacks should be sent for interfaces that do not otherwise support mDNS."
     bug: "395515556"
+    is_exported: true
 }
 
 flag {
@@ -86,4 +89,3 @@ flag {
     bug: "452488983"
     is_exported: true
 }
-

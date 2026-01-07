@@ -16,8 +16,8 @@
 
 package com.android.server.connectivity.mdns;
 
-import static com.android.server.connectivity.mdns.MdnsSocket.MULTICAST_IPV4_ADDRESS;
-import static com.android.server.connectivity.mdns.MdnsSocket.MULTICAST_IPV6_ADDRESS;
+import static com.android.server.connectivity.mdns.MdnsConstants.IPV4_SOCKET_ADDR;
+import static com.android.server.connectivity.mdns.MdnsConstants.IPV6_SOCKET_ADDR;
 
 import android.annotation.NonNull;
 import android.annotation.RequiresApi;
@@ -132,7 +132,7 @@ public class MdnsInterfaceSocket {
     private void maybeJoinIpv4(@NonNull List<LinkAddress> addresses) {
         final boolean hasAddr = hasIpv4Address(addresses);
         if (!mJoinedIpv4 && hasAddr) {
-            mJoinedIpv4 = joinGroup(MULTICAST_IPV4_ADDRESS);
+            mJoinedIpv4 = joinGroup(IPV4_SOCKET_ADDR);
         } else if (!hasAddr) {
             // Lost IPv4 address
             mJoinedIpv4 = false;
@@ -142,7 +142,7 @@ public class MdnsInterfaceSocket {
     private void maybeJoinIpv6(@NonNull List<LinkAddress> addresses) {
         final boolean hasAddr = hasIpv6Address(addresses);
         if (!mJoinedIpv6 && hasAddr) {
-            mJoinedIpv6 = joinGroup(MULTICAST_IPV6_ADDRESS);
+            mJoinedIpv6 = joinGroup(IPV6_SOCKET_ADDR);
         } else if (!hasAddr) {
             // Lost IPv6 address
             mJoinedIpv6 = false;

@@ -89,7 +89,7 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
      */
     annotation class CollectTcpdumpOnFailure
 
-    private data class TcpdumpRun(val pid: Int, val pcapFile: File)
+    private data class TcpdumpRun(val pid: Int, val pcapFile: File, val startSsOutput: ByteArray)
 
     private var failureHeader: String? = null
 
@@ -215,7 +215,9 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
         val tcpdumpPid = Integer.parseInt(reader.readLine())
         reader.close()
         stdout.close()
-        tcpdumpRun = TcpdumpRun(tcpdumpPid, pcapFile)
+
+        val startSsOutput = captureCommandOutput("su 0 ss -eionptu")
+        tcpdumpRun = TcpdumpRun(tcpdumpPid, pcapFile, startSsOutput)
     }
 
     private fun stopTcpdumpIfRunning(testData: DataRecord?, baseFilename: String?) {
@@ -223,6 +225,9 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
         // Send SIGTERM for graceful shutdown of tcpdump so that it can flush its output
         executeCommandBlocking("su 0 kill ${run.pid}")
         if (testData != null && baseFilename != null) {
+            buffer.write(run.startSsOutput)
+            collectCommandOutput("su 0 ss -eionptu")
+            collectDumpsys("deviceidle")
             val pcapFile = run.pcapFile
             if (pcapFile.exists()) {
                 val fileKey =
@@ -272,6 +277,8 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
             filename = baseFilename + "_$i"
             i++
         }
+        stopTcpdumpIfRunning(testData, filename)
+
         val outFile = File(collectorDir, filename + FILENAME_SUFFIX)
         outputFiles.add(filename)
         getOutputStreamViaShell(outFile).use { fos ->
@@ -281,7 +288,6 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
             }
             fos.write(buffer.toByteArray())
         }
-        stopTcpdumpIfRunning(testData, filename)
         failureHeader = null
         buffer.reset()
         val fileKey = "${ConnectivityDiagnosticsCollector::class.qualifiedName}_$filename"
@@ -498,5 +504,19 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
         if (exceptionContext == null) return
         writer.println("At: ")
         exceptionContext.printStackTrace(writer)
+    }
+
+    private fun captureCommandOutput(cmd: String): ByteArray {
+        val outStream = ByteArrayOutputStream()
+        PrintWriter(outStream).let {
+            it.println("--- $cmd at ${ZonedDateTime.now()} ---")
+            it.flush()
+        }
+        AutoCloseInputStream(
+            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)
+        ).use {
+            it.copyTo(outStream)
+        }
+        return outStream.toByteArray()
     }
 }

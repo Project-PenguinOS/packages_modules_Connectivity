@@ -16,7 +16,7 @@
 
 package com.android.server.connectivity.mdns;
 
-import static com.android.server.connectivity.mdns.MdnsSocket.INTERFACE_INDEX_UNSPECIFIED;
+import static com.android.server.connectivity.mdns.MdnsConstants.INTERFACE_INDEX_UNSPECIFIED;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;

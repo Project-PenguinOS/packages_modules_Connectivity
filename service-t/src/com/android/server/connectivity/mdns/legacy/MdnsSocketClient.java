@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-package com.android.server.connectivity.mdns;
+package com.android.server.connectivity.mdns.legacy;
 
 import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
+import static com.android.server.connectivity.mdns.MdnsConstants.INTERFACE_INDEX_UNSPECIFIED;
 
 import android.Manifest.permission;
 import android.annotation.NonNull;
@@ -33,13 +34,22 @@ import android.util.Log;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.SharedLog;
+import com.android.server.connectivity.mdns.MdnsConfigs;
+import com.android.server.connectivity.mdns.MdnsConstants;
+import com.android.server.connectivity.mdns.MdnsFeatureFlags;
+import com.android.server.connectivity.mdns.MdnsPacket;
+import com.android.server.connectivity.mdns.MdnsResponseDecoder;
+import com.android.server.connectivity.mdns.MdnsResponseErrorCode;
+import com.android.server.connectivity.mdns.MdnsServiceBrowserListener;
+import com.android.server.connectivity.mdns.MdnsSocketClientBase;
+import com.android.server.connectivity.mdns.SocketKey;
 import com.android.server.connectivity.mdns.util.MdnsUtils;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
-import java.net.InetAddress;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -244,8 +254,9 @@ public class MdnsSocketClient implements MdnsSocketClientBase {
                     + "specific networks");
         }
         // This class is only used by gmscore, network capabilities is not used and supported.
-        socketCreationCallback.onSocketCreated(new SocketKey(
-                multicastSocket.getInterfaceIndex(), multicastSocket.getInterfaceName()));
+        socketCreationCallback.onSocketCreated(new SocketKey(null /* network */,
+                multicastSocket.getInterfaceIndex(), multicastSocket.getInterfaceName(),
+                EMPTY_NETWORK_CAPABILITIES));
     }
 
     @Override
@@ -475,11 +486,11 @@ public class MdnsSocketClient implements MdnsSocketClientBase {
                     final int interfaceIndex;
                     final String interfaceName;
                     if (socket == null || !propagateInterfaceIndex) {
-                        interfaceIndex = MdnsSocket.INTERFACE_INDEX_UNSPECIFIED;
+                        interfaceIndex = INTERFACE_INDEX_UNSPECIFIED;
                         interfaceName = MdnsSocket.INTERFACE_NAME_UNKNOWN;
                     } else if (mdnsFeatureFlags.mIsSocketClientNetworkGuessingEnabled) {
                         interfaceIndex = key == null
-                                ? MdnsSocket.INTERFACE_INDEX_UNSPECIFIED
+                                ? INTERFACE_INDEX_UNSPECIFIED
                                 : key.getInterfaceIndex();
                         interfaceName = key == null
                                 ? MdnsSocket.INTERFACE_NAME_UNKNOWN

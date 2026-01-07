@@ -30,6 +30,7 @@ import static com.android.server.connectivity.mdns.MdnsServiceTypeClient.EVENT_Q
 import static com.android.server.connectivity.mdns.MdnsServiceTypeClient.EVENT_REMOVE_EXPIRED_SERVICES;
 import static com.android.server.connectivity.mdns.MdnsServiceTypeClient.EVENT_START_QUERYTASK;
 import static com.android.server.connectivity.mdns.MdnsServiceTypeClient.NO_HOSTNAME;
+import static com.android.server.connectivity.mdns.MdnsServiceTypeClient.NO_SUBTYPE;
 import static com.android.server.connectivity.mdns.MdnsServiceTypeClient.REMOVE_SERVICE_AFTER_QUERY_SENT_TIME;
 import static com.android.server.connectivity.mdns.MdnsServiceTypeClient.SERVICE_NAME_DISCOVERY;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.LOCAL_TLD;
@@ -134,6 +135,8 @@ public class MdnsServiceTypeClientTests {
     private MdnsServiceBrowserListener mockListenerOne;
     @Mock
     private MdnsServiceBrowserListener mockListenerTwo;
+    @Mock
+    private MdnsServiceBrowserListener mockListenerThree;
     @Mock
     private MdnsMultinetworkSocketClient mockSocketClient;
     @Mock
@@ -2726,7 +2729,7 @@ public class MdnsServiceTypeClientTests {
         final Set<FilterRepliesInfo> offloadInfo = getFilterRepliesInfo();
         assertEquals(1, offloadInfo.size());
         assertTrue(offloadInfo.contains(new FilterRepliesInfo(
-                SERVICE_NAME_DISCOVERY, SERVICE_TYPE, List.of(), NO_HOSTNAME)));
+                SERVICE_NAME_DISCOVERY, SERVICE_TYPE, List.of(subtype, NO_SUBTYPE), NO_HOSTNAME)));
 
         // Stop base type listener
         stopSendAndReceive(mockListenerOne);
@@ -2736,6 +2739,48 @@ public class MdnsServiceTypeClientTests {
         assertEquals(1, offloadInfo2.size());
         assertTrue(offloadInfo2.contains(new FilterRepliesInfo(
                 SERVICE_NAME_DISCOVERY, SERVICE_TYPE, List.of(subtype), NO_HOSTNAME)));
+    }
+
+    @Test
+    public void testGetFilterRepliesInfo_twoDiscoveryRequests_NoSubtypes() throws Exception {
+        final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+                .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
+        client = makeMdnsServiceTypeClient(flags, false);
+
+        final MdnsSearchOptions discoverOptions1 = MdnsSearchOptions.newBuilder().build();
+        final MdnsSearchOptions discoverOptions2 = MdnsSearchOptions.newBuilder().build();
+        // Register two discovery listeners, none of them specifies any subtype
+        startSendAndReceive(mockListenerOne, discoverOptions1);
+        startSendAndReceive(mockListenerTwo, discoverOptions2);
+
+        // Check offload service info. There should be only one service info with base type
+        // and an empty subtype
+        final Set<FilterRepliesInfo> offloadInfo = getFilterRepliesInfo();
+        assertEquals(1, offloadInfo.size());
+        assertTrue(offloadInfo.contains(new FilterRepliesInfo(
+                SERVICE_NAME_DISCOVERY,
+                SERVICE_TYPE,
+                List.of(NO_SUBTYPE), NO_HOSTNAME)
+        ));
+
+        // Stop 1st listener
+        stopSendAndReceive(mockListenerOne);
+        // Check offload service info. There is still one service info with base type and
+        // an empty subtype.
+        final Set<FilterRepliesInfo> offloadInfo2 = getFilterRepliesInfo();
+        assertEquals(1, offloadInfo2.size());
+        assertTrue(offloadInfo2.contains(new FilterRepliesInfo(
+                SERVICE_NAME_DISCOVERY,
+                SERVICE_TYPE,
+                List.of(NO_SUBTYPE),
+                NO_HOSTNAME))
+        );
+
+        // Stop 2nd listener
+        stopSendAndReceive(mockListenerTwo);
+
+        final Set<FilterRepliesInfo> offloadInfo3 = getFilterRepliesInfo();
+        assertEquals(0, offloadInfo3.size());
     }
 
     @Test
@@ -2760,6 +2805,18 @@ public class MdnsServiceTypeClientTests {
         assertTrue(offloadInfo.contains(new FilterRepliesInfo(
                 SERVICE_NAME_DISCOVERY, SERVICE_TYPE, List.of(subtype1, subtype2), NO_HOSTNAME)));
 
+        final MdnsSearchOptions discoverOptions3 = MdnsSearchOptions.newBuilder().build();
+        startSendAndReceive(mockListenerThree, discoverOptions3);
+        final Set<FilterRepliesInfo> updatedOffloadInfo = getFilterRepliesInfo();
+        assertEquals(1, updatedOffloadInfo.size());
+        assertTrue(updatedOffloadInfo.contains(new FilterRepliesInfo(
+                SERVICE_NAME_DISCOVERY,
+                SERVICE_TYPE,
+                List.of(subtype1, subtype2, NO_SUBTYPE),
+                NO_HOSTNAME))
+        );
+
+
         // Stop one of listener
         stopSendAndReceive(mockListenerOne);
 
@@ -2767,7 +2824,23 @@ public class MdnsServiceTypeClientTests {
         final Set<FilterRepliesInfo> offloadInfo2 = getFilterRepliesInfo();
         assertEquals(1, offloadInfo2.size());
         assertTrue(offloadInfo2.contains(new FilterRepliesInfo(
-                SERVICE_NAME_DISCOVERY, SERVICE_TYPE, List.of(subtype2), NO_HOSTNAME)));
+                SERVICE_NAME_DISCOVERY, SERVICE_TYPE, List.of(subtype2, NO_SUBTYPE), NO_HOSTNAME)));
+
+        // Stop 2nd listener
+        stopSendAndReceive(mockListenerTwo);
+        final Set<FilterRepliesInfo> offloadInfo3 = getFilterRepliesInfo();
+        assertEquals(1, offloadInfo3.size());
+        assertTrue(offloadInfo3.contains(new FilterRepliesInfo(
+                SERVICE_NAME_DISCOVERY,
+                SERVICE_TYPE,
+                List.of(NO_SUBTYPE),
+                NO_HOSTNAME))
+        );
+
+        // Stop the 3rd listener
+        stopSendAndReceive(mockListenerThree);
+        final Set<FilterRepliesInfo> offloadInfo4 = getFilterRepliesInfo();
+        assertEquals(0, offloadInfo4.size());
     }
 
     @Test
@@ -2870,7 +2943,7 @@ public class MdnsServiceTypeClientTests {
         // Register discovery listener
         startSendAndReceive(listener1, discoveryOptions);
         final FilterRepliesInfo discoveryInfo = new FilterRepliesInfo(
-                SERVICE_NAME_DISCOVERY, SERVICE_TYPE, Collections.emptyList(), NO_HOSTNAME);
+                SERVICE_NAME_DISCOVERY, SERVICE_TYPE, Collections.singletonList(""), NO_HOSTNAME);
         verify(mockCallback).onOffloadStartOrUpdate(eq(socketKey.getInterfaceName()),
                 eq(createOffloadServiceInfoFromFilterReplies(discoveryInfo)));
 

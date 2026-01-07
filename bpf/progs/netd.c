@@ -401,6 +401,13 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
     return isRestricted;
 }
 
+static __always_inline inline void
+log_loopback_access(__unused struct __sk_buff *skb,
+                    __unused uint32_t sender_uid) {
+    // TODO(b/431786207): check for cross-UID loopback and add events to ring
+    // buffer
+}
+
 static __always_inline inline void do_packet_tracing(
         const struct __sk_buff* const skb, const struct egress_bool egress, const uint32_t uid,
         const uint32_t tag, const struct kver_uint kver) {
@@ -613,6 +620,12 @@ static __always_inline inline void update_stats_with_config(const uint32_t selec
     }
 }
 
+static inline __always_inline bool loopback_metrics_enabled() {
+    const uint32_t zero = 0;
+    bool *enabled = bpf_loopback_access_metrics_enabled_map_lookup_elem(&zero);
+    return enabled && *enabled;
+}
+
 static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
                                                       const struct egress_bool egress,
                                                       const struct kver_uint kver,
@@ -656,6 +669,11 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
         if (match == DROP_UNLESS_DNS) match = PASS;
     } else {
         if (match == DROP_UNLESS_DNS) match = DROP;
+    }
+
+    if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q4) && egress.egress && skb->ifindex == 1 &&
+        loopback_metrics_enabled()) {
+        log_loopback_access(skb, sock_uid);
     }
 
     if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q2) && (match != DROP)) {
