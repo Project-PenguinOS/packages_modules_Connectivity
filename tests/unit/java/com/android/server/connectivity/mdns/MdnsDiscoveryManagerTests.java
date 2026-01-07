@@ -42,7 +42,7 @@ import android.text.TextUtils;
 import android.util.Pair;
 
 import com.android.net.module.util.SharedLog;
-import com.android.server.connectivity.mdns.MdnsServiceTypeClient.FilterRepliesInfo;
+import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOffloadInfo;
 import com.android.server.connectivity.mdns.MdnsSocketClientBase.SocketCreationCallback;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
@@ -534,17 +534,19 @@ public class MdnsDiscoveryManagerTests {
 
         final MdnsSearchOptions options =
                 MdnsSearchOptions.newBuilder().setNetwork(NETWORK_1).build();
-        final FilterRepliesInfo info1 = new FilterRepliesInfo(
+        final DiscoveryOffloadInfo info1 = new DiscoveryOffloadInfo(
                 "testName1", SERVICE_TYPE_1, List.of("_sub1"), "testHost1");
-        doReturn(Set.of(info1)).when(mockServiceTypeClientType1Network1).getFilterRepliesInfo();
+        doReturn(Set.of(info1)).when(mockServiceTypeClientType1Network1)
+                .getAllDiscoveryOffloadInfos();
         final SocketCreationCallback callback1 = expectSocketCreationCallback(
                 SERVICE_TYPE_1, mockListenerOne, options);
         runOnHandler(() -> callback1.onSocketCreated(SOCKET_KEY_NETWORK_1));
         verify(mockServiceTypeClientType1Network1).startSendAndReceive(mockListenerOne, options);
 
-        final FilterRepliesInfo info2 = new FilterRepliesInfo(
+        final DiscoveryOffloadInfo info2 = new DiscoveryOffloadInfo(
                 "", SERVICE_TYPE_2, List.of("_sub2"), "testHost2");
-        doReturn(Set.of(info2)).when(mockServiceTypeClientType2Network1).getFilterRepliesInfo();
+        doReturn(Set.of(info2)).when(mockServiceTypeClientType2Network1)
+                .getAllDiscoveryOffloadInfos();
         final SocketCreationCallback callback2 = expectSocketCreationCallback(
                 SERVICE_TYPE_2, mockListenerTwo, options);
         runOnHandler(() -> callback2.onSocketCreated(SOCKET_KEY_NETWORK_1));
@@ -552,14 +554,14 @@ public class MdnsDiscoveryManagerTests {
 
         runOnHandler(() -> {
             // Verify the offload service info that collects from each service type clients.
-            final List<FilterRepliesInfo> offloadInfo1 =
+            final List<DiscoveryOffloadInfo> offloadInfo1 =
                     discoveryManager.notifyOffloadStart("interface1");
             assertEquals(2, offloadInfo1.size());
             assertTrue(offloadInfo1.containsAll(List.of(info1, info2)));
             verify(socketClient).notifyOffloadStart("interface1");
 
             // Verify that no data is present if the target interface is not discovered.
-            final List<FilterRepliesInfo> offloadInfo2 =
+            final List<DiscoveryOffloadInfo> offloadInfo2 =
                     discoveryManager.notifyOffloadStart("interface2");
             assertEquals(0, offloadInfo2.size());
         });

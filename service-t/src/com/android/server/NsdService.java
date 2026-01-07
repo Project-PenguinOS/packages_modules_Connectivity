@@ -57,8 +57,9 @@ import static com.android.server.connectivity.mdns.MdnsRecord.MAX_LABEL_LENGTH;
 import static com.android.server.connectivity.mdns.MdnsSearchOptions.AGGRESSIVE_QUERY_MODE;
 import static com.android.server.connectivity.mdns.MdnsSearchOptions.PASSIVE_QUERY_MODE;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.Clock;
-import static com.android.server.connectivity.mdns.util.MdnsUtils.createOffloadServiceInfoFromFilterReplies;
+import static com.android.server.connectivity.mdns.util.MdnsUtils.createOffloadServiceInfoFromDiscoveryOffload;
 import static com.android.tethering.flags.Flags.FLAG_NSD_SERVICE_PICKER;
+import static com.android.tethering.flags.Flags.nsdMdnsScanOffload;
 
 import android.Manifest;
 import android.annotation.NonNull;
@@ -137,7 +138,7 @@ import com.android.server.connectivity.mdns.MdnsMultinetworkSocketClient;
 import com.android.server.connectivity.mdns.MdnsSearchOptions;
 import com.android.server.connectivity.mdns.MdnsServiceBrowserListener;
 import com.android.server.connectivity.mdns.MdnsServiceInfo;
-import com.android.server.connectivity.mdns.MdnsServiceTypeClient.FilterRepliesInfo;
+import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOffloadInfo;
 import com.android.server.connectivity.mdns.MdnsSocketProvider;
 import com.android.server.connectivity.mdns.OffloadCallback;
 import com.android.server.connectivity.mdns.util.MdnsUtils;
@@ -2795,23 +2796,47 @@ public class NsdService extends INsdManager.Stub {
                 mAdvertiser.notifyOffloadStart(targetInterface);
         for (MdnsAdvertiser.OffloadServiceInfoWrapper wrapper : offloadWrappers) {
             try {
-                offloadEngine.onOffloadServiceUpdated(wrapper.mOffloadServiceInfo);
+                if (nsdMdnsScanOffload()) {
+                    long updatedOffloadType = offloadEngineInfo.mOffloadType
+                            & wrapper.mOffloadServiceInfo.getOffloadType();
+                    if (updatedOffloadType != 0) {
+                        OffloadServiceInfo updatedOffloadServiceInfo =
+                                wrapper.mOffloadServiceInfo.withOffloadType(updatedOffloadType);
+                        offloadEngine.onOffloadServiceUpdated(updatedOffloadServiceInfo);
+                    }
+                } else {
+                    offloadEngine.onOffloadServiceUpdated(wrapper.mOffloadServiceInfo);
+                }
+
             } catch (RemoteException e) {
                 // Can happen in regular cases, do not log a stacktrace
                 Log.i(TAG, "Failed to send offload callback, remote died: " + e.getMessage());
             }
         }
 
-        // Check if the engine supports OFFLOAD_TYPE_FILTER_REPLIES or OFFLOAD_TYPE_QUERY
+        // Check if the engine supports offload type for offloaded discovery
         if ((offloadEngineInfo.mOffloadType
-                & (OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES
-                    | OffloadEngine.OFFLOAD_TYPE_QUERY)) != 0) {
-            final List<FilterRepliesInfo> discoveryOffloadInfo =
+                & DiscoveryOffloadInfo.OFFLOAD_TYPE) != 0) {
+            final List<DiscoveryOffloadInfo> discoveryOffloadInfo =
                     mMdnsDiscoveryManager.notifyOffloadStart(targetInterface);
-            for (FilterRepliesInfo info : discoveryOffloadInfo) {
+            for (DiscoveryOffloadInfo info : discoveryOffloadInfo) {
                 try {
-                    offloadEngine.onOffloadServiceUpdated(
-                            createOffloadServiceInfoFromFilterReplies(info));
+                    if (nsdMdnsScanOffload()) {
+                        offloadEngine.onOffloadServiceUpdated(
+                                createOffloadServiceInfoFromDiscoveryOffload(
+                                        info,
+                                        offloadEngineInfo.mOffloadType
+                                                & DiscoveryOffloadInfo.OFFLOAD_TYPE
+                                )
+                        );
+                    } else {
+                        offloadEngine.onOffloadServiceUpdated(
+                                createOffloadServiceInfoFromDiscoveryOffload(
+                                        info,
+                                        DiscoveryOffloadInfo.OFFLOAD_TYPE
+                                )
+                        );
+                    }
                 } catch (RemoteException e) {
                     // Can happen in regular cases, do not log a stacktrace
                     Log.i(TAG, "Failed to send offload callback, remote died: " + e.getMessage());
@@ -2833,13 +2858,21 @@ public class NsdService extends INsdManager.Stub {
                         & offloadServiceInfo.getOffloadType()) == 0)) {
                     continue;
                 }
+                OffloadServiceInfo updatedOffloadServiceInfo;
+                if (nsdMdnsScanOffload()) {
+                    updatedOffloadServiceInfo =
+                            offloadServiceInfo.withOffloadType(offloadEngineInfo.mOffloadType
+                                    & offloadServiceInfo.getOffloadType());
+                } else {
+                    updatedOffloadServiceInfo = offloadServiceInfo;
+                }
                 try {
                     if (isRemove) {
                         mOffloadEngines.getBroadcastItem(i).onOffloadServiceRemoved(
-                                offloadServiceInfo);
+                                updatedOffloadServiceInfo);
                     } else {
                         mOffloadEngines.getBroadcastItem(i).onOffloadServiceUpdated(
-                                offloadServiceInfo);
+                                updatedOffloadServiceInfo);
                     }
                 } catch (RemoteException e) {
                     // Can happen in regular cases, do not log a stacktrace

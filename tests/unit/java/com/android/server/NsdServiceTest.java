@@ -20,7 +20,6 @@ import static android.Manifest.permission.ACCESS_LOCAL_NETWORK;
 import static android.Manifest.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS;
 import static android.Manifest.permission.NEARBY_WIFI_DEVICES;
 import static android.Manifest.permission.DEVICE_POWER;
-import static android.Manifest.permission.NEARBY_WIFI_DEVICES;
 import static android.Manifest.permission.NETWORK_SETTINGS;
 import static android.Manifest.permission.NETWORK_STACK;
 import static android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED;
@@ -60,9 +59,11 @@ import static com.android.server.NsdService.checkHostname;
 import static com.android.server.NsdService.parseTypeAndSubtype;
 import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_GOODBYE_RECEIVED;
 import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_TTL_EXPIRED;
-import static com.android.server.connectivity.mdns.util.MdnsUtils.createOffloadServiceInfoFromFilterReplies;
+import static com.android.server.connectivity.mdns.util.MdnsUtils.createOffloadServiceInfoFromDiscoveryOffload;
 import static com.android.testutils.ContextUtils.mockService;
+import static com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD;
 import static com.android.tethering.flags.Flags.FLAG_NSD_SERVICE_PICKER;
+import static com.android.tethering.flags.Flags.nsdMdnsScanOffload;
 
 import static libcore.junit.util.compat.CoreCompatChangeRule.DisableCompatChanges;
 import static libcore.junit.util.compat.CoreCompatChangeRule.EnableCompatChanges;
@@ -153,7 +154,7 @@ import com.android.server.connectivity.mdns.MdnsInterfaceSocket;
 import com.android.server.connectivity.mdns.MdnsSearchOptions;
 import com.android.server.connectivity.mdns.MdnsServiceBrowserListener;
 import com.android.server.connectivity.mdns.MdnsServiceInfo;
-import com.android.server.connectivity.mdns.MdnsServiceTypeClient.FilterRepliesInfo;
+import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOffloadInfo;
 import com.android.server.connectivity.mdns.MdnsSocketProvider;
 import com.android.server.connectivity.mdns.MdnsSocketProvider.SocketRequestMonitor;
 import com.android.server.connectivity.mdns.OffloadCallback;
@@ -2843,13 +2844,16 @@ public class NsdServiceTest {
         client.unregisterOffloadEngine(offloadEngine);
     }
 
-    private OffloadEngine registerOffloadEngine(String interfaceName) {
+    private OffloadEngine registerOffloadEngine(
+            String interfaceName,
+            @OffloadEngine.OffloadType long offloadType
+    ) {
         final NsdManager client = connectClient(mService);
         final OffloadEngine offloadEngine = mock(OffloadEngine.class);
         doReturn(PERMISSION_GRANTED).when(mContext).checkCallingOrSelfPermission(
                 REGISTER_NSD_OFFLOAD_ENGINE);
         client.registerOffloadEngine(interfaceName,
-                OFFLOAD_TYPE_REPLY | OFFLOAD_TYPE_FILTER_REPLIES,
+                offloadType,
                 OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run,
                 offloadEngine);
         waitForIdle();
@@ -2858,13 +2862,14 @@ public class NsdServiceTest {
 
     private OffloadSession registerOffloadSession(
             String interfaceName,
-            OffloadEngine offloadEngine
+            OffloadEngine offloadEngine,
+            @OffloadEngine.OffloadType long offloadType
     ) {
         final NsdManager client = connectClient(mService);
         doReturn(PERMISSION_GRANTED).when(mContext).checkCallingOrSelfPermission(
                 REGISTER_NSD_OFFLOAD_ENGINE);
         OffloadSession offloadSession = client.registerOffloadSession(interfaceName,
-                OFFLOAD_TYPE_QUERY,
+                offloadType,
                 OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run,
                 offloadEngine);
         waitForIdle();
@@ -2874,40 +2879,109 @@ public class NsdServiceTest {
     @Test
     @EnableCompatChanges(ENABLE_PLATFORM_MDNS_BACKEND)
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @RequiresFlagsDisabled(FLAG_NSD_MDNS_SCAN_OFFLOAD)
     public void testRegisterOffloadEngine_sendAllOffloadServiceInfos() {
         final String interfaceName = "iface";
+        long offloadTypeUsedInOffloadEngineRegistration =
+                OFFLOAD_TYPE_REPLY | OFFLOAD_TYPE_FILTER_REPLIES;
         final OffloadServiceInfo advertingInfo = new OffloadServiceInfo(
                 new OffloadServiceInfo.Key("_testService", "_testType"), List.of("_sub1", "_sub2"),
                 "Android.local", new byte[] { 0x1, 0x2, 0x3 }, 1 /* priority */,
                 OFFLOAD_TYPE_REPLY);
+        final OffloadServiceInfo advertingInfoExpected = advertingInfo.withOffloadType(
+                OFFLOAD_TYPE_REPLY
+        );
+
         doReturn(List.of(new MdnsAdvertiser.OffloadServiceInfoWrapper(123, advertingInfo)))
                 .when(mAdvertiser).notifyOffloadStart(interfaceName);
-        final FilterRepliesInfo filerRepliesInfo = new FilterRepliesInfo(
+        final DiscoveryOffloadInfo filerRepliesInfo = new DiscoveryOffloadInfo(
                 "_testService", "_testType", List.of("_sub1", "_sub2"), "Android.local");
-        final OffloadServiceInfo discoveryInfo =
-                createOffloadServiceInfoFromFilterReplies(filerRepliesInfo);
+        final OffloadServiceInfo discoveryInfoExpected =
+                createOffloadServiceInfoFromDiscoveryOffload(
+                        filerRepliesInfo,
+                        DiscoveryOffloadInfo.OFFLOAD_TYPE
+                );
+
         doReturn(List.of(filerRepliesInfo)).when(mDiscoveryManager)
                 .notifyOffloadStart(eq(interfaceName));
-        final OffloadEngine offloadEngine = registerOffloadEngine(interfaceName);
+        final OffloadEngine offloadEngine = registerOffloadEngine(
+                interfaceName,
+                offloadTypeUsedInOffloadEngineRegistration
+        );
         // Verify that the OffloadServiceInfo retrieves from the advertiser and discoveryManager and
         // then sends it to the OffloadEngine.
         verify(mAdvertiser).notifyOffloadStart(interfaceName);
         verify(mDiscoveryManager).notifyOffloadStart(eq(interfaceName));
-        verify(offloadEngine).onOffloadServiceUpdated(advertingInfo);
-        verify(offloadEngine).onOffloadServiceUpdated(discoveryInfo);
+        verify(offloadEngine).onOffloadServiceUpdated(advertingInfoExpected);
+        verify(offloadEngine).onOffloadServiceUpdated(discoveryInfoExpected);
     }
 
     @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @RequiresFlagsEnabled(FLAG_NSD_MDNS_SCAN_OFFLOAD)
+    public void testRegisterOffloadEngine_onOffloadServiceUpdatedIsNotInvoked_AdvertisingInfo() {
+        final String interfaceName = "iface";
+        final OffloadServiceInfo advertisingInfo = new OffloadServiceInfo(
+                new OffloadServiceInfo.Key("_testService", "_testType"),
+                List.of("_sub1", "_sub2"),
+                "Android.local",
+                new byte[] { 0x1, 0x2, 0x3 },
+                1 /* priority */,
+                OFFLOAD_TYPE_REPLY
+        );
+        doReturn(List.of(new MdnsAdvertiser.OffloadServiceInfoWrapper(123, advertisingInfo)))
+                .when(mAdvertiser).notifyOffloadStart(interfaceName);
+
+        final OffloadEngine offloadEngine = registerOffloadEngine(
+                interfaceName,
+                OFFLOAD_TYPE_QUERY
+        );
+
+        verify(mAdvertiser).notifyOffloadStart(interfaceName);
+        verify(offloadEngine, never()).onOffloadServiceUpdated(any());
+    }
+
+    @Test
+    public void testRegisterOffloadEngine_onOffloadServiceUpdatedIsNotInvoked_DiscoveryInfo() {
+        final String interfaceName = "iface";
+        final DiscoveryOffloadInfo discoveryOffloadInfo = new DiscoveryOffloadInfo(
+                "_testService",
+                "_testType",
+                List.of("_sub1", "_sub2"),
+                "Android.local"
+        );
+        doReturn(List.of(discoveryOffloadInfo)).when(mDiscoveryManager)
+                .notifyOffloadStart(eq(interfaceName));
+
+        final OffloadEngine offloadEngine = registerOffloadEngine(
+                interfaceName,
+                OFFLOAD_TYPE_REPLY
+        );
+
+        verify(mDiscoveryManager, never()).notifyOffloadStart(any());
+        verify(offloadEngine, never()).onOffloadServiceUpdated(any());
+    }
+
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void testRegisterOffloadSession_sendAllOffloadServiceInfos() {
         final String interfaceName = "iface";
-        final FilterRepliesInfo filterRepliesInfo = new FilterRepliesInfo(
+        final DiscoveryOffloadInfo discoveryOffloadInfo = new DiscoveryOffloadInfo(
                 "_testService", "_testType", List.of("_sub1", "_sub2"), "Android.local");
+        long offloadType = OFFLOAD_TYPE_QUERY | OFFLOAD_TYPE_REPLY;
+        long expectedOffloadType = DiscoveryOffloadInfo.OFFLOAD_TYPE;
+        if (nsdMdnsScanOffload()) {
+            expectedOffloadType = offloadType & DiscoveryOffloadInfo.OFFLOAD_TYPE;
+        }
         final OffloadServiceInfo discoveryInfo =
-                createOffloadServiceInfoFromFilterReplies(filterRepliesInfo);
-        doReturn(List.of(filterRepliesInfo)).when(mDiscoveryManager)
+                createOffloadServiceInfoFromDiscoveryOffload(
+                        discoveryOffloadInfo,
+                        expectedOffloadType
+                );
+        doReturn(List.of(discoveryOffloadInfo)).when(mDiscoveryManager)
                 .notifyOffloadStart(eq(interfaceName));
         final OffloadEngine offloadEngine = mock(OffloadEngine.class);
-        registerOffloadSession(interfaceName, offloadEngine);
+        registerOffloadSession(interfaceName, offloadEngine, offloadType);
         // Verify that the OffloadServiceInfo retrieves from the advertiser and discoveryManager and
         // then sends it to the OffloadEngine.
         verify(mAdvertiser).notifyOffloadStart(interfaceName);
@@ -2916,12 +2990,17 @@ public class NsdServiceTest {
     }
 
     @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void testInjectProxyOffloadEngineResponse() {
         NsdServiceInfo serviceInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
         boolean isServiceLost = false;
         String interfaceName = "lo";
         final OffloadEngine offloadEngine = mock(OffloadEngine.class);
-        OffloadSession offloadSession = registerOffloadSession(interfaceName, offloadEngine);
+        OffloadSession offloadSession = registerOffloadSession(
+                interfaceName,
+                offloadEngine,
+                OFFLOAD_TYPE_QUERY
+        );
 
         offloadSession.onServiceFound(serviceInfo);
 
@@ -2963,7 +3042,10 @@ public class NsdServiceTest {
                 OFFLOAD_TYPE_REPLY);
         doReturn(Collections.emptyList()).when(mAdvertiser)
                 .notifyOffloadStart(anyString());
-        final OffloadEngine offloadEngine = registerOffloadEngine(interfaceName);
+        final OffloadEngine offloadEngine = registerOffloadEngine(
+                interfaceName,
+                OFFLOAD_TYPE_REPLY | OFFLOAD_TYPE_FILTER_REPLIES
+        );
         // Verify that the OffloadServiceInfo retrieves from the advertiser and that no info is
         // sent to the OffloadEngine.
         verify(mAdvertiser).notifyOffloadStart(interfaceName);
@@ -2983,7 +3065,9 @@ public class NsdServiceTest {
                 OFFLOAD_TYPE_FILTER_REPLIES);
         doReturn(Collections.emptyList()).when(mDiscoveryManager)
                 .notifyOffloadStart(eq(interfaceName));
-        final OffloadEngine offloadEngine = registerOffloadEngine(interfaceName);
+        final OffloadEngine offloadEngine = registerOffloadEngine(
+                interfaceName, OFFLOAD_TYPE_REPLY | OFFLOAD_TYPE_FILTER_REPLIES
+        );
         // Verify that the OffloadServiceInfo retrieves from the DiscoveryManager and that no info
         // is sent to the OffloadEngine.
         verify(mDiscoveryManager).notifyOffloadStart(eq(interfaceName));
@@ -2994,6 +3078,7 @@ public class NsdServiceTest {
     }
 
     @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void testRegisterOffloadSession_OffloadServiceUpdatedAndRemoved_DiscoveryManager() {
         final String interfaceName = "iface";
         final OffloadServiceInfo info = new OffloadServiceInfo(
@@ -3005,7 +3090,8 @@ public class NsdServiceTest {
         final OffloadEngine offloadEngine = mock(OffloadEngine.class);
         registerOffloadSession(
                 interfaceName,
-                offloadEngine
+                offloadEngine,
+                OFFLOAD_TYPE_FILTER_REPLIES | OFFLOAD_TYPE_QUERY
         );
         // Verify that the OffloadServiceInfo retrieved from the DiscoveryManager and that no info
         // is sent to the OffloadEngine.

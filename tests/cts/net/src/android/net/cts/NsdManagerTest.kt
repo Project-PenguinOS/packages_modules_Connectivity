@@ -1114,6 +1114,10 @@ class NsdManagerTest {
         }
 
         tryTest {
+            val offloadTypeInRegistration = OffloadEngine.OFFLOAD_TYPE_REPLY.toLong()
+            val offloadScanEnabled = runAsShell(READ_DEVICE_CONFIG) {
+                com.android.tethering.flags.Flags.nsdMdnsScanOffload()
+            }
             // Register service before the OffloadEngine is registered.
             nsdManager.registerService(si1, NsdManager.PROTOCOL_DNS_SD, record1)
             record1.expectCallback<ServiceRegistered>()
@@ -1127,7 +1131,11 @@ class NsdManagerTest {
                 .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
                     it.info.key.serviceName == si1.serviceName
                 }
-            checkOffloadServiceInfo(addOrUpdateEvent1.info, si1, offloadType)
+            checkOffloadServiceInfo(
+                addOrUpdateEvent1.info,
+                si1,
+                if (offloadScanEnabled) offloadTypeInRegistration else offloadType
+            )
 
             // Register service after OffloadEngine is registered.
             nsdManager.registerService(si2, NsdManager.PROTOCOL_DNS_SD, record2)
@@ -1136,7 +1144,11 @@ class NsdManagerTest {
                 .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
                     it.info.key.serviceName == si2.serviceName
                 }
-            checkOffloadServiceInfo(addOrUpdateEvent2.info, si2, offloadType)
+            checkOffloadServiceInfo(
+                addOrUpdateEvent2.info,
+                si2,
+                if (offloadScanEnabled) offloadTypeInRegistration else offloadType
+            )
 
             nsdManager.unregisterService(record2)
             record2.expectCallback<ServiceUnregistered>()
@@ -1144,7 +1156,11 @@ class NsdManagerTest {
                 .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.RemoveEvent> {
                     it.info.key.serviceName == si2.serviceName
                 }
-            checkOffloadServiceInfo(unregisterEvent.info, si2, offloadType)
+            checkOffloadServiceInfo(
+                unregisterEvent.info,
+                si2,
+                if (offloadScanEnabled) offloadTypeInRegistration else offloadType
+            )
         } cleanupStep {
             runAsShell(NETWORK_SETTINGS) {
                 nsdManager.unregisterOffloadEngine(offloadEngine)
@@ -1169,11 +1185,12 @@ class NsdManagerTest {
 
         tryTest {
             // Register OffloadEngine before the service is registered.
+            val offloadType = OffloadEngine.OFFLOAD_TYPE_REPLY or
+                                OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES
             runAsShell(NETWORK_SETTINGS) {
                 nsdManager.registerOffloadEngine(
                     testNetwork1.iface.interfaceName,
-                    (OffloadEngine.OFFLOAD_TYPE_REPLY
-                        or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong(),
+                    offloadType.toLong(),
                     OffloadEngine.OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK.toLong(),
                     { it.run() },
                     offloadEngine
@@ -1188,7 +1205,7 @@ class NsdManagerTest {
             checkOffloadServiceInfo(
                 addOrUpdateEvent1.info,
                 si,
-                OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong()
+                offloadType.toLong() and addOrUpdateEvent1.info.offloadType
             )
             record.expectCallback<ServiceRegistered>()
             val addOrUpdateEvent2 = offloadEngine
@@ -1198,8 +1215,7 @@ class NsdManagerTest {
             checkOffloadServiceInfo(
                 addOrUpdateEvent2.info,
                 si,
-                (OffloadEngine.OFFLOAD_TYPE_REPLY
-                    or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong()
+                offloadType.toLong() and addOrUpdateEvent2.info.offloadType
             )
         } cleanupStep {
             runAsShell(NETWORK_SETTINGS) {
@@ -1217,6 +1233,7 @@ class NsdManagerTest {
         subtypes: List<String>,
         hostName: String,
         serviceInfo: OffloadServiceInfo,
+        offloadType: Long
     ) {
         val expected = OffloadServiceInfo(
             OffloadServiceInfo.Key(serviceName, serviceType),
@@ -1224,8 +1241,7 @@ class NsdManagerTest {
             hostName,
             null /* offloadPayload */,
             0 /* priority */,
-            OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong() or
-                    OffloadEngine.OFFLOAD_TYPE_QUERY.toLong()
+            offloadType
         )
         assertEquals(expected, serviceInfo)
     }
@@ -1251,9 +1267,18 @@ class NsdManagerTest {
             nsdManager.discoverServices(discoveryRequest, { it.run() }, discoveryRecord)
             discoveryRecord.expectCallback<DiscoveryStarted>()
 
+            val offloadType = OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES
+            val mdnsScanOffloadEnabled = runAsShell(READ_DEVICE_CONFIG) {
+                com.android.tethering.flags.Flags.nsdMdnsScanOffload()
+            }
+            val expectedOffloadType = if (mdnsScanOffloadEnabled) {
+                offloadType
+            } else {
+                OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES or OffloadEngine.OFFLOAD_TYPE_QUERY
+            }
             runAsShell(NETWORK_SETTINGS) {
                 nsdManager.registerOffloadEngine(testNetwork1.iface.interfaceName,
-                    OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong(),
+                    offloadType.toLong(),
                     0L, /* offloadCapability */
                     { it.run() }, offloadEngine)
             }
@@ -1266,7 +1291,8 @@ class NsdManagerTest {
                 "$serviceType.local" /* serviceType */,
                 listOf("subtype") /* subTypes */,
                 "" /* hostName */,
-                discoveryInfoEvent.info
+                discoveryInfoEvent.info,
+                expectedOffloadType.toLong()
             )
 
             // Start resolution after the OffloadEngine is registered.
@@ -1280,7 +1306,8 @@ class NsdManagerTest {
                 "$serviceType.local" /* serviceType */,
                 listOf() /* subTypes */,
                 "" /* hostName */,
-                resolutionInfoEvent.info
+                resolutionInfoEvent.info,
+                expectedOffloadType.toLong()
             )
 
             // Stop resolution and check info is removed.
@@ -1293,7 +1320,8 @@ class NsdManagerTest {
                 "$serviceType.local" /* serviceType */,
                 listOf() /* subTypes */,
                 "" /* hostName */,
-                removeResolutionInfoEvent.info
+                removeResolutionInfoEvent.info,
+                expectedOffloadType.toLong()
             )
 
             // Stop discovery and check info is removed.
@@ -1306,7 +1334,8 @@ class NsdManagerTest {
                 "$serviceType.local" /* serviceType */,
                 listOf("subtype") /* subTypes */,
                 "" /* hostName */,
-                removeDiscoveryInfoEvent.info
+                removeDiscoveryInfoEvent.info,
+                expectedOffloadType.toLong()
             )
         } cleanup {
             runAsShell(NETWORK_SETTINGS) {
@@ -1329,9 +1358,18 @@ class NsdManagerTest {
 
         tryTest {
             // Register an OffloadEngine
+            val offloadType = OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES
+            val isMdnsScanOffloadEnabled = runAsShell(READ_DEVICE_CONFIG) {
+                com.android.tethering.flags.Flags.nsdMdnsScanOffload()
+            }
+            val expectedOffloadType = if (isMdnsScanOffloadEnabled) {
+                offloadType
+            } else {
+                OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES or OffloadEngine.OFFLOAD_TYPE_QUERY
+            }
             runAsShell(NETWORK_SETTINGS) {
                 nsdManager.registerOffloadEngine(testNetwork1.iface.interfaceName,
-                    OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong(),
+                    offloadType.toLong(),
                     0L, /* offloadCapability */
                     { it.run() }, offloadEngine)
             }
@@ -1352,7 +1390,8 @@ class NsdManagerTest {
                 "$serviceType.local" /* serviceType */,
                 listOf("subtype") /* subTypes */,
                 "" /* hostName */,
-                discoveryInfoEvent.info
+                discoveryInfoEvent.info,
+                expectedOffloadType.toLong()
             )
 
             // Start a resolution.
@@ -1366,7 +1405,8 @@ class NsdManagerTest {
                 "$serviceType.local" /* serviceType */,
                 listOf() /* subTypes */,
                 "" /* hostName */,
-                resolutionInfoEvent.info
+                resolutionInfoEvent.info,
+                expectedOffloadType.toLong()
             )
 
             // Disconnect testNetwork1
@@ -1390,20 +1430,21 @@ class NsdManagerTest {
                     assertEquals("", removeEvent1.info.key.serviceName)
                     Pair(removeEvent2, removeEvent1)
                 }
-
             checkSelectiveMdnsResponseOffloadServiceInfo(
                 si.serviceName /* serviceName */,
                 "$serviceType.local" /* serviceType */,
                 listOf() /* subTypes */,
                 "" /* hostName */,
-                resolutionEvent.info
+                resolutionEvent.info,
+                expectedOffloadType.toLong()
             )
             checkSelectiveMdnsResponseOffloadServiceInfo(
                 "" /* serviceName */,
                 "$serviceType.local" /* serviceType */,
                 listOf("subtype") /* subTypes */,
                 "" /* hostName */,
-                discoveryEvent.info
+                discoveryEvent.info,
+                expectedOffloadType.toLong()
             )
         } cleanupStep {
             runAsShell(NETWORK_SETTINGS) {

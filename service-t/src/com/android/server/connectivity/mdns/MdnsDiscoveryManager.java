@@ -31,7 +31,7 @@ import static android.net.NetworkCapabilities.NET_CAPABILITY_LOCAL_NETWORK;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.net.module.util.DnsUtils;
 import com.android.net.module.util.SharedLog;
-import com.android.server.connectivity.mdns.MdnsServiceTypeClient.FilterRepliesInfo;
+import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOffloadInfo;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -489,10 +489,10 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
      * interface and offload types.
      *
      * @param interfaceName The name of the network interface for which offloading is starting.
-     * @return A list of {@link FilterRepliesInfo} relevant to the specified interface.
+     * @return A list of {@link DiscoveryOffloadInfo} relevant to the specified interface.
      */
     @NonNull
-    public List<FilterRepliesInfo> notifyOffloadStart(@NonNull String interfaceName) {
+    public List<DiscoveryOffloadInfo> notifyOffloadStart(@NonNull String interfaceName) {
         discoveryExecutor.ensureRunningOnHandlerThread();
         sharedLog.log("notifyOffloadStart for interface:" + interfaceName);
         socketClient.notifyOffloadStart(interfaceName);
@@ -501,10 +501,10 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
             return Collections.emptyList();
         }
 
-        final List<FilterRepliesInfo> info = new ArrayList<>();
+        final List<DiscoveryOffloadInfo> info = new ArrayList<>();
         for (MdnsServiceTypeClient serviceTypeClient :
                 getMdnsServiceTypeClientByInterfaceName(interfaceName)) {
-            info.addAll(serviceTypeClient.getFilterRepliesInfo());
+            info.addAll(serviceTypeClient.getAllDiscoveryOffloadInfos());
         }
         return info;
     }

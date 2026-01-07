@@ -369,7 +369,6 @@ public class Tethering {
 
         // Load tethering configuration.
         updateConfiguration();
-        mConfig.readEnableSyncSM(mContext);
 
         // Must be initialized after tethering configuration is loaded because BpfCoordinator
         // constructor needs to use the configuration.

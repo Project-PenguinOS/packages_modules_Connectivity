@@ -44,7 +44,6 @@ import static com.android.net.module.util.ConnectivityCommonFlags.USE_ROUTE_PARC
 import static com.android.net.module.util.Inet4AddressUtils.intToInet4AddressHTH;
 import static com.android.net.module.util.NetworkStackConstants.RFC7421_PREFIX_LENGTH;
 import static com.android.net.module.util.netlink.RtNetlinkQdiscMessage.CLSACT;
-import static com.android.networkstack.tethering.TetheringConfiguration.USE_SYNC_SM;
 import static com.android.networkstack.tethering.TetheringFeatureFlags.TETHERING_AND_P2P_GO_LOCAL_AGENT;
 import static com.android.networkstack.tethering.util.PrefixUtils.asIpPrefix;
 import static com.android.networkstack.tethering.util.TetheringMessageBase.BASE_IPSERVER;
@@ -96,6 +95,7 @@ import com.android.net.module.util.NetdUtils;
 import com.android.net.module.util.RoutingCoordinatorManager;
 import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.SharedLog;
+import com.android.net.module.util.SyncStateMachine;
 import com.android.net.module.util.SyncStateMachine.StateInfo;
 import com.android.net.module.util.ip.InterfaceController;
 import com.android.net.module.util.netlink.NetlinkUtils;
@@ -104,7 +104,6 @@ import com.android.networkstack.tethering.TetheringConfiguration;
 import com.android.networkstack.tethering.metrics.TetheringMetrics;
 import com.android.networkstack.tethering.util.InterfaceSet;
 import com.android.networkstack.tethering.util.PrefixUtils;
-import com.android.networkstack.tethering.util.StateMachineShim;
 import com.android.tethering.mainline.beta.Flags;
 
 import java.net.Inet4Address;
@@ -126,7 +125,7 @@ import java.util.Set;
  *
  * @hide
  */
-public class IpServer extends StateMachineShim {
+public class IpServer extends SyncStateMachine {
     public static final int STATE_UNAVAILABLE = 0;
     public static final int STATE_AVAILABLE   = 1;
     public static final int STATE_TETHERED    = 2;
@@ -380,7 +379,7 @@ public class IpServer extends StateMachineShim {
             RoutingCoordinatorManager routingCoordinatorManager, Callback callback,
             TetheringConfiguration config,
             TetheringMetrics tetheringMetrics, Dependencies deps) {
-        super(ifaceName, USE_SYNC_SM ? null : handler.getLooper());
+        super(ifaceName, Thread.currentThread());
         mContext = Objects.requireNonNull(context);
         mHandler = handler;
         mLog = log.forSubComponent(ifaceName);
@@ -527,6 +526,26 @@ public class IpServer extends StateMachineShim {
         sendMessage(CMD_TETHER_UNREQUESTED);
     }
 
+    /** Send message to state machine. */
+    public void sendMessage(int what) {
+        processMessage(what, 0, 0, null);
+    }
+
+    /** Send message to state machine. */
+    public void sendMessage(int what, Object obj) {
+        processMessage(what, 0, 0, obj);
+    }
+
+    /** Send message to state machine. */
+    public void sendMessage(int what, int arg1) {
+        processMessage(what, arg1, 0, null);
+    }
+
+    /** Send message to state machine. */
+    public void sendMessage(int what, int arg1, int arg2, Object obj) {
+        processMessage(what, arg1, arg2, obj);
+    }
+
     /** Internals. */
 
     private boolean startIPv4(int scope) {
@@ -607,12 +626,7 @@ public class IpServer extends StateMachineShim {
 
         private void handleError() {
             mLastError = TETHER_ERROR_DHCPSERVER_ERROR;
-            if (USE_SYNC_SM) {
-                sendMessage(CMD_SERVICE_FAILED_TO_START, TETHER_ERROR_DHCPSERVER_ERROR);
-            } else {
-                sendMessageAtFrontOfQueueToAsyncSM(CMD_SERVICE_FAILED_TO_START,
-                        TETHER_ERROR_DHCPSERVER_ERROR);
-            }
+            sendMessage(CMD_SERVICE_FAILED_TO_START, TETHER_ERROR_DHCPSERVER_ERROR);
         }
     }
 
@@ -1208,13 +1222,7 @@ public class IpServer extends StateMachineShim {
                 // message (and generally ignores them). It is difficult to know for sure whether
                 // this is correct in all cases, but this is equivalent to what IpServer was doing
                 // in previous versions of the mainline module.
-                // TODO : remove sendMessageAtFrontOfQueueToAsyncSM after migrating to the Sync
-                // StateMachine.
-                if (USE_SYNC_SM) {
-                    sendSelfMessageToSyncSM(CMD_SERVICE_FAILED_TO_START, mLastError);
-                } else {
-                    sendMessageAtFrontOfQueueToAsyncSM(CMD_SERVICE_FAILED_TO_START, mLastError);
-                }
+                sendSelfMessage(CMD_SERVICE_FAILED_TO_START, 0, 0, mLastError);
             }
 
             if (DBG) Log.d(TAG, getStateString(mDesiredInterfaceState) + " serve " + mIfaceName);
