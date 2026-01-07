@@ -38,6 +38,7 @@ static const int DROP_UNLESS_DNS = 2;  // internal to our program
 #define TCP_FLAG32_OFF 12
 
 #define TCP_FLAG8_OFF (TCP_FLAG32_OFF + 1)
+#define TCP_FLAG8_SYN 0x02
 
 // For maps netd does not need to access
 #define DEFINE_BPF_MAP_NO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
@@ -402,11 +403,63 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
 }
 
 static __always_inline inline void
-log_loopback_access(__unused struct __sk_buff *const skb,
-                    __unused const SkbIpPacketData *const packet_data,
-                    __unused const uint32_t sender_uid) {
+add_loopback_access_event(__unused const uint32_t src_uid,
+                          __unused const uint32_t dst_uid,
+                          __unused const enum LoopbackAccessResult result) {
     // TODO(b/431786207): check for cross-UID loopback and add events to ring
     // buffer
+}
+
+static __always_inline inline void
+log_loopback_access(struct __sk_buff *const skb,
+                    const SkbIpPacketData *const packet_data,
+                    const uint32_t sender_uid) {
+    struct bpf_sock_tuple sock_tuple = {};
+    uint32_t tuple_size;
+
+    if (packet_data->ip_version == 4) {
+        // IPv4-mapped-v6
+        sock_tuple.ipv4.saddr = packet_data->saddr.s6_addr32[3];
+        sock_tuple.ipv4.daddr = packet_data->daddr.s6_addr32[3];
+        sock_tuple.ipv4.sport = packet_data->sport;
+        sock_tuple.ipv4.dport = packet_data->dport;
+        tuple_size = sizeof(sock_tuple.ipv4);
+    } else if (packet_data->ip_version == 6) {
+        __builtin_memcpy(&sock_tuple.ipv6.saddr, &packet_data->saddr,
+                         sizeof(sock_tuple.ipv6.saddr));
+        __builtin_memcpy(&sock_tuple.ipv6.daddr, &packet_data->daddr,
+                         sizeof(sock_tuple.ipv6.daddr));
+        sock_tuple.ipv6.sport = packet_data->sport;
+        sock_tuple.ipv6.dport = packet_data->dport;
+        tuple_size = sizeof(sock_tuple.ipv6);
+    } else {
+        return;
+    }
+
+    struct bpf_sock *local_sk;
+    if (packet_data->ip_proto == IPPROTO_TCP) {
+        // Only trigger on SYN to avoid redundant lookups for established
+        // connections
+        if (!(packet_data->tcp_flags & TCP_FLAG8_SYN)) return;
+        local_sk = bpf_sk_lookup_tcp(skb, &sock_tuple, tuple_size,
+                                     BPF_F_CURRENT_NETNS, 0);
+    } else if (packet_data->ip_proto == IPPROTO_UDP) {
+        local_sk = bpf_sk_lookup_udp(skb, &sock_tuple, tuple_size,
+                                     BPF_F_CURRENT_NETNS, 0);
+    } else {
+        return;
+    }
+
+    SkStorageValue *v = bpf_sk_storage_get(local_sk, 0, 0);
+    const uint32_t receiver_uid = v ? v->uid : 0;
+    bpf_sk_release(local_sk);
+    if (!v) return;
+
+    // We don't care about cases where apps are sending loopback traffic to
+    // themselves.
+    if (sender_uid == receiver_uid) return;
+    add_loopback_access_event(sender_uid, receiver_uid,
+                              LOOPBACK_ACCESS_ALLOWED);
 }
 
 static __always_inline inline bool parse_skb(SkbIpPacketData *const packet,
