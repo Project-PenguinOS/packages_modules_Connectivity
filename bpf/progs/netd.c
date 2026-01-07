@@ -402,10 +402,84 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
 }
 
 static __always_inline inline void
-log_loopback_access(__unused struct __sk_buff *skb,
-                    __unused uint32_t sender_uid) {
+log_loopback_access(__unused struct __sk_buff *const skb,
+                    __unused const SkbIpPacketData *const packet_data,
+                    __unused const uint32_t sender_uid) {
     // TODO(b/431786207): check for cross-UID loopback and add events to ring
     // buffer
+}
+
+static __always_inline inline bool parse_skb(SkbIpPacketData *const packet,
+                                             const struct __sk_buff *const skb,
+                                             const struct kver_uint kver) {
+    // Errors from bpf_skb_load_bytes_net are ignored to favor returning
+    // something over returning nothing. In the event of an error, the kernel
+    // will fill in zero for the destination memory.
+    uint8_t proto = 0;
+    uint8_t L4_off = 0;
+    if (skb->protocol == htons(ETH_P_IP)) {
+        packet->ip_version = 4;
+        packet->saddr.s6_addr32[2] = htonl(0xFFFF);
+        (void)bpf_skb_load_bytes_net(skb, IP4_OFFSET(saddr),
+                                     &packet->saddr.s6_addr32[3],
+                                     sizeof(__be32), kver);
+
+        packet->daddr.s6_addr32[2] = htonl(0xFFFF);
+        (void)bpf_skb_load_bytes_net(skb, IP4_OFFSET(daddr),
+                                     &packet->daddr.s6_addr32[3],
+                                     sizeof(__be32), kver);
+
+        (void)bpf_skb_load_bytes_net(skb, IP4_OFFSET(protocol), &proto,
+                                     sizeof(proto), kver);
+        // IHL calculation
+        (void)bpf_skb_load_bytes_net(skb, IPPROTO_IHL_OFF, &L4_off,
+                                     sizeof(L4_off), kver);
+        if (L4_off < 0x45 || L4_off > 0x4F) return false;
+        L4_off = (L4_off & 0x0F) * 4;
+    } else if (skb->protocol == htons(ETH_P_IPV6)) {
+        packet->ip_version = 6;
+        (void)bpf_skb_load_bytes_net(skb, IP6_OFFSET(saddr), &packet->saddr,
+                                     sizeof(packet->saddr), kver);
+        (void)bpf_skb_load_bytes_net(skb, IP6_OFFSET(daddr), &packet->daddr,
+                                     sizeof(packet->daddr), kver);
+        (void)bpf_skb_load_bytes_net(skb, IP6_OFFSET(nexthdr), &proto,
+                                     sizeof(proto), kver);
+        L4_off = sizeof(struct ipv6hdr);
+    } else {
+        // Not an IP packet. Don't continue parsing.
+        return false;
+    }
+    packet->ip_proto = proto;
+
+    switch (proto) {
+        case IPPROTO_TCP:
+            (void)bpf_skb_load_bytes_net(skb, L4_off + TCP_FLAG8_OFF,
+                                         &packet->tcp_flags,
+                                         sizeof(packet->tcp_flags), kver);
+            // fallthrough
+        case IPPROTO_DCCP:
+        case IPPROTO_UDP:
+        case IPPROTO_UDPLITE:
+        case IPPROTO_SCTP:
+            (void)bpf_skb_load_bytes_net(skb, L4_off + 0, &packet->sport,
+                                         sizeof(packet->sport), kver);
+            (void)bpf_skb_load_bytes_net(skb, L4_off + 2, &packet->dport,
+                                         sizeof(packet->dport), kver);
+            break;
+        case IPPROTO_ICMP:
+        case IPPROTO_ICMPV6:
+            // Both IPv4 and IPv6 icmp start with u8 type & code, which we store
+            // in the bottom (ie. second) byte of sport/dport (which are be16s),
+            // the top byte is already zero.
+            (void)bpf_skb_load_bytes_net(skb, L4_off + 0,
+                                         (char *)&packet->sport + 1, 1,
+                                         kver); // type
+            (void)bpf_skb_load_bytes_net(skb, L4_off + 1,
+                                         (char *)&packet->dport + 1, 1,
+                                         kver); // code
+            break;
+    }
+    return true;
 }
 
 static __always_inline inline void do_packet_tracing(
@@ -658,6 +732,7 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
     // CLAT daemon receives via an untagged AF_PACKET socket.
     if (egress.egress && statsUid == AID_CLAT) return PASS;
 
+    // TODO(b/467964186): use the parsed skb
     int match = bpf_owner_match(skb, sock_uid, egress, kver, lvl);
 
 // Workaround for secureVPN with VpnIsolation enabled, refer to b/159994981 for details.
@@ -673,10 +748,14 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q4) && egress.egress && skb->ifindex == 1 &&
         loopback_metrics_enabled()) {
-        log_loopback_access(skb, sock_uid);
+        SkbIpPacketData packet_data = {};
+        if (parse_skb(&packet_data, skb, kver)) {
+            log_loopback_access(skb, &packet_data, sock_uid);
+        }
     }
 
     if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q2) && (match != DROP)) {
+        // TODO(b/467964186): use the parsed skb
         if (should_block_local_network_packets(skb, statsUid, egress, kver)) match = DROP;
     }
 
@@ -693,6 +772,7 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     if (!selectedMap) return PASS;  // cannot happen, needed to keep bpf verifier happy
 
+    // TODO(b/467964186): use the parsed skb
     do_packet_tracing(skb, egress, statsUid, tag, kver);
     update_stats_with_config(*selectedMap, skb, &key, egress, kver);
     update_app_uid_stats_map(skb, &statsUid, egress, kver);
