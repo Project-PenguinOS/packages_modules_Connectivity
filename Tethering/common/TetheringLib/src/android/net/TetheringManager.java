@@ -155,7 +155,7 @@ public class TetheringManager {
 
     /**
      * Invalid tethering type.
-     * @see #startTethering.
+     * @see #startTethering
      * @hide
      */
     @SystemApi
@@ -163,14 +163,14 @@ public class TetheringManager {
 
     /**
      * Wifi tethering type.
-     * @see #startTethering.
+     * @see #startTethering
      */
     @SuppressLint("UnflaggedApi")
     public static final int TETHERING_WIFI      = 0;
 
     /**
      * USB tethering type.
-     * @see #startTethering.
+     * @see #startTethering
      * @hide
      */
     @SystemApi
@@ -178,7 +178,7 @@ public class TetheringManager {
 
     /**
      * Bluetooth tethering type.
-     * @see #startTethering.
+     * @see #startTethering
      * @hide
      */
     @SystemApi
