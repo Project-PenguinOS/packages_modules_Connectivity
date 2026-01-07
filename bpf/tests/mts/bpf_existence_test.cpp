@@ -175,7 +175,7 @@ static const set<string> MAINLINE_FOR_25Q2_5_10_PLUS = {
     NETD "map_netd_local_net_note_op_ringbuf",
 };
 
-// Provided by *current* mainline module for 26Q1+ devices
+// Provided by *current* mainline module for 25Q4+ devices
 static const set<string> MAINLINE_FOR_25Q4_PLUS = {
     NETD "map_netd_loopback_access_cache_map",
     NETD "map_netd_loopback_access_ringbuf",

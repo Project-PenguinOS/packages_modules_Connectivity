@@ -914,24 +914,6 @@ DEFINE_NETD_BPF_PROG_KVER(cgroupsockrelease, inet_release, , 5_10)
     return 1;
 }
 
-static __always_inline inline int check_localhost(__unused struct bpf_sock_addr *ctx) {
-    // See include/uapi/linux/bpf.h:
-    //
-    // struct bpf_sock_addr {
-    //   __u32 user_family;	//     R: 4 byte
-    //   __u32 user_ip4;	// BE, R: 1,2,4-byte,   W: 4-byte
-    //   __u32 user_ip6[4];	// BE, R: 1,2,4,8-byte, W: 4,8-byte
-    //   __u32 user_port;	// BE, R: 1,2,4-byte,   W: 4-byte
-    //   __u32 family;		//     R: 4 byte
-    //   __u32 type;		//     R: 4 byte
-    //   __u32 protocol;	//     R: 4 byte
-    //   __u32 msg_src_ip4;	// BE, R: 1,2,4-byte,   W: 4-byte
-    //   __u32 msg_src_ip6[4];	// BE, R: 1,2,4,8-byte, W: 4,8-byte
-    //   __bpf_md_ptr(struct bpf_sock *, sk);
-    // };
-    return BPF_ALLOW;
-}
-
 // --- BIND CGROUP HOOKS ---
 
 static inline __always_inline bool block_bind_port(__u32 protocol, __be16 user_port) {
@@ -1010,58 +992,38 @@ DEFINE_NETD_BPF_PROG_KVER_RANGE(bind6, inet6_bind, 4_19, 4_19, 5_15)
 
 // --- CONNECT CGROUP HOOKS ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, , 4_19)
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect4, inet4_connect, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
-
-DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
-
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect6, inet6_connect, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, , 4_19)
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
 // --- UDP RECVMSG HOOKS ---
 
 DEFINE_NETD_V_BPF_PROG_KVER(recvmsg4, udp4_recvmsg, , 4_19)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
 DEFINE_NETD_V_BPF_PROG_KVER(recvmsg6, udp6_recvmsg, , 4_19)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
 // --- UDP SENDMSG HOOKS ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, , 4_19)
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg4, udp4_sendmsg, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
-
-DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
-
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg6, udp6_sendmsg, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, , 4_19)
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
 // --- GETSOCKOPT HOOK ---
