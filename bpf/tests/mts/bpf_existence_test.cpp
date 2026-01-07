@@ -221,15 +221,14 @@ TEST_F(BpfExistenceTest, TestPrograms) {
     ASSERT_TRUE(isAtLeastS);  // Q & R are no longer supported by mainline
 
     // S requires Linux Kernel 4.9+ and thus requires eBPF support.
-    if (isAtLeastS) ASSERT_TRUE(isAtLeastKernelVersion(4, 9));
+    ASSERT_TRUE(isAtLeastKernelVersion(4, 9));
 
     // on S without a new enough DnsResolver apex, NetBpfLoad doesn't get triggered,
     // and thus no mainline programs get loaded.
     bool mainlineBpfCapableResolve = !access("/apex/com.android.resolv/NetBpfLoad-S.flag", F_OK);
-    bool mainlineNetBpfLoad = isAtLeastT || mainlineBpfCapableResolve;
-    DO_EXPECT(isAtLeastS && mainlineNetBpfLoad, MAINLINE_FOR_S_PLUS);
+    DO_EXPECT(mainlineBpfCapableResolve || isAtLeastT, MAINLINE_FOR_S_PLUS);
 
-    // Nothing added or removed in SCv2.
+    // Nothing added or removed in Sv2.
 
     // T still only requires Linux Kernel 4.9+.
     DO_EXPECT(isAtLeastT, MAINLINE_FOR_T_PLUS);
