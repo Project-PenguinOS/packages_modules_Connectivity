@@ -630,12 +630,12 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     uint64_t cookie = bpf_get_socket_cookie(skb);  // 0 iff !skb->sk
     UidTagValue* utag = bpf_cookie_tag_map_lookup_elem(&cookie);
-    uint32_t uid, tag;
+    uint32_t statsUid, tag;
     if (utag) {
-        uid = utag->uid;
+        statsUid = utag->uid;
         tag = utag->tag;
     } else {
-        uid = sock_uid;
+        statsUid = sock_uid;
         tag = 0;
     }
 
@@ -643,7 +643,7 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
     // interface is accounted for and subject to usage restrictions.
     // CLAT IPv6 TX sockets are *always* tagged with CLAT uid, see tagSocketAsClat()
     // CLAT daemon receives via an untagged AF_PACKET socket.
-    if (egress.egress && uid == AID_CLAT) return PASS;
+    if (egress.egress && statsUid == AID_CLAT) return PASS;
 
     int match = bpf_owner_match(skb, sock_uid, egress, kver, lvl);
 
@@ -651,23 +651,23 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 // Keep TAG_SYSTEM_DNS in sync with DnsResolver/include/netd_resolv/resolv.h
 // and TrafficStatsConstants.java
 #define TAG_SYSTEM_DNS 0xFFFFFF82
-    if (tag == TAG_SYSTEM_DNS && uid == AID_DNS) {
-        uid = sock_uid;
+    if (tag == TAG_SYSTEM_DNS && statsUid == AID_DNS) {
+        statsUid = sock_uid;
         if (match == DROP_UNLESS_DNS) match = PASS;
     } else {
         if (match == DROP_UNLESS_DNS) match = DROP;
     }
 
     if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q2) && (match != DROP)) {
-        if (should_block_local_network_packets(skb, uid, egress, kver)) match = DROP;
+        if (should_block_local_network_packets(skb, statsUid, egress, kver)) match = DROP;
     }
 
     // If an outbound packet is going to be dropped, we do not count that traffic.
     if (egress.egress && (match == DROP)) return DROP;
 
-    StatsKey key = {.uid = uid, .tag = tag, .counterSet = 0, .ifaceIndex = skb->ifindex};
+    StatsKey key = {.uid = statsUid, .tag = tag, .counterSet = 0, .ifaceIndex = skb->ifindex};
 
-    uint8_t* counterSet = bpf_uid_counterset_map_lookup_elem(&uid);
+    uint8_t* counterSet = bpf_uid_counterset_map_lookup_elem(&statsUid);
     if (counterSet) key.counterSet = (uint32_t)*counterSet;
 
     uint32_t mapSettingKey = CURRENT_STATS_MAP_CONFIGURATION_KEY;
@@ -675,9 +675,9 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     if (!selectedMap) return PASS;  // cannot happen, needed to keep bpf verifier happy
 
-    do_packet_tracing(skb, egress, uid, tag, kver);
+    do_packet_tracing(skb, egress, statsUid, tag, kver);
     update_stats_with_config(*selectedMap, skb, &key, egress, kver);
-    update_app_uid_stats_map(skb, &uid, egress, kver);
+    update_app_uid_stats_map(skb, &statsUid, egress, kver);
 
     // We've already handled DROP_UNLESS_DNS up above, thus when we reach here the only
     // possible values of match are DROP(0) or PASS(1), however we need to use

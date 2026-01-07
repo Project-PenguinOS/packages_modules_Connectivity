@@ -45,6 +45,5 @@
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"नेटवर्कको कुनै अज्ञात प्रकार"</string>
     <string name="connect_to_service_title" msgid="2417012530980077322">"सेवामा कनेक्ट गर्नुहोस्"</string>
     <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> लोकल नेटवर्कमा भएको अर्को डिभाइसमा कनेक्ट गर्न चाहन्छ"</string>
-    <!-- no translation found for scanning_for_services_progress_description (2231669717305529286) -->
-    <skip />
+    <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"सेवाहरू खोजिँदै छन्"</string>
 </resources>
