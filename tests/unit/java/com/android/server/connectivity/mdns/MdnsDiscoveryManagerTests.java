@@ -28,10 +28,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import android.annotation.NonNull;
 import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.nsd.NsdServiceInfo;
 import android.os.Build;
 import android.os.Handler;
@@ -579,5 +581,72 @@ public class MdnsDiscoveryManagerTests {
                         )) /* answers */,
                 Collections.emptyList() /* authorityRecords */,
                 Collections.emptyList() /* additionalRecords */);
+    }
+
+    @Test
+    public void testInterfaceIndexRequested_usesLocalNetworkInterface() throws IOException {
+        final MdnsFeatureFlags featureFlags = MdnsFeatureFlags.newBuilder()
+                .setAllFlagsForTesting().build();
+        // create a new discoveryManager with a more general mock
+        final List<MdnsServiceTypeClient> createdClients = new ArrayList<>();
+        MdnsDiscoveryManager discoveryManager = new MdnsDiscoveryManager(
+                executorProvider, socketClient, sharedLog, featureFlags, mockCallback) {
+            @Override
+            MdnsServiceTypeClient createServiceTypeClient(@NonNull String serviceType,
+                    @NonNull SocketKey socketKey, boolean isReceiveOnly) {
+                MdnsServiceTypeClient client = mock(MdnsServiceTypeClient.class);
+                when(client.getExecutor()).thenReturn(mockExecutorService);
+                createdClients.add(client);
+                return client;
+            }
+        };
+
+        // Set up search options to discover on a specific interface index, without a Network.
+        final MdnsSearchOptions searchOptions =
+                MdnsSearchOptions.newBuilder()
+                        .setNetwork(null)
+                        .setInterfaceIndex(INTERFACE_INDEX_NULL_NETWORK)
+                        .build();
+
+        final ArgumentCaptor<SocketCreationCallback> callbackCaptor =
+                ArgumentCaptor.forClass(SocketCreationCallback.class);
+        runOnHandler(() -> discoveryManager.registerListener(SERVICE_TYPE_1, mockListenerOne,
+                searchOptions));
+        verify(socketClient).notifyNetworkRequested(
+                eq(mockListenerOne), eq(null), callbackCaptor.capture());
+        final SocketCreationCallback callback = callbackCaptor.getValue();
+
+        // Create various socket keys to simulate different network conditions.
+        // A socket on an unused interface index.
+        final SocketKey unusedIfaceKey = new SocketKey(
+                null, INTERFACE_INDEX_NULL_NETWORK + 1,  "interfaceOther",
+                EMPTY_NETWORK_CAPABILITIES);
+        // A socket on a matching interface index but with a non-local network. This should be
+        // skipped.
+        final SocketKey matchingIfaceWithNetworkKey = new SocketKey(
+                Mockito.mock(Network.class), INTERFACE_INDEX_NULL_NETWORK, "interface",
+                EMPTY_NETWORK_CAPABILITIES);
+        // A socket on a matching interface index with a local network. This should be used.
+        final long localNetworkCaps = 1L << NetworkCapabilities.NET_CAPABILITY_LOCAL_NETWORK;
+        final SocketKey matchingIfaceWithLocalNetworkKey = new SocketKey(
+                Mockito.mock(Network.class), INTERFACE_INDEX_NULL_NETWORK, "interface",
+                localNetworkCaps);
+        // A socket on a matching interface index with no network. This should be used.
+        final SocketKey matchingIfaceNoNetworkKey = new SocketKey(
+                null, INTERFACE_INDEX_NULL_NETWORK, "interface",
+                EMPTY_NETWORK_CAPABILITIES);
+
+        // Trigger socket creation for all simulated keys.
+        runOnHandler(() -> {
+            callback.onSocketCreated(unusedIfaceKey);
+            callback.onSocketCreated(matchingIfaceWithNetworkKey);
+            callback.onSocketCreated(matchingIfaceWithLocalNetworkKey);
+            callback.onSocketCreated(matchingIfaceNoNetworkKey);
+        });
+
+        // Verify that only the sockets on the local network and the one with no network are used.
+        assertEquals(2, createdClients.size());
+        verify(createdClients.get(0)).startSendAndReceive(mockListenerOne, searchOptions);
+        verify(createdClients.get(1)).startSendAndReceive(mockListenerOne, searchOptions);
     }
 }

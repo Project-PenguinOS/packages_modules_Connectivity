@@ -26,6 +26,8 @@ import android.util.ArrayMap;
 import android.util.Log;
 import android.util.Pair;
 
+import static android.net.NetworkCapabilities.NET_CAPABILITY_LOCAL_NETWORK;
+
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.net.module.util.DnsUtils;
 import com.android.net.module.util.SharedLog;
@@ -281,16 +283,22 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
     private boolean shouldSkipDiscovery(@NonNull SocketKey socketKey,
             @NonNull MdnsSearchOptions searchOptions) {
         final int searchInterfaceIndex = searchOptions.getInterfaceIndex();
-        if (searchOptions.getNetwork() == null
-                && searchInterfaceIndex > 0
-                // The interface index in options should only match interfaces that
-                // do not have any Network; a matching Network should be provided
-                // otherwise.
-                && (socketKey.getNetwork() != null
-                    || socketKey.getInterfaceIndex() != searchInterfaceIndex)) {
-            sharedLog.i("Skipping " + socketKey + " as ifIndex "
-                    + searchInterfaceIndex + " was requested.");
-            return true;
+        if (searchOptions.getNetwork() == null && searchInterfaceIndex > 0) {
+            // Search is for a specific interface index, without a Network object.
+
+            // The interface index in options should only match interfaces that do not have any
+            // Network; a matching Network should be provided otherwise.
+            // For backward compatibility with older callers, this also supports matching sockets
+            // that have a Network, as long as it is a local-only network (like tethering
+            // downstreams on older platforms), which would previously not have a Network object.
+            final boolean isLocalNetwork = (socketKey.getCreationCapabilitiesBits()
+                    & (1L << NET_CAPABILITY_LOCAL_NETWORK)) != 0L;
+            if ((socketKey.getNetwork() != null && !isLocalNetwork)
+                    || socketKey.getInterfaceIndex() != searchInterfaceIndex) {
+                sharedLog.i("Skipping " + socketKey + " as ifIndex "
+                        + searchInterfaceIndex + " was requested.");
+                return true;
+            }
         }
         return false;
     }

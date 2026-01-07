@@ -31,6 +31,7 @@ import static android.content.pm.PackageManager.FEATURE_LEANBACK;
 import static android.content.pm.PackageManager.PERMISSION_DENIED;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.net.InetAddresses.parseNumericAddress;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_LOCAL_NETWORK;
 import static android.net.NetworkCapabilities.TRANSPORT_ETHERNET;
 import static android.net.NetworkCapabilities.TRANSPORT_VPN;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
@@ -65,6 +66,7 @@ import static com.android.tethering.flags.Flags.FLAG_NSD_SERVICE_PICKER;
 
 import static libcore.junit.util.compat.CoreCompatChangeRule.DisableCompatChanges;
 import static libcore.junit.util.compat.CoreCompatChangeRule.EnableCompatChanges;
+import static android.net.connectivity.ConnectivityCompatChanges.ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -159,6 +161,9 @@ import com.android.server.connectivity.mdns.util.MdnsUtils;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
 import com.android.testutils.HandlerUtils;
+import com.android.testutils.com.android.testutils.SetFeatureFlagsRule;
+import com.android.testutils.com.android.testutils.SetFeatureFlagsRule.FeatureFlag;
+import com.android.tethering.flags.Flags;
 
 import org.junit.After;
 import org.junit.Before;
@@ -179,6 +184,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
@@ -199,6 +205,14 @@ public class NsdServiceTest {
     @Rule
     public final CheckFlagsRule mCheckFlagsRule =
             DeviceFlagsValueProvider.createCheckFlagsRule();
+
+    private final HashMap<String, Boolean> mFeatureFlags = new HashMap<>();
+    @Rule
+    public final SetFeatureFlagsRule mSetFeatureFlagsRule =
+            new SetFeatureFlagsRule((name, enabled) -> {
+                mFeatureFlags.put(name, enabled);
+                return null;
+            }, (name) -> mFeatureFlags.getOrDefault(name, false));
 
     static final int PROTOCOL = NsdManager.PROTOCOL_DNS_SD;
     private static final long CLEANUP_DELAY_MS = 500;
@@ -296,7 +310,6 @@ public class NsdServiceTest {
         doReturn(true).when(mMockMDnsM).resolve(
                 anyInt(), anyString(), anyString(), anyString(), anyInt());
         doReturn(false).when(mDeps).isMdnsDiscoveryManagerEnabled(any(Context.class));
-        doReturn(true).when(mDeps).isAconfigFlagEnabled(FLAG_NSD_SERVICE_PICKER);
         doAnswer(inv -> {
             mOffloadCallback = (OffloadCallback) inv.getArguments()[4];
             return mDiscoveryManager;
@@ -313,6 +326,25 @@ public class NsdServiceTest {
         doReturn(mMetrics).when(mDeps).makeNetworkNsdReportedMetrics(anyInt(), anyInt());
         doReturn(mClock).when(mDeps).makeClock();
         doReturn(TEST_TIME_MS).when(mClock).elapsedRealtime();
+
+        doAnswer(inv -> {
+            final String flag = inv.getArgument(0);
+            // Let @FeatureFlag annotation override the default value.
+            if (mFeatureFlags.containsKey(flag)) {
+                return mFeatureFlags.get(flag);
+            }
+            // Default to true for FLAG_NSD_SERVICE_PICKER for tests that don't specify it.
+            if (FLAG_NSD_SERVICE_PICKER.equals(flag)) {
+                return true;
+            }
+            return false;
+        }).when(mDeps).isAconfigFlagEnabled(anyString());
+
+        doAnswer(inv -> mFeatureFlags.getOrDefault(
+                com.android.tethering.mainline.beta.Flags.FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT,
+                false))
+                .when(mDeps).isSupportTetheringAndP2pGoLocalAgent(any(Context.class));
+
         mService = makeService();
         final ArgumentCaptor<SocketRequestMonitor> cbMonitorCaptor =
                 ArgumentCaptor.forClass(SocketRequestMonitor.class);
@@ -3047,5 +3079,73 @@ public class NsdServiceTest {
         final int testUid = android.os.Process.myUid();
         final int testPid = android.os.Process.myPid();
         return new AttributionSource.Builder(testUid).setPid(testPid).build();
+    }
+
+    @FeatureFlag(name = Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS, enabled = false)
+    @Test
+    public void testBuildNsdServiceInfoFromMdnsEvent_localNetwork_flagDisabled() {
+        doTestBuildNsdServiceInfoFromMdnsEvent_localNetwork(false /* expectNetwork */);
+    }
+
+    @FeatureFlag(name = com.android.tethering.mainline.beta.Flags
+            .FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT, enabled = true)
+    @FeatureFlag(name = Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS, enabled = true)
+    @EnableCompatChanges(ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS)
+    @Test
+    public void testBuildNsdServiceInfoFromMdnsEvent_localNetwork_flagEnabled() {
+        doTestBuildNsdServiceInfoFromMdnsEvent_localNetwork(true /* expectNetwork */);
+    }
+
+    @FeatureFlag(name = com.android.tethering.mainline.beta.Flags
+            .FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT, enabled = false)
+    @FeatureFlag(name = Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS, enabled = true)
+    @EnableCompatChanges(ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS)
+    @Test
+    public void testBuildNsdServiceInfoFromMdnsEvent_localNetwork_localAgentDisabled() {
+        doTestBuildNsdServiceInfoFromMdnsEvent_localNetwork(false /* expectNetwork */);
+    }
+
+    private void doTestBuildNsdServiceInfoFromMdnsEvent_localNetwork(boolean expectNetwork) {
+        setMdnsDiscoveryManagerEnabled();
+
+        final NsdManager client = connectClient(mService);
+        final DiscoveryListener discListener = mock(DiscoveryListener.class);
+        final Network network = new Network(999);
+        final String serviceTypeWithLocalDomain = SERVICE_TYPE + ".local";
+
+        client.discoverServices(SERVICE_TYPE, PROTOCOL, network, r -> r.run(), discListener);
+        waitForIdle();
+
+        final ArgumentCaptor<MdnsListener> listenerCaptor =
+                ArgumentCaptor.forClass(MdnsListener.class);
+        verify(mDiscoveryManager).registerListener(eq(serviceTypeWithLocalDomain),
+                listenerCaptor.capture(), any());
+
+        final MdnsListener listener = listenerCaptor.getValue();
+        final long caps = 1L << NET_CAPABILITY_LOCAL_NETWORK;
+        final int ifaceIndex = 1234;
+        final MdnsServiceInfo localInfo = new MdnsServiceInfo(
+                SERVICE_NAME, /* serviceInstanceName */
+                serviceTypeWithLocalDomain.split("\\."), /* serviceType */
+                List.of(), /* subtypes */
+                new String[] {"android", "local"}, /* hostName */
+                12345, /* port */
+                List.of(), /* ipv4Addresses */
+                List.of(), /* ipv6Addresses */
+                List.of(), /* textEntries */
+                ifaceIndex, /* interfaceIndex */
+                network,
+                Instant.MAX /* expirationTime */,
+                caps);
+
+        listener.onServiceNameDiscovered(localInfo, false);
+
+        if (expectNetwork) {
+            verify(discListener, timeout(TIMEOUT_MS)).onServiceFound(argThat(info ->
+                    network.equals(info.getNetwork()) && info.getInterfaceIndex() == 0));
+        } else {
+            verify(discListener, timeout(TIMEOUT_MS)).onServiceFound(argThat(info ->
+                    info.getNetwork() == null && info.getInterfaceIndex() == ifaceIndex));
+        }
     }
 }

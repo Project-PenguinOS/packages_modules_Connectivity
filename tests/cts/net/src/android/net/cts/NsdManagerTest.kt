@@ -52,7 +52,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.platform.test.annotations.AppModeFull
-import android.platform.test.annotations.RequiresFlagsDisabled
 import android.platform.test.annotations.RequiresFlagsEnabled
 import android.platform.test.flag.junit.DeviceFlagsValueProvider
 import android.provider.DeviceConfig.NAMESPACE_TETHERING
@@ -144,6 +143,7 @@ import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeFalse
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
@@ -164,8 +164,6 @@ private const val MDNS_PORT = 5353.toShort()
 private const val TYPE_KEY = 25
 private const val QCLASS_INTERNET = 0x0001
 private const val NAME_RECORDS_TTL_MILLIS: Long = 120
-private const val FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED =
-    "android.net.connectivity.android.permission.flags.access_local_network_permission_enabled"
 private const val FLAG_NSD_MDNS_SCAN_OFFLOAD =
     "com.android.tethering.flags.nsd_mdns_scan_offload"
 private const val NOT_MDNS_CAPABLE_INTERFACE = "lo"
@@ -623,8 +621,8 @@ class NsdManagerTest {
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     fun testDiscoverServices_missingLocalNetPermission_failsPermissionDenied() {
+        assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
         val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
         assertEquals(PackageManager.PERMISSION_DENIED, perm)
 
@@ -643,9 +641,9 @@ class NsdManagerTest {
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @RequiresFlagsDisabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     @RequiresFlagsEnabled(Flags.FLAG_LNP_DEVELOPER_OPT_IN)
     fun testLocalNetworkDevOptIn_permissionCheckFails_returnsInternalError() {
+        assumeFalse(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
         val perm = context.checkSelfPermission(NEARBY_WIFI_DEVICES)
         assertEquals(PackageManager.PERMISSION_DENIED, perm)
 
@@ -842,8 +840,8 @@ class NsdManagerTest {
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     fun testRegisterService_missingLocalNetworkPermission_throwsSecurityException() {
+        assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
         val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
         assertEquals(PackageManager.PERMISSION_DENIED, perm)
 
@@ -1526,8 +1524,8 @@ class NsdManagerTest {
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     fun testResolveService_missingLocalNetworkPermission_failsPermissionDenied() {
+        assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
         val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
         assertEquals(PackageManager.PERMISSION_DENIED, perm)
 
@@ -1588,8 +1586,8 @@ class NsdManagerTest {
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     fun testRegisterServiceInfoCallback_missingLocalNetworkPermission_failsPermissionDenied() {
+        assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
         val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
         assertEquals(PackageManager.PERMISSION_DENIED, perm)
 

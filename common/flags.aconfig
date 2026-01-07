@@ -89,3 +89,11 @@ flag {
     bug: "452488983"
     is_exported: true
 }
+
+flag {
+    name: "netstats_per_query_flags"
+    namespace: "com_android_tethering"
+    description: "Enable per-query flags for NetworkStatsManager APIs."
+    bug: "453906718"
+    is_exported: true
+}
