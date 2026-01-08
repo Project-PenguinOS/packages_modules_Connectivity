@@ -15,7 +15,6 @@
  */
 package android.net.util
 
-import android.Manifest.permission.READ_DEVICE_CONFIG
 import android.net.dns.HttpsEndpoint
 import android.net.dns.HttpsRecord
 import android.net.DnsResolver
@@ -34,12 +33,11 @@ import androidx.test.filters.SmallTest
 
 import com.android.net.module.util.DnsPacket
 import com.android.net.module.util.HexDump
+import com.android.net.module.util.SdkUtil
 import com.android.testutils.AutoReleaseNetworkCallbackRule
 import com.android.testutils.ConnectivityModuleTest
-import com.android.testutils.runAsShell
 import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.TestableNetworkCallback.Event
-import com.android.tethering.flags.Flags
 
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -73,8 +71,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenSvcbQueryType_returnsEmptyResponse() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val errorCallback = createExpectErrorCallback { error: DnsException ->
         assertEquals(error.code, DnsResolver.ERROR_PARSE)
@@ -92,8 +88,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenSvcbResponseType_returnsEmptyResponse() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val errorCallback = createExpectErrorCallback { error: DnsException ->
         assertEquals(error.code, DnsResolver.ERROR_PARSE)
@@ -111,7 +105,9 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenSingleHttpsRecord_success() {
-    assumeDnsAndPlatformFlagsEnabled()
+    // Instead of reading the Conscrypt platform flag, check for the SDK version because of trunk
+    // stable flag weirdness.
+    assumeTrue(SdkUtil.isAtLeast26Q2())
 
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
@@ -132,8 +128,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenMultipleHttpsRecords_success() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 3)
@@ -151,8 +145,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testGetPriority_returnsCorrectValue() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 1)
@@ -169,8 +161,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testGetTargetName_returnsCorrectValue() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 1)
@@ -187,8 +177,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testGetAlpnIds_returnsCorrectValue() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 1)
@@ -205,8 +193,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testGetPort_returnsCorrectValue() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 1)
@@ -223,8 +209,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testGetIpAddressHints_whenNetworkIpv4Only_returnsCorrectValue() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 1)
@@ -242,8 +226,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testGetIpAddressHints_whenNetworkIpv6Only_returnsCorrectValue() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 1)
@@ -261,8 +243,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testGetIpAddressHints_whenNetworkIpv4AndIpv6_returnsCorrectValue() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 1)
@@ -278,7 +258,9 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testGetEchConfigList_returnsCorrectValue() {
-    assumeDnsAndPlatformFlagsEnabled()
+    // Instead of reading the Conscrypt platform flag, check for the SDK version because of trunk
+    // stable flag weirdness.
+    assumeTrue(SdkUtil.isAtLeast26Q2())
 
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
@@ -296,8 +278,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenARecordOnly_success() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertTrue(response.httpsRecords.isEmpty())
@@ -313,8 +293,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenAAAARecordOnly_success() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertTrue(response.httpsRecords.isEmpty())
@@ -330,8 +308,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenAAndAAAARecordsOnly_success() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertTrue(response.httpsRecords.isEmpty())
@@ -348,8 +324,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenHttpsAndARecordOnly_success() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertContentEquals(TEST_IP_HINTS_IPV4_ONLY, response.ipAddresses)
@@ -372,8 +346,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenHttpsAndAAAARecordOnly_success() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertContentEquals(TEST_IP_HINTS_IPV6_ONLY, response.ipAddresses)
@@ -395,8 +367,6 @@ class HttpsEndpointAccumulatorTest {
 
   @Test
   fun testOnAnswer_whenAllRecords_success() {
-    assumeDnsFlagEnabled()
-
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertContentEquals(TEST_IP_HINTS, response.ipAddresses)
@@ -510,19 +480,6 @@ class HttpsEndpointAccumulatorTest {
     |c72ba65d889ca06e8a4282a286710a0004000100010012636c6f7564666c6172652d65
     |63682e636f6d0000
     """.trimMargin().replace("\n", ""))
-
-    private fun assumeDnsFlagEnabled() {
-      // Because these tests also run on S & T, the READ_DEVICE_CONFIG permission is required to
-      // check that flags are enabled.
-      assumeTrue(runAsShell(READ_DEVICE_CONFIG) { Flags.encryptedClientHelloDns() })
-    }
-
-    private fun assumeDnsAndPlatformFlagsEnabled() {
-      // Because these tests also run on S & T, the READ_DEVICE_CONFIG permission is required to
-      // check that flags are enabled.
-      assumeTrue(runAsShell(READ_DEVICE_CONFIG) { Flags.encryptedClientHelloDns() &&
-          com.android.org.conscrypt.net.flags.Flags.encryptedClientHelloPlatform() })
-    }
 
     private fun createErrorAccumulator(network: Network, callback: Callback<HttpsEndpoint>) =
         HttpsEndpointAccumulator(network, callback, /* queryCount= */ 1, QUERY_TIMEOUT_MS,

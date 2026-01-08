@@ -620,8 +620,8 @@ public class ConnectivitySettingsManager {
      * Get dns resolver samples range from {@link Settings}.
      *
      * @param context The {@link Context} to query the setting.
-     * @return The {@link Range<Integer>} of samples needed for statistics to be considered
-     *         meaningful in the system DNS resolver.
+     * @return The {@link Range} of {@link Integer} of samples needed for statistics to be
+     *         considered meaningful in the system DNS resolver.
      */
     @NonNull
     public static Range<Integer> getDnsResolverSampleRanges(@NonNull Context context) {

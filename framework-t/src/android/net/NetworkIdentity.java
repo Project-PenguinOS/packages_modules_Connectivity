@@ -456,7 +456,7 @@ public class NetworkIdentity {
         /**
          * Set the network type of the network.
          *
-         * @param type the network type. See {@link ConnectivityManager#TYPE_*}.
+         * @param type the network type. See {@code ConnectivityManager.TYPE_*}.
          *
          * @return this builder.
          */

@@ -45,6 +45,5 @@
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"알 수 없는 네트워크 유형"</string>
     <string name="connect_to_service_title" msgid="2417012530980077322">"서비스에 연결"</string>
     <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g>이(가) 로컬 네트워크에 있는 다른 기기에 연결하려고 합니다."</string>
-    <!-- no translation found for scanning_for_services_progress_description (2231669717305529286) -->
-    <skip />
+    <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"서비스 검색 중"</string>
 </resources>

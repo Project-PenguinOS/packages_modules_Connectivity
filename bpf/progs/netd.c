@@ -38,6 +38,7 @@ static const int DROP_UNLESS_DNS = 2;  // internal to our program
 #define TCP_FLAG32_OFF 12
 
 #define TCP_FLAG8_OFF (TCP_FLAG32_OFF + 1)
+#define TCP_FLAG8_SYN 0x02
 
 // For maps netd does not need to access
 #define DEFINE_BPF_MAP_NO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
@@ -401,6 +402,162 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
     return isRestricted;
 }
 
+static __always_inline inline void
+add_loopback_access_event(const uint32_t src_uid, const uint32_t dst_uid,
+                          const enum LoopbackAccessResult result) {
+    LoopbackAccessEvent key = {
+        .src_uid = src_uid,
+        .dst_uid = dst_uid,
+        .result = result,
+    };
+    uint64_t *lastReportNs = bpf_loopback_access_cache_map_lookup_elem(&key);
+    uint64_t currentBootNs = bpf_ktime_get_boot_ns();
+    if (lastReportNs && (currentBootNs - *lastReportNs) < NS_PER_MINUTE) return;
+
+    LoopbackAccessEvent *event = bpf_loopback_access_ringbuf_reserve();
+    if (!event) return;
+
+    if (lastReportNs) {
+        *lastReportNs = currentBootNs;
+    } else {
+        if (bpf_loopback_access_cache_map_update_elem(&key, &currentBootNs,
+                                                      BPF_NOEXIST) != 0) {
+            bpf_loopback_access_ringbuf_discard(event);
+            return;
+        }
+    }
+
+    event->src_uid = src_uid;
+    event->dst_uid = dst_uid;
+    event->result = result;
+    bpf_loopback_access_ringbuf_submit(event);
+}
+
+static __always_inline inline void
+log_loopback_access(struct __sk_buff *const skb,
+                    const SkbIpPacketData *const packet_data,
+                    const uint32_t sender_uid) {
+    struct bpf_sock_tuple sock_tuple = {};
+    uint32_t tuple_size;
+
+    if (packet_data->ip_version == 4) {
+        // IPv4-mapped-v6
+        sock_tuple.ipv4.saddr = packet_data->saddr.s6_addr32[3];
+        sock_tuple.ipv4.daddr = packet_data->daddr.s6_addr32[3];
+        sock_tuple.ipv4.sport = packet_data->sport;
+        sock_tuple.ipv4.dport = packet_data->dport;
+        tuple_size = sizeof(sock_tuple.ipv4);
+    } else if (packet_data->ip_version == 6) {
+        __builtin_memcpy(&sock_tuple.ipv6.saddr, &packet_data->saddr,
+                         sizeof(sock_tuple.ipv6.saddr));
+        __builtin_memcpy(&sock_tuple.ipv6.daddr, &packet_data->daddr,
+                         sizeof(sock_tuple.ipv6.daddr));
+        sock_tuple.ipv6.sport = packet_data->sport;
+        sock_tuple.ipv6.dport = packet_data->dport;
+        tuple_size = sizeof(sock_tuple.ipv6);
+    } else {
+        return;
+    }
+
+    struct bpf_sock *local_sk;
+    if (packet_data->ip_proto == IPPROTO_TCP) {
+        // Only trigger on SYN to avoid redundant lookups for established
+        // connections
+        if (!(packet_data->tcp_flags & TCP_FLAG8_SYN)) return;
+        local_sk = bpf_sk_lookup_tcp(skb, &sock_tuple, tuple_size,
+                                     BPF_F_CURRENT_NETNS, 0);
+    } else if (packet_data->ip_proto == IPPROTO_UDP) {
+        local_sk = bpf_sk_lookup_udp(skb, &sock_tuple, tuple_size,
+                                     BPF_F_CURRENT_NETNS, 0);
+    } else {
+        return;
+    }
+
+    SkStorageValue *v = bpf_sk_storage_get(local_sk, 0, 0);
+    const uint32_t receiver_uid = v ? v->uid : 0;
+    bpf_sk_release(local_sk);
+    if (!v) return;
+
+    // We don't care about cases where apps are sending loopback traffic to
+    // themselves.
+    if (sender_uid == receiver_uid) return;
+    add_loopback_access_event(sender_uid, receiver_uid,
+                              LOOPBACK_ACCESS_ALLOWED);
+}
+
+static __always_inline inline bool parse_skb(SkbIpPacketData *const packet,
+                                             const struct __sk_buff *const skb,
+                                             const struct kver_uint kver) {
+    // Errors from bpf_skb_load_bytes_net are ignored to favor returning
+    // something over returning nothing. In the event of an error, the kernel
+    // will fill in zero for the destination memory.
+    uint8_t proto = 0;
+    uint8_t L4_off = 0;
+    if (skb->protocol == htons(ETH_P_IP)) {
+        packet->ip_version = 4;
+        packet->saddr.s6_addr32[2] = htonl(0xFFFF);
+        (void)bpf_skb_load_bytes_net(skb, IP4_OFFSET(saddr),
+                                     &packet->saddr.s6_addr32[3],
+                                     sizeof(__be32), kver);
+
+        packet->daddr.s6_addr32[2] = htonl(0xFFFF);
+        (void)bpf_skb_load_bytes_net(skb, IP4_OFFSET(daddr),
+                                     &packet->daddr.s6_addr32[3],
+                                     sizeof(__be32), kver);
+
+        (void)bpf_skb_load_bytes_net(skb, IP4_OFFSET(protocol), &proto,
+                                     sizeof(proto), kver);
+        // IHL calculation
+        (void)bpf_skb_load_bytes_net(skb, IPPROTO_IHL_OFF, &L4_off,
+                                     sizeof(L4_off), kver);
+        if (L4_off < 0x45 || L4_off > 0x4F) return false;
+        L4_off = (L4_off & 0x0F) * 4;
+    } else if (skb->protocol == htons(ETH_P_IPV6)) {
+        packet->ip_version = 6;
+        (void)bpf_skb_load_bytes_net(skb, IP6_OFFSET(saddr), &packet->saddr,
+                                     sizeof(packet->saddr), kver);
+        (void)bpf_skb_load_bytes_net(skb, IP6_OFFSET(daddr), &packet->daddr,
+                                     sizeof(packet->daddr), kver);
+        (void)bpf_skb_load_bytes_net(skb, IP6_OFFSET(nexthdr), &proto,
+                                     sizeof(proto), kver);
+        L4_off = sizeof(struct ipv6hdr);
+    } else {
+        // Not an IP packet. Don't continue parsing.
+        return false;
+    }
+    packet->ip_proto = proto;
+
+    switch (proto) {
+        case IPPROTO_TCP:
+            (void)bpf_skb_load_bytes_net(skb, L4_off + TCP_FLAG8_OFF,
+                                         &packet->tcp_flags,
+                                         sizeof(packet->tcp_flags), kver);
+            // fallthrough
+        case IPPROTO_DCCP:
+        case IPPROTO_UDP:
+        case IPPROTO_UDPLITE:
+        case IPPROTO_SCTP:
+            (void)bpf_skb_load_bytes_net(skb, L4_off + 0, &packet->sport,
+                                         sizeof(packet->sport), kver);
+            (void)bpf_skb_load_bytes_net(skb, L4_off + 2, &packet->dport,
+                                         sizeof(packet->dport), kver);
+            break;
+        case IPPROTO_ICMP:
+        case IPPROTO_ICMPV6:
+            // Both IPv4 and IPv6 icmp start with u8 type & code, which we store
+            // in the bottom (ie. second) byte of sport/dport (which are be16s),
+            // the top byte is already zero.
+            (void)bpf_skb_load_bytes_net(skb, L4_off + 0,
+                                         (char *)&packet->sport + 1, 1,
+                                         kver); // type
+            (void)bpf_skb_load_bytes_net(skb, L4_off + 1,
+                                         (char *)&packet->dport + 1, 1,
+                                         kver); // code
+            break;
+    }
+    return true;
+}
+
 static __always_inline inline void do_packet_tracing(
         const struct __sk_buff* const skb, const struct egress_bool egress, const uint32_t uid,
         const uint32_t tag, const struct kver_uint kver) {
@@ -613,6 +770,12 @@ static __always_inline inline void update_stats_with_config(const uint32_t selec
     }
 }
 
+static inline __always_inline bool loopback_metrics_enabled() {
+    const uint32_t zero = 0;
+    bool *enabled = bpf_loopback_access_metrics_enabled_map_lookup_elem(&zero);
+    return enabled && *enabled;
+}
+
 static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
                                                       const struct egress_bool egress,
                                                       const struct kver_uint kver,
@@ -630,12 +793,12 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     uint64_t cookie = bpf_get_socket_cookie(skb);  // 0 iff !skb->sk
     UidTagValue* utag = bpf_cookie_tag_map_lookup_elem(&cookie);
-    uint32_t uid, tag;
+    uint32_t statsUid, tag;
     if (utag) {
-        uid = utag->uid;
+        statsUid = utag->uid;
         tag = utag->tag;
     } else {
-        uid = sock_uid;
+        statsUid = sock_uid;
         tag = 0;
     }
 
@@ -643,31 +806,41 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
     // interface is accounted for and subject to usage restrictions.
     // CLAT IPv6 TX sockets are *always* tagged with CLAT uid, see tagSocketAsClat()
     // CLAT daemon receives via an untagged AF_PACKET socket.
-    if (egress.egress && uid == AID_CLAT) return PASS;
+    if (egress.egress && statsUid == AID_CLAT) return PASS;
 
+    // TODO(b/467964186): use the parsed skb
     int match = bpf_owner_match(skb, sock_uid, egress, kver, lvl);
 
 // Workaround for secureVPN with VpnIsolation enabled, refer to b/159994981 for details.
 // Keep TAG_SYSTEM_DNS in sync with DnsResolver/include/netd_resolv/resolv.h
 // and TrafficStatsConstants.java
 #define TAG_SYSTEM_DNS 0xFFFFFF82
-    if (tag == TAG_SYSTEM_DNS && uid == AID_DNS) {
-        uid = sock_uid;
+    if (tag == TAG_SYSTEM_DNS && statsUid == AID_DNS) {
+        statsUid = sock_uid;
         if (match == DROP_UNLESS_DNS) match = PASS;
     } else {
         if (match == DROP_UNLESS_DNS) match = DROP;
     }
 
+    if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q4) && egress.egress && skb->ifindex == 1 &&
+        loopback_metrics_enabled()) {
+        SkbIpPacketData packet_data = {};
+        if (parse_skb(&packet_data, skb, kver)) {
+            log_loopback_access(skb, &packet_data, sock_uid);
+        }
+    }
+
     if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q2) && (match != DROP)) {
-        if (should_block_local_network_packets(skb, uid, egress, kver)) match = DROP;
+        // TODO(b/467964186): use the parsed skb
+        if (should_block_local_network_packets(skb, statsUid, egress, kver)) match = DROP;
     }
 
     // If an outbound packet is going to be dropped, we do not count that traffic.
     if (egress.egress && (match == DROP)) return DROP;
 
-    StatsKey key = {.uid = uid, .tag = tag, .counterSet = 0, .ifaceIndex = skb->ifindex};
+    StatsKey key = {.uid = statsUid, .tag = tag, .counterSet = 0, .ifaceIndex = skb->ifindex};
 
-    uint8_t* counterSet = bpf_uid_counterset_map_lookup_elem(&uid);
+    uint8_t* counterSet = bpf_uid_counterset_map_lookup_elem(&statsUid);
     if (counterSet) key.counterSet = (uint32_t)*counterSet;
 
     uint32_t mapSettingKey = CURRENT_STATS_MAP_CONFIGURATION_KEY;
@@ -675,9 +848,10 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     if (!selectedMap) return PASS;  // cannot happen, needed to keep bpf verifier happy
 
-    do_packet_tracing(skb, egress, uid, tag, kver);
+    // TODO(b/467964186): use the parsed skb
+    do_packet_tracing(skb, egress, statsUid, tag, kver);
     update_stats_with_config(*selectedMap, skb, &key, egress, kver);
-    update_app_uid_stats_map(skb, &uid, egress, kver);
+    update_app_uid_stats_map(skb, &statsUid, egress, kver);
 
     // We've already handled DROP_UNLESS_DNS up above, thus when we reach here the only
     // possible values of match are DROP(0) or PASS(1), however we need to use
@@ -914,24 +1088,6 @@ DEFINE_NETD_BPF_PROG_KVER(cgroupsockrelease, inet_release, , 5_10)
     return 1;
 }
 
-static __always_inline inline int check_localhost(__unused struct bpf_sock_addr *ctx) {
-    // See include/uapi/linux/bpf.h:
-    //
-    // struct bpf_sock_addr {
-    //   __u32 user_family;	//     R: 4 byte
-    //   __u32 user_ip4;	// BE, R: 1,2,4-byte,   W: 4-byte
-    //   __u32 user_ip6[4];	// BE, R: 1,2,4,8-byte, W: 4,8-byte
-    //   __u32 user_port;	// BE, R: 1,2,4-byte,   W: 4-byte
-    //   __u32 family;		//     R: 4 byte
-    //   __u32 type;		//     R: 4 byte
-    //   __u32 protocol;	//     R: 4 byte
-    //   __u32 msg_src_ip4;	// BE, R: 1,2,4-byte,   W: 4-byte
-    //   __u32 msg_src_ip6[4];	// BE, R: 1,2,4,8-byte, W: 4,8-byte
-    //   __bpf_md_ptr(struct bpf_sock *, sk);
-    // };
-    return BPF_ALLOW;
-}
-
 // --- BIND CGROUP HOOKS ---
 
 static inline __always_inline bool block_bind_port(__u32 protocol, __be16 user_port) {
@@ -1010,58 +1166,38 @@ DEFINE_NETD_BPF_PROG_KVER_RANGE(bind6, inet6_bind, 4_19, 4_19, 5_15)
 
 // --- CONNECT CGROUP HOOKS ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, , 4_19)
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect4, inet4_connect, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
-
-DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
-
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(connect6, inet6_connect, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, , 4_19)
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
 // --- UDP RECVMSG HOOKS ---
 
 DEFINE_NETD_V_BPF_PROG_KVER(recvmsg4, udp4_recvmsg, , 4_19)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
 DEFINE_NETD_V_BPF_PROG_KVER(recvmsg6, udp6_recvmsg, , 4_19)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
 // --- UDP SENDMSG HOOKS ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, , 4_19)
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg4, udp4_sendmsg, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
-
-DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, 5_10, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
-}
-
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(sendmsg6, udp6_sendmsg, 4_19, 4_19, 5_10)
-(struct bpf_sock_addr *ctx) {
-    return check_localhost(ctx);
+DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, , 4_19)
+(__unused struct bpf_sock_addr *ctx) {
+    return BPF_ALLOW;
 }
 
 // --- GETSOCKOPT HOOK ---

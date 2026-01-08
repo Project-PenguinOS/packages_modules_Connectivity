@@ -175,7 +175,7 @@ public class QosSocketFilter extends QosFilter {
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     @Override
     public boolean matchesLocalAddress(@NonNull final InetAddress address, final int startPort,
@@ -189,7 +189,7 @@ public class QosSocketFilter extends QosFilter {
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     @Override
     public boolean matchesRemoteAddress(@NonNull final InetAddress address, final int startPort,
@@ -224,7 +224,7 @@ public class QosSocketFilter extends QosFilter {
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     @Override
     public boolean matchesProtocol(final int protocol) {

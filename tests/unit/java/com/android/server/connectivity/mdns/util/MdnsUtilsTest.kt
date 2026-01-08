@@ -219,28 +219,26 @@ class MdnsUtilsTest {
     }
 
     @Test
-    fun testCreateOffloadServiceInfoFromFilterReplies() {
-        val filterRepliesInfo = MdnsServiceTypeClient.FilterRepliesInfo(
+    fun testCreateOffloadServiceInfoSetsAllPropertiesCorrectly() {
+        val discoveryOffloadInfo = MdnsServiceTypeClient.DiscoveryOffloadInfo(
             "MyService",
             SERVICE_TYPE,
             listOf("subtype0", "subtype1"),
             "My.TestHost"
         )
+        val offloadType =
+            (OffloadEngine.OFFLOAD_TYPE_QUERY or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong()
 
-        val result = MdnsUtils.createOffloadServiceInfoFromFilterReplies(filterRepliesInfo)
+        val result = MdnsUtils.createOffloadServiceInfoFromDiscoveryOffload(
+            discoveryOffloadInfo,
+            offloadType
+        )
 
-        assertEquals(filterRepliesInfo.hostname, result.hostname)
-        assertEquals(filterRepliesInfo.serviceType, result.key.serviceType)
-        assertEquals(filterRepliesInfo.serviceName, result.key.serviceName)
-        assertSameElements(filterRepliesInfo.subtypes, result.subtypes)
-        assertThat(
-            result.offloadType
-                and (OffloadEngine.OFFLOAD_TYPE_QUERY.toLong())
-        ).isNotEqualTo(0L)
-        assertThat(
-            result.offloadType
-                and (OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES.toLong())
-        ).isNotEqualTo(0L)
+        assertEquals(discoveryOffloadInfo.hostname, result.hostname)
+        assertEquals(discoveryOffloadInfo.serviceType, result.key.serviceType)
+        assertEquals(discoveryOffloadInfo.serviceName, result.key.serviceName)
+        assertSameElements(discoveryOffloadInfo.subtypes, result.subtypes)
+        assertThat(offloadType).isEqualTo(result.offloadType)
     }
 
     @Test

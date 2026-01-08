@@ -759,24 +759,4 @@ public class TetheringConfigurationTest {
                 new TetheringConfiguration(mMockContext, mLog, INVALID_SUBSCRIPTION_ID, mDeps);
         assertEquals(p2pLeasesSubnetPrefixLength, p2pCfg.getP2pLeasesSubnetPrefixLength());
     }
-
-    private void setTetherEnableSyncSMFlagEnabled(Boolean enabled) {
-        mDeps.setFeatureEnabled(TetheringFeatureFlags.TETHER_ENABLE_SYNC_SM, enabled);
-        new TetheringConfiguration(
-                mMockContext, mLog, INVALID_SUBSCRIPTION_ID, mDeps).readEnableSyncSM(mMockContext);
-    }
-
-    @Test
-    public void testEnableSyncSMFlag() throws Exception {
-        // Test default enabled
-        setTetherEnableSyncSMFlagEnabled(null);
-        assertEquals(true, TetheringConfiguration.USE_SYNC_SM);
-
-        setTetherEnableSyncSMFlagEnabled(true);
-        assertEquals(true, TetheringConfiguration.USE_SYNC_SM);
-
-        // Feature is enabled forcefully after 25Q2 release.
-        setTetherEnableSyncSMFlagEnabled(false);
-        assertEquals(SdkLevel.isAtLeastB(), TetheringConfiguration.USE_SYNC_SM);
-    }
 }

@@ -66,9 +66,11 @@ import androidx.test.InstrumentationRegistry;
 import androidx.test.runner.AndroidJUnit4;
 
 import com.android.net.module.util.DnsPacket;
+import com.android.net.module.util.SdkUtil;
 import com.android.tethering.flags.Flags;
 import com.android.testutils.AutoReleaseNetworkCallbackRule;
 import com.android.testutils.ConnectivityDiagnosticsCollector;
+import com.android.testutils.ConnectivityModuleTest;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.DeviceConfigRule;
@@ -852,22 +854,18 @@ public class DnsResolverTest {
     }
 
     @Test
-    @DnsResolverModuleTest
+    @ConnectivityModuleTest
     public void testQueryForHttpsRecord() throws Exception {
-        // Because these tests also run on S & T, they require the READ_DEVICE_CONFIG permission
-        // to read flag values.
-        assumeTrue(runAsShell(READ_DEVICE_CONFIG, () -> Flags.encryptedClientHelloDns()));
-
+        // Because this test is annotated with @ConnectivityModuleTest, it will use the latest
+        // tethering code. There is no need for a flag read.
         doTestQueryForHttpsRecord(mExecutor);
     }
 
     @Test
-    @DnsResolverModuleTest
+    @ConnectivityModuleTest
     public void testQueryForHttpsRecordInline() throws Exception {
-        // Because these tests also run on S & T, they require the READ_DEVICE_CONFIG permission
-        // to read flag values.
-        assumeTrue(runAsShell(READ_DEVICE_CONFIG, () -> Flags.encryptedClientHelloDns()));
-
+        // Because this test is annotated with @ConnectivityModuleTest, it will use the latest
+        // tethering code. There is no need for a flag read.
         doTestQueryForHttpsRecord(mExecutorInline);
     }
 
@@ -886,11 +884,11 @@ public class DnsResolverTest {
             assertFalse(msg + " returned 0 results", callback.isAnswerEmpty());
             callback.assertHasIpAddressAnswer();
             callback.assertHasHttpsAnswer();
-            runAsShell(READ_DEVICE_CONFIG, () -> {
-                if (com.android.org.conscrypt.net.flags.Flags.encryptedClientHelloPlatform()) {
-                    callback.assertHasEchAnswer();
-                }
-            });
+            // Because of trunk stable flag weirdness, check for the SDK version instead of reading
+            // the Conscrypt platform flag.
+            if (SdkUtil.isAtLeast26Q2()) {
+                callback.assertHasEchAnswer();
+            }
         }
     }
 

@@ -14,14 +14,18 @@
  * limitations under the License
  */
 
-package com.android.server.connectivity.mdns;
+package com.android.server.connectivity.mdns.legacy;
 
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import android.os.Build;
 
+import static com.android.server.connectivity.mdns.MdnsConstants.IPV4_SOCKET_ADDR;
+import static com.android.server.connectivity.mdns.MdnsConstants.IPV6_SOCKET_ADDR;
+
 import com.android.net.module.util.SharedLog;
+import com.android.server.connectivity.mdns.NetworkInterfaceWrapper;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
 
@@ -52,8 +56,7 @@ public class MdnsSocketTests {
     @Mock private MulticastSocket mockMulticastSocket;
     @Mock private MulticastNetworkInterfaceProvider mockMulticastNetworkInterfaceProvider;
     @Mock private SharedLog sharedLog;
-    private SocketAddress socketIPv4Address;
-    private SocketAddress socketIPv6Address;
+
 
     private final byte[] data = new byte[25];
     private final DatagramPacket datagramPacket = new DatagramPacket(data, data.length);
@@ -69,10 +72,7 @@ public class MdnsSocketTests {
         when(mockNetworkInterfaceWrapper.getNetworkInterface()).thenReturn(networkInterface);
         when(mockMulticastNetworkInterfaceProvider.getMulticastNetworkInterfaces())
                 .thenReturn(Collections.singletonList(mockNetworkInterfaceWrapper));
-        socketIPv4Address = new InetSocketAddress(
-                InetAddress.getByName("224.0.0.251"), MdnsConstants.MDNS_PORT);
-        socketIPv6Address = new InetSocketAddress(
-                InetAddress.getByName("FF02::FB"), MdnsConstants.MDNS_PORT);
+
     }
 
     @Test
@@ -87,10 +87,10 @@ public class MdnsSocketTests {
         verify(mockMulticastSocket).receive(datagramPacket);
 
         mdnsSocket.joinGroup();
-        verify(mockMulticastSocket).joinGroup(socketIPv4Address, networkInterface);
+        verify(mockMulticastSocket).joinGroup(IPV4_SOCKET_ADDR, networkInterface);
 
         mdnsSocket.leaveGroup();
-        verify(mockMulticastSocket).leaveGroup(socketIPv4Address, networkInterface);
+        verify(mockMulticastSocket).leaveGroup(IPV4_SOCKET_ADDR, networkInterface);
 
         mdnsSocket.close();
         verify(mockMulticastSocket).close();
@@ -112,10 +112,10 @@ public class MdnsSocketTests {
                 .thenReturn(true);
 
         mdnsSocket.joinGroup();
-        verify(mockMulticastSocket).joinGroup(socketIPv6Address, networkInterface);
+        verify(mockMulticastSocket).joinGroup(IPV6_SOCKET_ADDR, networkInterface);
 
         mdnsSocket.leaveGroup();
-        verify(mockMulticastSocket).leaveGroup(socketIPv6Address, networkInterface);
+        verify(mockMulticastSocket).leaveGroup(IPV6_SOCKET_ADDR, networkInterface);
 
         mdnsSocket.close();
         verify(mockMulticastSocket).close();
@@ -137,10 +137,10 @@ public class MdnsSocketTests {
                 .thenReturn(true);
 
         mdnsSocket.joinGroup();
-        verify(mockMulticastSocket).joinGroup(socketIPv6Address, networkInterface);
+        verify(mockMulticastSocket).joinGroup(IPV6_SOCKET_ADDR, networkInterface);
 
         mdnsSocket.leaveGroup();
-        verify(mockMulticastSocket).leaveGroup(socketIPv6Address, networkInterface);
+        verify(mockMulticastSocket).leaveGroup(IPV6_SOCKET_ADDR, networkInterface);
 
         mdnsSocket.close();
         verify(mockMulticastSocket).close();

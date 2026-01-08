@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.android.server.connectivity.mdns;
+package com.android.server.connectivity.mdns.legacy;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -25,6 +25,9 @@ import androidx.annotation.GuardedBy;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.net.module.util.SharedLog;
+import com.android.server.connectivity.mdns.MdnsConfigs;
+import com.android.server.connectivity.mdns.NetworkInterfaceWrapper;
+import com.android.server.connectivity.mdns.SocketKey;
 
 import java.io.IOException;
 import java.net.Inet4Address;

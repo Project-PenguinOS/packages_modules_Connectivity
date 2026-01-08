@@ -237,6 +237,10 @@ public class MultipathPolicyTrackerTest {
                     eq(cycleOfTheMonth.getLower().toInstant().toEpochMilli()),
                     eq(cycleOfTheMonth.getUpper().toInstant().toEpochMilli())))
                     .thenReturn(mockedStatsBucket);
+            when(mStatsManager.querySummaryForDevice(any(),
+                    eq(cycleOfTheMonth.getLower().toInstant().toEpochMilli()),
+                    eq(cycleOfTheMonth.getUpper().toInstant().toEpochMilli()), eq(0)))
+                    .thenReturn(mockedStatsBucket);
         } else {
             when(mNPM.getNetworkPolicies()).thenReturn(new NetworkPolicy[0]);
         }
@@ -252,6 +256,10 @@ public class MultipathPolicyTrackerTest {
         when(mStatsManager.querySummaryForDevice(any(),
                 eq(startOfDay.toInstant().toEpochMilli()),
                 eq(now.toInstant().toEpochMilli()))).thenReturn(mockedStatsBucket);
+        when(mStatsManager.querySummaryForDevice(any(),
+                eq(startOfDay.toInstant().toEpochMilli()),
+                eq(now.toInstant().toEpochMilli()), eq(0)))
+                .thenReturn(mockedStatsBucket);
 
         ArgumentCaptor<ConnectivityManager.NetworkCallback> networkCallback =
                 ArgumentCaptor.forClass(ConnectivityManager.NetworkCallback.class);

@@ -307,6 +307,19 @@ typedef struct {
 } LocalNetNoteOp;
 STRUCT_SIZE(LocalNetNoteOp, 4 + 4); // 8
 
+// IP packet data from an __sk_buff
+typedef struct {
+    struct in6_addr saddr; // Stores v6 or v4-mapped-v6
+    struct in6_addr daddr; // Stores v6 or v4-mapped-v6
+    __be16 sport;
+    __be16 dport;
+    uint8_t ip_proto;
+    uint8_t tcp_flags;
+    uint8_t ip_version;
+    uint8_t pad;
+} SkbIpPacketData;
+STRUCT_SIZE(SkbIpPacketData, 16 + 16 + 2 + 2 + 1 + 1 + 1 + 1); // 40
+
 // Entry in the configuration map that stores which UID rules are enabled.
 #define UID_RULES_CONFIGURATION_KEY 0
 // Entry in the configuration map that stores which stats map is currently in use.

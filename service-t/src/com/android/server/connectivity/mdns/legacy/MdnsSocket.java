@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.android.server.connectivity.mdns;
+package com.android.server.connectivity.mdns.legacy;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -22,6 +22,8 @@ import android.net.Network;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.net.module.util.SharedLog;
+import com.android.server.connectivity.mdns.MdnsConstants;
+import com.android.server.connectivity.mdns.NetworkInterfaceWrapper;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -36,13 +38,12 @@ import java.util.List;
  *
  * @see MulticastSocket for javadoc of each public method.
  */
+import static com.android.server.connectivity.mdns.MdnsConstants.INTERFACE_INDEX_UNSPECIFIED;
+import static com.android.server.connectivity.mdns.MdnsConstants.IPV4_SOCKET_ADDR;
+import static com.android.server.connectivity.mdns.MdnsConstants.IPV6_SOCKET_ADDR;
+
 public class MdnsSocket {
-    static final int INTERFACE_INDEX_UNSPECIFIED = -1;
     static final String INTERFACE_NAME_UNKNOWN = "";
-    public static final InetSocketAddress MULTICAST_IPV4_ADDRESS =
-            new InetSocketAddress(MdnsConstants.getMdnsIPv4Address(), MdnsConstants.MDNS_PORT);
-    public static final InetSocketAddress MULTICAST_IPV6_ADDRESS =
-            new InetSocketAddress(MdnsConstants.getMdnsIPv6Address(), MdnsConstants.MDNS_PORT);
     private final MulticastNetworkInterfaceProvider multicastNetworkInterfaceProvider;
     private final MulticastSocket multicastSocket;
     private boolean isOnIPv6OnlyNetwork;
@@ -84,10 +85,10 @@ public class MdnsSocket {
     public void joinGroup() throws IOException {
         List<NetworkInterfaceWrapper> networkInterfaces =
                 multicastNetworkInterfaceProvider.getMulticastNetworkInterfaces();
-        InetSocketAddress multicastAddress = MULTICAST_IPV4_ADDRESS;
+        InetSocketAddress multicastAddress = IPV4_SOCKET_ADDR;
         if (multicastNetworkInterfaceProvider.isOnIpV6OnlyNetwork(networkInterfaces)) {
             isOnIPv6OnlyNetwork = true;
-            multicastAddress = MULTICAST_IPV6_ADDRESS;
+            multicastAddress = IPV6_SOCKET_ADDR;
         } else {
             isOnIPv6OnlyNetwork = false;
         }
@@ -95,7 +96,7 @@ public class MdnsSocket {
             multicastSocket.joinGroup(multicastAddress, networkInterface.getNetworkInterface());
             if (!isOnIPv6OnlyNetwork) {
                 multicastSocket.joinGroup(
-                        MULTICAST_IPV6_ADDRESS, networkInterface.getNetworkInterface());
+                        IPV6_SOCKET_ADDR, networkInterface.getNetworkInterface());
             }
         }
     }
@@ -103,15 +104,15 @@ public class MdnsSocket {
     public void leaveGroup() throws IOException {
         List<NetworkInterfaceWrapper> networkInterfaces =
                 multicastNetworkInterfaceProvider.getMulticastNetworkInterfaces();
-        InetSocketAddress multicastAddress = MULTICAST_IPV4_ADDRESS;
+        InetSocketAddress multicastAddress = IPV4_SOCKET_ADDR;
         if (multicastNetworkInterfaceProvider.isOnIpV6OnlyNetwork(networkInterfaces)) {
-            multicastAddress = MULTICAST_IPV6_ADDRESS;
+            multicastAddress = IPV6_SOCKET_ADDR;
         }
         for (NetworkInterfaceWrapper networkInterface : networkInterfaces) {
             multicastSocket.leaveGroup(multicastAddress, networkInterface.getNetworkInterface());
             if (!isOnIPv6OnlyNetwork) {
                 multicastSocket.leaveGroup(
-                        MULTICAST_IPV6_ADDRESS, networkInterface.getNetworkInterface());
+                        IPV6_SOCKET_ADDR, networkInterface.getNetworkInterface());
             }
         }
     }

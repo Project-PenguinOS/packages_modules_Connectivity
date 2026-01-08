@@ -187,6 +187,8 @@ static long (*bpf_ringbuf_output_unsafe)(const void* ringbuf,
 static void* (*bpf_ringbuf_reserve_unsafe)(const void* ringbuf,
                                            __u64 size, __u64 flags) = (void*)
         BPF_FUNC_ringbuf_reserve;
+static void (*bpf_ringbuf_discard_unsafe)(const void *data, __u64 flags) = (void *)
+    BPF_FUNC_ringbuf_discard;
 static void (*bpf_ringbuf_submit_unsafe)(const void* data, __u64 flags) = (void*)
         BPF_FUNC_ringbuf_submit;
 static void* (*bpf_sk_storage_get_unsafe) (const void* sk_storage, const void* sk,
@@ -288,6 +290,11 @@ static long (*bpf_sk_storage_delete_unsafe) (const void* sk_storage,
     static inline __always_inline __unused                                     \
             ValueType* bpf_##the_map##_reserve() {                             \
         return bpf_ringbuf_reserve_unsafe(&the_map, sizeof(ValueType), 0);     \
+    }                                                                          \
+                                                                               \
+    static inline __always_inline __unused void bpf_##the_map##_discard(       \
+            const ValueType* v) {                                              \
+        return bpf_ringbuf_discard_unsafe(v, 0);                               \
     }                                                                          \
                                                                                \
     static inline __always_inline __unused void bpf_##the_map##_submit(        \

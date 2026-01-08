@@ -284,6 +284,7 @@ public final class NetworkStackConstants {
     public static final int TYPE_TXT = 16;
     public static final int TYPE_AAAA = 28;
     public static final int TYPE_SRV = 33;
+    public static final int TYPE_ANY = 255;
 
     /**
      * IEEE802.11 standard constants.
