@@ -180,7 +180,7 @@ public class DnsHttpsRecord extends DnsRecord {
      *
      * <p>See RFC 9460 7.1 for more details.
      */
-    public @NonNull List<String> getAlpn() {
+    public @NonNull List<String> getAlpnIds() {
         final SvcParam svcParamAlpn = mSvcParams.get(KEY_ALPN);
         if (svcParamAlpn == null || !(svcParamAlpn instanceof SvcParamAlpn)) {
             return Collections.emptyList();
@@ -220,7 +220,7 @@ public class DnsHttpsRecord extends DnsRecord {
      *
      * <p>See RFC 9460 7.3 for more details.
      */
-    public @NonNull List<InetAddress> getIpv4Hint() {
+    public @NonNull List<InetAddress> getIpv4Hints() {
         final SvcParam svcParamIpv4Hint = mSvcParams.get(KEY_IPV4HINT);
         if (svcParamIpv4Hint == null || !(svcParamIpv4Hint instanceof SvcParamIpv4Hint)) {
             return Collections.emptyList();
@@ -248,7 +248,7 @@ public class DnsHttpsRecord extends DnsRecord {
      *
      * <p>See RFC 9460 7.3 for more details.
      */
-    public @NonNull List<InetAddress> getIpv6Hint() {
+    public @NonNull List<InetAddress> getIpv6Hints() {
         final SvcParam svcParamIpv6Hint = mSvcParams.get(KEY_IPV6HINT);
         if (svcParamIpv6Hint == null || !(svcParamIpv6Hint instanceof SvcParamIpv6Hint)) {
             return Collections.emptyList();

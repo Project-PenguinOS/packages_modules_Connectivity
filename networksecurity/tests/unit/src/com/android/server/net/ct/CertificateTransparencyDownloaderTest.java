@@ -114,8 +114,8 @@ public class CertificateTransparencyDownloaderTest {
         mCompatVersion =
                 new CompatibilityVersion(
                         /* compatVersion= */ "v666",
-                        Config.URL_SIGNATURE_V1,
-                        Config.URL_LOG_LIST_V1);
+                        Config.URL_SIGNATURE_V2,
+                        Config.URL_LOG_LIST_V2);
         mCertificateTransparencyDownloader =
                 new CertificateTransparencyDownloader(
                         mContext,

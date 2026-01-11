@@ -15,8 +15,6 @@
  */
 package com.android.server.net.ct;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 import android.annotation.RequiresApi;
 import android.os.Build;
 import android.system.ErrnoException;
@@ -27,12 +25,8 @@ import androidx.annotation.VisibleForTesting;
 
 import com.android.server.net.ct.CertificateTransparencyLogger.CTLogListUpdateState;
 
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -55,6 +49,7 @@ class CompatibilityVersion {
     private final String mContentUrl;
     private final File mVersionDirectory;
     private final File mCurrentLogsDirSymlink;
+    private final LogListFile.Provider mLogListProvider;
 
     CompatibilityVersion(String compatVersion, String metadataUrl, String contentUrl) {
         mCompatVersion = compatVersion;
@@ -62,6 +57,8 @@ class CompatibilityVersion {
         mContentUrl = contentUrl;
         mVersionDirectory = new File(sRootDirectory, compatVersion);
         mCurrentLogsDirSymlink = new File(mVersionDirectory, CURRENT_LOGS_DIR_SYMLINK_NAME);
+
+        mLogListProvider = new LogListFileProviderJson(mVersionDirectory);
     }
 
     @VisibleForTesting
@@ -80,34 +77,33 @@ class CompatibilityVersion {
     LogListUpdateStatus install(InputStream newContent, LogListUpdateStatus.Builder statusBuilder)
             throws IOException {
         byte[] contentBytes = newContent.readAllBytes();
-        File logsDir = null;
-        long timestamp;
+
+        LogListFile newLogList = null;
         try {
-            JSONObject contentJson = new JSONObject(new String(contentBytes, UTF_8));
-            logsDir =
-                    new File(mVersionDirectory, LOGS_DIR_PREFIX + contentJson.getString("version"));
-            timestamp = contentJson.getLong("log_list_timestamp");
-        } catch (JSONException e) {
+            newLogList = mLogListProvider.fromBytes(contentBytes);
+        } catch (IOException e) {
             Log.e(TAG, "invalid log list format", e);
             return statusBuilder.setState(CTLogListUpdateState.LOG_LIST_INVALID).build();
         }
 
-        if (!shouldInstall(logsDir, timestamp)) {
-            Log.i(TAG, logsDir + " already exists, skipping install.");
+        if (!shouldInstall(newLogList)) {
+            Log.i(TAG, newLogList.directory() + " already exists, skipping install.");
             deleteOldLogDirectories();
             return statusBuilder
-                    .setLogListTimestamp(timestamp)
+                    .setLogListTimestamp(newLogList.timestamp())
                     .setState(CTLogListUpdateState.VERSION_ALREADY_EXISTS)
                     .build();
         }
 
         return install(
                 new ByteArrayInputStream(contentBytes),
-                logsDir,
-                statusBuilder.setLogListTimestamp(timestamp));
+                newLogList,
+                statusBuilder.setLogListTimestamp(newLogList.timestamp()));
     }
 
-    boolean shouldInstall(File logsDir, long newTimestamp) throws IOException {
+    boolean shouldInstall(LogListFile logList) throws IOException {
+        File logsDir = logList.directory();
+
         // This new version was not seen before, proceed with installation.
         if (!logsDir.exists()) {
             return true;
@@ -121,20 +117,18 @@ class CompatibilityVersion {
             return true;
         }
 
-        long existingTimestamp;
-        try (InputStream logListFile =
-                new FileInputStream(new File(logsDir, LOGS_LIST_FILE_NAME))) {
-            existingTimestamp =
-                    new JSONObject(new String(logListFile.readAllBytes(), UTF_8))
-                            .getLong("log_list_timestamp");
-        } catch (JSONException e) {
-            Log.w(TAG, "The existing log list is not a valid JSON file", e);
+        LogListFile existingLogList = null;
+        try {
+            existingLogList = mLogListProvider.fromFile(logList.file());
+        } catch (IOException e) {
+            Log.w(TAG, "The existing log list is not valid", e);
             DirectoryUtils.removeDir(logsDir);
             return true;
         }
+
         // If the previous installation was successful but the new log list has a later timestamp it
         // means it's a bug fix for a previously broken version.
-        if (existingTimestamp < newTimestamp) {
+        if (existingLogList.timestamp() < logList.timestamp()) {
             Log.i(TAG, "The new log list has a later timestamp.");
             DirectoryUtils.removeDir(logsDir);
             return true;
@@ -146,7 +140,9 @@ class CompatibilityVersion {
     }
 
     LogListUpdateStatus install(
-            InputStream newContent, File newLogsDir, LogListUpdateStatus.Builder statusBuilder)
+            InputStream newContent,
+            LogListFile newLogList,
+            LogListUpdateStatus.Builder statusBuilder)
             throws IOException {
         // To support atomically replacing the old configuration directory with the new
         // there's a bunch of steps. We create a new directory with the logs and then do
@@ -155,6 +151,7 @@ class CompatibilityVersion {
         DirectoryUtils.makeDir(sRootDirectory);
         DirectoryUtils.makeDir(mVersionDirectory);
 
+        File newLogsDir = newLogList.directory();
         try {
             // 2. Create a new logs-<new_version>/ directory to store the new list.
             DirectoryUtils.makeDir(newLogsDir);
