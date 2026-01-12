@@ -56,7 +56,7 @@ public class CompatibilityVersionTest {
         CompatibilityVersion.setRootDirectoryForTesting(mTestDir);
         mCompatVersion =
                 new CompatibilityVersion(
-                        TEST_VERSION, Config.URL_SIGNATURE_V1, Config.URL_LOG_LIST_V1);
+                        TEST_VERSION, Config.URL_SIGNATURE_V2, Config.URL_LOG_LIST_V2);
     }
 
     @After

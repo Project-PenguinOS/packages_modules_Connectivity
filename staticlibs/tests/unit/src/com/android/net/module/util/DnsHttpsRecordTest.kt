@@ -170,33 +170,33 @@ class DnsHttpsRecordTest {
     }
 
     @Test
-    fun getAlpn_whenAbsent_returnsEmptyList() {
+    fun getAlpnIds_whenAbsent_returnsEmptyList() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_MANDATORY))))
 
-        assertTrue(record.alpn.isEmpty())
+        assertTrue(record.alpnIds.isEmpty())
     }
 
     @Test
-    fun getAlpn_whenSingleAlpn_returnsSingleAlpn() {
+    fun getAlpnIds_whenSingleAlpn_returnsSingleAlpn() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_DOQ))))
 
-        assertEquals(listOf("doq"), record.alpn)
+        assertEquals(listOf("doq"), record.alpnIds)
     }
 
     @Test
-    fun getAlpn_whenMultipleAlpns_returnsMultipleAlpns() {
+    fun getAlpnIds_whenMultipleAlpns_returnsMultipleAlpns() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_HTTPS))))
 
-        assertEquals(listOf("h2", "http/1.1"), record.alpn)
+        assertEquals(listOf("h2", "http/1.1"), record.alpnIds)
     }
 
     @Test
@@ -240,28 +240,28 @@ class DnsHttpsRecordTest {
     }
 
     @Test
-    fun getIpv4Hint_whenEmpty_returnsEmptyList() {
+    fun getIpv4Hints_whenEmpty_returnsEmptyList() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_MANDATORY))))
 
-        assertTrue(record.ipv4Hint.isEmpty())
+        assertTrue(record.ipv4Hints.isEmpty())
     }
 
     @Test
-    fun getIpv4Hint_whenSingleIpv4Hint_returnsSingleIpv4Hint() {
+    fun getIpv4Hints_whenSingleIpv4Hint_returnsSingleIpv4Hint() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(
                     svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_SINGLE_IPV4HINT))))
 
-        assertEquals(listOf(InetAddresses.parseNumericAddress("4.3.2.1")), record.ipv4Hint)
+        assertEquals(listOf(InetAddresses.parseNumericAddress("4.3.2.1")), record.ipv4Hints)
     }
 
     @Test
-    fun getIpv4Hint_whenMultipleIpv4Hints_returnsMultipleIpv4Hints() {
+    fun getIpv4Hints_whenMultipleIpv4Hints_returnsMultipleIpv4Hints() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
@@ -272,7 +272,7 @@ class DnsHttpsRecordTest {
             InetAddresses.parseNumericAddress("1.2.3.4"),
             InetAddresses.parseNumericAddress("6.7.8.9")
         )
-        assertEquals(expectedIpv4Hints, record.ipv4Hint)
+        assertEquals(expectedIpv4Hints, record.ipv4Hints)
     }
 
     @Test
@@ -296,28 +296,28 @@ class DnsHttpsRecordTest {
     }
 
     @Test
-    fun getIpv6Hint_whenEmpty_returnsEmptyList() {
+    fun getIpv6Hints_whenEmpty_returnsEmptyList() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_MANDATORY))))
 
-        assertTrue(record.ipv6Hint.isEmpty())
+        assertTrue(record.ipv6Hints.isEmpty())
     }
 
     @Test
-    fun getIpv6Hint_whenSingleIpv6Hint_returnsSingleIpv6Hint() {
+    fun getIpv6Hints_whenSingleIpv6Hint_returnsSingleIpv6Hint() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(
                     svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_SINGLE_IPV6HINT))))
 
-        assertEquals(listOf(InetAddresses.parseNumericAddress("2001:db8::1")), record.ipv6Hint)
+        assertEquals(listOf(InetAddresses.parseNumericAddress("2001:db8::1")), record.ipv6Hints)
     }
 
     @Test
-    fun getIpv6Hint_whenMultipleIpv6Hints_returnsMultipleIpv6Hints() {
+    fun getIpv6Hints_whenMultipleIpv6Hints_returnsMultipleIpv6Hints() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
@@ -328,7 +328,7 @@ class DnsHttpsRecordTest {
             InetAddresses.parseNumericAddress("2606:4700::6812:a76"),
             InetAddresses.parseNumericAddress("2606:4700::6812:b76")
         )
-        assertEquals(expectedIpv6Hints, record.ipv6Hint)
+        assertEquals(expectedIpv6Hints, record.ipv6Hints)
     }
 
     @Test
@@ -369,12 +369,12 @@ class DnsHttpsRecordTest {
                 FakeDnsRecord(svcParams = svcParams)))
 
         assertTrue(record.mandatory.isEmpty())
-        assertEquals(listOf("h2", "http/1.1"), record.alpn)
+        assertEquals(listOf("h2", "http/1.1"), record.alpnIds)
         assertTrue(record.isNoDefaultAlpn())
         assertEquals(5353, record.port)
-        assertEquals(listOf(InetAddresses.parseNumericAddress("4.3.2.1")), record.ipv4Hint)
+        assertEquals(listOf(InetAddresses.parseNumericAddress("4.3.2.1")), record.ipv4Hints)
         assertContentEquals(DnsSvcbTestUtils.TEST_ECH_CONFIG_LIST, record.echConfigList)
-        assertEquals(listOf(InetAddresses.parseNumericAddress("2001:db8::1")), record.ipv6Hint)
+        assertEquals(listOf(InetAddresses.parseNumericAddress("2001:db8::1")), record.ipv6Hints)
         assertEquals("/some-path{?dns}", record.dohPath)
     }
 
@@ -395,13 +395,13 @@ class DnsHttpsRecordTest {
                 )))
 
         assertEquals("www.example.com", record.targetName)
-        assertEquals(listOf("h2", "http/1.1"), record.alpn)
+        assertEquals(listOf("h2", "http/1.1"), record.alpnIds)
         assertEquals(
             listOf(
                 InetAddresses.parseNumericAddress("1.2.3.4"),
                 InetAddresses.parseNumericAddress("6.7.8.9")
             ),
-            record.ipv4Hint
+            record.ipv4Hints
         )
         assertContentEquals(DnsSvcbTestUtils.TEST_ECH_CONFIG_LIST, record.echConfigList)
         assertEquals(
@@ -409,7 +409,7 @@ class DnsHttpsRecordTest {
                 InetAddresses.parseNumericAddress("2606:4700::6812:a76"),
                 InetAddresses.parseNumericAddress("2606:4700::6812:b76")
             ),
-            record.ipv6Hint
+            record.ipv6Hints
         )
     }
 

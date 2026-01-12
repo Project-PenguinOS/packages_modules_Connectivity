@@ -24,6 +24,7 @@
 #include <sys/mman.h>
 #include <utils/Log.h>
 
+#include "BpfSyscallWrappers.h"
 #include "bpf/BpfUtils.h"
 
 #include <atomic>

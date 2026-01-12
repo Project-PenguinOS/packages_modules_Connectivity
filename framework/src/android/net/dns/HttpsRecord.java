@@ -65,8 +65,8 @@ public class HttpsRecord {
         this.mRecord = httpsRecord;
 
         List<InetAddress> ipHints = new ArrayList<>();
-        ipHints.addAll(httpsRecord.getIpv4Hint());
-        ipHints.addAll(httpsRecord.getIpv6Hint());
+        ipHints.addAll(httpsRecord.getIpv4Hints());
+        ipHints.addAll(httpsRecord.getIpv6Hints());
         this.mIpHints = DnsUtils.rfc6724Sort(network, ipHints);
     }
 
@@ -111,7 +111,7 @@ public class HttpsRecord {
     public @NonNull List<String> getAlpnIds() {
         // DnsHttpsRecord returns an unmodifiable list, so we need to make a copy to add the default
         // ALPN if it is not explicitly set.
-        List<String> specifiedAlpns = new ArrayList<>(mRecord.getAlpn());
+        List<String> specifiedAlpns = new ArrayList<>(mRecord.getAlpnIds());
         if (!mRecord.isNoDefaultAlpn()) {
             specifiedAlpns.add(DEFAULT_ALPN_ID);
         }
@@ -141,7 +141,7 @@ public class HttpsRecord {
      * @hide
      */
     public @NonNull List<InetAddress> getIpv4Hints() {
-        return mRecord.getIpv4Hint();
+        return mRecord.getIpv4Hints();
     }
 
     /**
@@ -153,7 +153,7 @@ public class HttpsRecord {
      * @hide
      */
     public @NonNull List<InetAddress> getIpv6Hints() {
-        return mRecord.getIpv6Hint();
+        return mRecord.getIpv6Hints();
     }
 
     /**

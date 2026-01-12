@@ -472,6 +472,7 @@ log_loopback_access(struct __sk_buff *const skb,
     } else {
         return;
     }
+    if (!local_sk) return;
 
     SkStorageValue *v = bpf_sk_storage_get(local_sk, 0, 0);
     const uint32_t receiver_uid = v ? v->uid : 0;
@@ -866,28 +867,34 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
 // Supported kernel + platform/os version combinations:
 //
-//      | 4.9 | 4.14 | 4.19 | 5.4 | 5.10 | 5.15 | 6.1 | 6.6 | 6.12 |
+//      | 4.9 | 4.14 | 4.19 | 5.4 | 5.10 | 5.15 | 6.1 | 6.6 | 6.12 | 6.18 |
+// 26Q2 |     |      |      |     |  x   |  x   |  x  |  x  |  x   |  x   |
+// 25Q4 |     |      |      |     |  x   |  x   |  x  |  x  |  x   |
 // 25Q2 |     |      |      |  x  |  x   |  x   |  x  |  x  |  x   |
 //    V |     |      |  x   |  x  |  x   |  x   |  x  |  x  |      | (netbpfload)
 //    U |     |  x   |  x   |  x  |  x   |  x   |  x  |     |      |
 //    T |  x  |  x   |  x   |  x  |  x   |  x   |     |     |      | (magic netbpfload)
 //    S |  x  |  x   |  x   |  x  |  x   |      |     |     |      | (dns netbpfload for offload)
-//    R |  x  |  x   |  x   |  x  |      |      |     |     |      | (no mainline ebpf)
-//
-// Not relevant for eBPF, but R can also run on 4.4
 
 // ----- ingress/stats -----
 
-// Android 25Q2+ 5.10+ (localnet protection + tracing)
+// Android 25Q4+ (full featured)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 25q4, 5_10, INF,
+                            BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER)
+(struct __sk_buff* skb) {
+    return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_25Q4);
+}
+
+// Android 25Q2/25Q3 5.10+ (localnet protection + tracing)
 DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_25q2, 5_10, INF,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
+                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_25Q2);
 }
 
-// Android 25Q2+ 5.4 (localnet protection)
+// Android 25Q2/25Q3 5.4 (localnet protection)
 DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_4_25q2, 5_4, 5_10,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
+                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_4, SDK_LEVEL_25Q2);
 }
@@ -919,16 +926,23 @@ DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_9, 4_9, 4_19)
 
 // ----- egress/stats -----
 
-// Android 25Q2+ 5.10+ (localnet protection + tracing)
+// Android 25Q4+ (full featured)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 25q4, 5_10, INF,
+                            BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER)
+(struct __sk_buff* skb) {
+    return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_25Q4);
+}
+
+// Android 25Q2/25Q3 5.10+ (localnet protection + tracing)
 DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_25q2, 5_10, INF,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
+                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_25Q2);
 }
 
-// Android 25Q2+ 5.4 (localnet protection)
+// Android 25Q2/25Q3 5.4 (localnet protection)
 DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_4_25q2, 5_4, 5_10,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
+                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_4, SDK_LEVEL_25Q2);
 }

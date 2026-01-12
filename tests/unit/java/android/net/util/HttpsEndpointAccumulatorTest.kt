@@ -104,6 +104,19 @@ class HttpsEndpointAccumulatorTest {
   }
 
   @Test
+  fun testOnAnswer_whenNoDataReturned_returnsEmptyResponse() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+    val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
+        assertTrue(response.httpsRecords.isEmpty())
+    }
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+
+    val accumulator = createOnAnswerAccumulator(network, answerCallback)
+    accumulator.onAnswer(NODATA_HTTPS_RESPONSE, /* rcode= */ 0)
+  }
+
+  @Test
   fun testOnAnswer_whenSingleHttpsRecord_success() {
     // Instead of reading the Conscrypt platform flag, check for the SDK version because of trunk
     // stable flag weirdness.
@@ -472,6 +485,12 @@ class HttpsEndpointAccumulatorTest {
     |c72ba65d889ca06e8a4282a286710a0004000100010012636c6f7564666c6172652d65
     |63682e636f6d00000006002026064700000000000000000068120a7626064700000000
     |000000000068120b76
+    """.trimMargin().replace("\n", ""))
+
+    // When the response contains no answer RRs (NODATA).
+    val NODATA_HTTPS_RESPONSE = HexDump.hexStringToByteArray(
+    """
+    |da68818000010000000000000e636c6f7564666c6172652d65636803636f6d0000410001
     """.trimMargin().replace("\n", ""))
 
     val TEST_ECH_CONFIG_LIST = HexDump.hexStringToByteArray(

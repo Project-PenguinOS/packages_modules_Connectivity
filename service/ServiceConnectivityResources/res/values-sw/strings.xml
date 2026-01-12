@@ -36,7 +36,7 @@
     <string name="network_switch_metered_detail" msgid="1257300152739542096">"Kifaa hutumia <xliff:g id="NEW_NETWORK">%1$s</xliff:g> wakati <xliff:g id="PREVIOUS_NETWORK">%2$s</xliff:g> haina intaneti. Huenda ukalipishwa."</string>
     <string name="network_switch_metered_toast" msgid="70691146054130335">"Imebadilisha mtandao kutoka <xliff:g id="PREVIOUS_NETWORK">%1$s</xliff:g> na sasa inatumia <xliff:g id="NEW_NETWORK">%2$s</xliff:g>"</string>
   <string-array name="network_switch_type_name">
-    <item msgid="3004933964374161223">"data ya mtandao wa simu"</item>
+    <item msgid="3004933964374161223">"data ya simu"</item>
     <item msgid="5624324321165953608">"Wi-Fi"</item>
     <item msgid="5667906231066981731">"Bluetooth"</item>
     <item msgid="346574747471703768">"Ethaneti"</item>
