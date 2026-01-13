@@ -166,6 +166,16 @@ public class DnsHttpsRecord extends DnsRecord {
     }
 
     /**
+     * Returns the owner name of the HTTPS record.
+     *
+     * <p>This is the name included in the HTTPS record's DNS response, and should be used as the
+     * effective target name if the HTTPS record target name is `.`.
+     */
+    public @NonNull String getOwnerName() {
+        return dName;
+    }
+
+    /**
      * Returns the list of mandatory SvcParamKeys contained in the HTTPS record.
      *
      * <p>See RFC 9460 8 for more details.

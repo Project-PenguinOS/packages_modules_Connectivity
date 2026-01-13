@@ -97,7 +97,14 @@ public class HttpsRecord {
         return mRecord.getTargetName();
     }
 
-    // TODO(b/448882639): add a getOwnerName() method to the API surface.
+    /**
+     * Returns the owner name of the HTTPS record.
+     *
+     * <p>This should be used as the effective target name if the HTTPS record target name is `.`.
+     */
+    public @NonNull String getOwnerName() {
+        return mRecord.getOwnerName();
+    }
 
     /**
      * Returns the list of Application-Layer Protocol Negotiation (ALPN) protocol identifiers

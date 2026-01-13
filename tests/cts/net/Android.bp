@@ -114,6 +114,9 @@ android_test {
     test_suites: [
         "automotive-general-tests",
         "cts",
+        // See test/dts/README.md for triage instructions for bugs from the dts suite.
+        // Bugs should not be filed on the core networking team.
+        "dts",
         "mts-tethering",
         "mcts-tethering",
         "general-tests",

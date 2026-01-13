@@ -33,6 +33,9 @@ android_test {
     ],
     test_suites: [
         "cts",
+        // See test/dts/README.md for triage instructions for bugs from the dts suite.
+        // Bugs should not be filed on the thread team.
+        "dts",
         "general-tests",
         "mcts-tethering",
         "mts-tethering",

@@ -576,6 +576,7 @@ package android.net.dns {
     method @NonNull public java.util.List<java.lang.String> getAlpnIds();
     method @FlaggedApi("com.android.org.conscrypt.net.flags.encrypted_client_hello_platform") @Nullable public android.net.ssl.EchConfigList getEchConfigList() throws android.net.ssl.InvalidEchDataException;
     method @NonNull public java.util.List<java.net.InetAddress> getIpAddressHints();
+    method @NonNull public String getOwnerName();
     method public int getPort();
     method @IntRange(from=0, to=65535) public int getPriority();
     method @NonNull public String getTargetName();

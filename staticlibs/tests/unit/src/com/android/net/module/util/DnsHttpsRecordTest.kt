@@ -159,6 +159,16 @@ class DnsHttpsRecordTest {
     }
 
     @Test
+    fun getOwnerName_returnsCorrectValue() {
+        val record = DnsHttpsRecord(
+            DnsPacket.ANSECTION,
+            DnsSvcbTestUtils.toByteBuffer(FakeDnsRecord(recordName = "www.fakeownername.com"))
+        )
+
+        assertEquals("www.fakeownername.com", record.ownerName)
+    }
+
+    @Test
     fun getMandatory_returnsEmptyList() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
