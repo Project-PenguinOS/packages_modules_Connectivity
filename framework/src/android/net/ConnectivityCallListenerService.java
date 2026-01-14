@@ -79,6 +79,22 @@ public class ConnectivityCallListenerService extends InCallService {
     // Caches the UID for each individual call
     private final Map<String, Integer> mCallUidMap = new ArrayMap<>();
 
+    /**
+     * Local constant to mirror the platform's {@link
+     * PhoneAccount#CAPABILITY_OPT_OUT_OF_PREMIUM_NETWORK}
+     *
+     * This is a temporary measure because the platform API will not be public until the 26Q2
+     * release. Using a local constant allows us to implement the opt-out feature in this
+     * mainline module without creating a dependency on the yet-to-be-released public API.
+     *
+     * Once the platform API is public, this local constant should be removed and replaced with
+     * the official {@link PhoneAccount#CAPABILITY_OPT_OUT_OF_PREMIUM_NETWORK}
+     *
+     * For more details, see b/447631226.
+     */
+     // TODO (b/468165661) : Replace local constant with platform Api once available
+    private static final int CAPABILITY_OPT_OUT_OF_PREMIUM_NETWORK = 0x200000;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -157,9 +173,25 @@ public class ConnectivityCallListenerService extends InCallService {
     /**
      * Determines if a call is eligible for network slicing.
      */
-    private boolean isTransactionalOttCall(@NonNull Call.Details details,
+    private boolean isCallEligibleForSlicing(@NonNull Call.Details details,
             @NonNull PhoneAccountHandle handle) {
+
         if (!details.hasProperty(Call.Details.PROPERTY_IS_TRANSACTIONAL)) {
+            Log.i(TAG, "non transactional ott call, ignore slicing");
+            return false;
+        }
+
+        // The platform supports multiple PhoneAccounts per app (e.g., for multiple user logins
+        // associated with the app). Slicing eligibility is evaluated per-call based on the specific
+        // account handle associated with this call.
+        final PhoneAccount phoneAccount = mTelecomManager.getPhoneAccount(handle);
+
+        // Note: Modifying PhoneAccount properties after a call starts (e.g., via
+        // re-registration) does not affect live calls. Eligibility is determined when
+        // the call is first added to the service.
+        if (phoneAccount != null &&
+                phoneAccount.hasCapabilities(CAPABILITY_OPT_OUT_OF_PREMIUM_NETWORK)) {
+            Log.i(TAG, "opt out of slicing set");
             return false;
         }
 
@@ -167,7 +199,6 @@ public class ConnectivityCallListenerService extends InCallService {
             return true;
         }
 
-        final PhoneAccount phoneAccount = mTelecomManager.getPhoneAccount(handle);
         return phoneAccount != null &&
                 phoneAccount.hasCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED);
     }
@@ -195,8 +226,8 @@ public class ConnectivityCallListenerService extends InCallService {
             return;
         }
 
-        if (!isTransactionalOttCall(details, handle)) {
-            if (DBG) Log.d(TAG, "handleOnCallAdded: ignoring non transactional ott call");
+        if (!isCallEligibleForSlicing(details, handle)) {
+            if (DBG) Log.d(TAG, "handleOnCallAdded: slicing not allowed");
             return;
         }
 

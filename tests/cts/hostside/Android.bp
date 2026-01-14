@@ -52,6 +52,9 @@ java_test_host {
     // Tag this module as a cts test artifact
     test_suites: [
         "cts",
+        // See test/dts/README.md for triage instructions for bugs from the dts suite.
+        // Bugs should not be filed on the core networking team.
+        "dts",
         "general-tests",
         "mcts-tethering",
         "mts-tethering",
@@ -63,7 +66,7 @@ java_test_host {
         ":CtsHostsideNetworkCapTestsAppWithoutProperty",
         ":CtsHostsideNetworkCapTestsAppWithProperty",
         ":CtsHostsideNetworkCapTestsAppSdk33",
-        ":ConnectivityTestPreparer"
+        ":ConnectivityTestPreparer",
     ],
     per_testcase_directory: true,
 }

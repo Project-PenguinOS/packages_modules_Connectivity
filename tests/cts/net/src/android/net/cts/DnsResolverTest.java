@@ -823,6 +823,11 @@ public class DnsResolverTest {
                     mAnswer.getHttpsRecords().get(0).getEchConfigList());
         }
 
+        public void assertHttpsRecordHasOwnerName(String ownerName) throws Exception {
+            assertEquals(mMsg + ": HTTPS record should have owner name", ownerName,
+                    mAnswer.getHttpsRecords().get(0).getOwnerName());
+        }
+
         public void assertHasHttpsAnswer() {
             assertFalse(mMsg + ": HTTPS records should not be empty",
                     mAnswer.getHttpsRecords().isEmpty());
@@ -884,6 +889,7 @@ public class DnsResolverTest {
             assertFalse(msg + " returned 0 results", callback.isAnswerEmpty());
             callback.assertHasIpAddressAnswer();
             callback.assertHasHttpsAnswer();
+            callback.assertHttpsRecordHasOwnerName(TEST_HTTPS_RECORD_DOMAIN);
             // Because of trunk stable flag weirdness, check for the SDK version instead of reading
             // the Conscrypt platform flag.
             if (SdkUtil.isAtLeast26Q2()) {

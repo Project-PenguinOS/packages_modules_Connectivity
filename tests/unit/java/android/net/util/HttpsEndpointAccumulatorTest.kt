@@ -189,6 +189,22 @@ class HttpsEndpointAccumulatorTest {
   }
 
   @Test
+  fun testGetOwnerName_returnsCorrectValue() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+    val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
+        assertEquals(response.httpsRecords.size, 1)
+        with(response.httpsRecords.first()) {
+          assertEquals("cloudflare-ech.com", ownerName)
+        }
+      }
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+
+    val accumulator = createOnAnswerAccumulator(network, answerCallback)
+    accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
+  }
+
+  @Test
   fun testGetAlpnIds_returnsCorrectValue() {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
