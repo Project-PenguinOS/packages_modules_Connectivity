@@ -18,6 +18,7 @@ package com.android.networkstack.tethering.metrics;
 
 import static android.app.usage.NetworkStats.Bucket.STATE_ALL;
 import static android.app.usage.NetworkStats.Bucket.TAG_NONE;
+import static android.app.usage.NetworkStatsManager.FLAG_POLL_ON_OPEN;
 import static android.net.NetworkCapabilities.TRANSPORT_BLUETOOTH;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_ETHERNET;
@@ -89,6 +90,9 @@ import android.util.ArrayMap;
 
 import androidx.test.filters.SmallTest;
 
+import com.android.tethering.flags.Flags;
+import com.android.testutils.com.android.testutils.SetFeatureFlagsRule;
+import com.android.testutils.com.android.testutils.SetFeatureFlagsRule.FeatureFlag;
 import com.android.networkstack.tethering.UpstreamNetworkState;
 import com.android.networkstack.tethering.metrics.TetheringMetrics.DataUsage;
 import com.android.networkstack.tethering.metrics.TetheringMetrics.Dependencies;
@@ -104,12 +108,22 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.mockito.stubbing.Answer;
+
+import java.util.HashMap;
 
 @DevSdkIgnoreRunner.MonitorThreadLeak
 @RunWith(DevSdkIgnoreRunner.class)
 @SmallTest
 public final class TetheringMetricsTest {
     @Rule public final DevSdkIgnoreRule mIgnoreRule = new DevSdkIgnoreRule();
+    final HashMap<String, Boolean> mFeatureFlags = new HashMap<>();
+    @Rule
+    public final SetFeatureFlagsRule mSetFeatureFlagsRule =
+            new SetFeatureFlagsRule((name, enabled) -> {
+                mFeatureFlags.put(name, enabled);
+                return null;
+            }, (name) -> mFeatureFlags.getOrDefault(name, false));
 
     private static final String TEST_CALLER_PKG = "com.test.caller.pkg";
     private static final String SETTINGS_PKG = "com.android.settings";
@@ -166,13 +180,25 @@ public final class TetheringMetricsTest {
         mMockUpstreamUsageBaseline.put(UT_WIFI, new DataUsage(400L, 800L));
         mMockUpstreamUsageBaseline.put(UT_BLUETOOTH, new DataUsage(50L, 80L));
         mMockUpstreamUsageBaseline.put(UT_ETHERNET, new DataUsage(0L, 0L));
-        doAnswer(inv -> {
+        final boolean isNetstatsPerQueryFlagsEnabled = mFeatureFlags.getOrDefault(
+                Flags.FLAG_NETSTATS_PER_QUERY_FLAGS, false);
+        doReturn(isNetstatsPerQueryFlagsEnabled)
+                .when(mDeps).isNetstatsPerQueryFlagsEnabled();
+        final Answer<android.app.usage.NetworkStats> dataUsageAnswer = inv -> {
             final NetworkTemplate template = (NetworkTemplate) inv.getArguments()[0];
             final DataUsage dataUsage = mMockUpstreamUsageBaseline.getOrDefault(
                     matchRuleToUpstreamType(template.getMatchRule()), new DataUsage(0L, 0L));
             return makeNetworkStatsWithTxRxBytes(dataUsage);
-        }).when(mNetworkStatsManager).queryDetailsForUidTagState(any(), eq(Long.MIN_VALUE),
-                eq(Long.MAX_VALUE), eq(UID_TETHERING), eq(TAG_NONE), eq(STATE_ALL));
+        };
+        if (isNetstatsPerQueryFlagsEnabled) {
+            doAnswer(dataUsageAnswer).when(mNetworkStatsManager).queryDetailsForUidTagState(any(),
+                    eq(Long.MIN_VALUE), eq(Long.MAX_VALUE), eq(UID_TETHERING), eq(TAG_NONE),
+                    eq(STATE_ALL), eq(FLAG_POLL_ON_OPEN));
+        } else {
+            doAnswer(dataUsageAnswer).when(mNetworkStatsManager).queryDetailsForUidTagState(any(),
+                    eq(Long.MIN_VALUE), eq(Long.MAX_VALUE), eq(UID_TETHERING), eq(TAG_NONE),
+                    eq(STATE_ALL));
+        }
         mTetheringMetrics = new TetheringMetrics(mContext, mDeps);
         mElapsedRealtime = 0L;
     }
@@ -596,7 +622,18 @@ public final class TetheringMetricsTest {
 
     @Test
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
-    public void testDataUsageCalculation() throws Exception {
+    @FeatureFlag(name = Flags.FLAG_NETSTATS_PER_QUERY_FLAGS, enabled = true)
+    public void testDataUsageCalculation_withNetstatsPerQueryFlagsEnabled() throws Exception {
+        doTestDataUsageCalculation();
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.S_V2)
+    public void testDataUsageCalculation_withNetstatsPerQueryFlagsDisabled() throws Exception {
+        doTestDataUsageCalculation();
+    }
+
+    private void doTestDataUsageCalculation() throws Exception {
         initializeUpstreamUsageBaseline();
         runAndWaitForIdle(() -> mTetheringMetrics.createBuilder(TETHERING_WIFI, SETTINGS_PKG));
         final long wifiTetheringStartTime = currentTimeMillis();

@@ -1006,7 +1006,7 @@ public final class NsdManager {
     /**
      * Indicates that the operation failed because the caller did not have the required permissions.
      * This can happen when trying to perform resolution, discovery, or callback registration
-     * without the {@link android.Manifest.permission.ACCESS_LOCAL_NETWORK} permission.
+     * without the {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK} permission.
      *
      * This failure is passed with {@link ResolveListener#onResolveFailed},
      * {@link DiscoveryListener#onStartDiscoveryFailed}, or

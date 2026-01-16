@@ -38,7 +38,9 @@ import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mock
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.doThrow
+import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Spy
 import org.mockito.junit.MockitoJUnit
@@ -256,5 +258,42 @@ class ConnectivityCallListenerServiceTest {
                 hasSelfManagedCap = true, hasOptOutCapability = true)
         service.onCallAdded(mockCall)
         verify(mockConnectivityManager, never()).onOttCallStateChanged(anyInt(), anyBoolean())
+    }
+
+    @Test
+    fun onCall_sharedUid_isHandledCorrectly() {
+        mockCallProperties(isTransactional = true, hasSelfManagedProp = true,
+                hasSelfManagedCap = true, hasOptOutCapability = false)
+
+        // Create a second, distinct call object that will resolve to the same UID.
+        val mockCall2 = mock(Call::class.java)
+        val mockCallDetails2 = mock(Call.Details::class.java)
+        doReturn(mockCallDetails2).`when`(mockCall2).details
+        doReturn(realPhoneAccountHandle).`when`(mockCallDetails2).accountHandle
+        doReturn(true).`when`(mockCallDetails2)
+                .hasProperty(Call.Details.PROPERTY_IS_TRANSACTIONAL)
+        doReturn(true).`when`(mockCallDetails2)
+                .hasProperty(Call.Details.PROPERTY_SELF_MANAGED)
+        val callId = "test_call_id_456"
+        doReturn(callId).`when`(mockCallDetails2).id
+
+        // 1. First call with shared uid added, notified to connectivity to create slicing
+        service.onCallAdded(mockCall)
+        verify(mockConnectivityManager, times(1))
+                .onOttCallStateChanged(TEST_UID, true /* isAdd */)
+
+        // 2. Second call with shared uid added, not notified to connectivity for slicing
+        service.onCallAdded(mockCall2)
+        verify(mockConnectivityManager, times(1))
+                .onOttCallStateChanged(TEST_UID, true /* isAdd */)
+
+        // 3. First call ended, not notified to connectivity for slicing removal
+        service.onCallRemoved(mockCall)
+        verify(mockConnectivityManager, never()).onOttCallStateChanged(TEST_UID, false /* isAdd */)
+
+        // 4. Second (and last) call for the UID ends, notified to connectivity for slicing removal
+        service.onCallRemoved(mockCall2)
+        verify(mockConnectivityManager, times(1))
+                .onOttCallStateChanged(TEST_UID, false /* isAdd */)
     }
 }

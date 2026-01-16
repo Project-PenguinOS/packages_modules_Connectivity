@@ -472,6 +472,9 @@
       "name": "CtsNetTestCasesInternetPermission"
     },
     {
+      "name": "CtsNetTestCasesLocalNetNoPermissions"
+    },
+    {
       "name": "CtsNetTestCasesUpdateStatsPermission"
     }
   ],

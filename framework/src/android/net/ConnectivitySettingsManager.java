@@ -803,7 +803,7 @@ public class ConnectivitySettingsManager {
      * PAC proxies. In particular, smaller devices like watches often do not have the capabilities
      * necessary to interpret the PAC file. In such cases, calling this API with a PAC proxy
      * results in undefined behavior, including possibly breaking networking for applications.
-     * You can test for this by checking for the presence of {@link PackageManager.FEATURE_WEBVIEW}.
+     * You can test for this by checking for the presence of {@link PackageManager#FEATURE_WEBVIEW}.
      * </p>
      *
      * @param context The {@link Context} to set the setting.

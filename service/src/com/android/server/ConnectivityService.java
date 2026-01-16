@@ -164,6 +164,9 @@ import static com.android.net.module.util.PermissionUtils.enforceNetworkStackPer
 import static com.android.net.module.util.PermissionUtils.hasAnyPermissionOf;
 import static com.android.net.module.util.netlink.RtNetlinkQdiscMessage.CLSACT;
 import static com.android.server.ConnectivityStatsLog.CONNECTIVITY_STATE_SAMPLE;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_REQUESTROUTETOHOST_FAIL;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_REQUESTROUTETOHOST_OK;
 import static com.android.server.ConnectivityStatsLog.DEFAULT_NETWORK_REMATCH__REMATCH_REASON__RMR_NETWORK_DISCONNECTED;
 import static com.android.server.NetIdManager.MAX_NET_ID;
 import static com.android.server.NetIdManager.MIN_NET_ID;
@@ -3685,6 +3688,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 netId = nai.network.getNetId();
             }
             boolean ok = addLegacyRouteToHost(lp, addr, netId, uid);
+            final int eventType = ok
+                    ? CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_REQUESTROUTETOHOST_OK
+                    : CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_REQUESTROUTETOHOST_FAIL;
+            ConnectivityStatsLog.write_non_chained(CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED,
+                    uid, null, eventType, 1);
             if (DBG) {
                 log("requestRouteToHostAddress " + addr + nai.toShortString() + " ok=" + ok);
             }
