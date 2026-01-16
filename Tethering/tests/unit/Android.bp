@@ -60,6 +60,8 @@ java_defaults {
         "mockito-target-extended-minus-junit4",
         "TetheringCommonTests",
         "androidx.test.rules",
+        "com.android.tethering.flags-aconfig-java",
+        "flag-junit",
         "frameworks-base-testutils",
         "testables",
         "truth",

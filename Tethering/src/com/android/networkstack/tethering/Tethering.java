@@ -153,6 +153,7 @@ import com.android.net.module.util.FrameworkConnectivityStatsLog;
 import com.android.net.module.util.HandlerUtils;
 import com.android.net.module.util.NetdUtils;
 import com.android.net.module.util.RoutingCoordinatorManager;
+import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.SharedLog;
 import com.android.networkstack.apishim.common.BluetoothPanShim;
 import com.android.networkstack.apishim.common.BluetoothPanShim.TetheredInterfaceCallbackShim;
@@ -1190,7 +1191,13 @@ public class Tethering {
         // NOTE: If a CMD_TETHER_REQUESTED message is already in the IpServer's queue but not yet
         // processed, this will be a no-op and it will not return an error.
         tetherState.ipServer.enable(request);
-        if (request.getRequestType() == REQUEST_TYPE_PLACEHOLDER) {
+        // NOTE: USB placeholder requests are ignored from logging due to being expected as a result
+        // of the legacy setUsbTethering API. From CINNAMON_BUN, we should not expect any more usage
+        // of setUsbTethering.
+        boolean maybeLegacySetUsbTetheringRequest =
+                request.getTetheringType() == TETHERING_USB && !SdkUtil.isAtLeast26Q2();
+        if (request.getRequestType() == REQUEST_TYPE_PLACEHOLDER
+                && !maybeLegacySetUsbTetheringRequest) {
             Log.i(TAG, "Started tethering with placeholder request: " + request);
             TetheringStatsLog.write(
                     CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,

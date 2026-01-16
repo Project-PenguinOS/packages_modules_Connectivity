@@ -1604,7 +1604,7 @@ public final class LinkProperties implements Parcelable {
      * Get the URL of the captive portal API endpoint to get more information about the network.
      *
      * <p>This is null unless the application has
-     * {@link android.Manifest.permission.NETWORK_SETTINGS} or
+     * {@link android.Manifest.permission#NETWORK_SETTINGS} or
      * {@link NetworkStack#PERMISSION_MAINLINE_NETWORK_STACK} permissions, and the network provided
      * the URL.
      * @hide
@@ -1628,7 +1628,7 @@ public final class LinkProperties implements Parcelable {
      * Get the CaptivePortalData obtained from the captive portal API (RFC7710bis).
      *
      * <p>This is null unless the application has
-     * {@link android.Manifest.permission.NETWORK_SETTINGS} or
+     * {@link android.Manifest.permission#NETWORK_SETTINGS} or
      * {@link NetworkStack#PERMISSION_MAINLINE_NETWORK_STACK} permissions.
      * @hide
      */

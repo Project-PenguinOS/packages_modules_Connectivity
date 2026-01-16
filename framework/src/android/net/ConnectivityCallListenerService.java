@@ -51,11 +51,6 @@ import java.util.Map;
  * correctness of the {@link #onCallAdded(Call)} and {@link #onCallRemoved(Call)} callbacks
  * from the Telecom framework. This service expects the following behavior from Telecom:
  * <ul>
- *     <li><b>Multiple calls from the same application:</b> If a single application
- *     has multiple concurrent calls, the Telecom framework is expected to trigger
- *     {@link #onCallAdded(Call)} for the first call and {@link #onCallRemoved(Call)}
- *     only after the last call has ended.</li>
- *
  *     <li><b>Call Termination:</b> This service relies on the Telecom framework
  *     to issue an {@link #onCallRemoved(Call)} event for any reason a call ends. This includes
  *     normal hangup, an application crash, or an application uninstall while a call is active.
@@ -129,8 +124,6 @@ public class ConnectivityCallListenerService extends InCallService {
             return;
         }
 
-        // TODO (b/448566948): Different ott apps sharing same uid with same time call,
-        //  call ending scenario to be checked and handled if needed
         if (call == null || call.getDetails() == null) {
             Log.w(TAG, "onCallRemoved: Ignoring call with null call or details.");
             return;
@@ -141,9 +134,14 @@ public class ConnectivityCallListenerService extends InCallService {
         if (uid == null) {
             return;
         }
-        Log.i(TAG, "Processing transactional OTT onCallRemoved state for call ID with uid: "
-                + callId + " : " + uid);
-        mConnectivityManager.onOttCallStateChanged(uid, false /*isAdd*/);
+
+        // check if other calls for this UID are still active, if so avoid removing slicing for the
+        // uid
+        if (!mCallUidMap.containsValue(uid)) {
+            Log.i(TAG, "Processing transactional OTT onCallRemoved for call ID with uid: "
+                    + callId + " : " + uid);
+            mConnectivityManager.onOttCallStateChanged(uid, false /*isAdd*/);
+        }
     }
 
     /**
@@ -237,11 +235,18 @@ public class ConnectivityCallListenerService extends InCallService {
             return;
         }
         final String callId = details.getId();
+
+        // Check if this is the first call for this UID
+        boolean isFirstCallForUid = !mCallUidMap.containsValue(uid);
+
         mCallUidMap.put(callId, uid);
 
-        Log.i(TAG, "Processing transactional OTT onCallAdded state for call ID with uid: "
-                + callId + " : " + uid);
-        mConnectivityManager.onOttCallStateChanged(uid, true /*isAdd*/);
+        // Avoid sending slicing request for the same uid, in case of multiple call with same uid
+        if (isFirstCallForUid) {
+            Log.i(TAG, "Processing transactional OTT onCallAdded for call ID with uid: "
+                    + callId + " : " + uid);
+            mConnectivityManager.onOttCallStateChanged(uid, true /*isAdd*/);
+        }
     }
 
     @Override

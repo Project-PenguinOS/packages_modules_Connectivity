@@ -77,7 +77,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * without waking up the CPU should not, as this would be prohibitive in
  * terms of battery - these agents should simply not override the related
  * methods, which results in the implementation returning
- * {@link SocketKeepalive.ERROR_UNSUPPORTED} as appropriate.
+ * {@link SocketKeepalive#ERROR_UNSUPPORTED} as appropriate.
  *
  * Keepalive packets need to be sent at relatively frequent intervals
  * (a few seconds to a few minutes). As the contents of keepalive packets
@@ -241,7 +241,7 @@ public abstract class NetworkAgent {
 
     /**
      * Network validation suceeded.
-     * Corresponds to {@link NetworkCapabilities.NET_CAPABILITY_VALIDATED}.
+     * Corresponds to {@link NetworkCapabilities#NET_CAPABILITY_VALIDATED}.
      */
     public static final int VALIDATION_STATUS_VALID = 1;
 
