@@ -80,11 +80,13 @@
     <!-- Network type name displayed if one of the types is not found in network_switch_type_name. -->
     <string name="network_switch_type_name_unknown">an unknown network type</string>
 
-    <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. This is the title of the dialog. -->
-    <string name="connect_to_service_title">Connect to service</string>
+    <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. This is the title of the dialog. [BACKUP_MESSAGE_ID: 2417012530980077322] -->
+    <string name="choose_device_title">Choose a device to connect</string>
 
-    <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. This is the text of the dialog, before the list of devices. Devices displayed in the list may be from different networks (for example, one on local Wi-Fi and one on local Ethernet). -->
-    <string name="connect_to_service_summary"><xliff:g id="app_name" example="Google Home">%1$s</xliff:g> wants to connect to another device on a local network</string>
+    <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. This is the text of the dialog, before the list of devices. Devices displayed in the list may be from different networks (for example, one on local Wi-Fi and one on local Ethernet). [BACKUP_MESSAGE_ID: 8059566528115046359] -->
+    <string name="choose_device_summary"><xliff:g id="app_name" example="Google Home">%1$s</xliff:g> wants to connect to a device on your local network</string>
+    <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. The dialog has a cancel button to dismiss without connecting. This is the text of the cancel button. -->
+    <string name="choose_device_cancel">Don\'t connect</string>
     <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. Before the devices are found a ProgressBar spinner is shown. This is the accessibility text for that ProgressBar. -->
     <string name="scanning_for_services_progress_description">Scanning for services</string>
 

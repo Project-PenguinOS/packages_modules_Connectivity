@@ -75,8 +75,10 @@ class IPv4UdpFilter @JvmOverloads constructor(
     dstPort: Short? = null
 ) : Predicate<ByteArray> {
     private val impl = OffsetFilter(ETHER_TYPE_OFFSET, 0x08, 0x00 /* IPv4 */).and(
-            OffsetFilter(IPV4_PROTOCOL_OFFSET, 17 /* UDP */)).and(
-            UdpPortFilter(IPV4_PAYLOAD_OFFSET, srcPort, dstPort))
+            OffsetFilter(IPV4_PROTOCOL_OFFSET, 17 /* UDP */)
+    ).and(
+            UdpPortFilter(IPV4_PAYLOAD_OFFSET, srcPort, dstPort)
+    )
     override fun test(t: ByteArray) = impl.test(t)
 }
 
@@ -88,8 +90,10 @@ class IPv6UdpFilter @JvmOverloads constructor(
     dstPort: Short? = null
 ) : Predicate<ByteArray> {
     private val impl = OffsetFilter(ETHER_TYPE_OFFSET, 0x86.toByte(), 0xdd.toByte() /* IPv6 */).and(
-            OffsetFilter(IPV6_PROTOCOL_OFFSET, 17 /* UDP */)).and(
-            UdpPortFilter(IPV6_PAYLOAD_OFFSET, srcPort, dstPort))
+            OffsetFilter(IPV6_PROTOCOL_OFFSET, 17 /* UDP */)
+    ).and(
+            UdpPortFilter(IPV6_PAYLOAD_OFFSET, srcPort, dstPort)
+    )
     override fun test(t: ByteArray) = impl.test(t)
 }
 
@@ -112,7 +116,8 @@ class ArpRequestFilter : Predicate<ByteArray> {
 
 class Icmpv6Filter : Predicate<ByteArray> {
     private val impl = OffsetFilter(ETHER_TYPE_OFFSET, 0x86.toByte(), 0xdd.toByte() /* IPv6 */).and(
-        OffsetFilter(IPV6_PROTOCOL_OFFSET, 58 /* ICMPv6 */))
+        OffsetFilter(IPV6_PROTOCOL_OFFSET, 58 /* ICMPv6 */)
+    )
     override fun test(t: ByteArray) = impl.test(t)
 }
 
@@ -122,6 +127,15 @@ class Icmpv6Filter : Predicate<ByteArray> {
 class DhcpClientPacketFilter : Predicate<ByteArray> {
     private val impl = IPv4UdpFilter(srcPort = 68, dstPort = 67)
     override fun test(t: ByteArray) = impl.test(t)
+}
+
+/**
+ * A [Predicate] that matches Dns packets (UDP dst port 53).
+ */
+class DnsPacketFilter : Predicate<ByteArray> {
+    private val dnsV4Impl = IPv4UdpFilter(dstPort = 53)
+    private val dnsV6Impl = IPv6UdpFilter(dstPort = 53)
+    override fun test(t: ByteArray) = dnsV4Impl.test(t) or dnsV6Impl.test(t)
 }
 
 /**
@@ -147,7 +161,9 @@ fun findDhcpOption(packet: ByteArray, option: Byte): ByteArray? =
 private tailrec fun findOptionOffset(packet: ByteArray, option: Byte, searchOffset: Int): Int? {
     if (packet.size <= searchOffset + 2 /* type, length bytes */) return null
 
-    return if (packet[searchOffset] == option) searchOffset else {
+    return if (packet[searchOffset] == option) {
+        searchOffset
+    } else {
         val optionLen = packet[searchOffset + 1]
         findOptionOffset(packet, option, searchOffset + 2 + optionLen)
     }

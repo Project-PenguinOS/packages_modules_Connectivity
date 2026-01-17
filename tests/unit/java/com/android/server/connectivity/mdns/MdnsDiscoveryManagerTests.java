@@ -74,6 +74,7 @@ public class MdnsDiscoveryManagerTests {
     private static final String SERVICE_NAME = "a_name";
     private static final String SERVICE_TYPE_1 = "_googlecast._tcp.local";
     private static final String SERVICE_TYPE_2 = "_test._tcp.local";
+    private static final String SERVICE_TYPE_WITHOUT_DOT_AND_LOCAL_SUFFIX = "_googlecast._tcp";
     private static final Network NETWORK_1 = Mockito.mock(Network.class);
     private static final Network NETWORK_2 = Mockito.mock(Network.class);
 
@@ -240,7 +241,10 @@ public class MdnsDiscoveryManagerTests {
         verify(mockServiceTypeClientType1MulticastDisabledNetwork)
                 .startSendAndReceive(mockListenerOne, options);
 
-        NsdServiceInfo serviceInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE_1);
+        NsdServiceInfo serviceInfo = new NsdServiceInfo(
+                SERVICE_NAME,
+                SERVICE_TYPE_WITHOUT_DOT_AND_LOCAL_SUFFIX
+        );
         boolean isServiceLost = false;
 
         runOnHandler(

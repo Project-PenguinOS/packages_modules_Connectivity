@@ -879,7 +879,10 @@ public class MdnsServiceTypeClientTests {
         final String serviceName = "service-instance";
         final MdnsFeatureFlags flags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
                 .setIsSelectiveMdnsResponseOffloadEnabled(true).build();
-        NsdServiceInfo nsdServiceInfo = new NsdServiceInfo(serviceName, SERVICE_TYPE);
+        NsdServiceInfo nsdServiceInfo = new NsdServiceInfo(
+                serviceName,
+                SERVICE_TYPE
+        );
         nsdServiceInfo.setSubtypes(Set.of("subtype1"));
         nsdServiceInfo.setHostname("c.d.e");
         nsdServiceInfo.setPort(5353);

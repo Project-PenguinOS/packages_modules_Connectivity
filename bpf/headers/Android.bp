@@ -47,6 +47,7 @@ cc_test {
     srcs: [
         "BpfMapTest.cpp",
         "BpfRingbufTest.cpp",
+        "RingbufEventPollerTest.cpp",
     ],
     defaults: ["bpf_cc_defaults"],
     cflags: [

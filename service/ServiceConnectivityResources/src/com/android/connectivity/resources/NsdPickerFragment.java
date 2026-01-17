@@ -18,7 +18,6 @@ package com.android.connectivity.resources;
 
 import android.annotation.RequiresNoPermission;
 import android.annotation.TargetApi;
-import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -64,9 +63,18 @@ public class NsdPickerFragment extends DialogFragment {
     private static final SparseArray<ServiceReceiver> sActiveReceivers = new SparseArray<>();
     private static int sNextReceiverId = 0;
 
+    /** Listener interface for the host activity (in particular for testing). */
+    interface PickerDialogListener {
+        /** Called when the picker dialog fragment is detached after selection is done. */
+        @UiThread
+        void onDetachedAfterSelection();
+    }
+
     @Nullable
     private ServiceAdapter mAdapter;
     private State mState;
+    private PickerDialogListener mListener;
+    private boolean mIsSelectionDone = false;
 
     public NsdPickerFragment() {
         // The fragment is being recreated; the state will be in savedInstanceState
@@ -163,6 +171,7 @@ public class NsdPickerFragment extends DialogFragment {
     }
 
     @UiThread
+    @NonNull
     @Override
     public Dialog onCreateDialog(@Nullable Bundle savedInstanceState) {
         if (mState == null && savedInstanceState != null) {
@@ -176,14 +185,14 @@ public class NsdPickerFragment extends DialogFragment {
         final LayoutInflater inflater = LayoutInflater.from(getContext());
         final View customTitle = inflater.inflate(R.layout.nsd_picker_title, null);
         customTitle.<TextView>findViewById(android.R.id.summary).setText(
-                getString(R.string.connect_to_service_summary, mState.mAppName));
+                getString(R.string.choose_device_summary, mState.mAppName));
 
         final DialogInterface.OnClickListener serviceSelectedListener =
                 (dialogInterface, itemPosition) -> onServiceSelected(itemPosition);
         final AlertDialog dialog = new AlertDialog.Builder(getContext())
                 .setCustomTitle(customTitle)
                 .setAdapter(mAdapter, serviceSelectedListener)
-                .setNegativeButton(android.R.string.cancel, (d, which) -> onCancel(d))
+                .setNegativeButton(R.string.choose_device_cancel, (d, which) -> onCancel(d))
                 .create();
 
         final ServiceReceiver receiver = makeOrGetServiceReceiver(
@@ -212,26 +221,49 @@ public class NsdPickerFragment extends DialogFragment {
                 Log.e(TAG, "Failed to notify of selected service", e);
             }
         }
+        selectionDone();
+    }
+
+    /**
+     * Called when service selection is done, either by selecting a service or cancelling selection.
+     */
+    private void selectionDone() {
+        mIsSelectionDone = true;
         dismiss();
+        // onDetach() will be called after dismiss()
+    }
+
+    @UiThread
+    public void onAttach(@NonNull Context context) {
+        super.onAttach(context);
+        if (context instanceof PickerDialogListener) {
+            mListener = (PickerDialogListener) context;
+        } else {
+            throw new IllegalStateException("Hosting activity must implement PickerDialogListener");
+        }
     }
 
     @UiThread
     @Override
-    public void onDismiss(@NonNull DialogInterface dialog) {
-        super.onDismiss(dialog);
-        if (DBG) Log.d(TAG, "Dialog dismissed");
-        final Activity activity = getActivity();
-        if (activity != null) {
-            activity.finish();
+    public void onDetach() {
+        super.onDetach();
+        if (DBG) Log.d(TAG, "Fragment detached");
+        // The fragment may be detached when selection is done, or if the activity is being
+        // recreated
+        if (mIsSelectionDone) {
+            if (mListener != null) {
+                mListener.onDetachedAfterSelection();
+            }
+            removeReceiver();
         }
-        removeReceiver();
     }
 
-    @UiThread
     @Override
     public void onCancel(@NonNull DialogInterface dialog) {
         super.onCancel(dialog);
         if (DBG) Log.d(TAG, "Dialog cancelled");
+        mIsSelectionDone = true;
+        // onDetach will be called after onCancel
         // TODO: stop discovery, don't wait for the requesting app to time out and unregister
     }
 
@@ -355,7 +387,7 @@ public class NsdPickerFragment extends DialogFragment {
             mHandler.post(() -> {
                 final NsdPickerFragment parent = mParent.get();
                 if (parent == null) return;
-                parent.dismiss();
+                parent.selectionDone();
             });
         }
     }

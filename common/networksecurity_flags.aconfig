@@ -17,3 +17,10 @@ flag {
     bug: "319829948"
     is_fixed_read_only: true
 }
+
+flag {
+    name: "flatbuffers_log_list"
+    namespace: "network_security"
+    description: "Enable the log list in flatbuffers format"
+    bug: "428898869"
+}

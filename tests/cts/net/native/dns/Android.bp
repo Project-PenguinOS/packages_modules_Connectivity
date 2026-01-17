@@ -62,7 +62,7 @@ cc_test {
     test_suites: [
         "cts",
         "general-tests",
-        "mts-dnsresolver",
-        "mcts-dnsresolver",
+        "mts-tethering",
+        "mcts-tethering",
     ],
 }

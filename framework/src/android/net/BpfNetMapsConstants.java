@@ -64,6 +64,8 @@ public class BpfNetMapsConstants {
             "/sys/fs/bpf/netd_shared/map_netd_local_net_access_map";
     public static final String LOCAL_NET_BLOCKED_UID_MAP_PATH =
             "/sys/fs/bpf/netd_shared/map_netd_local_net_blocked_uid_map";
+    public static final String LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH =
+            "/sys/fs/bpf/netd_shared/map_netd_local_net_uid_host_allowlist_map";
     public static final String UID_MIGRATION_ENABLED_MAP_PATH =
             "/sys/fs/bpf/netd_shared/map_netd_uid_migration_enabled_map";
     public static final String PERMISSION_PROPAGATION_ENABLED_MAP_PATH =

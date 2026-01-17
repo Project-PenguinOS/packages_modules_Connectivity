@@ -20,6 +20,7 @@
 #define DEFAULT_BPF_PIN_SUBDIR "netd_shared"
 
 #include "bpf_net_helpers.h"
+#include "internal_net_api.h"
 #include "netd.h"
 
 // This is defined for cgroup bpf filter only.
@@ -108,6 +109,15 @@ DEFINE_BPF_MAP_EXT(local_net_access_map, LPM_TRIE, LocalNetAccessKey, bool, 1000
 // not preallocated
 DEFINE_BPF_MAP_EXT(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000,
                    AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
+                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+
+// This trie holds exceptions to blocked access listed in local_net_access_map.
+// Although it is a trie, it is only used as a map (all entries use the maximum
+// prefix length). A trie is used because map keys are preallocated, which would
+// be wasteful as the keys are much larger than the values.
+DEFINE_BPF_MAP_EXT(local_net_uid_host_allowlist_map, LPM_TRIE,
+                   LocalNetUidHostAllowlistKey, bool, 1000, AID_ROOT,
+                   AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
                    BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
 
 DEFINE_BPF_MAP_RO_NETD(uid_migration_enabled_map, ARRAY, uint32_t, bool, 1)
@@ -273,9 +283,13 @@ static __always_inline inline int bpf_skb_load_bytes_net(const struct __sk_buff*
         : bpf_skb_load_bytes(skb, L3_off, to, len);
 }
 
-// False iff arguments are found with longest prefix match lookup and disallowed.
-static inline __always_inline bool is_local_net_access_allowed(const uint32_t if_index,
-        const struct in6_addr* remote_ip6, const uint16_t protocol, const __be16 remote_port) {
+// False iff arguments are found with longest prefix match lookup and
+// disallowed, and the allowlist does not contain an exception for the uid/host
+// on the interface.
+static inline __always_inline bool
+is_local_net_access_allowed(const uint32_t uid, const uint32_t if_index,
+                            const struct in6_addr *remote_ip6,
+                            const uint16_t protocol, const __be16 remote_port) {
     LocalNetAccessKey query_key = {
         .lpm_bitlen = 8 * (sizeof(if_index) + sizeof(*remote_ip6) + sizeof(protocol)
             + sizeof(remote_port)),
@@ -285,11 +299,24 @@ static inline __always_inline bool is_local_net_access_allowed(const uint32_t if
         .remote_port = remote_port
     };
     bool* v = bpf_local_net_access_map_lookup_elem(&query_key);
-    return v ? *v : true;
+    if (!v || *v) {
+        return true;
+    }
+    LocalNetUidHostAllowlistKey allowlist_query_key = {
+        .lpm_bitlen =
+            8 * (sizeof(uid) + sizeof(if_index) + sizeof(*remote_ip6)),
+        .uid = uid,
+        .if_index = if_index,
+        .remote_ip6 = *remote_ip6,
+    };
+    v = bpf_local_net_uid_host_allowlist_map_lookup_elem(&allowlist_query_key);
+    return v && *v;
 }
 
-static __always_inline inline bool is_restricted_local_network(struct __sk_buff *skb,
-                                   const struct egress_bool egress, const struct kver_uint kver) {
+static __always_inline inline bool
+is_restricted_local_network(struct __sk_buff *skb, const uint32_t uid,
+                            const struct egress_bool egress,
+                            const struct kver_uint kver) {
     struct in6_addr remote_ip6;
     uint8_t ip_proto;
     uint8_t L4_off;
@@ -323,7 +350,8 @@ static __always_inline inline bool is_restricted_local_network(struct __sk_buff 
         break;
     }
 
-    return !is_local_net_access_allowed(skb->ifindex, &remote_ip6, ip_proto, remote_port);
+    return !is_local_net_access_allowed(uid, skb->ifindex, &remote_ip6,
+                                        ip_proto, remote_port);
 }
 
 static __always_inline inline uint8_t
@@ -373,7 +401,7 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
     }
     bool isRestricted;
     if (reportLocalAccess) {
-        isRestricted = is_restricted_local_network(skb, egress, kver);
+        isRestricted = is_restricted_local_network(skb, uid, egress, kver);
         // Currently, generate events for all local network access, regardless of the UID's
         // permission status.
         // This is to identify all UIDs that are accessing the local network.
@@ -397,7 +425,7 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
     }
 
     if (!reportLocalAccess) {
-        isRestricted = is_restricted_local_network(skb, egress, kver);
+        isRestricted = is_restricted_local_network(skb, uid, egress, kver);
     }
     return isRestricted;
 }
@@ -833,7 +861,13 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q2) && (match != DROP)) {
         // TODO(b/467964186): use the parsed skb
-        if (should_block_local_network_packets(skb, statsUid, egress, kver)) match = DROP;
+        if (should_block_local_network_packets(skb, statsUid, egress, kver)) {
+            if (KVER_IS_AT_LEAST(kver, 5, 10, 0) && skb->sk && egress.egress) {
+                SkStorageValue *v = bpf_sk_storage_get(skb->sk, 0, 0);
+                if (v) v->dropReasons |= DROP_REASON_LNP;
+            }
+            match = DROP;
+        }
     }
 
     // If an outbound packet is going to be dropped, we do not count that traffic.
@@ -1216,12 +1250,22 @@ DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, , 4_19)
 
 // --- GETSOCKOPT HOOK ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, , 5_4)
-(struct bpf_sockopt *ctx) {
+static inline __always_inline int inet_getsockopt(struct bpf_sockopt *ctx,
+                                                  __unused const struct kver_uint kver) {
     // Tell kernel to return 'original' kernel reply (instead of the bpf modified buffer)
     // This is important if the answer is larger than PAGE_SIZE (max size this bpf hook can provide)
     ctx->optlen = 0;
     return BPF_ALLOW;
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, 5_10, 5_10)
+(struct bpf_sockopt *ctx) {
+    return inet_getsockopt(ctx, KVER_5_10);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(getsockopt, prog, 5_4, 5_4, 5_10)
+(struct bpf_sockopt *ctx) {
+    return inet_getsockopt(ctx, KVER_5_4);
 }
 
 // --- SETSOCKOPT HOOK ---

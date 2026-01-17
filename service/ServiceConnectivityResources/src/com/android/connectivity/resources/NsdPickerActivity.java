@@ -23,47 +23,96 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 import androidx.fragment.app.FragmentActivity;
 
+import com.android.connectivity.resources.NsdPickerFragment.PickerDialogListener;
 import com.android.connectivity.resources.aidl.NsdPickerConnector;
 
-public class NsdPickerActivity extends FragmentActivity {
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Queue;
+
+public class NsdPickerActivity extends FragmentActivity implements PickerDialogListener {
     private static final String TAG = NsdPickerActivity.class.getSimpleName();
     private static final String FRAGMENT_PICKER_DIALOG = "picker_dialog";
+    private static final String KEY_INTENT_QUEUE = "intent_queue";
+
+    private final Queue<Intent> mIntentQueue = new ArrayDeque<>();
 
     @UiThread
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Fragments will be auto-recreated and re-added on activity recreation, only add if
-        // this is the first creation.
         if (savedInstanceState == null) {
-            addPickerFragment();
+            mIntentQueue.add(getIntent());
+        } else {
+            ArrayList<Intent> savedQueue = savedInstanceState.getParcelableArrayList(
+                    KEY_INTENT_QUEUE);
+            if (savedQueue != null) {
+                mIntentQueue.addAll(savedQueue);
+            }
         }
+        showNextPickerFragmentOrFinish();
     }
 
     @UiThread
-    private void addPickerFragment() {
-        final Bundle intentBundle = getIntent().getExtras();
-        final NsdPickerConnector connector = NsdPickerConnector.Stub.asInterface(
-                intentBundle.getBinder(EXTRA_CONNECTOR));
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putParcelableArrayList(KEY_INTENT_QUEUE, new ArrayList<>(mIntentQueue));
+    }
 
-        if (connector == null) {
-            Log.wtf(TAG, "Missing connector");
-            finish();
+    @UiThread
+    private void showNextPickerFragmentOrFinish() {
+        if (getSupportFragmentManager().findFragmentByTag(FRAGMENT_PICKER_DIALOG) != null) {
+            // A dialog fragment is already shown
             return;
         }
 
-        NsdPickerFragment.newInstance(connector, intentBundle.getString(EXTRA_APP_NAME))
-                .show(getSupportFragmentManager(), FRAGMENT_PICKER_DIALOG);
+        while (!mIntentQueue.isEmpty()) {
+            final Intent intent = mIntentQueue.poll();
+            if (intent == null) {
+                Log.wtf(TAG, "Null intent in queue");
+                continue;
+            }
+
+            final Bundle intentBundle = intent.getExtras();
+            if (intentBundle == null) {
+                Log.wtf(TAG, "Invalid request intent: missing extras");
+                continue;
+            }
+
+            final NsdPickerConnector connector = NsdPickerConnector.Stub.asInterface(
+                    intentBundle.getBinder(EXTRA_CONNECTOR));
+            if (connector == null) {
+                Log.wtf(TAG, "Invalid request intent: missing connector");
+                continue;
+            }
+
+            NsdPickerFragment.newInstance(connector, intentBundle.getString(EXTRA_APP_NAME))
+                    .show(getSupportFragmentManager(), FRAGMENT_PICKER_DIALOG);
+            return;
+        }
+
+        // No picker currently shown and no valid intents left to show a picker for.
+        finish();
     }
 
+    @UiThread
     @Override
-    public void onNewIntent(Intent intent) {
+    public void onNewIntent(@NonNull Intent intent) {
         super.onNewIntent(intent);
-        // TODO: handle multiple requests for discovery
+        mIntentQueue.add(intent);
+        showNextPickerFragmentOrFinish();
+    }
+
+    @UiThread
+    @Override
+    public void onDetachedAfterSelection() {
+        showNextPickerFragmentOrFinish();
     }
 }

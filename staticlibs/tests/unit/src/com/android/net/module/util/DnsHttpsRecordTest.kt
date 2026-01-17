@@ -145,7 +145,7 @@ class DnsHttpsRecordTest {
             DnsSvcbTestUtils.toByteBuffer(FakeDnsRecord(targetName = ""))
         )
 
-        assertEquals(DnsHttpsRecord.ZERO_LENGTH_TARGET_NAME, record.targetName)
+        assertEquals("", record.targetName)
     }
 
     @Test
@@ -194,7 +194,9 @@ class DnsHttpsRecordTest {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
-                FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_DOQ))))
+                FakeDnsRecord(svcParams = listOf(
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_DOQ,
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_NO_DEFAULT_ALPN))))
 
         assertEquals(listOf("doq"), record.alpnIds)
     }
@@ -204,29 +206,47 @@ class DnsHttpsRecordTest {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
-                FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_HTTPS))))
+                FakeDnsRecord(svcParams = listOf(
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_HTTPS,
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_NO_DEFAULT_ALPN))))
 
         assertEquals(listOf("h2", "http/1.1"), record.alpnIds)
     }
 
     @Test
-    fun getNoDefaultAlpn_whenAbsent_returnsFalse() {
+    fun getAlpnIds_whenNoDefaultAlpnAbsent_butAlpnSpecifiesDefaultAlpn_returnsDefaultAlpnOnce() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
-                FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_MANDATORY))))
+                FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_HTTPS))))
 
-        assertFalse(record.isNoDefaultAlpn())
+        // Verify we don't add the default ALPN ID twice
+        assertEquals(listOf("h2", "http/1.1"), record.alpnIds)
+        assertTrue(record.alpnIds.contains(DnsHttpsRecord.DEFAULT_HTTPS_ALPN_ID))
     }
 
     @Test
-    fun getNoDefaultAlpn_whenPresent_returnsTrue() {
+    fun getAlpnIds_whenNoDefaultAlpnAbsent_returnsDefaultAlpn() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
-                FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_NO_DEFAULT_ALPN))))
+                FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_QUIC))))
 
-        assertTrue(record.isNoDefaultAlpn())
+        assertEquals(listOf("h3", "h2", "http/1.1"), record.alpnIds)
+        assertTrue(record.alpnIds.contains(DnsHttpsRecord.DEFAULT_HTTPS_ALPN_ID))
+    }
+
+    @Test
+    fun getAlpnIds_whenNoDefaultAlpnPresent_doesNotReturnDefaultAlpn() {
+        val record = DnsHttpsRecord(
+            DnsPacket.ANSECTION,
+            DnsSvcbTestUtils.toByteBuffer(
+                FakeDnsRecord(svcParams = listOf(
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_QUIC,
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_NO_DEFAULT_ALPN))))
+
+        assertEquals(listOf("h3", "h2"), record.alpnIds)
+        assertFalse(record.alpnIds.contains(DnsHttpsRecord.DEFAULT_HTTPS_ALPN_ID))
     }
 
     @Test
@@ -236,7 +256,7 @@ class DnsHttpsRecordTest {
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_MANDATORY))))
 
-        assertEquals(DnsHttpsRecord.DEFAULT_PORT_VALUE, record.port)
+        assertEquals(DnsHttpsRecord.DEFAULT_HTTPS_PORT_VALUE, record.port)
     }
 
     @Test
@@ -380,7 +400,6 @@ class DnsHttpsRecordTest {
 
         assertTrue(record.mandatory.isEmpty())
         assertEquals(listOf("h2", "http/1.1"), record.alpnIds)
-        assertTrue(record.isNoDefaultAlpn())
         assertEquals(5353, record.port)
         assertEquals(listOf(InetAddresses.parseNumericAddress("4.3.2.1")), record.ipv4Hints)
         assertContentEquals(DnsSvcbTestUtils.TEST_ECH_CONFIG_LIST, record.echConfigList)

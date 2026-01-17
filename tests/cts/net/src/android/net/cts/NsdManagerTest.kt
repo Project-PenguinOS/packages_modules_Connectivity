@@ -52,6 +52,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.platform.test.annotations.AppModeFull
+import android.platform.test.annotations.RequiresFlagsDisabled
 import android.platform.test.annotations.RequiresFlagsEnabled
 import android.platform.test.flag.junit.DeviceFlagsValueProvider
 import android.provider.DeviceConfig.NAMESPACE_TETHERING
@@ -119,6 +120,7 @@ import com.android.testutils.pollForReply
 import com.android.testutils.runAsShell
 import com.android.testutils.tryTest
 import com.android.testutils.waitForIdle
+import com.android.tethering.flags.Flags.FLAG_NSD_SERVICE_PICKER
 import com.android.tethering.mainline.beta.Flags
 import com.google.common.truth.Truth.assertThat
 import java.io.File
@@ -620,6 +622,7 @@ class NsdManagerTest {
 
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
+    @RequiresFlagsDisabled(FLAG_NSD_SERVICE_PICKER)
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     fun testDiscoverServices_missingLocalNetPermission_failsPermissionDenied() {
         assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
@@ -967,7 +970,8 @@ class NsdManagerTest {
 
             discoveryRecord3.expectCallback<DiscoveryStarted>()
 
-            val nsdServiceInfo = NsdServiceInfo("MyService", serviceType.plus(".local"))
+            val serviceTypeWithDotSuffix = serviceType + "."
+            val nsdServiceInfo = NsdServiceInfo("MyService", serviceTypeWithDotSuffix)
                 .also { it ->
                     it.subtypes = setOf("_subtype1", "_subtype2")
             }
@@ -989,7 +993,7 @@ class NsdManagerTest {
 
             val nsdServiceInfoWithHostname = NsdServiceInfo(
                 foundInfo1.serviceName,
-                serviceType.plus(".local")
+                serviceType
             ).also { it ->
                 it.hostname = "My.TestHost"
                 it.port = 5353
@@ -1022,6 +1026,7 @@ class NsdManagerTest {
                 val actualVal = serviceInfoCb.serviceInfo.attributes[key]
                 assertContentEquals(expectedVal, actualVal)
             }
+            nsdServiceInfoWithHostname.serviceType = serviceTypeWithDotSuffix
             runAsShell(NETWORK_SETTINGS) {
                 offloadSession?.onServiceLost(nsdServiceInfoWithHostname)
             }
