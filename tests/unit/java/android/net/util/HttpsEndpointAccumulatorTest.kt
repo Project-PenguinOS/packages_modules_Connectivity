@@ -127,7 +127,7 @@ class HttpsEndpointAccumulatorTest {
         assertEquals(response.httpsRecords.size, 1)
         with(response.httpsRecords.first()) {
           assertEquals(1, priority)
-          assertEquals(DEFAULT_TARGET_NAME, targetName)
+          assertEquals("", targetName)
           assertContentEquals(TEST_IP_HINTS, ipAddressHints)
           assertContentEquals(TEST_ECH_CONFIG_LIST, echConfigList?.toBytes())
         }
@@ -178,7 +178,7 @@ class HttpsEndpointAccumulatorTest {
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 1)
         with(response.httpsRecords.first()) {
-          assertEquals(DEFAULT_TARGET_NAME, targetName)
+          assertEquals("", targetName)
         }
       }
 
@@ -422,7 +422,6 @@ class HttpsEndpointAccumulatorTest {
     private const val NETWORK_TIMEOUT_MS = 10_000L
     private const val QUERY_TIMEOUT_MS = 1000
 
-    private const val DEFAULT_TARGET_NAME = "."
     private const val DEFAULT_PORT = 443
 
     val TEST_IP_HINTS_IPV4_ONLY = listOf(

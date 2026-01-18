@@ -103,6 +103,7 @@ import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
+import android.os.Process;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 import android.os.UserHandle;
@@ -121,12 +122,12 @@ import com.android.internal.util.IndentingPrintWriter;
 import com.android.metrics.NetworkNsdReportedMetrics;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.CollectionUtils;
-import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.DnsUtils;
 import com.android.net.module.util.HandlerUtils;
 import com.android.net.module.util.InetAddressUtils;
 import com.android.net.module.util.PermissionUtils;
+import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.SharedLog;
 import com.android.server.connectivity.mdns.ExecutorProvider;
 import com.android.server.connectivity.mdns.MdnsAdvertiser;
@@ -470,18 +471,19 @@ public class NsdService extends INsdManager.Stub {
         }
 
         private String getAppName() {
-            final ApplicationInfo appInfo;
+            CharSequence appName;
             final PackageManager pm = mContext.getPackageManager();
             try {
-                appInfo = pm.getApplicationInfoAsUser(
+                final ApplicationInfo appInfo = pm.getApplicationInfoAsUser(
                         mClientInfo.mPackageName, /* flags= */0,
                         UserHandle.getUserHandleForUid(mClientInfo.mUid));
+                appName = pm.getApplicationLabel(appInfo);
             } catch (PackageManager.NameNotFoundException e) {
                 mServiceLogs.e("Failed to find app name for " + mClientInfo.mPackageName);
-                return "";
+                appName = null;
+                // Fall through
             }
-            CharSequence appName = pm.getApplicationLabel(appInfo);
-            return (appName != null) ? appName.toString() : "";
+            return TextUtils.isEmpty(appName) ? mClientInfo.mPackageName : appName.toString();
         }
 
         @Override
@@ -1182,9 +1184,7 @@ public class NsdService extends INsdManager.Stub {
         final Pair<String, List<String>> typeAndSubtype =
                 parseTypeAndSubtype(discoveryRequest.getServiceType());
         final String serviceType = typeAndSubtype == null ? null : typeAndSubtype.first;
-        final boolean useJavaBackend = clientInfo.mUseJavaBackend
-                || mDeps.isMdnsDiscoveryManagerEnabled(mContext)
-                || useDiscoveryManagerForType(serviceType);
+        final boolean useJavaBackend = useDiscoveryManager(clientInfo, serviceType);
         final boolean noPicker = !mEnablePicker
                 || ((discoveryRequest.getFlags() & FLAG_NO_PICKER) != 0);
         final boolean usingPermission = checkDataDeliveryPermissions(
@@ -1531,74 +1531,90 @@ public class NsdService extends INsdManager.Stub {
             return;
         }
 
-        final boolean usingLocalNetworkPermission = checkDataDeliveryPermissions(
-                clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
-        boolean usingFallbackPermission = false;
-        if (!usingLocalNetworkPermission) {
-            if (hasFallbackPermission(clientInfo.mUid, clientInfo.mPid)) {
-                usingFallbackPermission = true;
-            } else {
-                // TODO(b/34621721): fall back to device picker
-                clientInfo.onResolveServiceFailedPermissions(clientRequestId);
-                return;
-            }
-        }
-
-        final NsdServiceInfo info = args.serviceInfo;
-        final int transactionId = getUniqueId();
         final Pair<String, List<String>> typeSubtype =
-                parseTypeAndSubtype(info.getServiceType());
+                parseTypeAndSubtype(args.serviceInfo.getServiceType());
         final String serviceType = typeSubtype == null
                 ? null : typeSubtype.first;
-        if (clientInfo.mUseJavaBackend
-                ||  mDeps.isMdnsDiscoveryManagerEnabled(mContext)
-                || useDiscoveryManagerForType(serviceType)) {
-            if (serviceType == null) {
-                clientInfo.onResolveServiceFailedImmediately(clientRequestId,
-                        NsdManager.FAILURE_INTERNAL_ERROR, false /* isLegacy */,
-                        usingLocalNetworkPermission);
-                return;
-            }
-            final String resolveServiceType = serviceType + ".local";
+        final boolean useJavaBackend = useDiscoveryManager(clientInfo, serviceType);
+        if (useJavaBackend && serviceType == null) {
+            clientInfo.onResolveServiceFailedImmediately(clientRequestId,
+                    NsdManager.FAILURE_INTERNAL_ERROR, false /* isLegacy */,
+                    false /* usingLocalNetworkPermission */);
+            return;
+        }
 
-            maybeStartMonitoringSockets();
-            final MdnsListener listener = new ResolutionListener(clientRequestId,
-                    transactionId, resolveServiceType, info.getServiceName());
-            final int ifaceIdx = info.getNetwork() != null
-                    ? 0 : info.getInterfaceIndex();
-            final MdnsSearchOptions options = MdnsSearchOptions.newBuilder()
-                    .setNetwork(info.getNetwork())
-                    .setInterfaceIndex(ifaceIdx)
-                    .setQueryMode(mMdnsFeatureFlags.isAggressiveQueryModeEnabled()
-                            ? AGGRESSIVE_QUERY_MODE
-                            : PASSIVE_QUERY_MODE)
-                    .setResolveInstanceName(info.getServiceName())
-                    .setRemoveExpiredService(true)
-                    .build();
-            mMdnsDiscoveryManager.registerListener(
-                    resolveServiceType, listener, options);
-            storeDiscoveryManagerRequestMap(clientRequestId, transactionId,
-                    listener, clientInfo, info.getNetwork(), usingFallbackPermission);
-            clientInfo.log("Register a ResolutionListener " + transactionId
-                    + " for service type:" + resolveServiceType);
+        // First check for local network permission. If it is not granted, still allow resolving if
+        // the app has a fallback permission.
+        // NsdService needs to track whether the local network permission or a fallback permission
+        // is being used, as if checkDataDeliveryPermissions returned PERMISSION_GRANTED,
+        // finishDataDelivery will need to be called when the request is unregistered to stop
+        // blaming the app for using the local network permission.
+        final boolean usingFallbackPermission;
+        final boolean usingLocalNetworkPermission = checkDataDeliveryPermissions(
+                clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
+        if (usingLocalNetworkPermission) {
+            usingFallbackPermission = false;
+        } else if (hasFallbackPermission(clientInfo.mUid, clientInfo.mPid)) {
+            usingFallbackPermission = true;
         } else {
-            if (clientInfo.mResolvedService != null) {
-                clientInfo.onResolveServiceFailedImmediately(clientRequestId,
-                        NsdManager.FAILURE_ALREADY_ACTIVE, true /* isLegacy */,
-                        usingLocalNetworkPermission);
-                return;
-            }
+            clientInfo.onResolveServiceFailedPermissions(clientRequestId);
+            return;
+        }
 
-            maybeStartDaemon();
-            if (resolveService(transactionId, info)) {
-                clientInfo.mResolvedService = new NsdServiceInfo();
-                storeLegacyRequestMap(clientRequestId, transactionId, clientInfo,
-                        NsdManager.RESOLVE_SERVICE, mClock.elapsedRealtime());
-            } else {
-                clientInfo.onResolveServiceFailedImmediately(clientRequestId,
-                        NsdManager.FAILURE_INTERNAL_ERROR, true /* isLegacy */,
-                        usingLocalNetworkPermission);
-            }
+        if (useJavaBackend) {
+            handleResolveServiceAfterPermissionCheck(clientRequestId, args.serviceInfo,
+                    clientInfo, serviceType, usingFallbackPermission);
+        } else {
+            handleResolveServiceWithLegacyBackendAfterPermissionCheck(clientRequestId,
+                    args.serviceInfo, clientInfo, usingLocalNetworkPermission);
+        }
+    }
+
+    private void handleResolveServiceAfterPermissionCheck(int clientRequestId, NsdServiceInfo info,
+            ClientInfo clientInfo, String parsedServiceType, boolean usingPermissionExemption) {
+        final int transactionId = getUniqueId();
+        final String resolveServiceType = parsedServiceType + ".local";
+
+        maybeStartMonitoringSockets();
+        final MdnsListener listener = new ResolutionListener(clientRequestId,
+                transactionId, resolveServiceType, info.getServiceName());
+        final int ifaceIdx = info.getNetwork() != null ? 0 : info.getInterfaceIndex();
+        final MdnsSearchOptions options = MdnsSearchOptions.newBuilder()
+                .setNetwork(info.getNetwork())
+                .setInterfaceIndex(ifaceIdx)
+                .setQueryMode(mMdnsFeatureFlags.isAggressiveQueryModeEnabled()
+                        ? AGGRESSIVE_QUERY_MODE
+                        : PASSIVE_QUERY_MODE)
+                .setResolveInstanceName(info.getServiceName())
+                .setRemoveExpiredService(true)
+                .build();
+        mMdnsDiscoveryManager.registerListener(
+                resolveServiceType, listener, options);
+        storeDiscoveryManagerRequestMap(clientRequestId, transactionId,
+                listener, clientInfo, info.getNetwork(), usingPermissionExemption);
+        clientInfo.log("Register a ResolutionListener " + transactionId
+                + " for service type:" + resolveServiceType);
+    }
+
+    private void handleResolveServiceWithLegacyBackendAfterPermissionCheck(int clientRequestId,
+            NsdServiceInfo info, ClientInfo clientInfo, boolean usingLocalNetworkPermission) {
+        final int transactionId = getUniqueId();
+        if (clientInfo.mResolvedService != null) {
+            clientInfo.onResolveServiceFailedImmediately(clientRequestId,
+                    NsdManager.FAILURE_ALREADY_ACTIVE, true /* isLegacy */,
+                    usingLocalNetworkPermission);
+            return;
+        }
+
+        maybeStartDaemon();
+        if (resolveService(transactionId, info)) {
+            clientInfo.mResolvedService = new NsdServiceInfo();
+            storeLegacyRequestMap(clientRequestId, transactionId, clientInfo,
+                    NsdManager.RESOLVE_SERVICE, mClock.elapsedRealtime());
+        } else {
+            clientInfo.onResolveServiceFailedImmediately(clientRequestId,
+                    NsdManager.FAILURE_INTERNAL_ERROR, true /* isLegacy */,
+                    usingLocalNetworkPermission);
         }
     }
 
@@ -1651,31 +1667,44 @@ public class NsdService extends INsdManager.Stub {
             return;
         }
 
-        final boolean usingLocalNetworkPermission = checkDataDeliveryPermissions(
-                clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
-        boolean usingFallbackPermission = false;
-        if (!usingLocalNetworkPermission) {
-            if (hasFallbackPermission(clientInfo.mUid, clientInfo.mPid)) {
-                usingFallbackPermission = true;
-            } else {
-                // TODO(b/34621721): fall back to device picker
-                clientInfo.onServiceInfoCallbackRegistrationFailedPermissions(clientRequestId);
-                return;
-            }
-        }
-
         final NsdServiceInfo info = args.serviceInfo;
-        final int transactionId = getUniqueId();
         final Pair<String, List<String>> typeAndSubtype =
                 parseTypeAndSubtype(info.getServiceType());
         final String serviceType = typeAndSubtype == null
                 ? null : typeAndSubtype.first;
         if (serviceType == null) {
             clientInfo.onServiceInfoCallbackRegistrationFailed(clientRequestId,
-                    NsdManager.FAILURE_BAD_PARAMETERS, usingLocalNetworkPermission);
+                    NsdManager.FAILURE_BAD_PARAMETERS, /* usingLocalNetworkPermission= */false);
             return;
         }
-        final String resolveServiceType = serviceType + ".local";
+        // First check for local network permission. If it is not granted, still allow resolving if
+        // the app has a fallback permission.
+        // NsdService needs to track whether the local network permission or a fallback permission
+        // is being used, as if checkDataDeliveryPermissions returned PERMISSION_GRANTED,
+        // finishDataDelivery will need to be called when the request is unregistered to stop
+        // blaming the app for using the local network permission.
+        final boolean usingFallbackPermission;
+        final boolean usingLocalNetworkPermission = checkDataDeliveryPermissions(
+                clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
+        if (usingLocalNetworkPermission) {
+            usingFallbackPermission = false;
+        } else if (hasFallbackPermission(clientInfo.mUid, clientInfo.mPid)) {
+            usingFallbackPermission = true;
+        } else {
+            clientInfo.mClientLogs.w("Not allowed to watch service " + info);
+            clientInfo.onServiceInfoCallbackRegistrationFailedPermissions(clientRequestId);
+            return;
+        }
+        handleRegisterServiceCallbackAfterPermissionCheck(
+                clientRequestId, args.serviceInfo, clientInfo, serviceType,
+                usingFallbackPermission);
+    }
+
+    private void handleRegisterServiceCallbackAfterPermissionCheck(int clientRequestId,
+            NsdServiceInfo info, ClientInfo clientInfo, String parsedServiceType,
+            boolean usingPermissionExemption) {
+        final int transactionId = getUniqueId();
+        final String resolveServiceType = parsedServiceType + ".local";
 
         maybeStartMonitoringSockets();
         final MdnsListener listener = new ServiceInfoListener(clientRequestId,
@@ -1691,10 +1720,9 @@ public class NsdService extends INsdManager.Stub {
                 .setResolveInstanceName(info.getServiceName())
                 .setRemoveExpiredService(true)
                 .build();
-        mMdnsDiscoveryManager.registerListener(
-                resolveServiceType, listener, options);
+        mMdnsDiscoveryManager.registerListener(resolveServiceType, listener, options);
         storeDiscoveryManagerRequestMap(clientRequestId, transactionId, listener,
-                clientInfo, info.getNetwork(), usingFallbackPermission);
+                clientInfo, info.getNetwork(), usingPermissionExemption);
         clientInfo.onServiceInfoCallbackRegistered(transactionId);
         clientInfo.log("Register a ServiceInfoListener " + transactionId
                 + " for service type:" + resolveServiceType);
@@ -2463,9 +2491,17 @@ public class NsdService extends INsdManager.Stub {
                         com.android.tethering.mainline.beta
                                 .Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD))
                 .setUseNetworkCallbackForLocalNetworksEnabled(
+                        // Note that on V+, isChangeEnabled returns false for
+                        // ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS even if the app is targeting
+                        // higher SDK due to b/401088586.
+                        // Thus, check compat change against the current process's uid is needed.
+                        // If this check is not performed, MdnsSocketProvider may fail to learn
+                        // local network agent events via network callbacks.
                         mDeps.isSupportTetheringAndP2pGoLocalAgent(mContext)
-                        && mDeps.isAconfigFlagEnabled(
-                        Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS))
+                                && mDeps.isAconfigFlagEnabled(
+                                        Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS)
+                                && CompatChanges.isChangeEnabled(
+                                        ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS, Process.myUid()))
                 .setIsMdnsScanOffloadEnabled(mDeps.isAconfigFlagEnabled(
                         com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD))
                 .setOverrideProvider(new MdnsFeatureFlags.FlagOverrideProvider() {
@@ -2734,6 +2770,12 @@ public class NsdService extends INsdManager.Stub {
 
     private boolean useDiscoveryManagerForType(@Nullable String type) {
         return isTypeAllowlistedForJavaBackend(type, MDNS_DISCOVERY_MANAGER_ALLOWLIST_FLAG_PREFIX);
+    }
+
+    private boolean useDiscoveryManager(@NonNull ClientInfo clientInfo, @Nullable String type) {
+        return clientInfo.mUseJavaBackend
+                || mDeps.isMdnsDiscoveryManagerEnabled(mContext)
+                || useDiscoveryManagerForType(type);
     }
 
     private boolean useAdvertiserForType(@Nullable String type) {
@@ -3406,13 +3448,13 @@ public class NsdService extends INsdManager.Stub {
         private boolean mIsServiceFromCache = false;
         private int mSentQueryCount = NO_SENT_QUERY_COUNT;
         private int mCachedServiceExpiredCount = 0;
-        boolean mUsingFallbackPermission;
+        boolean mUsingPermissionExemption;
 
         private ClientRequest(int transactionId, long startTimeMs,
-                boolean usingFallbackPermission) {
+                boolean usingPermissionExemption) {
             mTransactionId = transactionId;
             mStartTimeMs = startTimeMs;
-            mUsingFallbackPermission = usingFallbackPermission;
+            mUsingPermissionExemption = usingPermissionExemption;
         }
 
         public long calculateRequestDurationMs(long stopTimeMs) {
@@ -3541,7 +3583,7 @@ public class NsdService extends INsdManager.Stub {
 
         @Override
         protected boolean usingLocalNetworkPermission() {
-            return !mUsingFallbackPermission;
+            return !mUsingPermissionExemption;
         }
     }
 
@@ -3564,7 +3606,7 @@ public class NsdService extends INsdManager.Stub {
 
         @Override
         protected boolean usingLocalNetworkPermission() {
-            return !(mListener instanceof PickerListener) && !mUsingFallbackPermission;
+            return !(mListener instanceof PickerListener) && !mUsingPermissionExemption;
         }
     }
 

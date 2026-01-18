@@ -1597,10 +1597,16 @@ static int doLoad(char** argv, char * const envp[]) {
 
     if (has_platform_bpfloader_rc && has_platform_netbpfload_rc) {
         ALOGE("Platform has *both* bpfloader & netbpfload init scripts.");
-        return 2;
+        return 1;
     }
 
     logTetheringApexVersion();
+
+    if (exists("/apex/com.android.resolv/lib") ||
+        exists("/apex/com.android.resolv/lib64")) {
+        ALOGE("Incorrect DNS Resolver APEX found.");
+        return 2;
+    }
 
     // both S and T require kernel 4.9 (and eBpf support)
     // (this also guarantees 'kernelVer' isn't an invalid uninitialized 0)

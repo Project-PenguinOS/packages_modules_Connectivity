@@ -51,8 +51,7 @@ public class HttpsRecord {
     private final DnsHttpsRecord mRecord;
     private final List<InetAddress> mIpHints;
 
-    public static final String DEFAULT_ALPN_ID = "http/1.1";
-    private static final int DEFAULT_HTTPS_PORT_VALUE = 443;
+    public static final String DEFAULT_ALPN_ID = DnsHttpsRecord.DEFAULT_HTTPS_ALPN_ID;
 
     /**
      * Used by the platform to construct a {@link HttpsRecord}.
@@ -89,8 +88,8 @@ public class HttpsRecord {
     /**
      * Returns the target name of the HTTPS record.
      *
-     * <p>If the target name is `.`, RFC 9460 2.5 specifies that this indicates special rules.
-     * For AliasMode RRs, this indicates that the service is not available or does not exist.
+     * <p>If the target name is an empty string, RFC 9460 2.5 specifies that this indicates special
+     * rules. For AliasMode RRs, this indicates that the service is not available or does not exist.
      * For ServiceMode RRs, this indicates the record's owner name is the effective target name.
      */
     public @NonNull String getTargetName() {
@@ -100,7 +99,8 @@ public class HttpsRecord {
     /**
      * Returns the owner name of the HTTPS record.
      *
-     * <p>This should be used as the effective target name if the HTTPS record target name is `.`.
+     * <p>This should be used as the effective target name if the HTTPS record target name is an
+     * empty string.
      */
     public @NonNull String getOwnerName() {
         return mRecord.getOwnerName();
@@ -116,13 +116,7 @@ public class HttpsRecord {
      * <p>See RFC 9460 7.1 for more details.
      */
     public @NonNull List<String> getAlpnIds() {
-        // DnsHttpsRecord returns an unmodifiable list, so we need to make a copy to add the default
-        // ALPN if it is not explicitly set.
-        List<String> specifiedAlpns = new ArrayList<>(mRecord.getAlpnIds());
-        if (!mRecord.isNoDefaultAlpn()) {
-            specifiedAlpns.add(DEFAULT_ALPN_ID);
-        }
-        return Collections.unmodifiableList(specifiedAlpns);
+        return mRecord.getAlpnIds();
     }
 
     /**
@@ -131,12 +125,7 @@ public class HttpsRecord {
      * <p>See RFC 9460 7.2 for more details.
      */
     public int getPort() {
-        int port = mRecord.getPort();
-        // If no port is specified in the record, use the default HTTPS port.
-        if (port == -1) {
-            return DEFAULT_HTTPS_PORT_VALUE;
-        }
-        return port;
+        return mRecord.getPort();
     }
 
     /**

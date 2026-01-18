@@ -2005,11 +2005,11 @@ public class VpnTest {
             final FileDescriptor dstUdpFd = dstSock.getFileDescriptor$();
             checkBlockUdp(srcTunFd.getFileDescriptor(), dstUdpFd,
                     InetAddresses.parseNumericAddress("192.0.2.2") /* dstAddress */,
-                    InetAddresses.parseNumericAddress("192.0.2.1") /* srcAddress */,
+                    InetAddresses.parseNumericAddress("8.8.8.8") /* srcAddress */,
                     duplicatedAddress ? EXPECT_PASS : EXPECT_BLOCK);
             checkBlockUdp(srcTunFd.getFileDescriptor(), dstUdpFd,
                     InetAddresses.parseNumericAddress("2001:db8:1:2::ffe") /* dstAddress */,
-                    InetAddresses.parseNumericAddress("2001:db8:1:2::ffa") /* srcAddress */,
+                    InetAddresses.parseNumericAddress("2001:4860:4860::8888") /* srcAddress */,
                     duplicatedAddress ? EXPECT_PASS : EXPECT_BLOCK);
 
             // Traffic on VPN should not be affected

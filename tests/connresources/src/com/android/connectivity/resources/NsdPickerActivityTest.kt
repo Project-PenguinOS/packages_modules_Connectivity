@@ -1,4 +1,3 @@
-
 /*
  * Copyright (C) 2025 The Android Open Source Project
  *
@@ -94,14 +93,19 @@ class NsdPickerActivityTest {
         }
     }
 
+    private fun makeStartIntent(connector: NsdPickerConnector, appName: String): Intent {
+        val intent = Intent(mContext, NsdPickerActivity::class.java)
+        val bundle = Bundle()
+        bundle.putString(NsdPickerConnector.EXTRA_APP_NAME, appName)
+        bundle.putBinder(NsdPickerConnector.EXTRA_CONNECTOR, ForwardingConnector(connector))
+        intent.putExtras(bundle)
+        return intent
+    }
+
     @Before
     fun setUp() {
         val receiverCaptor = ArgumentCaptor.forClass(NsdServiceReceiver::class.java)
-        val intent = Intent(mContext, NsdPickerActivity::class.java)
-        val bundle = Bundle()
-        bundle.putString(NsdPickerConnector.EXTRA_APP_NAME, TEST_APP_NAME)
-        bundle.putBinder(NsdPickerConnector.EXTRA_CONNECTOR, ForwardingConnector(mMockConnector))
-        intent.putExtras(bundle)
+        val intent = makeStartIntent(mMockConnector, TEST_APP_NAME)
 
         mScenario = ActivityScenario.launch(intent)
 
@@ -172,11 +176,77 @@ class NsdPickerActivityTest {
 
     @Test
     fun testDiscoveryCancelled() {
-        onView(withText(R.string.connect_to_service_title)).check(matches(isDisplayed()))
+        onView(withText(R.string.choose_device_title)).check(matches(isDisplayed()))
         mServiceReceiver.onCancelled()
 
-        onView(withText(R.string.connect_to_service_title)).check(doesNotExist())
+        onView(withText(R.string.choose_device_title)).check(doesNotExist())
         verifyNoMoreInteractions(mMockConnector)
+    }
+
+    @Test
+    fun testNewIntentWhileShown() {
+        // Send a new intent while the dialog is already shown
+        val otherAppName = "Other Test App"
+        val otherConnector = mock(NsdPickerConnector::class.java)
+        val newIntent = makeStartIntent(otherConnector, otherAppName)
+
+        mScenario.onActivity { activity ->
+            activity.onNewIntent(newIntent)
+        }
+
+        // First dialog should still be visible
+        onDialogView(
+            withText(mContext.getString(R.string.choose_device_summary, TEST_APP_NAME))
+        )
+            .check(matches(isDisplayed()))
+
+        // Close the first dialog
+        onDialogView(withText(R.string.choose_device_cancel)).perform(click())
+
+        // Second dialog should now be shown
+        onDialogView(
+            withText(mContext.getString(R.string.choose_device_summary, otherAppName))
+        )
+            .check(matches(isDisplayed()))
+
+        val receiverCaptor = ArgumentCaptor.forClass(NsdServiceReceiver::class.java)
+        verify(otherConnector).setServiceReceiver(receiverCaptor.capture())
+        val otherServiceReceiver = receiverCaptor.value
+
+        val otherServiceName = "Other Service"
+        val serviceInfo = createServiceInfo(otherServiceName)
+        otherServiceReceiver.onServiceFound(serviceInfo)
+        onServiceInList(otherServiceName).check(matches(isDisplayed()))
+        onServiceInList(otherServiceName).perform(click())
+        verify(otherConnector).notifyServiceSelected(argThat { it.serviceName == otherServiceName })
+    }
+
+    @Test
+    fun testNewIntentQueued_survivesRecreation() {
+        // Send a new intent while the dialog is already shown
+        val otherAppName = "Other Test App"
+        val otherConnector = mock(NsdPickerConnector::class.java)
+        val newIntent = makeStartIntent(otherConnector, otherAppName)
+
+        mScenario.onActivity { activity ->
+            activity.onNewIntent(newIntent)
+        }
+
+        // Recreate the activity: the first dialog should still be shown with the next intent queued
+        mScenario.recreate()
+        onDialogView(
+            withText(mContext.getString(R.string.choose_device_summary, TEST_APP_NAME))
+        )
+            .check(matches(isDisplayed()))
+
+        // Close the first dialog
+        onDialogView(withText(R.string.choose_device_cancel)).perform(click())
+
+        // Second dialog should now be shown
+        onDialogView(
+            withText(mContext.getString(R.string.choose_device_summary, otherAppName))
+        )
+            .check(matches(isDisplayed()))
     }
 }
 

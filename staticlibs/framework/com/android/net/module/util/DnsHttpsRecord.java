@@ -82,11 +82,14 @@ public class DnsHttpsRecord extends DnsRecord {
     @NonNull private final String mTargetName;
     @NonNull private final SparseArray<SvcParam> mSvcParams = new SparseArray<>();
 
-    // TODO(b/454544870): move this to SvcParamUtils so it can be reused by DnsSvcbRecord
+    // If no port is specified in the HTTPS record, RFC 9460 7.2 specifies to use the standard HTTPS
+    // port of 443.
     @VisibleForTesting(visibility = PACKAGE)
-    public static final String ZERO_LENGTH_TARGET_NAME = ".";
+    public static final int DEFAULT_HTTPS_PORT_VALUE = 443;
+    // If no-default-alpn is absent from the HTTPS record, then RFC 9460 7.1 states the default ALPN
+    // ID of "http/1.1" should be appended to the list of ALPN IDs.
     @VisibleForTesting(visibility = PACKAGE)
-    public static final int DEFAULT_PORT_VALUE = -1;
+    public static final String DEFAULT_HTTPS_ALPN_ID = "http/1.1";
 
     public DnsHttpsRecord(@DnsPacket.RecordType int rType, @NonNull ByteBuffer buff)
             throws IllegalStateException, ParseException, BufferUnderflowException {
@@ -108,16 +111,8 @@ public class DnsHttpsRecord extends DnsRecord {
         ByteBuffer buf = ByteBuffer.wrap(rdata).asReadOnlyBuffer();
         mSvcPriority = Short.toUnsignedInt(buf.getShort());
 
-        // Mark the buffer so that we can reset it later.
-        buf.mark();
-        // If the target name is `"." (zero-length)`, RFC 9460 2.5 specifies special rules apply.
-        if (buf.get() == 0) {
-            mTargetName = ZERO_LENGTH_TARGET_NAME;
-        } else {
-            buf.reset(); // Reset the buffer to the start of the target name.
-            mTargetName = DnsPacketUtils.DnsRecordParser.parseName(buf, /* depth= */ 0,
-                /* isNameCompressionSupported= */ true);
-        }
+        mTargetName = DnsPacketUtils.DnsRecordParser.parseName(buf, /* depth= */ 0,
+            /* isNameCompressionSupported= */ true);
 
         if (mTargetName.length() > DnsPacket.DnsRecord.MAXNAMESIZE) {
             throw new ParseException(
@@ -186,41 +181,45 @@ public class DnsHttpsRecord extends DnsRecord {
     }
 
     /**
-     * Returns the list of ALPN protocols contained in the HTTPS record.
+     * Returns the list of ALPN protocol identifiers contained in the HTTPS record.
+     *
+     * <p>If the record does not specify {@code no-default-alpn} SvcParamKey, the list will contain
+     * the default ALPN ID "http/1.1".
      *
      * <p>See RFC 9460 7.1 for more details.
      */
     public @NonNull List<String> getAlpnIds() {
         final SvcParam svcParamAlpn = mSvcParams.get(KEY_ALPN);
+        final SvcParam svcParamNoDefaultAlpn = mSvcParams.get(KEY_NO_DEFAULT_ALPN);
+        boolean useDefaultAlpn = (svcParamNoDefaultAlpn == null
+                || !(svcParamNoDefaultAlpn instanceof SvcParamNoDefaultAlpn));
+
+        // If no-default-alpn is present without the alpn key, still return an empty list as this
+        // means the record is not self-consistent. See RFC 9460 7.1.1-5 for more details.
         if (svcParamAlpn == null || !(svcParamAlpn instanceof SvcParamAlpn)) {
             return Collections.emptyList();
         }
-        return Collections.unmodifiableList(((SvcParamAlpn) svcParamAlpn).getValue());
-    }
 
-    /**
-     * Returns whether the HTTPS record has the `no-default-alpn` SvcParam.
-     *
-     * <p>See RFC 9460 7.1 for more details.
-     */
-    public boolean isNoDefaultAlpn() {
-        final SvcParam svcParamNoDefaultAlpn = mSvcParams.get(KEY_NO_DEFAULT_ALPN);
-        if (svcParamNoDefaultAlpn == null ||
-                !(svcParamNoDefaultAlpn instanceof SvcParamNoDefaultAlpn)) {
-            return false;
+        List<String> alpnIds = new ArrayList<>();
+        alpnIds.addAll(((SvcParamAlpn) svcParamAlpn).getValue());
+        if (useDefaultAlpn && !alpnIds.contains(DEFAULT_HTTPS_ALPN_ID)) {
+            alpnIds.add(DEFAULT_HTTPS_ALPN_ID);
         }
-        return true;
+        return Collections.unmodifiableList(alpnIds);
     }
 
     /**
      * Returns the port of the HTTPS record.
+     *
+     * <p>If the record does not specify the port SvcParamKey, the default HTTPS port value of 443
+     * is returned.
      *
      * <p>See RFC 9460 7.2 for more details.
      */
     public int getPort() {
         final SvcParam svcParamPort = mSvcParams.get(KEY_PORT);
         if (svcParamPort == null || !(svcParamPort instanceof SvcParamPort)) {
-            return DEFAULT_PORT_VALUE;
+            return DEFAULT_HTTPS_PORT_VALUE;
         }
         return ((SvcParamPort) svcParamPort).getValue();
     }

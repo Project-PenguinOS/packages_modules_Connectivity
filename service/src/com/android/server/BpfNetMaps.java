@@ -28,12 +28,13 @@ import static android.net.BpfNetMapsConstants.INGRESS_DISCARD_MAP_PATH;
 import static android.net.BpfNetMapsConstants.L4S_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
+import static android.net.BpfNetMapsConstants.LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
 import static android.net.BpfNetMapsConstants.PERMISSION_PROPAGATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_MIGRATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_OWNER_MAP_PATH;
-import static android.net.BpfNetMapsConstants.UID_PERMISSION_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_PERMISSION_CHUNK_MAP_PATH;
+import static android.net.BpfNetMapsConstants.UID_PERMISSION_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_RULES_CONFIGURATION_KEY;
 import static android.net.BpfNetMapsUtils.getMatchByFirewallChain;
 import static android.net.BpfNetMapsUtils.isFirewallAllowList;
@@ -49,23 +50,23 @@ import static android.system.OsConstants.ENOENT;
 import static android.system.OsConstants.EOPNOTSUPP;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
-import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
-import static com.android.net.module.util.bpf.UidPermissionChunk.getIndex;
-import static com.android.net.module.util.bpf.UidPermissionChunk.getShift;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_INT64_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_UID_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_COUNT;
-import static com.android.net.module.util.bpf.UidPermissionChunk.UID_PERMISSION_MASK;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
+import static com.android.net.module.util.bpf.UidPermissionChunk.UID_PERMISSION_MASK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getIndex;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getShift;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_NONE;
-import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UNINSTALLED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_INVALID_NET_PERM_SENT_TO_NETD;
 import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
@@ -120,6 +121,7 @@ import com.android.net.module.util.bpf.CookieTagMapValue;
 import com.android.net.module.util.bpf.IngressDiscardKey;
 import com.android.net.module.util.bpf.IngressDiscardValue;
 import com.android.net.module.util.bpf.LocalNetAccessKey;
+import com.android.net.module.util.bpf.LocalNetUidHostAllowlistKey;
 import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 
@@ -127,12 +129,12 @@ import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Arrays;
-import java.util.function.BiFunction;
-import java.util.function.Predicate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.function.BiFunction;
+import java.util.function.Predicate;
 
 /**
  * BpfNetMaps is responsible for providing traffic controller relevant functionality.
@@ -182,6 +184,7 @@ public class BpfNetMaps {
 
     private static IBpfMap<LocalNetAccessKey, Bool> sLocalNetAccessMap = null;
     private static IBpfMap<U32, Bool> sLocalNetBlockedUidMap = null;
+    private static IBpfMap<LocalNetUidHostAllowlistKey, Bool> sLocalNetUidHostAllowlistMap = null;
     private static BpfBoolean sL4sEnabledMap = null;
 
     private static final List<Pair<Integer, String>> PERMISSION_LIST = Arrays.asList(
@@ -312,6 +315,15 @@ public class BpfNetMaps {
     }
 
     /**
+     * Set localNetUidHostAllowlistMap for test.
+     */
+    @VisibleForTesting
+    public static void setLocalNetUidHostAllowlistMapForTest(
+            IBpfMap<LocalNetUidHostAllowlistKey, Bool> localNetUidHostAllowlistMap) {
+        sLocalNetUidHostAllowlistMap = localNetUidHostAllowlistMap;
+    }
+
+    /**
      * Set sInitialized for test.
      */
     @VisibleForTesting
@@ -397,6 +409,16 @@ public class BpfNetMaps {
                     U32.class, Bool.class);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Cannot open local_net_blocked_uid map", e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private static IBpfMap<LocalNetUidHostAllowlistKey, Bool> getLocalNetUidHostAllowlistMap() {
+        try {
+            return SingleWriterBpfMap.getSingleton(LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH,
+                    LocalNetUidHostAllowlistKey.class, Bool.class);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open local_net_uid_host_access map", e);
         }
     }
 
@@ -509,6 +531,16 @@ public class BpfNetMaps {
             } catch (ErrnoException e) {
                 throw new IllegalStateException("Failed to initialize local_net_blocked_uid map",
                         e);
+            }
+
+            if (sLocalNetUidHostAllowlistMap == null) {
+                sLocalNetUidHostAllowlistMap = getLocalNetUidHostAllowlistMap();
+            }
+            try {
+                sLocalNetUidHostAllowlistMap.clear();
+            } catch (ErrnoException e) {
+                throw new IllegalStateException(
+                        "Failed to initialize local_net_uid_host_allowlist map", e);
             }
         }
 
@@ -1635,6 +1667,39 @@ public class BpfNetMaps {
     }
 
     /**
+     * Add an entry to map_netd_local_net_uid_host_allowlist_map.
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void addLocalNetUidHostAccess(final int uid, final int ifIndex,
+            @NonNull final InetAddress address) {
+        throwIfPre25Q2("addLocalNetUidHostAccess is not available on pre-B devices");
+        final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(
+                uid, ifIndex, address);
+        try {
+            sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(true));
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to add local network access for key: " + key);
+        }
+    }
+
+    /**
+     * Remove all entries from map_netd_local_net_uid_host_allowlist_map that match the ifIndex.
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void removeLocalNetHostAllowlistForInterface(final int ifIndex) {
+        throwIfPre25Q2("removeLocalNetHostAllowlistForUid is not available on pre-B devices");
+        try {
+            sLocalNetUidHostAllowlistMap.forEach((key, value) -> {
+                if (key.ifIndex == ifIndex) {
+                    sLocalNetUidHostAllowlistMap.deleteEntry(key);
+                }
+            });
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed removing local net allowlist entries for ifIndex " + ifIndex, e);
+        }
+    }
+
+    /**
      * Get granted permissions for specified uid. If uid is not in the map, this method returns
      * {@link android.net.INetd.PERMISSION_INTERNET} since this is a default permission.
      * See {@link #setNetPermForUids}
@@ -2007,6 +2072,11 @@ public class BpfNetMaps {
             }
             if (sLocalNetBlockedUidMap != null) {
                 BpfDump.dumpMap(sLocalNetBlockedUidMap, pw, "sLocalNetBlockedUidMap",
+                        (key, value) -> "" + key + ": " + value.val);
+            }
+            if (sLocalNetUidHostAllowlistMap != null) {
+                BpfDump.dumpMap(sLocalNetUidHostAllowlistMap, pw,
+                        "sLocalNetUidHostAllowlistMap",
                         (key, value) -> "" + key + ": " + value.val);
             }
             dumpDataSaverConfig(pw);

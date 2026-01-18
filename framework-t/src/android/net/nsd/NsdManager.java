@@ -512,7 +512,10 @@ public final class NsdManager {
                     anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
             )
             public void onServiceFound(@NonNull NsdServiceInfo nsdServiceInfo) {
-                NsdServiceInfo serviceFoundServiceInfo = new NsdServiceInfo(
+                String serviceType = nsdServiceInfo.getServiceType();
+                String updatedServiceType = parseDiscoveryServiceType(serviceType);
+                nsdServiceInfo.setServiceType(updatedServiceType);
+                final NsdServiceInfo serviceFoundServiceInfo = new NsdServiceInfo(
                         nsdServiceInfo.getServiceName(),
                         nsdServiceInfo.getServiceType()
                 );
@@ -525,7 +528,15 @@ public final class NsdManager {
                     anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
             )
             public void onServiceUpdated(@NonNull NsdServiceInfo nsdServiceInfo) {
-                handleOffloadedServiceInfoResponse(nsdServiceInfo, false);
+                // As per contract for ServiceInfoCallback#onServiceUpdated,
+                // OffloadSession#onServiceUpdated should not contain "." as a suffix.
+                String serviceType = nsdServiceInfo.getServiceType();
+                if (TextUtils.isEmpty(serviceType)
+                        || serviceType.endsWith(".")) {
+                    throw new IllegalArgumentException("Invalid Service type = " + serviceType);
+                }
+                final NsdServiceInfo serviceUpdatedServiceInfo = new NsdServiceInfo(nsdServiceInfo);
+                handleOffloadedServiceInfoResponse(serviceUpdatedServiceInfo, false);
             }
 
             @Override
@@ -533,7 +544,32 @@ public final class NsdManager {
                     anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
             )
             public void onServiceLost(@NonNull NsdServiceInfo nsdServiceInfo) {
-                handleOffloadedServiceInfoResponse(nsdServiceInfo, true);
+                String serviceType = nsdServiceInfo.getServiceType();
+                String updatedServiceType = parseDiscoveryServiceType(serviceType);
+                nsdServiceInfo.setServiceType(updatedServiceType);
+                final NsdServiceInfo serviceLostServiceInfo = new NsdServiceInfo(nsdServiceInfo);
+                handleOffloadedServiceInfoResponse(serviceLostServiceInfo, true);
+            }
+
+            /**
+             * Parses and validates the service type received from discovery.
+             *
+             * <p>As per the contract for {@link DiscoveryListener#onServiceFound} and
+             * {@link DiscoveryListener#onServiceLost}, the service type in
+             * {@link OffloadSession#onServiceFound} and {@link OffloadSession#onServiceLost}
+             * should contain a "." as a suffix.
+             *
+             * @param serviceType the service type to be parsed and validated
+             * @return the parsed service type with the trailing dot removed
+             * @throws IllegalArgumentException if the {@code serviceType} is empty or does
+             *     not end with a dot as a suffix
+             */
+            private static String parseDiscoveryServiceType(String serviceType) {
+                if (TextUtils.isEmpty(serviceType)
+                        || !serviceType.endsWith(".")) {
+                    throw new IllegalArgumentException("Invalid Service type = " + serviceType);
+                }
+                return serviceType.substring(0, serviceType.length() - 1);
             }
 
             private void handleOffloadedServiceInfoResponse(
@@ -541,7 +577,11 @@ public final class NsdManager {
                     boolean isServiceLost
             ) {
                 try {
+                    if (TextUtils.isEmpty(nsdServiceInfo.getServiceType())) {
+                        throw new IllegalArgumentException("Service type cannot be null.");
+                    }
                     if (isOffloadEngineRegistered(engine)) {
+                        Log.d(TAG, "ServiceInfo injected is " + nsdServiceInfo);
                         mService.injectOffloadEngineResponse(
                                 nsdServiceInfo,
                                 isServiceLost,

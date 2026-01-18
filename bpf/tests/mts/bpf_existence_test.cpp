@@ -168,6 +168,7 @@ static const set<string> MAINLINE_FOR_25Q2_PLUS = {
     NETD "map_netd_local_net_blocked_uid_map",
     NETD "map_netd_local_net_note_op_cache_map",
     NETD "map_netd_local_net_note_op_enabled_map",
+    NETD "map_netd_local_net_uid_host_allowlist_map",
 };
 
 // Provided by *current* mainline module for 25Q2+ devices with 5.10+ kernels
