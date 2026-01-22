@@ -20,3 +20,9 @@ enum DropReasonType : uint64_t {
     DROP_REASON_NONE = 0,
     DROP_REASON_LNP = (1 << 0),
 };
+
+// Socket options for SOL_SOCKET
+enum AndroidSocketOption : int32_t {
+    SO_ANDROID_BASE = 0xAD01D00,
+    SO_ANDROID_DROP_REASON,
+};

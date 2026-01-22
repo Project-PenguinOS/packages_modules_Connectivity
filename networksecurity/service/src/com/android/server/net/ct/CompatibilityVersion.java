@@ -40,7 +40,6 @@ class CompatibilityVersion {
     private static File sRootDirectory = new File(Config.CT_ROOT_DIRECTORY_PATH);
 
     static final String LOGS_DIR_PREFIX = "logs-";
-    static final String LOGS_LIST_FILE_NAME = "log_list.json";
     static final String CURRENT_LOGS_DIR_SYMLINK_NAME = "current";
 
     private final String mCompatVersion;
@@ -58,7 +57,11 @@ class CompatibilityVersion {
         mVersionDirectory = new File(sRootDirectory, compatVersion);
         mCurrentLogsDirSymlink = new File(mVersionDirectory, CURRENT_LOGS_DIR_SYMLINK_NAME);
 
-        mLogListProvider = new LogListFileProviderJson(mVersionDirectory);
+        if (Config.COMPATIBILITY_VERSION_V3.equals(compatVersion)) {
+            mLogListProvider = new LogListFileProviderFlatbuffers(mVersionDirectory);
+        } else {
+            mLogListProvider = new LogListFileProviderJson(mVersionDirectory);
+        }
     }
 
     @VisibleForTesting
@@ -157,7 +160,7 @@ class CompatibilityVersion {
             DirectoryUtils.makeDir(newLogsDir);
 
             // 3. Move the log list json file in logs-<new_version>/ .
-            File logListFile = new File(newLogsDir, LOGS_LIST_FILE_NAME);
+            File logListFile = newLogList.file();
             if (Files.copy(newContent, logListFile.toPath()) == 0) {
                 throw new IOException("The log list appears empty");
             }
@@ -212,7 +215,7 @@ class CompatibilityVersion {
     }
 
     File getLogsFile() {
-        return new File(mCurrentLogsDirSymlink, LOGS_LIST_FILE_NAME);
+        return new File(mCurrentLogsDirSymlink, mLogListProvider.getFileName());
     }
 
     void delete() {

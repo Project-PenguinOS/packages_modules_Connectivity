@@ -30,6 +30,7 @@ cc_library {
     defaults: ["netd_defaults"],
     header_libs: [
         "bpf_connectivity_headers",
+        "bpf_prog_mainline_headers",
         "libcutils_headers",
     ],
     srcs: [

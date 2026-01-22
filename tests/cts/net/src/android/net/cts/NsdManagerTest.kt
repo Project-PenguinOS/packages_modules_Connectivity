@@ -1910,12 +1910,12 @@ class NsdManagerTest {
 
         // Register service on testNetwork1
         val registrationRecord = NsdRegistrationRecord()
-        nsdManager.registerService(
-            si,
-            NsdManager.PROTOCOL_DNS_SD,
-            { it.run() },
+            nsdManager.registerService(
+                si,
+                NsdManager.PROTOCOL_DNS_SD,
+                { it.run() },
                 registrationRecord
-        )
+            )
 
         tryTest {
             assertNotNull(packetReader.pollForProbe(serviceName, serviceType),
@@ -1950,20 +1950,23 @@ class NsdManagerTest {
 
         // Register service on testNetwork1
         val registrationRecord = NsdRegistrationRecord()
-        nsdManager.registerService(
-            si,
-            NsdManager.PROTOCOL_DNS_SD,
-            { it.run() },
-                registrationRecord
-        )
 
         tryTest {
-            assertNotNull(packetReader.pollForProbe(serviceName, serviceType),
-                    "Did not find a probe for the service")
-            packetReader.sendResponse(buildConflictingAnnouncementForCustomHost())
+            val cb = runAsShell(NETWORK_SETTINGS) {
+                nsdManager.registerService(
+                    si,
+                    NsdManager.PROTOCOL_DNS_SD,
+                    { it.run() },
+                    registrationRecord
+                )
 
-            // Registration must use an updated hostname to avoid the conflict
-            val cb = registrationRecord.expectCallback<ServiceRegistered>(REGISTRATION_TIMEOUT_MS)
+                assertNotNull(packetReader.pollForProbe(serviceName, serviceType),
+                    "Did not find a probe for the service")
+                packetReader.sendResponse(buildConflictingAnnouncementForCustomHost())
+
+                // Registration must use an updated hostname to avoid the conflict
+                registrationRecord.expectCallback<ServiceRegistered>(REGISTRATION_TIMEOUT_MS)
+            }
             // Service name is not renamed because there's no conflict on the service name.
             assertEquals(serviceName, cb.serviceInfo.serviceName)
             val hostname = cb.serviceInfo.hostname ?: fail("Missing hostname")
@@ -1990,21 +1993,26 @@ class NsdManagerTest {
 
         // Register service on testNetwork1
         val registrationRecord = NsdRegistrationRecord()
-        nsdManager.registerService(
-            si,
-            NsdManager.PROTOCOL_DNS_SD,
-            { it.run() },
-                registrationRecord
-        )
 
         tryTest {
-            assertNotNull(packetReader.pollForProbe(serviceName, serviceType),
-                    "Did not find a probe for the service")
-            // Not a conflict because no record is registered for the hostname
-            packetReader.sendResponse(buildConflictingAnnouncementForCustomHost())
+            val cb = runAsShell(NETWORK_SETTINGS) {
+                nsdManager.registerService(
+                    si,
+                    NsdManager.PROTOCOL_DNS_SD,
+                    { it.run() },
+                    registrationRecord
+                )
 
-            // Registration is not renamed because there's no conflict
-            val cb = registrationRecord.expectCallback<ServiceRegistered>(REGISTRATION_TIMEOUT_MS)
+                assertNotNull(
+                    packetReader.pollForProbe(serviceName, serviceType),
+                    "Did not find a probe for the service"
+                )
+                // Not a conflict because no record is registered for the hostname
+                packetReader.sendResponse(buildConflictingAnnouncementForCustomHost())
+
+                // Registration is not renamed because there's no conflict
+                registrationRecord.expectCallback<ServiceRegistered>(REGISTRATION_TIMEOUT_MS)
+            }
             assertEquals(serviceName, cb.serviceInfo.serviceName)
             assertEquals(customHostname, cb.serviceInfo.hostname)
         } cleanupStep {
@@ -2100,42 +2108,52 @@ class NsdManagerTest {
         // Register service on testNetwork1
         val registrationRecord = NsdRegistrationRecord()
         val discoveryRecord = NsdDiscoveryRecord()
-        val registeredService = registerService(registrationRecord, si)
         val packetReader = makePacketReader()
 
         tryTest {
-            assertNotNull(packetReader.pollForAdvertisement(serviceName, serviceType),
-                "No announcements sent after initial probing")
+            val registeredService = runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord, si)
+            }
+
+            assertNotNull(
+                packetReader.pollForAdvertisement(serviceName, serviceType),
+                "No announcements sent after initial probing"
+            )
 
             assertEquals(si.serviceName, registeredService.serviceName)
             assertEquals(si.hostname, registeredService.hostname)
 
-            nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD,
-                    testNetwork1.network, { it.run() }, discoveryRecord)
+            nsdManager.discoverServices(
+                serviceType, NsdManager.PROTOCOL_DNS_SD,
+                testNetwork1.network, { it.run() }, discoveryRecord
+            )
             val discoveredInfo = discoveryRecord.waitForServiceDiscovered(
-                    si.serviceName, serviceType)
+                si.serviceName, serviceType
+            )
 
             // Send a conflicting announcement
             val conflictingAnnouncement = buildConflictingAnnouncementForCustomHost()
             packetReader.sendResponse(conflictingAnnouncement)
 
             // Expect to see probes (RFC6762 9., service is reset to probing state)
-            assertNotNull(packetReader.pollForProbe(serviceName, serviceType),
-                    "Probe not received within timeout after conflict")
+            assertNotNull(
+                packetReader.pollForProbe(serviceName, serviceType),
+                "Probe not received within timeout after conflict"
+            )
 
             // Send the conflicting packet again to reply to the probe
             packetReader.sendResponse(conflictingAnnouncement)
 
             val newRegistration =
-                    registrationRecord
-                            .expectCallbackEventually<ServiceRegistered>(REGISTRATION_TIMEOUT_MS) {
-                                it.serviceInfo.serviceName == serviceName &&
-                                        it.serviceInfo.hostname.let { hostname ->
-                                    hostname != null &&
-                                            hostname.startsWith(customHostname) &&
-                                            hostname != customHostname
-                                }
+                registrationRecord
+                .expectCallbackEventually<ServiceRegistered>(REGISTRATION_TIMEOUT_MS) {
+                    it.serviceInfo.serviceName == serviceName &&
+                            it.serviceInfo.hostname.let { hostname ->
+                                hostname != null &&
+                                        hostname.startsWith(customHostname) &&
+                                        hostname != customHostname
                             }
+                }
 
             val resolvedInfo = resolveService(discoveredInfo)
             assertEquals(newRegistration.serviceInfo.serviceName, resolvedInfo.serviceName)
@@ -2163,7 +2181,9 @@ class NsdManagerTest {
         // Register service on testNetwork1
         val registrationRecord = NsdRegistrationRecord()
         val discoveryRecord = NsdDiscoveryRecord()
-        val registeredService = registerService(registrationRecord, si)
+        val registeredService = runAsShell(NETWORK_SETTINGS) {
+            registerService(registrationRecord, si)
+        }
         val packetReader = makePacketReader()
 
         tryTest {
@@ -2655,7 +2675,9 @@ class NsdManagerTest {
         val discoveryRecord1 = NsdDiscoveryRecord()
         val discoveryRecord2 = NsdDiscoveryRecord()
         tryTest {
-            registerService(registrationRecord1, si1)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord1, si1)
+            }
 
             nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD,
                     testNetwork1.network, Executor { it.run() }, discoveryRecord1)
@@ -2668,7 +2690,9 @@ class NsdManagerTest {
             assertEquals(si1.hostname, resolvedInfo.hostname)
             assertAddressEquals(hostAddresses1, resolvedInfo.hostAddresses)
 
-            registerService(registrationRecord2, si2)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord2, si2)
+            }
             nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD,
                     testNetwork1.network, Executor { it.run() }, discoveryRecord2)
 
@@ -2721,8 +2745,10 @@ class NsdManagerTest {
 
         val discoveryRecord = NsdDiscoveryRecord()
         tryTest {
-            registerService(registrationRecord1, si1)
-            registerService(registrationRecord2, si2)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord1, si1)
+                registerService(registrationRecord2, si2)
+            }
 
             nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD,
                     testNetwork1.network, Executor { it.run() }, discoveryRecord)
@@ -2772,7 +2798,9 @@ class NsdManagerTest {
 
         val discoveryRecord = NsdDiscoveryRecord()
         tryTest {
-            registerService(registrationRecord1, si1)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord1, si1)
+            }
 
             nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD,
                     testNetwork1.network, Executor { it.run() }, discoveryRecord)
@@ -2786,7 +2814,9 @@ class NsdManagerTest {
             assertEquals(si1.hostname, resolvedInfo1.hostname)
             assertAddressEquals(hostAddresses, resolvedInfo1.hostAddresses)
 
-            registerService(registrationRecord2, si2)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord2, si2)
+            }
 
             val discoveredInfo2 = discoveryRecord.waitForServiceDiscovered(
                     serviceName2, serviceType, testNetwork1.network)
@@ -2877,13 +2907,17 @@ class NsdManagerTest {
         val discoveryRecord = NsdDiscoveryRecord()
 
         tryTest {
-            registerService(registrationRecord1, si1)
-            registerService(registrationRecord2, si2)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord1, si1)
+                registerService(registrationRecord2, si2)
+            }
 
             nsdManager.unregisterService(registrationRecord1)
             registrationRecord1.expectCallback<ServiceUnregistered>()
 
-            registerService(registrationRecord3, si3)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord3, si3)
+            }
 
             nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD,
                     testNetwork1.network, Executor { it.run() }, discoveryRecord)
@@ -2969,7 +3003,9 @@ class NsdManagerTest {
         val packetReader = makePacketReader()
         val registrationRecord = NsdRegistrationRecord()
         tryTest {
-            registerService(registrationRecord, si)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord, si)
+            }
 
             val announcement = packetReader.pollForReply("$customHostname.local", TYPE_KEY)
             assertNotNull(announcement)
@@ -3023,7 +3059,9 @@ class NsdManagerTest {
         val registrationRecord1 = NsdRegistrationRecord()
         val registrationRecord2 = NsdRegistrationRecord()
         tryTest {
-            registerService(registrationRecord1, si1)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord1, si1)
+            }
 
             var announcement =
                 packetReader.pollForReply("$serviceName.$serviceType.local", TYPE_KEY)
@@ -3043,7 +3081,9 @@ class NsdManagerTest {
             }
             assertEquals(3, addressRecords.size)
 
-            registerService(registrationRecord2, si2)
+            runAsShell(NETWORK_SETTINGS) {
+                registerService(registrationRecord2, si2)
+            }
 
             announcement = packetReader.pollForReply("$serviceName2.$serviceType2.local", TYPE_KEY)
             assertNotNull(announcement)

@@ -51,6 +51,7 @@ import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Captor
 import org.mockito.junit.MockitoJUnit
@@ -869,6 +870,32 @@ class AppOptInDefaultNetworkControllerTest {
         val expectedPolicyFlags = POLICY_SATELLITE_OPT_IN or POLICY_SATELLITE_ROLE_SMS or POLICY_OTT
         val expectedPolicy = AppOptInDefaultNetworkPolicy(expectedPolicyFlags, setOf(uidAll))
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
+        inOrder.verifyNoMoreInteractions()
+    }
+
+    @Test
+    fun testOttSessionDuration_loggedOnCallEnd() {
+        startAppOptInDefaultNetworkController()
+        val startTime = 1000L
+        val endTime = 2000L
+        val expectedDuration = endTime - startTime
+        val inOrder = inOrder(deps)
+
+        doReturn(startTime).doReturn(endTime).`when`(deps).elapsedRealtime()
+        // ott call slicing adding request
+        processOnHandlerThread {
+            appOptInDefaultNetworkController.onOttCallStateChanged(TEST_UID1,
+                    true /*isAdded*/)
+        }
+
+        // ott call slicing removal request
+        processOnHandlerThread {
+            appOptInDefaultNetworkController.onOttCallStateChanged(TEST_UID1,
+                    false /*isAdded*/)
+        }
+
+        // Verify that logOttSessionDuration is called with duration used.
+        inOrder.verify(deps).logOttSessionDuration(TEST_UID1, expectedDuration)
         inOrder.verifyNoMoreInteractions()
     }
 }

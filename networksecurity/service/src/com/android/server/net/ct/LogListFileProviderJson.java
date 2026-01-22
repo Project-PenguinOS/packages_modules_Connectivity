@@ -45,6 +45,7 @@ class LogListFileProviderJson implements LogListFile.Provider {
         mVersionDirectory = versionDirectory;
     }
 
+    @Override
     public LogListFile fromBytes(byte[] content) throws IOException {
         File logsDir = null;
         long timestamp;
@@ -64,6 +65,7 @@ class LogListFileProviderJson implements LogListFile.Provider {
                 .build();
     }
 
+    @Override
     public LogListFile fromFile(File file) throws IOException {
         byte[] content = null;
         try (InputStream logListInputStream = new FileInputStream(file)) {
@@ -71,5 +73,10 @@ class LogListFileProviderJson implements LogListFile.Provider {
         }
 
         return fromBytes(content);
+    }
+
+    @Override
+    public String getFileName() {
+        return LOGS_LIST_FILE_NAME;
     }
 }

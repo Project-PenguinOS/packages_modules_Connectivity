@@ -41,6 +41,9 @@ static const int DROP_UNLESS_DNS = 2;  // internal to our program
 #define TCP_FLAG8_OFF (TCP_FLAG32_OFF + 1)
 #define TCP_FLAG8_SYN 0x02
 
+#define EINVAL  22
+#define EUNATCH 49
+
 // For maps netd does not need to access
 #define DEFINE_BPF_MAP_NO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
     DEFINE_BPF_MAP_EXT(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries,         \
@@ -1251,14 +1254,41 @@ DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, , 4_19)
 // --- GETSOCKOPT HOOK ---
 
 static inline __always_inline int inet_getsockopt(struct bpf_sockopt *ctx,
-                                                  __unused const struct kver_uint kver) {
+                                                  const struct kver_uint kver) {
+    if (KVER_IS_AT_LEAST(kver, 5, 10, 0) && ctx->level == SOL_SOCKET &&
+        ctx->optname == SO_ANDROID_DROP_REASON) {
+        uint8_t *optval_end = ctx->optval_end;
+        uint8_t *optval = ctx->optval;
+        if (optval + sizeof(uint64_t) > optval_end) {
+            if (KVER_IS_AT_LEAST(kver, 6, 1, 0)) bpf_set_retval(-EINVAL);
+            return BPF_DISALLOW;
+        }
+
+        SkStorageValue *v = bpf_sk_storage_get(ctx->sk, 0, 0);
+        if (!v) {
+            if (KVER_IS_AT_LEAST(kver, 6, 1, 0)) bpf_set_retval(-EUNATCH);
+            return BPF_DISALLOW;
+        }
+
+        *(uint64_t *)optval = v->dropReasons;
+        v->dropReasons = DROP_REASON_NONE;
+        WRITE_ONCE(ctx->retval, 0);
+        WRITE_ONCE(ctx->optlen, sizeof(uint64_t));
+        return BPF_ALLOW;
+    }
+
     // Tell kernel to return 'original' kernel reply (instead of the bpf modified buffer)
     // This is important if the answer is larger than PAGE_SIZE (max size this bpf hook can provide)
     ctx->optlen = 0;
     return BPF_ALLOW;
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, 5_10, 5_10)
+DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, 6_1, 6_1)
+(struct bpf_sockopt *ctx) {
+    return inet_getsockopt(ctx, KVER_6_1);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(getsockopt, prog, 5_10, 5_10, 6_1)
 (struct bpf_sockopt *ctx) {
     return inet_getsockopt(ctx, KVER_5_10);
 }

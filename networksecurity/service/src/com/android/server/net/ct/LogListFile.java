@@ -33,6 +33,8 @@ public abstract class LogListFile {
         LogListFile fromBytes(byte[] content) throws IOException;
 
         LogListFile fromFile(File file) throws IOException;
+
+        String getFileName();
     }
 
     /**
