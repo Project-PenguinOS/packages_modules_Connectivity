@@ -652,7 +652,7 @@ public class CertificateTransparencyDownloaderTest {
                         mCompatVersion.getVersionDir(),
                         CompatibilityVersion.LOGS_DIR_PREFIX + version);
         assertThat(logsDir.exists()).isTrue();
-        File logsFile = new File(logsDir, CompatibilityVersion.LOGS_LIST_FILE_NAME);
+        File logsFile = new File(logsDir, mCompatVersion.getLogsFile().getName());
         assertThat(logsFile.exists()).isTrue();
     }
 

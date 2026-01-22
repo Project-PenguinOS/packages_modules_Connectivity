@@ -19,6 +19,7 @@ package com.android.server.net.ct;
 import static android.security.Flags.certificateTransparencyConfiguration;
 
 import static com.android.net.ct.flags.Flags.certificateTransparencyService;
+import static com.android.net.ct.flags.Flags.flatbuffersLogList;
 
 import android.annotation.RequiresApi;
 import android.content.Context;
@@ -30,7 +31,7 @@ import android.util.Log;
 
 import com.android.server.SystemService;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.concurrent.Executors;
 
@@ -53,12 +54,19 @@ public class CertificateTransparencyService extends ICertificateTransparencyMana
     /** Creates a new {@link CertificateTransparencyService} object. */
     public CertificateTransparencyService(Context context) {
         SignatureVerifier signatureVerifier = new SignatureVerifier(context);
-        Collection<CompatibilityVersion> compatVersions =
-                Arrays.asList(
-                        new CompatibilityVersion(
-                                Config.COMPATIBILITY_VERSION_V2,
-                                Config.URL_SIGNATURE_V2,
-                                Config.URL_LOG_LIST_V2));
+        Collection<CompatibilityVersion> compatVersions = new ArrayList<>();
+        compatVersions.add(
+                new CompatibilityVersion(
+                        Config.COMPATIBILITY_VERSION_V2,
+                        Config.URL_SIGNATURE_V2,
+                        Config.URL_LOG_LIST_V2));
+        if (flatbuffersLogList()) {
+            compatVersions.add(
+                    new CompatibilityVersion(
+                            Config.COMPATIBILITY_VERSION_V3,
+                            Config.URL_SIGNATURE_V3,
+                            Config.URL_LOG_LIST_V3));
+        }
 
         mCertificateTransparencyJob =
                 new CertificateTransparencyJob(

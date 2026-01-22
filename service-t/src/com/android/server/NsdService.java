@@ -841,6 +841,11 @@ public class NsdService extends INsdManager.Stub {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    private boolean hasNetworkSettingsPermission(int uid, int pid) {
+        return mContext.checkPermission(NETWORK_SETTINGS, pid, uid)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
     /**
      * @param uid The UID of the calling process
      * @param pid The PID of the calling process
@@ -1347,6 +1352,13 @@ public class NsdService extends INsdManager.Stub {
                 serviceType);
         final String registerServiceType = typeSubtype == null
                 ? null : typeSubtype.first;
+        // Force set the hostname to null if the process id does not have NETWORK_SETTINGS. As this
+        // permission is a signature permission, only processes having this permission will be able
+        // to actually set the hostname.
+        if (!TextUtils.isEmpty(serviceInfo.getHostname())
+                && !hasNetworkSettingsPermission(clientInfo.mUid, clientInfo.mPid)) {
+            serviceInfo.setHostname(null);
+        }
         final String hostname = serviceInfo.getHostname();
         // Keep compatible with the legacy behavior: It's allowed to set host
         // addresses for a service registration although the host addresses

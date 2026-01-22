@@ -38,6 +38,8 @@ java_library {
     static_libs: [
         "auto_value_annotations",
         "android.security.flags-aconfig-java-export",
+        "flatbuffers-java",
+        "conscrypt-flatbuffers-java",
     ],
 
     plugins: [
@@ -58,4 +60,25 @@ genrule {
     tools: ["stats-log-api-gen"],
     cmd: "$(location stats-log-api-gen) --java $(out) --module certificate_transparency --javaPackage com.android.server.net.ct --javaClass CertificateTransparencyStatsLog",
     out: ["com/android/server/net/ct/CertificateTransparencyStatsLog.java"],
+}
+
+java_library {
+    name: "conscrypt-flatbuffers-java",
+    visibility: [
+        "//packages/modules/Connectivity/networksecurity:__subpackages__",
+    ],
+
+    jarjar_rules: "jarjar-rules.txt",
+    srcs: [
+        ":conscrypt_generated_flatbuffers",
+    ],
+    libs: [
+        "flatbuffers-java",
+    ],
+
+    sdk_version: "system_server_current",
+    min_sdk_version: "31",
+    apex_available: [
+        "com.android.tethering",
+    ],
 }

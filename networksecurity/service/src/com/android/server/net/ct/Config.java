@@ -43,4 +43,10 @@ final class Config {
     static final String URL_PREFIX_V2 = URL_PREFIX + COMPATIBILITY_VERSION_V2 + "/";
     static final String URL_LOG_LIST_V2 = URL_PREFIX_V2 + "log_list.json";
     static final String URL_SIGNATURE_V2 = URL_PREFIX_V2 + "log_list.sig";
+
+    // Compatibility Version v3
+    static final String COMPATIBILITY_VERSION_V3 = "v3";
+    static final String URL_PREFIX_V3 = URL_PREFIX + COMPATIBILITY_VERSION_V3 + "/";
+    static final String URL_LOG_LIST_V3 = URL_PREFIX_V3 + "log_list.ctfb";
+    static final String URL_SIGNATURE_V3 = URL_PREFIX_V3 + "log_list.sig";
 }

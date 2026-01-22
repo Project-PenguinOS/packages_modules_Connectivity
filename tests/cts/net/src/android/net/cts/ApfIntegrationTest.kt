@@ -29,6 +29,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.TrafficStats
 import android.net.apf.ApfCapabilities
 import android.net.apf.ApfConstants.ETH_ETHERTYPE_OFFSET
 import android.net.apf.ApfConstants.ETH_HEADER_LEN
@@ -54,6 +55,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.PowerManager
+import android.os.SystemClock
 import android.os.SystemProperties
 import android.platform.test.annotations.AppModeFull
 import android.system.Os
@@ -108,6 +110,7 @@ import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.fail
 import org.junit.After
 import org.junit.AfterClass
 import org.junit.Assume.assumeFalse
@@ -122,6 +125,10 @@ private const val TAG = "ApfIntegrationTest"
 private const val TIMEOUT_MS = 2000L
 private const val RCV_BUFFER_SIZE = 1480
 private const val PING_HEADER_LENGTH = 8
+
+// Sets threshold to 5 Mbps to provide a conservative buffer against the 10 Mbps VSR requirement.
+private const val TRAFFIC_THRESHOLD_KBPS = 5000.0
+private val BACKOFF_INTERVALS_MS = listOf(2000L, 4000L, 8000L, 16000L, 32000L)
 
 open class FromU<Type>(val value: Type)
 
@@ -484,6 +491,93 @@ class ApfIntegrationTest {
         assume().that(SystemProperties.get("ro.product.board", "")).isNotEqualTo("cutf")
     }
 
+    private data class TrafficSnapshot(
+        val rxBytes: Long,
+        val txBytes: Long,
+        val timeMs: Long
+    ) {
+        fun getThroughputKbps(prev: TrafficSnapshot): Double {
+            val totalBytesDiff = (rxBytes - prev.rxBytes) + (txBytes - prev.txBytes)
+            val timeDiffMs = timeMs - prev.timeMs
+            if (timeDiffMs <= 1000) {
+                fail(
+                    "Need to wait least 1 second to avoid hit cache: timeDiffMs=$timeDiffMs."
+                )
+            }
+            return (totalBytesDiff * 8.0) / (timeDiffMs / 1000.0) / 1000.0
+        }
+
+        fun isUnsupported(): Boolean {
+            return rxBytes == TrafficStats.UNSUPPORTED.toLong() ||
+                    txBytes == TrafficStats.UNSUPPORTED.toLong()
+        }
+
+        override fun toString(): String = "rx=$rxBytes tx=$txBytes"
+
+        companion object {
+            fun capture(ifname: String) = TrafficSnapshot(
+                TrafficStats.getRxBytes(ifname),
+                TrafficStats.getTxBytes(ifname),
+                SystemClock.elapsedRealtime()
+            )
+        }
+    }
+
+    /**
+     * Wait for network traffic on the test interface to be low enough for APF to be active.
+     * Uses exponential backoff: measures traffic over 2s, 4s, 8s, 16s, 32s intervals.
+     * Fails if traffic exceeds threshold after all retries.
+     *
+     * Note: This method will wait at least 2 seconds to measure traffic.
+     */
+    fun waitForLowTraffic() {
+        var prev = TrafficSnapshot.capture(ifname)
+        Log.i(TAG, "$ifname initial TrafficStats: $prev")
+
+        if (prev.isUnsupported()) {
+            fail("TrafficStats unsupported for $ifname")
+        }
+
+        for ((attemptIndex, intervalMs) in BACKOFF_INTERVALS_MS.withIndex()) {
+            Thread.sleep(intervalMs)
+
+            val current = TrafficSnapshot.capture(ifname)
+            Log.i(
+                TAG,
+                "$ifname TrafficStats (attempt ${attemptIndex + 1}/" +
+                    "${BACKOFF_INTERVALS_MS.size}): $current"
+            )
+
+            val throughputKbps = current.getThroughputKbps(prev)
+            val rxDiff = current.rxBytes - prev.rxBytes
+            val txDiff = current.txBytes - prev.txBytes
+
+            Log.i(
+                TAG,
+                "$ifname throughput (${attemptIndex + 1}/${BACKOFF_INTERVALS_MS.size}) " +
+                        "after ${intervalMs}ms: " +
+                        "${"%.2f".format(throughputKbps)} Kbps " +
+                        "(rxDiff=$rxDiff txDiff=$txDiff)."
+            )
+
+            if (throughputKbps < TRAFFIC_THRESHOLD_KBPS) {
+                Log.i(
+                    TAG,
+                    "$ifname traffic below threshold ${TRAFFIC_THRESHOLD_KBPS}kbps after " +
+                            "${intervalMs}ms; continuing"
+                )
+                return
+            }
+
+            prev = current
+        }
+
+        fail(
+            "Background traffic on $ifname exceeded $TRAFFIC_THRESHOLD_KBPS Kbps after retries. " +
+            "APF requires low traffic. Ensure no background traffic during test."
+        )
+    }
+
     fun installProgram(bytes: ByteArray) {
         val prog = bytes.toHexString()
         val result = runShellCommandOrThrow("cmd network_stack apf $ifname install $prog").trim()
@@ -574,6 +668,8 @@ class ApfIntegrationTest {
         assumeApfVersionSupportAtLeast(4)
         assumeNotCuttlefish()
 
+        waitForLowTraffic()
+
         // clear any active APF filter
         clearApfMemory()
         readProgram() // wait for install completion
@@ -645,6 +741,9 @@ class ApfIntegrationTest {
         // Test v4 memory slots on both v4 and v6 interpreters.
         assumeApfVersionSupportAtLeast(4)
         assumeNotCuttlefish()
+
+        waitForLowTraffic()
+
         clearApfMemory()
         val gen = ApfV4Generator(
                 caps.apfVersionSupported,
@@ -716,6 +815,9 @@ class ApfIntegrationTest {
         }
         assumeApfVersionSupportAtLeast(4)
         assumeNotCuttlefish()
+
+        waitForLowTraffic()
+
         clearApfMemory()
         val gen = ApfV4Generator(
                 caps.apfVersionSupported,
@@ -760,6 +862,9 @@ class ApfIntegrationTest {
     fun testFilterAge16384thsIncreasesBetweenPackets() {
         assumeApfVersionSupportAtLeast(6000)
         assumeNotCuttlefish()
+
+        waitForLowTraffic()
+
         clearApfMemory()
         val gen = ApfV6Generator(
                 caps.apfVersionSupported,
@@ -811,6 +916,9 @@ class ApfIntegrationTest {
     fun testReplyPing() {
         assumeApfVersionSupportAtLeast(6000)
         assumeNotCuttlefish()
+
+        waitForLowTraffic()
+
         installProgram(ByteArray(caps.maximumApfProgramSize) { 0 }) // Clear previous program
         readProgram() // Ensure installation is complete
 

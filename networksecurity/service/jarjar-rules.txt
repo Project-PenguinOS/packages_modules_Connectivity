@@ -1,0 +1,1 @@
+rule com.android.org.conscrypt.ct.fbs.** com.android.server.net.ct.internal.fbs.@1

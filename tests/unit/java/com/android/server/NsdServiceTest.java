@@ -2117,6 +2117,38 @@ public class NsdServiceTest {
     }
 
     @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
+    public void testRegisterService_informsMdnsAdvertiserWithEmptyIpAddress() {
+        setMdnsAdvertiserEnabled();
+        doReturn(PERMISSION_DENIED).when(mContext)
+                .checkPermission(NETWORK_SETTINGS,
+                        Process.myPid(), Process.myUid());
+        final NsdManager client = connectClient(mService);
+        final RegistrationListener regListener = mock(RegistrationListener.class);
+        final ArgumentCaptor<MdnsAdvertiser.AdvertiserCallback> cbCaptor =
+                ArgumentCaptor.forClass(MdnsAdvertiser.AdvertiserCallback.class);
+        verify(mDeps).makeMdnsAdvertiser(
+                any(), any(), cbCaptor.capture(), any(), any(), any(), any());
+
+        final ArgumentCaptor<NsdServiceInfo> serviceInfoCaptor =
+                ArgumentCaptor.forClass(NsdServiceInfo.class);
+
+        final NsdServiceInfo regInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        regInfo.setHost(parseNumericAddress("192.0.2.123"));
+        regInfo.setPort(12345);
+        regInfo.setAttribute("testattr", "testvalue");
+        regInfo.setNetwork(new Network(999));
+        regInfo.setHostname("MyHost");
+
+        client.registerService(regInfo, NsdManager.PROTOCOL_DNS_SD, Runnable::run, regListener);
+        waitForIdle();
+        verify(mAdvertiser, times(1))
+                .addOrUpdateService(anyInt(), serviceInfoCaptor.capture(), any(), anyInt());
+        assertNull(serviceInfoCaptor.getValue().getHostname());
+        assertEquals(0, serviceInfoCaptor.getValue().getHostAddresses().size());
+    }
+
+    @Test
     @DisableCompatChanges(RESTRICT_LOCAL_NETWORK)
     public void testAdvertiseWithMdnsAdvertiser_FailedWithInvalidServiceType() {
         setMdnsAdvertiserEnabled();
