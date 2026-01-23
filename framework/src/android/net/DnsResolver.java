@@ -29,9 +29,16 @@ import static android.os.MessageQueue.OnFileDescriptorEventListener.EVENT_INPUT;
 import static android.system.OsConstants.ENONET;
 
 import android.annotation.CallbackExecutor;
+import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.TargetApi;
+import android.net.NetworkUtils;
+import android.net.dns.HttpsEndpoint;
+import android.net.dns.HttpsRecord;
+import android.net.util.HttpsEndpointAccumulator;
+import android.os.Build;
 import android.os.CancellationSignal;
 import android.os.Looper;
 import android.os.MessageQueue;
@@ -56,6 +63,7 @@ import java.util.concurrent.Executor;
  * the remote dns server does not support this, it may not respond at all, leading to a timeout.
  *
  */
+@TargetApi(Build.VERSION_CODES.S)
 public final class DnsResolver {
     private static final String TAG = "DnsResolver";
     private static final int FD_EVENTS = EVENT_INPUT | EVENT_ERROR;
@@ -71,12 +79,15 @@ public final class DnsResolver {
 
     @IntDef(prefix = { "TYPE_" },  value = {
             TYPE_A,
-            TYPE_AAAA
+            TYPE_AAAA,
+            TYPE_HTTPS
     })
     @Retention(RetentionPolicy.SOURCE)
     @interface QueryType {}
     public static final int TYPE_A = 1;
     public static final int TYPE_AAAA = 28;
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
+    public static final int TYPE_HTTPS = 65;
     // TODO: add below constants as part of QueryType and the public API
     /** @hide */
     public static final int TYPE_PTR = 12;
@@ -116,6 +127,37 @@ public final class DnsResolver {
      * The cause of this error is available via getCause() and is an ErrnoException.
      */
     public static final int ERROR_SYSTEM = 1;
+
+    /**
+     * Indicates that no additional wait should be used for the HTTPS query.
+     *
+     * <p>This option means the callback will be called immediately as soon as the IP address
+     * queries have received a response, regardless of whether the HTTPS query has received a
+     * response or not.
+     *
+     * <p>This option is not recommended for security or latency because it may result
+     * in HTTPS records not being returned even if they exist.
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
+    public static final int HTTPS_QUERY_WAIT_NONE = 0;
+
+    /**
+     * Indicates that the default wait time should be used for the HTTPS query.
+     *
+     * <p>This option balances the extra latency of waiting for the HTTPS record with the latency
+     * and security benefits of receiving it.
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
+    public static final int HTTPS_QUERY_WAIT_AUTO = -1;
+
+    /**
+     * Indicates that the HTTPS query will be retransmitted until it gets a response, or until it
+     * times out.
+     *
+     * <p>This option may increase latency if the HTTPS query is dropped by the network.
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
+    public static final int HTTPS_QUERY_WAIT_UNTIL_TIMEOUT = -2;
 
     private static final int NETID_UNSET = 0;
 
@@ -323,10 +365,12 @@ public final class DnsResolver {
 
     /**
      * Send a DNS query with the specified name on a network with both IPv4 and IPv6,
-     * get back a set of InetAddresses with rfc6724 sorting style asynchronously.
+     * get back a set of InetAddresses with rfc6724 sorting asynchronously.
      *
      * This method will examine the connection ability on given network, and query IPv4
-     * and IPv6 if connection is available.
+     * and IPv6 if connection is available. This method will send A queries if the specified
+     * {@code Network} provides IPv4 connectivity, and AAAA queries if it provides IPv6
+     * connectivity.
      *
      * If at least one query succeeded with valid answer, rcode will be 0
      *
@@ -425,7 +469,7 @@ public final class DnsResolver {
 
     /**
      * Send a DNS query with the specified name and query type, get back a set of
-     * InetAddresses with rfc6724 sorting style asynchronously.
+     * InetAddresses with rfc6724 sorting asynchronously.
      *
      * The answer will be provided asynchronously through the provided {@link Callback}.
      *
@@ -465,6 +509,116 @@ public final class DnsResolver {
             registerFDListener(executor, queryfd, accumulator, cancellationSignal, lock);
             if (cancellationSignal == null) return;
             addCancellationSignal(cancellationSignal, queryfd, lock);
+        }
+    }
+
+    /**
+     * Send concurrent A/AAAA/HTTPS DNS queries with the specified name on a network.
+     *
+     * The answer to all queries will be provided asynchronously through the provided
+     * {@code callback} {@link Callback}, which provides a {@link HttpsEndpoint}.
+     *
+     * @param network {@link Network} specifying which network to query on.
+     *         {@code null} for query on default network.
+     * @param domain domain name to query
+     * @param flags flags as a combination of the FLAGS_* constants
+     * @param executor The {@link Executor} that the callback should be executed on.
+     * @param httpsTimeoutMillis the timeout in milliseconds to wait for the HTTPS query to complete
+     *    after the A/AAAA queries have already completed. May be set to
+     *    {@link #HTTPS_QUERY_WAIT_NONE} to disable any additional wait,
+     *    {@link #HTTPS_QUERY_WAIT_AUTO} to use the default wait time,
+     *    {@link #HTTPS_QUERY_WAIT_UNTIL_TIMEOUT} to wait for the HTTPS query to complete, or a
+     *    specific value in milliseconds.
+     * @param cancellationSignal used by the caller to signal if all the queries should be
+     *    cancelled. May be {@code null}.
+     * @param callback a {@link Callback} which will be called to notify the caller of the results
+     *    of the A/AAAA/HTTPS DNS queries. Will return a {@link #ERROR_PARSE} if any of the DNS
+     *    records cannot be parsed, and should be treated as a resolution failure.
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
+    public void query(@Nullable Network network, @NonNull String domain, @QueryFlag int flags,
+            @NonNull @CallbackExecutor Executor executor, int httpsTimeoutMillis,
+            @Nullable CancellationSignal cancellationSignal,
+            @NonNull Callback<HttpsEndpoint> callback) {
+        if (cancellationSignal != null && cancellationSignal.isCanceled()) {
+            // TODO(b/448882639): add a test to check that the callback is never called even if some
+            // of the answers have already come back, on cancellation signal
+            return;
+        }
+
+        final Object lock = new Object();
+        final Network queryNetwork;
+        try {
+            queryNetwork = (network != null) ? network : getDnsNetwork();
+        } catch (ErrnoException e) {
+            executor.execute(() -> callback.onError(new DnsException(ERROR_SYSTEM, e)));
+            return;
+        }
+
+        final boolean queryIpv6 = haveIpv6(queryNetwork);
+        final boolean queryIpv4 = haveIpv4(queryNetwork);
+
+        // If queryIpv4 and queryIpv6 are both false, this almost certainly means that queryNetwork
+        // does not exist or no longer exists.
+        if (!queryIpv6 && !queryIpv4) {
+            executor.execute(() -> callback.onError(
+                    new DnsException(ERROR_SYSTEM, new ErrnoException("resNetworkQuery", ENONET))));
+            return;
+        }
+
+        // Deliberately initialize all to invalid file descriptors to make cancelling simpler
+        FileDescriptor httpsfd = new FileDescriptor();
+        FileDescriptor v4fd = new FileDescriptor();
+        FileDescriptor v6fd = new FileDescriptor();
+
+        int netId = queryNetwork.getNetIdForResolv();
+        List<FileDescriptor> allFds = new ArrayList<FileDescriptor>(3);
+
+        try {
+            httpsfd = resNetworkQuery(netId, domain, CLASS_IN, TYPE_HTTPS, flags);
+            allFds.add(httpsfd);
+        } catch (ErrnoException e) {
+            executor.execute(() -> callback.onError(new DnsException(ERROR_SYSTEM, e)));
+            return;
+        }
+
+        if (queryIpv6) {
+            try {
+                v6fd = resNetworkQuery(netId, domain, CLASS_IN, TYPE_AAAA, flags);
+            } catch (ErrnoException e) {
+                allFds.forEach(NetworkUtils::resNetworkCancel);
+                executor.execute(() -> callback.onError(new DnsException(ERROR_SYSTEM, e)));
+                return;
+            }
+            allFds.add(v6fd);
+        }
+
+        if (queryIpv4) {
+            try {
+                v4fd = resNetworkQuery(netId, domain, CLASS_IN, TYPE_A, flags);
+            } catch (ErrnoException e) {
+                allFds.forEach(NetworkUtils::resNetworkCancel);
+                executor.execute(() -> callback.onError(new DnsException(ERROR_SYSTEM, e)));
+                return;
+            }
+            allFds.add(v4fd);
+        }
+
+        final HttpsEndpointAccumulator accumulator =
+                new HttpsEndpointAccumulator(queryNetwork, callback, allFds.size(),
+                        httpsTimeoutMillis, queryIpv4, queryIpv6);
+
+        synchronized (lock) {
+            for (FileDescriptor fd : allFds) {
+                registerFDListener(executor, fd, accumulator, cancellationSignal, lock);
+            }
+
+            if (cancellationSignal == null) return;
+            cancellationSignal.setOnCancelListener(() -> {
+                synchronized (lock) {
+                    allFds.forEach(fd -> cancelQuery(fd));
+                }
+            });
         }
     }
 

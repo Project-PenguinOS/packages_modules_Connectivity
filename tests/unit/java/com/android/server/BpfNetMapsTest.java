@@ -74,6 +74,10 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UNINSTALLED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_INVALID_NET_PERM_SENT_TO_NETD;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_INTERNET;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UNINSTALLED;
@@ -88,10 +92,13 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeFalse;
+import static org.junit.Assume.assumeTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
@@ -115,6 +122,7 @@ import androidx.test.filters.SmallTest;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.BpfBoolean;
 import com.android.net.module.util.IBpfMap;
+import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.Struct.Bool;
 import com.android.net.module.util.Struct.S32;
 import com.android.net.module.util.Struct.S64;
@@ -241,7 +249,6 @@ public final class BpfNetMapsTest {
         doReturn(TEST_IF_INDEX).when(mInterfaceTracker).getInterfaceIndex(TEST_IF_NAME);
         doReturn(TEST_IF_NAME).when(mDeps).getIfName(TEST_IF_INDEX);
         doReturn(0).when(mDeps).synchronizeKernelRCU();
-        doReturn(false).when(mDeps).isL4SSupported();
         doAnswer(invocation -> mFeatureFlags.getOrDefault(FLAG_PERMISSION_MAP_UID_MIGRATION, false))
                 .when(mDeps).isPermissionMapUidMigrationEnabled();
         doAnswer(invocation -> mFeatureFlags.getOrDefault(
@@ -277,6 +284,10 @@ public final class BpfNetMapsTest {
         verify(mNetd).firewallRemoveUidInterfaceRules(TEST_UIDS);
         mBpfNetMaps.setNetPermForUids(PERMISSION_INTERNET, TEST_UIDS);
         verify(mNetd).trafficSetNetPermForUids(PERMISSION_INTERNET, TEST_UIDS);
+        verify(mDeps).writeStats(
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET,
+                TEST_UIDS.length
+        );
     }
 
     private long getMatch(final List<Integer> chains) {
@@ -1775,12 +1786,20 @@ public final class BpfNetMapsTest {
             throws Exception {
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(MOCK_USER1.getUid(TEST_APP_ID_1),
-                TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK);
+                TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS);
         permissionsUids.put(MOCK_USER2.getUid(TEST_APP_ID_1), TRAFFIC_PERMISSION_INTERNET);
         mBpfNetMaps.setPermListForUids(permissionsUids);
         verify(mNetd).trafficSetNetPermForUids(
-                TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK | PERMISSION_INTERNET,
+                TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS | PERMISSION_INTERNET,
                 new int[]{TEST_APP_ID_1});
+        verify(mDeps).writeStats(
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS,
+                1 /* count */
+        );
+        verify(mDeps).writeStats(
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET,
+                1 /* count */
+        );
     }
 
     @Test
@@ -1790,11 +1809,27 @@ public final class BpfNetMapsTest {
             throws Exception {
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(MOCK_USER1.getUid(TEST_APP_ID_1),
-                TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK);
+                TRAFFIC_PERMISSION_INTERNET);
         permissionsUids.put(MOCK_USER2.getUid(TEST_APP_ID_1), TRAFFIC_PERMISSION_UNINSTALLED);
         mBpfNetMaps.setPermListForUids(permissionsUids);
         verify(mNetd).trafficSetNetPermForUids(
-                TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK, new int[]{TEST_APP_ID_1});
+                TRAFFIC_PERMISSION_INTERNET, new int[]{TEST_APP_ID_1});
+    }
+
+    @Test
+    @IgnoreAfter(Build.VERSION_CODES.S_V2)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    public void testSetPermListForUids_invalidPermissionIgnored_BeforeT()
+            throws Exception {
+        SparseIntArray permissionsUids = new SparseIntArray();
+        permissionsUids.put(MOCK_USER1.getUid(TEST_APP_ID_1),
+                TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK);
+        permissionsUids.put(MOCK_USER2.getUid(TEST_APP_ID_1), TRAFFIC_PERMISSION_INTERNET);
+        mBpfNetMaps.setPermListForUids(permissionsUids);
+        verify(mNetd, never()).trafficSetNetPermForUids(anyInt(), any());
+        verify(mDeps).terribleError(
+                CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_INVALID_NET_PERM_SENT_TO_NETD
+        );
     }
 
     @Test
@@ -1808,6 +1843,10 @@ public final class BpfNetMapsTest {
         mBpfNetMaps.setPermListForUids(permissionsUids);
         verify(mNetd).trafficSetNetPermForUids(
             TRAFFIC_PERMISSION_UNINSTALLED, new int[]{TEST_APP_ID_1});
+        verify(mDeps).writeStats(
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UNINSTALLED,
+                1 /* count */
+        );
     }
 
     @Test
@@ -1817,12 +1856,20 @@ public final class BpfNetMapsTest {
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(MOCK_USER1.getUid(TEST_APP_ID_1), PERMISSION_INTERNET);
         permissionsUids.put(MOCK_USER1.getUid(TEST_APP_ID_2),
-                TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK);
+                TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS);
         mBpfNetMaps.setPermListForUids(permissionsUids);
         verify(mNetd).trafficSetNetPermForUids(
-            PERMISSION_INTERNET, new int[]{TEST_APP_ID_1});
+                PERMISSION_INTERNET, new int[]{TEST_APP_ID_1});
         verify(mNetd).trafficSetNetPermForUids(
-            TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK, new int[]{TEST_APP_ID_2});
+                TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS, new int[]{TEST_APP_ID_2});
+        verify(mDeps).writeStats(
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET,
+                1 /* count */
+        );
+        verify(mDeps).writeStats(
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS,
+                1 /* count */
+        );
     }
 
     @Test
@@ -2083,21 +2130,16 @@ public final class BpfNetMapsTest {
             TEST_UID + " PERMISSION_NONE");
     }
 
-    public void testL4SDisabledIfNotSupported() {
-        doReturn(false).when(mDeps).isL4SSupported();
-        assertFalse(mBpfNetMaps.isL4sEnabled());
-    }
-
     @Test
     public void testSetL4SDisabled() {
-        doReturn(true).when(mDeps).isL4SSupported();
+        assumeTrue(SdkUtil.isAtLeast26Q2());
         mBpfNetMaps.setL4sEnabled(false);
         assertFalse(mBpfNetMaps.isL4sEnabled());
     }
 
     @Test
     public void testSetL4SEnabled() {
-        doReturn(true).when(mDeps).isL4SSupported();
+        assumeTrue(SdkUtil.isAtLeast26Q2());
         mBpfNetMaps.setL4sEnabled(true);
         assertTrue(mBpfNetMaps.isL4sEnabled());
     }

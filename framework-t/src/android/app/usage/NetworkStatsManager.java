@@ -25,6 +25,8 @@ import static android.net.NetworkTemplate.MATCH_WIFI;
 
 import android.Manifest;
 import android.annotation.CallbackExecutor;
+import android.annotation.FlaggedApi;
+import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.RequiresPermission;
@@ -55,7 +57,10 @@ import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.net.module.util.NetworkIdentityUtils;
+import com.android.tethering.flags.Flags;
 
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -137,12 +142,40 @@ public class NetworkStatsManager {
     @Deprecated
     public static final String PREFIX_DEV = "dev";
 
-    /** @hide */
+    /**
+     * Flag to indicate that a poll is needed before the service gets statistics result.
+     *
+     * Note that for any non-privileged caller, the poll might be omitted in case of
+     * rate limiting.
+     *
+     * @hide
+     */
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
+    @SystemApi(client = MODULE_LIBRARIES)
     public static final int FLAG_POLL_ON_OPEN = 1 << 0;
-    /** @hide */
+    /**
+     * Flag to indicate that a query will force a stats poll.
+     * @hide
+     */
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
+    @SystemApi(client = MODULE_LIBRARIES)
     public static final int FLAG_POLL_FORCE = 1 << 1;
     /** @hide */
+    // TODO: Remove this flag and make the feature always on as it cannot be false in any case.
     public static final int FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN = 1 << 2;
+
+    private static final int MASK_REQUESTABLE_FLAGS = FLAG_POLL_ON_OPEN | FLAG_POLL_FORCE;
+
+    /**
+     * Flags to control the behavior of network statistics queries.
+     * @hide
+     */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(flag = true, prefix = { "FLAG_" }, value = {
+        FLAG_POLL_ON_OPEN,
+        FLAG_POLL_FORCE
+    })
+    public @interface NetworkStatsQueryFlags {}
 
     /**
      * Virtual RAT type to represent 5G NSA (Non Stand Alone) mode, where the primary cell is
@@ -164,7 +197,6 @@ public class NetworkStatsManager {
         mContext = context;
         mService = service;
         setPollOnOpen(true);
-        setAugmentWithSubscriptionPlan(true);
     }
 
     /** @hide */
@@ -188,6 +220,8 @@ public class NetworkStatsManager {
             NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK,
             android.Manifest.permission.NETWORK_STACK})
     public void setPollOnOpen(boolean pollOnOpen) {
+        // TODO (b/453909242): Throw if called by system_server uid after modifying
+        //  the callers to use per-query flags APIs.
         if (pollOnOpen) {
             mFlags |= FLAG_POLL_ON_OPEN;
         } else {
@@ -203,6 +237,8 @@ public class NetworkStatsManager {
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     @SystemApi(client = MODULE_LIBRARIES)
     public void setPollForce(boolean pollForce) {
+        // TODO (b/453909242): Throw if called by system_server uid after modifying
+        //  the callers to use per-query flags APIs.
         if (pollForce) {
             mFlags |= FLAG_POLL_FORCE;
         } else {
@@ -211,6 +247,7 @@ public class NetworkStatsManager {
     }
 
     /** @hide */
+    // TODO: Remove this method as the feature cannot be disabled in any case.
     public void setAugmentWithSubscriptionPlan(boolean augmentWithSubscriptionPlan) {
         if (augmentWithSubscriptionPlan) {
             mFlags |= FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN;
@@ -247,11 +284,45 @@ public class NetworkStatsManager {
     @SystemApi(client = MODULE_LIBRARIES)
     public Bucket querySummaryForDevice(@NonNull NetworkTemplate template,
             long startTime, long endTime) {
+        return querySummaryForDevice(template, startTime, endTime, mFlags);
+    }
+
+    /**
+     * Query network usage statistics summaries.
+     *
+     * Result is summarised data usage for the whole
+     * device. Result is a single Bucket aggregated over time, state, uid, tag, metered, and
+     * roaming. This means the bucket's start and end timestamp will be the same as the
+     * 'startTime' and 'endTime' arguments. State is going to be
+     * {@link NetworkStats.Bucket#STATE_ALL}, uid {@link NetworkStats.Bucket#UID_ALL},
+     * tag {@link NetworkStats.Bucket#TAG_NONE},
+     * default network {@link NetworkStats.Bucket#DEFAULT_NETWORK_ALL},
+     * metered {@link NetworkStats.Bucket#METERED_ALL},
+     * and roaming {@link NetworkStats.Bucket#ROAMING_ALL}.
+     * This may take a long time, and apps should avoid calling this on their main thread.
+     *
+     * @param template Template used to match networks. See {@link NetworkTemplate}.
+     * @param startTime Start of period, in milliseconds since the Unix epoch, see
+     *            {@link java.lang.System#currentTimeMillis}.
+     * @param endTime End of period, in milliseconds since the Unix epoch, see
+     *            {@link java.lang.System#currentTimeMillis}.
+     * @param flags Flags to control the behavior of this query.
+     * @return Bucket Summarised data usage.
+     *
+     * @hide
+     */
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
+    @NonNull
+    @SystemApi(client = MODULE_LIBRARIES)
+    @WorkerThread
+    public Bucket querySummaryForDevice(@NonNull NetworkTemplate template,
+            long startTime, long endTime, @NetworkStatsQueryFlags int flags) {
         Objects.requireNonNull(template);
         try {
-            NetworkStats stats =
-                    new NetworkStats(mContext, template, mFlags, startTime, endTime, mService);
-            Bucket bucket = stats.getDeviceSummaryForNetwork();
+            final NetworkStats stats =
+                    new NetworkStats(mContext, template, sanitizeQueryFlags(flags),
+                            startTime, endTime, mService);
+            final Bucket bucket = stats.getDeviceSummaryForNetwork();
             stats.close();
             return bucket;
         } catch (RemoteException e) {
@@ -350,7 +421,8 @@ public class NetworkStatsManager {
         }
 
         NetworkStats stats;
-        stats = new NetworkStats(mContext, template, mFlags, startTime, endTime, mService);
+        stats = new NetworkStats(mContext, template, sanitizeQueryFlags(mFlags), startTime,
+                endTime, mService);
         stats.startSummaryEnumeration();
 
         stats.close();
@@ -423,10 +495,37 @@ public class NetworkStatsManager {
     @WorkerThread
     public NetworkStats querySummary(@NonNull NetworkTemplate template, long startTime,
             long endTime) throws SecurityException {
+        return querySummary(template, startTime, endTime, mFlags);
+    }
+
+    /**
+     * Query network usage statistics summaries.
+     *
+     * The results will only include traffic made by UIDs belonging to the calling user profile.
+     * The results are aggregated over time, so that all buckets will have the same start and
+     * end timestamps as the passed arguments. Not aggregated over state, uid, default network,
+     * metered, or roaming.
+     * This may take a long time, and apps should avoid calling this on their main thread.
+     *
+     * @param template Template used to match networks. See {@link NetworkTemplate}.
+     * @param startTime Start of period, in milliseconds since the Unix epoch, see
+     *            {@link java.lang.System#currentTimeMillis}.
+     * @param endTime End of period, in milliseconds since the Unix epoch, see
+     *            {@link java.lang.System#currentTimeMillis}.
+     * @param flags Flags to control the behavior of this query.
+     * @return Statistics which is described above.
+     * @hide
+     */
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
+    @NonNull
+    @SystemApi(client = MODULE_LIBRARIES)
+    @WorkerThread
+    public NetworkStats querySummary(@NonNull NetworkTemplate template,
+            long startTime, long endTime, @NetworkStatsQueryFlags int flags) {
         Objects.requireNonNull(template);
         try {
-            NetworkStats result =
-                    new NetworkStats(mContext, template, mFlags, startTime, endTime, mService);
+            final NetworkStats result = new NetworkStats(mContext, template,
+                    sanitizeQueryFlags(flags), startTime, endTime, mService);
             result.startSummaryEnumeration();
             return result;
         } catch (RemoteException e) {
@@ -457,10 +556,37 @@ public class NetworkStatsManager {
     @WorkerThread
     public NetworkStats queryTaggedSummary(@NonNull NetworkTemplate template, long startTime,
             long endTime) throws SecurityException {
+        return queryTaggedSummary(template, startTime, endTime, mFlags);
+    }
+
+    /**
+     * Query tagged network usage statistics summaries.
+     *
+     * The results will only include tagged traffic made by UIDs belonging to the calling user
+     * profile. The results are aggregated over time, so that all buckets will have the same
+     * start and end timestamps as the passed arguments. Not aggregated over state, uid,
+     * default network, metered, or roaming.
+     * This may take a long time, and apps should avoid calling this on their main thread.
+     *
+     * @param template Template used to match networks. See {@link NetworkTemplate}.
+     * @param startTime Start of period, in milliseconds since the Unix epoch, see
+     *            {@link System#currentTimeMillis}.
+     * @param endTime End of period, in milliseconds since the Unix epoch, see
+     *            {@link System#currentTimeMillis}.
+     * @param flags Flags to control the behavior of this query.
+     * @return Statistics which is described above.
+     * @hide
+     */
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
+    @NonNull
+    @SystemApi(client = MODULE_LIBRARIES)
+    @WorkerThread
+    public NetworkStats queryTaggedSummary(@NonNull NetworkTemplate template,
+            long startTime, long endTime, @NetworkStatsQueryFlags int flags) {
         Objects.requireNonNull(template);
         try {
-            NetworkStats result =
-                    new NetworkStats(mContext, template, mFlags, startTime, endTime, mService);
+            final NetworkStats result = new NetworkStats(mContext, template,
+                    sanitizeQueryFlags(flags), startTime, endTime, mService);
             result.startTaggedSummaryEnumeration();
             return result;
         } catch (RemoteException e) {
@@ -493,10 +619,39 @@ public class NetworkStatsManager {
     @WorkerThread
     public NetworkStats queryDetailsForDevice(@NonNull NetworkTemplate template,
             long startTime, long endTime) {
+        return queryDetailsForDevice(template, startTime, endTime, mFlags);
+    }
+
+    /**
+     * Query usage statistics details for networks matching a given {@link NetworkTemplate}.
+     *
+     * Result is not aggregated over time. This means buckets' start and
+     * end timestamps will be between 'startTime' and 'endTime' parameters.
+     * <p>Only includes buckets whose entire time period is included between
+     * startTime and endTime. Doesn't interpolate or return partial buckets.
+     * Since bucket length is in the order of hours, this
+     * method cannot be used to measure data usage on a fine grained time scale.
+     * This may take a long time, and apps should avoid calling this on their main thread.
+     *
+     * @param template Template used to match networks. See {@link NetworkTemplate}.
+     * @param startTime Start of period, in milliseconds since the Unix epoch, see
+     *                  {@link java.lang.System#currentTimeMillis}.
+     * @param endTime End of period, in milliseconds since the Unix epoch, see
+     *                {@link java.lang.System#currentTimeMillis}.
+     * @param flags Flags to control the behavior of this query.
+     * @return Statistics which is described above.
+     * @hide
+     */
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
+    @NonNull
+    @SystemApi(client = MODULE_LIBRARIES)
+    @WorkerThread
+    public NetworkStats queryDetailsForDevice(@NonNull NetworkTemplate template,
+            long startTime, long endTime, @NetworkStatsQueryFlags int flags) {
         Objects.requireNonNull(template);
         try {
-            final NetworkStats result =
-                    new NetworkStats(mContext, template, mFlags, startTime, endTime, mService);
+            final NetworkStats result = new NetworkStats(mContext, template,
+                    sanitizeQueryFlags(flags), startTime, endTime, mService);
             result.startHistoryDeviceEnumeration();
             return result;
         } catch (RemoteException e) {
@@ -681,10 +836,49 @@ public class NetworkStatsManager {
     @WorkerThread
     public NetworkStats queryDetailsForUidTagState(@NonNull NetworkTemplate template,
             long startTime, long endTime, int uid, int tag, int state) throws SecurityException {
+        return queryDetailsForUidTagState(template, startTime, endTime, uid, tag, state, mFlags);
+    }
+
+    /**
+     * Query network usage statistics details for a given template, uid, tag, and state.
+     *
+     * Only usable for uids belonging to calling user. Result is not aggregated over time.
+     * This means buckets' start and end timestamps are going to be between 'startTime' and
+     * 'endTime' parameters. The uid is going to be the same as the 'uid' parameter, the tag
+     * the same as the 'tag' parameter, and the state the same as the 'state' parameter.
+     * defaultNetwork is going to be {@link NetworkStats.Bucket#DEFAULT_NETWORK_ALL},
+     * metered is going to be {@link NetworkStats.Bucket#METERED_ALL}, and
+     * roaming is going to be {@link NetworkStats.Bucket#ROAMING_ALL}.
+     * <p>Only includes buckets that atomically occur in the inclusive time range. Doesn't
+     * interpolate across partial buckets. Since bucket length is in the order of hours, this
+     * method cannot be used to measure data usage on a fine grained time scale.
+     * This may take a long time, and apps should avoid calling this on their main thread.
+     *
+     * @param template Template used to match networks. See {@link NetworkTemplate}.
+     * @param startTime Start of period, in milliseconds since the Unix epoch, see
+     *                  {@link java.lang.System#currentTimeMillis}.
+     * @param endTime End of period, in milliseconds since the Unix epoch, see
+     *                {@link java.lang.System#currentTimeMillis}.
+     * @param uid UID of app
+     * @param tag TAG of interest. Use {@link NetworkStats.Bucket#TAG_NONE} for aggregated data
+     *            across all the tags.
+     * @param state state of interest. Use {@link NetworkStats.Bucket#STATE_ALL} to aggregate
+     *            traffic from all states.
+     * @param flags Flags to control the behavior of this query.
+     * @return Statistics which is described above.
+     * @hide
+     */
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
+    @NonNull
+    @SystemApi(client = MODULE_LIBRARIES)
+    @WorkerThread
+    public NetworkStats queryDetailsForUidTagState(@NonNull NetworkTemplate template,
+            long startTime, long endTime, int uid, int tag, int state,
+            @NetworkStatsQueryFlags int flags) {
         Objects.requireNonNull(template);
         try {
             final NetworkStats result = new NetworkStats(
-                    mContext, template, mFlags, startTime, endTime, mService);
+                    mContext, template, sanitizeQueryFlags(flags), startTime, endTime, mService);
             result.startHistoryUidEnumeration(uid, tag, state);
             return result;
         } catch (RemoteException e) {
@@ -694,6 +888,22 @@ public class NetworkStatsManager {
         }
 
         return null; // To make the compiler happy.
+    }
+
+    /**
+     * Sanitize the query flags, verifying that no invalid flags are set. It also applies the
+     * default-enabled {@link NetworkStatsManager#FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN}, which is
+     * not allowed to be disabled by the all external callers.
+     *
+     * @throws IllegalArgumentException if flags contains any invalid flags.
+     * @hide
+     */
+    @VisibleForTesting
+    public static int sanitizeQueryFlags(@NetworkStatsQueryFlags int flags) {
+        if ((flags & ~MASK_REQUESTABLE_FLAGS) != 0) {
+            throw new IllegalArgumentException("Invalid flags specified: " + flags);
+        }
+        return flags | FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN;
     }
 
     /**
@@ -744,7 +954,8 @@ public class NetworkStatsManager {
         }
 
         NetworkStats result;
-        result = new NetworkStats(mContext, template, mFlags, startTime, endTime, mService);
+        result = new NetworkStats(mContext, template, sanitizeQueryFlags(mFlags), startTime,
+                endTime, mService);
         result.startUserUidEnumeration();
         return result;
     }

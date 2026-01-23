@@ -117,7 +117,21 @@ public class MdnsSocketProvider {
     private final BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            final String newP2pIface = getWifiP2pInterface(intent);
+            final WifiP2pGroup group =
+                    intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_GROUP);
+            final WifiP2pInfo p2pInfo =
+                    intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_INFO);
+
+            // If UseNetworkCallbackForLocalNetworks is true, the P2P GO network is handled by the
+            // NetworkCallback. This broadcast is ignored for GO connection events (isGroupOwner is
+            // true) to avoid double handling. For GO disconnection events (isGroupOwner is false),
+            // this broadcast is also a no-op as mWifiP2pTetherInterface is null and the teardown
+            // is handled by NetworkCallback#onLost.
+            if (mUseNetworkCallbackForLocalNetworks && p2pInfo != null && p2pInfo.isGroupOwner) {
+                return;
+            }
+
+            final String newP2pIface = getWifiP2pInterface(group, p2pInfo);
 
             if (!mMonitoringSockets || !hasAllNetworksRequest()) {
                 mWifiP2pTetherInterface = newP2pIface;
@@ -151,11 +165,8 @@ public class MdnsSocketProvider {
     };
 
     @Nullable
-    private static String getWifiP2pInterface(final Intent intent) {
-        final WifiP2pGroup group =
-                intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_GROUP);
-        final WifiP2pInfo p2pInfo =
-                intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_INFO);
+    private static String getWifiP2pInterface(@Nullable final WifiP2pGroup group,
+            @Nullable final WifiP2pInfo p2pInfo) {
         if (group == null || p2pInfo == null) {
             return null;
         }
@@ -198,7 +209,8 @@ public class MdnsSocketProvider {
             @Override
             public void onCapabilitiesChanged(@NonNull Network network,
                     @NonNull NetworkCapabilities networkCapabilities) {
-                if (!networkCapabilities.hasCapability(NET_CAPABILITY_LOCAL_NETWORK)) {
+                if (mUseNetworkCallbackForLocalNetworks
+                        || !networkCapabilities.hasCapability(NET_CAPABILITY_LOCAL_NETWORK)) {
                     mActiveNetworkCapabilities.put(network, networkCapabilities);
                 }
             }
@@ -370,8 +382,12 @@ public class MdnsSocketProvider {
                 new NetworkRequest.Builder().clearCapabilities().build(),
                 mNetworkCallback, mHandler);
 
-        final TetheringManager tetheringManager = mContext.getSystemService(TetheringManager.class);
-        tetheringManager.registerTetheringEventCallback(mHandler::post, mTetheringEventCallback);
+        if (!mUseNetworkCallbackForLocalNetworks) {
+            final TetheringManager tetheringManager = mContext.getSystemService(
+                    TetheringManager.class);
+            tetheringManager.registerTetheringEventCallback(mHandler::post,
+                    mTetheringEventCallback);
+        }
 
         if (mSocketNetlinkMonitor.isSupported()) {
             mHandler.post(mSocketNetlinkMonitor::startMonitoring);
@@ -399,9 +415,11 @@ public class MdnsSocketProvider {
             mContext.getSystemService(ConnectivityManager.class)
                     .unregisterNetworkCallback(mNetworkCallback);
 
-            final TetheringManager tetheringManager = mContext.getSystemService(
-                    TetheringManager.class);
-            tetheringManager.unregisterTetheringEventCallback(mTetheringEventCallback);
+            if (!mUseNetworkCallbackForLocalNetworks) {
+                final TetheringManager tetheringManager = mContext.getSystemService(
+                        TetheringManager.class);
+                tetheringManager.unregisterTetheringEventCallback(mTetheringEventCallback);
+            }
             // Clear all saved status.
             mActiveNetworksLinkProperties.clear();
             mNetworkSockets.clear();

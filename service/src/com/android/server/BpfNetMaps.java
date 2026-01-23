@@ -61,6 +61,13 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UID_PERMISSION_MASK;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_NONE;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UNINSTALLED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_INVALID_NET_PERM_SENT_TO_NETD;
 import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
 import static com.android.server.connectivity.NetworkPermissions.PERMISSION_NONE;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK;
@@ -76,6 +83,7 @@ import android.net.BpfNetMapsUtils;
 import android.net.INetd;
 import android.net.UidOwnerValue;
 import android.os.Build;
+import android.os.Process;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
 import android.os.UserHandle;
@@ -100,6 +108,7 @@ import com.android.net.module.util.BpfMap;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.IBpfMap;
 import com.android.net.module.util.IBpfMap.ThrowingBiConsumer;
+import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.SingleWriterBpfMap;
 import com.android.net.module.util.Struct;
 import com.android.net.module.util.Struct.Bool;
@@ -114,7 +123,6 @@ import com.android.net.module.util.bpf.LocalNetAccessKey;
 import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 
-import java.io.File;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -504,7 +512,7 @@ public class BpfNetMaps {
             }
         }
 
-        if (deps.isL4SSupported()) {
+        if (SdkUtil.isAtLeast26Q2()) {
             if (sL4sEnabledMap == null) {
                 sL4sEnabledMap = getL4sEnabledMap();
             }
@@ -621,14 +629,6 @@ public class BpfNetMaps {
         }
 
         /**
-         * Checks if L4S is potentially supported by verifying the existence of the BPF map.
-         */
-        public boolean isL4SSupported() {
-            final File file = new File(L4S_ENABLED_MAP_PATH);
-            return file.exists();
-        }
-
-        /**
          * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than lnp
          * permission propagation. Wrapper around accessLocalNetworkPermissionEnabled() so
          * that it can be mocked in unit test.
@@ -639,6 +639,27 @@ public class BpfNetMaps {
             // Local network permission will be supported from Android C+, update this when
             // isAtLeastC() is available.
             return SdkLevel.isAtLeastB() && accessLocalNetworkPermissionEnabled();
+        }
+
+        /**
+         * Write CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED metrics
+         */
+        public void writeStats(final int eventType, final int count) {
+            ConnectivityStatsLog.write_non_chained(CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED,
+                    Process.SYSTEM_UID,
+                    null,
+                    eventType,
+                    count);
+        }
+
+        /**
+         * Write CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED metrics
+         */
+        public void terribleError(final int errorType) {
+            ConnectivityStatsLog.write(
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                    errorType
+            );
         }
     }
 
@@ -679,6 +700,12 @@ public class BpfNetMaps {
 
     private void throwIfPre25Q2(final String msg) {
         if (!isAtLeastB()) {
+            throw new UnsupportedOperationException(msg);
+        }
+    }
+
+    private void throwIfPre26Q2(final String msg) {
+        if (!SdkUtil.isAtLeast26Q2()) {
             throw new UnsupportedOperationException(msg);
         }
     }
@@ -1073,6 +1100,30 @@ public class BpfNetMaps {
         maybeThrow(err, "synchronizeKernelRCU failed");
     }
 
+    private void logAndSendNetPermToNetd(final int permissions, final int[] appIds)
+            throws RemoteException {
+        if (permissions == TRAFFIC_PERMISSION_UNINSTALLED) {
+            mDeps.writeStats(
+                    CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UNINSTALLED,
+                    appIds.length);
+        } else if (permissions == PERMISSION_NONE) {
+            mDeps.writeStats(
+                    CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_NONE,
+                    appIds.length);
+        } else {
+            if ((permissions & TRAFFIC_PERMISSION_INTERNET) != 0) {
+                mDeps.writeStats(CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET,
+                        appIds.length);
+            }
+            if ((permissions & TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS) != 0) {
+                mDeps.writeStats(CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS,
+                        appIds.length);
+            }
+        }
+
+        mNetd.trafficSetNetPermForUids(permissions, appIds);
+    }
+
     /**
      * Assigns android.permission.INTERNET and/or android.permission.UPDATE_DEVICE_STATS to the uids
      * specified. Or remove all permissions from the uids.
@@ -1085,7 +1136,7 @@ public class BpfNetMaps {
      */
     public void setNetPermForUids(final int permissions, final int[] uids) throws RemoteException {
         if (!SdkLevel.isAtLeastT()) {
-            mNetd.trafficSetNetPermForUids(permissions, uids);
+            logAndSendNetPermToNetd(permissions, uids);
             return;
         }
 
@@ -1142,11 +1193,12 @@ public class BpfNetMaps {
             final int netdSupportedTrafficPerm = TRAFFIC_PERMISSION_INTERNET
                     | TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
             final int clearMask = ~netdSupportedTrafficPerm;
-            // TODO(436242702) add unit test for un-supported permission types
             if (permissions != TRAFFIC_PERMISSION_UNINSTALLED && (permissions & clearMask) != 0) {
                 Log.e(TAG, "unknown permission type: " + permissions);
+                mDeps.terribleError(CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_INVALID_NET_PERM_SENT_TO_NETD);
+                continue;
             }
-            mNetd.trafficSetNetPermForUids(permissions, CollectionUtils.toIntArray(appIds));
+            logAndSendNetPermToNetd(permissions, CollectionUtils.toIntArray(appIds));
         }
     }
 
@@ -1511,7 +1563,7 @@ public class BpfNetMaps {
      */
     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     public void setL4sEnabled(boolean enabled) {
-        if (!mDeps.isL4SSupported()) return;
+        throwIfPre26Q2("setL4sEnabled is not available on pre-C devices");
 
         try {
             sL4sEnabledMap.set(enabled);
@@ -1527,7 +1579,7 @@ public class BpfNetMaps {
      */
     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     public boolean isL4sEnabled() {
-        if (!mDeps.isL4SSupported()) return false;
+        throwIfPre26Q2("isL4sEnabled is not available on pre-C devices");
 
         try {
             return sL4sEnabledMap.get();

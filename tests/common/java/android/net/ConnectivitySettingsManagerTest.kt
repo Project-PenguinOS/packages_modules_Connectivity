@@ -28,6 +28,10 @@ import android.net.ConnectivitySettingsManager.DNS_RESOLVER_MAX_SAMPLES
 import android.net.ConnectivitySettingsManager.DNS_RESOLVER_MIN_SAMPLES
 import android.net.ConnectivitySettingsManager.DNS_RESOLVER_SAMPLE_VALIDITY_SECONDS
 import android.net.ConnectivitySettingsManager.DNS_RESOLVER_SUCCESS_THRESHOLD_PERCENT
+import android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION
+import android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION_AUTOMATIC
+import android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION_DISABLED
+import android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION_ENABLED
 import android.net.ConnectivitySettingsManager.MOBILE_DATA_ALWAYS_ON
 import android.net.ConnectivitySettingsManager.NETWORK_AVOID_BAD_WIFI
 import android.net.ConnectivitySettingsManager.NETWORK_SWITCH_NOTIFICATION_DAILY_LIMIT
@@ -42,6 +46,7 @@ import android.net.ConnectivitySettingsManager.getDnsResolverSampleRanges
 import android.net.ConnectivitySettingsManager.getDnsResolverSampleValidityDuration
 import android.net.ConnectivitySettingsManager.getDnsResolverSuccessThresholdPercent
 import android.net.ConnectivitySettingsManager.getIngressRateLimitInBytesPerSecond
+import android.net.ConnectivitySettingsManager.getL4sDeveloperOption
 import android.net.ConnectivitySettingsManager.getMobileDataActivityTimeout
 import android.net.ConnectivitySettingsManager.getMobileDataAlwaysOn
 import android.net.ConnectivitySettingsManager.getNetworkAvoidBadWifi
@@ -56,6 +61,7 @@ import android.net.ConnectivitySettingsManager.setDnsResolverSampleRanges
 import android.net.ConnectivitySettingsManager.setDnsResolverSampleValidityDuration
 import android.net.ConnectivitySettingsManager.setDnsResolverSuccessThresholdPercent
 import android.net.ConnectivitySettingsManager.setIngressRateLimitInBytesPerSecond
+import android.net.ConnectivitySettingsManager.setL4sDeveloperOption
 import android.net.ConnectivitySettingsManager.setMobileDataActivityTimeout
 import android.net.ConnectivitySettingsManager.setMobileDataAlwaysOn
 import android.net.ConnectivitySettingsManager.setNetworkAvoidBadWifi
@@ -753,6 +759,38 @@ class ConnectivitySettingsManagerTest {
                     orgCarrierAwareSetting,
                     orgSetting
                 )
+            )
+        }
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
+    @ConnectivityModuleTest
+    fun testNetworkL4s() {
+        val original = Settings.Global.getString(resolver, L4S_DEVELOPER_OPTION)
+        try {
+            // Test enabling L4S
+            setL4sDeveloperOption(context, L4S_DEVELOPER_OPTION_ENABLED)
+            assertEquals(getL4sDeveloperOption(context), L4S_DEVELOPER_OPTION_ENABLED)
+            assertEquals("1", Settings.Global.getString(resolver, L4S_DEVELOPER_OPTION))
+
+            // Test disabling L4S
+            setL4sDeveloperOption(context, L4S_DEVELOPER_OPTION_DISABLED)
+            assertEquals(getL4sDeveloperOption(context), L4S_DEVELOPER_OPTION_DISABLED)
+            assertEquals("0", Settings.Global.getString(resolver, L4S_DEVELOPER_OPTION))
+
+            // Test automatic L4S
+            setL4sDeveloperOption(context, L4S_DEVELOPER_OPTION_AUTOMATIC)
+            assertEquals(getL4sDeveloperOption(context), L4S_DEVELOPER_OPTION_AUTOMATIC)
+            assertEquals(null, Settings.Global.getString(resolver, L4S_DEVELOPER_OPTION))
+
+            // Test invalid input
+            assertFailsWith<IllegalArgumentException> {setL4sDeveloperOption(context, -1)}
+        } finally {
+            resetSettings(
+                names = arrayOf(L4S_DEVELOPER_OPTION),
+                type = settingsTypeGlobal,
+                values = arrayOf(original)
             )
         }
     }

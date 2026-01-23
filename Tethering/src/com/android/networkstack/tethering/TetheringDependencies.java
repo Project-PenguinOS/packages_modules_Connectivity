@@ -135,15 +135,8 @@ public abstract class TetheringDependencies {
      * Get the routing coordinator.
      */
     public RoutingCoordinatorManager getRoutingCoordinator(Context context, SharedLog log) {
-        IBinder binder;
-        if (!SdkLevel.isAtLeastS()) {
-            final ConnectivityManager cm = context.getSystemService(ConnectivityManager.class);
-            binder = new RoutingCoordinatorService(getINetd(context, log), cm::getAllNetworks,
-                    context, false /* bluetoothTetheringUseRandomAddress */);
-        } else {
-            binder = ConnectivityInternalApiUtil.getRoutingCoordinator(context);
-        }
-        return new RoutingCoordinatorManager(context, binder);
+        return new RoutingCoordinatorManager(context,
+                ConnectivityInternalApiUtil.getRoutingCoordinator(context));
     }
 
     /**

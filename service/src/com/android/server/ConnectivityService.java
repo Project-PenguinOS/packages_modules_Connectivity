@@ -80,6 +80,8 @@ import static android.net.ConnectivityManager.TYPE_WIFI;
 import static android.net.ConnectivityManager.TYPE_WIFI_P2P;
 import static android.net.ConnectivityManager.getNetworkTypeName;
 import static android.net.ConnectivityManager.isNetworkTypeValid;
+import static android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION;
+import static android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION_ENABLED;
 import static android.net.ConnectivitySettingsManager.PRIVATE_DNS_MODE_OPPORTUNISTIC;
 import static android.net.INetd.LOCAL_NET_ID;
 import static android.net.INetd.PERMISSION_INTERNET;
@@ -337,6 +339,8 @@ import android.util.SparseArray;
 import android.util.SparseIntArray;
 import android.util.StatsEvent;
 
+import androidx.annotation.ChecksSdkIntAtLeast;
+
 import com.android.connectivity.resources.R;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
@@ -362,6 +366,7 @@ import com.android.net.module.util.BinderUtils;
 import com.android.net.module.util.BitUtils;
 import com.android.net.module.util.BpfUtils;
 import com.android.net.module.util.CollectionUtils;
+import com.android.net.module.util.ConnectivitySettingsUtils;
 import com.android.net.module.util.ConnectivityUtils;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.HandlerUtils;
@@ -534,10 +539,6 @@ public class ConnectivityService extends IConnectivityManager.Stub
     // Delimiter used when creating the broadcast delivery group for sending
     // CONNECTIVITY_ACTION broadcast.
     private static final char DELIVERY_GROUP_KEY_DELIMITER = ';';
-
-    // TODO: Use android.Manifest.permission.CREATE_APP_SPECIFIC_NETWORK once it's available.
-    private static final String PERMISSION_CREATE_APP_SPECIFIC_NETWORK =
-            "android.permission.CREATE_APP_SPECIFIC_NETWORK";
 
     // The maximum value for the blocking validation result, in milliseconds.
     public static final int MAX_VALIDATION_IGNORE_AFTER_ROAM_TIME_MS = 10000;
@@ -1018,6 +1019,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
      * The network should be torn down now.
      */
     private static final int EVENT_TIMEOUT_NETWORK_SUSPENDED = 64;
+
+    /**
+     * Event to update L4S developer option setting changes.
+     */
+    private static final int EVENT_L4S_DEVELOPER_OPTION_CHANGED = 65;
 
     /**
      * Argument for {@link #EVENT_PROVISIONING_NOTIFICATION} to indicate that the notification
@@ -1595,6 +1601,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         public boolean isAtLeast25Q4() {
             return SdkUtil.isAtLeast25Q4();
+        }
+
+        @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.CINNAMON_BUN)
+        public boolean isAtLeast26Q2() {
+            return SdkUtil.isAtLeast26Q2();
         }
 
         /** Get SystemClock.elapsedRealtime() */
@@ -2598,6 +2609,12 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 Settings.Global.getUriFor(
                         ConnectivitySettingsManager.INGRESS_RATE_LIMIT_BYTES_PER_SECOND),
                 EVENT_INGRESS_RATE_LIMIT_CHANGED);
+        if (mDeps.isAtLeast26Q2()) {
+            // Watch for L4S changes.
+            mSettingsObserver.observe(
+                    Settings.Global.getUriFor(L4S_DEVELOPER_OPTION),
+                    EVENT_L4S_DEVELOPER_OPTION_CHANGED);
+        }
     }
 
     private void registerPrivateDnsSettingsCallbacks() {
@@ -3876,6 +3893,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
         disconnectAndDestroyNetwork(nai);
     }
 
+    private void handleNetworkL4sChanged() {
+        if (!mDeps.isAtLeast26Q2()) return;
+        ensureRunningOnConnectivityServiceThread();
+        final int setValue = ConnectivitySettingsUtils.getL4sDeveloperOptionSetting(mContext);
+        mBpfNetMaps.setL4sEnabled((setValue == L4S_DEVELOPER_OPTION_ENABLED));
+    }
+
     private void handleFreezeNetworkCallbacks(int[] uids, int[] frozenStates) {
         if (!mQueueCallbacksForFrozenApps) {
             return;
@@ -4190,7 +4214,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // The CREATE_APP_SPECIFIC_NETWORK permission was introduced in 25Q4.
         // It must not be granted on earlier platform versions, even if an app declares it.
         return mDeps.isAtLeast25Q4() && hasAnyPermissionOf(mContext,
-                PERMISSION_CREATE_APP_SPECIFIC_NETWORK);
+                android.Manifest.permission.CREATE_APP_SPECIFIC_NETWORK);
     }
 
     private boolean hasNetworkFactoryPermission() {
@@ -4578,6 +4602,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         if (mConstrainedDataSatelliteMetrics) {
             mSatelliteCoarseUsageMetricsCollector.startMonitoring();
+        }
+
+        if (mDeps.isAtLeast26Q2()) {
+            mHandler.sendMessage(mHandler.obtainMessage(EVENT_L4S_DEVELOPER_OPTION_CHANGED));
         }
     }
 
@@ -7592,6 +7620,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
                     break;
                 case EVENT_TIMEOUT_NETWORK_SUSPENDED:
                     handleNetwokSuspendedTimeout((NetworkAgentInfo) msg.obj);
+                    break;
+                case EVENT_L4S_DEVELOPER_OPTION_CHANGED:
+                    handleNetworkL4sChanged();
                     break;
             }
         }
@@ -14194,6 +14225,27 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
     }
 
+    private boolean addConnectivityDiagnosticsCallback(
+            @NonNull ConnectivityDiagnosticsCallbackInfo cbInfo, @NonNull IBinder iCb) {
+        ensureRunningOnConnectivityServiceThread();
+
+        // This means that the client registered the same callback multiple times. Do
+        // not override the previous entry, and exit silently.
+        if (mConnectivityDiagnosticsCallbacks.containsKey(iCb)) {
+            if (VDBG) log("Diagnostics callback is already registered");
+            return false;
+        }
+
+        try {
+            iCb.linkToDeath(cbInfo, 0);
+        } catch (RemoteException e) {
+            return false;
+        }
+
+        mConnectivityDiagnosticsCallbacks.put(iCb, cbInfo);
+        return true;
+    }
+
     private void handleRegisterConnectivityDiagnosticsCallback(
             @NonNull ConnectivityDiagnosticsCallbackInfo cbInfo) {
         ensureRunningOnConnectivityServiceThread();
@@ -14209,24 +14261,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 + "network requests.");
         }
 
-        // This means that the client registered the same callback multiple times. Do
-        // not override the previous entry, and exit silently.
-        if (mConnectivityDiagnosticsCallbacks.containsKey(iCb)) {
-            if (VDBG) log("Diagnostics callback is already registered");
+        if (!addConnectivityDiagnosticsCallback(cbInfo, iCb)) {
+            if (VDBG) log("Fail to register the diagnostics callback");
 
             // Decrement the reference count for this NetworkRequestInfo. The reference count is
             // incremented when the NetworkRequestInfo is created as part of
             // enforceRequestCountLimit().
             nri.mPerUidCounter.decrementCount(nri.mUid);
-            return;
-        }
-
-        mConnectivityDiagnosticsCallbacks.put(iCb, cbInfo);
-
-        try {
-            iCb.linkToDeath(cbInfo, 0);
-        } catch (RemoteException e) {
-            cbInfo.binderDied();
             return;
         }
 

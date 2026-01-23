@@ -20,15 +20,18 @@ import android.Manifest.permission;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.RequiresPermission;
+import android.net.nsd.NsdServiceInfo;
 import android.os.Looper;
 import android.util.ArrayMap;
 import android.util.Log;
 import android.util.Pair;
 
+import static android.net.NetworkCapabilities.NET_CAPABILITY_LOCAL_NETWORK;
+
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.net.module.util.DnsUtils;
 import com.android.net.module.util.SharedLog;
-import com.android.server.connectivity.mdns.MdnsServiceTypeClient.FilterRepliesInfo;
+import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOffloadInfo;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -104,6 +107,21 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
 
         public List<MdnsServiceTypeClient> getAllMdnsServiceTypeClient() {
             return new ArrayList<>(clients.values());
+        }
+
+        @Nullable
+        private MdnsServiceTypeClient getByServiceTypeAndInterfaceName(
+                @NonNull String serviceType, String interfaceName) {
+            final List<MdnsServiceTypeClient> list = new ArrayList<>();
+            final String dnsUpperServiceType = DnsUtils.toDnsUpperCase(serviceType);
+            for (int i = 0; i < clients.size(); i++) {
+                final Pair<String, SocketKey> perSocketServiceType = clients.keyAt(i);
+                if (dnsUpperServiceType.equals(perSocketServiceType.first)
+                        && perSocketServiceType.second.getInterfaceName().equals(interfaceName)) {
+                    return clients.valueAt(i);
+                }
+            }
+            return null;
         }
 
         public List<MdnsServiceTypeClient> getByInterfaceName(@NonNull String interfaceName) {
@@ -265,16 +283,22 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
     private boolean shouldSkipDiscovery(@NonNull SocketKey socketKey,
             @NonNull MdnsSearchOptions searchOptions) {
         final int searchInterfaceIndex = searchOptions.getInterfaceIndex();
-        if (searchOptions.getNetwork() == null
-                && searchInterfaceIndex > 0
-                // The interface index in options should only match interfaces that
-                // do not have any Network; a matching Network should be provided
-                // otherwise.
-                && (socketKey.getNetwork() != null
-                    || socketKey.getInterfaceIndex() != searchInterfaceIndex)) {
-            sharedLog.i("Skipping " + socketKey + " as ifIndex "
-                    + searchInterfaceIndex + " was requested.");
-            return true;
+        if (searchOptions.getNetwork() == null && searchInterfaceIndex > 0) {
+            // Search is for a specific interface index, without a Network object.
+
+            // The interface index in options should only match interfaces that do not have any
+            // Network; a matching Network should be provided otherwise.
+            // For backward compatibility with older callers, this also supports matching sockets
+            // that have a Network, as long as it is a local-only network (like tethering
+            // downstreams on older platforms), which would previously not have a Network object.
+            final boolean isLocalNetwork = (socketKey.getCreationCapabilitiesBits()
+                    & (1L << NET_CAPABILITY_LOCAL_NETWORK)) != 0L;
+            if ((socketKey.getNetwork() != null && !isLocalNetwork)
+                    || socketKey.getInterfaceIndex() != searchInterfaceIndex) {
+                sharedLog.i("Skipping " + socketKey + " as ifIndex "
+                        + searchInterfaceIndex + " was requested.");
+                return true;
+            }
         }
         return false;
     }
@@ -362,6 +386,28 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
                 handleOnResponseReceived(packet, socketKey));
     }
 
+    /**
+     * Handles {@code NsdServiceInfo} injected by OffloadEngine.
+     *
+     * @param serviceInfo The {@link NsdServiceInfo} object
+     * @param interfaceName  The interface name where client originally requested the service.
+     */
+    public void handleProxyOffloadEngineResponse(@NonNull NsdServiceInfo serviceInfo,
+            boolean isServiceLost,
+            @NonNull String interfaceName) {
+        MdnsServiceTypeClient serviceTypeClient =
+                perSocketServiceTypeClients.getByServiceTypeAndInterfaceName(
+                        serviceInfo.getServiceType(),
+                        interfaceName
+                );
+        if (serviceTypeClient == null) {
+            sharedLog.w("No Client Found for service type: "
+                    + serviceInfo.getServiceType() + " and interface: " + interfaceName);
+        } else {
+            serviceTypeClient.processProxyOffloadEngineResponse(serviceInfo, isServiceLost);
+        }
+    }
+
     private void handleOnResponseReceived(@NonNull MdnsPacket packet,
             @NonNull SocketKey socketKey) {
         for (MdnsServiceTypeClient serviceTypeClient : getMdnsServiceTypeClient(socketKey)) {
@@ -443,10 +489,10 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
      * interface and offload types.
      *
      * @param interfaceName The name of the network interface for which offloading is starting.
-     * @return A list of {@link FilterRepliesInfo} relevant to the specified interface.
+     * @return A list of {@link DiscoveryOffloadInfo} relevant to the specified interface.
      */
     @NonNull
-    public List<FilterRepliesInfo> notifyOffloadStart(@NonNull String interfaceName) {
+    public List<DiscoveryOffloadInfo> notifyOffloadStart(@NonNull String interfaceName) {
         discoveryExecutor.ensureRunningOnHandlerThread();
         sharedLog.log("notifyOffloadStart for interface:" + interfaceName);
         socketClient.notifyOffloadStart(interfaceName);
@@ -455,10 +501,10 @@ public class MdnsDiscoveryManager implements MdnsSocketClientBase.Callback {
             return Collections.emptyList();
         }
 
-        final List<FilterRepliesInfo> info = new ArrayList<>();
+        final List<DiscoveryOffloadInfo> info = new ArrayList<>();
         for (MdnsServiceTypeClient serviceTypeClient :
                 getMdnsServiceTypeClientByInterfaceName(interfaceName)) {
-            info.addAll(serviceTypeClient.getFilterRepliesInfo());
+            info.addAll(serviceTypeClient.getAllDiscoveryOffloadInfos());
         }
         return info;
     }

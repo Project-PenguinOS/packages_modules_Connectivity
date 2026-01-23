@@ -14,7 +14,7 @@
  * limitations under the License
  */
 
-package com.android.server.connectivity.mdns;
+package com.android.server.connectivity.mdns.legacy;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -30,6 +30,7 @@ import android.os.Build;
 import androidx.test.InstrumentationRegistry;
 
 import com.android.net.module.util.SharedLog;
+import com.android.server.connectivity.mdns.NetworkInterfaceWrapper;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
 
@@ -40,6 +41,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;

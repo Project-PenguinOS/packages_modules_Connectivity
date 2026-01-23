@@ -28,7 +28,9 @@ from net_tests_utils.host.python.apf_utils import (
     get_apf_counters_from_cmd,
     get_exclude_all_host_ipv6_multicast_addresses,
     get_hardware_address,
+    get_hop_limit,
     get_ipv4_addresses,
+    get_ipv4_multicast_addresses,
     get_matched_packet_counts,
     get_non_tentative_ipv6_addresses,
     is_apf_dump_counters_supported,
@@ -170,6 +172,39 @@ class TestApfUtils(base_test.BaseTestClass, parameterized.TestCase):
     ip_addresses = get_exclude_all_host_ipv6_multicast_addresses(
         self.mock_ad, 'wlan0'
     )
+    asserts.assert_equal(ip_addresses, [])
+
+  @patch('net_tests_utils.host.python.adb_utils.adb_shell')
+  def test_get_hop_limit_success(self, mock_adb_shell: MagicMock) -> None:
+    mock_adb_shell.return_value = '64\n'
+    hop_limit = get_hop_limit(self.mock_ad, 'wlan0')
+    asserts.assert_equal(hop_limit, 64)
+
+  @patch('net_tests_utils.host.python.adb_utils.adb_shell')
+  def test_get_hop_limit_failure(self, mock_adb_shell: MagicMock) -> None:
+    mock_adb_shell.return_value = 'invalid'
+    with asserts.assert_raises(UnexpectedBehaviorError):
+      get_hop_limit(self.mock_ad, 'wlan0')
+
+  @patch('net_tests_utils.host.python.adb_utils.adb_shell')
+  def test_get_ipv4_multicast_addresses_success(
+      self, mock_adb_shell: MagicMock
+  ) -> None:
+    mock_adb_shell.return_value = """
+2:      enp1s0
+        inet  239.255.255.250 users 24
+        inet  224.0.0.251 users 25
+        inet  224.0.0.1
+"""
+    ip_addresses = get_ipv4_multicast_addresses(self.mock_ad, 'enp1s0')
+    asserts.assert_equal(ip_addresses, ['239.255.255.250', '224.0.0.251'])
+
+  @patch('net_tests_utils.host.python.adb_utils.adb_shell')
+  def test_get_ipv4_multicast_addresses_not_found(
+      self, mock_adb_shell: MagicMock
+  ) -> None:
+    mock_adb_shell.return_value = ''
+    ip_addresses = get_ipv4_multicast_addresses(self.mock_ad, 'enp1s0')
     asserts.assert_equal(ip_addresses, [])
 
   @patch('net_tests_utils.host.python.adb_utils.adb_shell')

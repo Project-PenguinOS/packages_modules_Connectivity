@@ -20,6 +20,7 @@ import static android.net.ConnectivityManager.MULTIPATH_PREFERENCE_HANDOVER;
 import static android.net.ConnectivityManager.MULTIPATH_PREFERENCE_PERFORMANCE;
 import static android.net.ConnectivityManager.MULTIPATH_PREFERENCE_RELIABILITY;
 
+import static com.android.tethering.flags.Flags.FLAG_L4S_DEVELOPER_OPTION;
 import static com.android.net.module.util.ConnectivitySettingsUtils.getNetworkLegacyGlobalAvoidBadWifiSetting;
 import static com.android.net.module.util.ConnectivitySettingsUtils.getNetworkAvoidBadWifiSetting;
 import static com.android.net.module.util.ConnectivitySettingsUtils.getPrivateDnsModeAsString;
@@ -356,6 +357,22 @@ public class ConnectivitySettingsManager {
     public static final int NETWORK_AVOID_BAD_WIFI_AVOID = 2;
 
     /**
+     * L4S developer option is disabled.
+     */
+    @FlaggedApi(FLAG_L4S_DEVELOPER_OPTION)
+    public static final int L4S_DEVELOPER_OPTION_DISABLED = 0;
+    /**
+     * L4S developer option is enabled.
+     */
+    @FlaggedApi(FLAG_L4S_DEVELOPER_OPTION)
+    public static final int L4S_DEVELOPER_OPTION_ENABLED = 1;
+    /**
+     * The system will automatically determine the L4S developer option configuration.
+     */
+    @FlaggedApi(FLAG_L4S_DEVELOPER_OPTION)
+    public static final int L4S_DEVELOPER_OPTION_AUTOMATIC = 2;
+
+    /**
      * Per-carrier setting whether to switch away from wifi networks that lose access.
      *
      * When a device is connected to both mobile and wifi, and wifi loses Internet
@@ -392,6 +409,15 @@ public class ConnectivitySettingsManager {
             NETWORK_AVOID_BAD_WIFI_AVOID,
     })
     public @interface NetworkAvoidBadWifi {}
+
+    /** @hide */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(value = {
+            L4S_DEVELOPER_OPTION_DISABLED,
+            L4S_DEVELOPER_OPTION_ENABLED,
+            L4S_DEVELOPER_OPTION_AUTOMATIC,
+    })
+    public @interface L4sDeveloperOption {}
 
     /**
      * User setting for ConnectivityManager.getMeteredMultipathPreference(). This value may be
@@ -456,6 +482,17 @@ public class ConnectivitySettingsManager {
     public static final String INGRESS_RATE_LIMIT_BYTES_PER_SECOND =
             "ingress_rate_limit_bytes_per_second";
 
+    /**
+     * A global setting to control L4S developer option.
+     *
+     * This setting is a string that can have one of the following values:
+     * - "0": L4S developer option is disabled.
+     * - "1": L4S developer option is enabled.
+     * - null: The system will automatically determine the L4S developer option configuration.
+     *
+     *  @hide
+     */
+    public static final String L4S_DEVELOPER_OPTION = "l4s_developer_option";
     /**
      * Get mobile data activity timeout from {@link Settings}.
      *
@@ -583,8 +620,8 @@ public class ConnectivitySettingsManager {
      * Get dns resolver samples range from {@link Settings}.
      *
      * @param context The {@link Context} to query the setting.
-     * @return The {@link Range<Integer>} of samples needed for statistics to be considered
-     *         meaningful in the system DNS resolver.
+     * @return The {@link Range} of {@link Integer} of samples needed for statistics to be
+     *         considered meaningful in the system DNS resolver.
      */
     @NonNull
     public static Range<Integer> getDnsResolverSampleRanges(@NonNull Context context) {
@@ -1310,5 +1347,36 @@ public class ConnectivitySettingsManager {
         Settings.Global.putLong(context.getContentResolver(),
                 INGRESS_RATE_LIMIT_BYTES_PER_SECOND,
                 rateLimitInBytesPerSec);
+    }
+
+    /**
+     * Set the L4S developer option setting.
+     *
+     * This setting is stored as a global system setting.
+     *
+     * @param context The {@link Context} to set the setting.
+     * @param value The desired L4S developer option configuration, must be one of the
+     * {@code @L4sDeveloperOption} constants.
+     * @throws IllegalArgumentException if the provided {@code value} is invalid.
+     *
+     */
+    @FlaggedApi(FLAG_L4S_DEVELOPER_OPTION)
+    public static void setL4sDeveloperOption(
+            @NonNull Context context, @L4sDeveloperOption int value) {
+        ConnectivitySettingsUtils.setL4sDeveloperOptionSetting(context, value);
+    }
+
+    /**
+     * Get the L4S developer option setting.
+     *
+     * This checks the global system setting set by {@link #setL4sDeveloperOption(Context, int)}.
+     *
+     * @param context The {@link Context} to query the setting.
+     * @return the value must be one of the {@code @L4sDeveloperOption} constants.
+     */
+    @FlaggedApi(FLAG_L4S_DEVELOPER_OPTION)
+    @L4sDeveloperOption
+    public static int getL4sDeveloperOption(@NonNull Context context) {
+        return ConnectivitySettingsUtils.getL4sDeveloperOptionSetting(context);
     }
 }

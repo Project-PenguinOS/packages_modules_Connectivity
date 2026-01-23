@@ -1573,12 +1573,6 @@ static int libbpfPrint(enum libbpf_print_level lvl, const char *const formatStr,
 }
 
 static int doLoad(char** argv, char * const envp[]) {
-    if (!isAtLeastS) {
-        ALOGE("Impossible - not reachable on Android <S.");
-        // for safety, we don't fail, this is a just-in-case workaround
-        // for any possible busted 'optimized' start everything vendor init hacks on R
-        return 0;
-    }
     libbpf_set_print(libbpfPrint);
 
     const bool runningAsRoot = !getuid();  // true iff U QPR3 or V+

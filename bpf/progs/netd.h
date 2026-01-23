@@ -99,6 +99,18 @@ typedef struct {
 } SkStorageValue;
 STRUCT_SIZE(SkStorageValue, 8 + 4 + 4);
 
+enum LoopbackAccessResult : uint32_t {
+  LOOPBACK_ACCESS_ALLOWED = 0,
+  LOOPBACK_ACCESS_BLOCKED = (1 << 0),
+};
+
+typedef struct {
+  uint32_t src_uid;
+  uint32_t dst_uid;
+  enum LoopbackAccessResult result;
+} LoopbackAccessEvent;
+STRUCT_SIZE(LoopbackAccessEvent, 4 + 4 + 4);
+
 #define STATS_MAP_SIZE 5000
 #define CONFIGURATION_MAP_SIZE 2
 
@@ -171,6 +183,10 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define LOCAL_NET_NOTE_OP_RINGBUF_PATH BPF_NETD_PATH "map_netd_local_net_note_op_ringbuf"
 #define LOCAL_NET_NOTE_OP_CACHE_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_cache_map"
 #define LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_enabled_map"
+#define LOOPBACK_ACCESS_RINGBUF_NETD_PATH BPF_NETD_PATH "map_netd_loopback_access_ringbuf"
+#define LOOPBACK_ACCESS_CACHE_MAP_NETD_PATH BPF_NETD_PATH "map_netd_loopback_access_cache_map"
+#define LOOPBACK_ACCESS_METRICS_ENABLED_MAP_NETD_PATH                                         \
+    BPF_NETD_PATH "map_netd_loopback_access_metrics_enabled_map"
 
 #define L4S_INGRESS_ETHER_PROG_PATH   BPF_NETD_PATH "prog_netd_schedcls_ingress_accecn_eth"
 #define L4S_EGRESS_ETHER_PROG_PATH    BPF_NETD_PATH "prog_netd_schedcls_egress_accecn_eth"
@@ -290,6 +306,19 @@ typedef struct {
     uint32_t pid;
 } LocalNetNoteOp;
 STRUCT_SIZE(LocalNetNoteOp, 4 + 4); // 8
+
+// IP packet data from an __sk_buff
+typedef struct {
+    struct in6_addr saddr; // Stores v6 or v4-mapped-v6
+    struct in6_addr daddr; // Stores v6 or v4-mapped-v6
+    __be16 sport;
+    __be16 dport;
+    uint8_t ip_proto;
+    uint8_t tcp_flags;
+    uint8_t ip_version;
+    uint8_t pad;
+} SkbIpPacketData;
+STRUCT_SIZE(SkbIpPacketData, 16 + 16 + 2 + 2 + 1 + 1 + 1 + 1); // 40
 
 // Entry in the configuration map that stores which UID rules are enabled.
 #define UID_RULES_CONFIGURATION_KEY 0

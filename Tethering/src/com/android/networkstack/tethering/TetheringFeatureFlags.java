@@ -50,11 +50,6 @@ public class TetheringFeatureFlags {
             "tether_force_random_prefix_base_selection";
 
     /**
-     * A feature flag to control whether the synchronize state machine is enabled.
-     */
-    public static final String TETHER_ENABLE_SYNC_SM = "tether_enable_sync_sm";
-
-    /**
      * A feature flag to control whether the active sessions metrics should be enabled.
      * Disabled by default.
      */

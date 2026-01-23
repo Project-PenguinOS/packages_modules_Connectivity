@@ -43,4 +43,7 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"ଏକ ଅଜଣା ନେଟୱାର୍କ ପ୍ରକାର"</string>
+    <string name="connect_to_service_title" msgid="2417012530980077322">"ସର୍ଭିସ ସହ କନେକ୍ଟ କରନ୍ତୁ"</string>
+    <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> ଏକ ସ୍ଥାନୀୟ ନେଟୱାର୍କରେ ଅନ୍ୟ ଏକ ଡିଭାଇସ ସହ କନେକ୍ଟ କରିବାକୁ ଚାହେଁ"</string>
+    <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"ସର୍ଭିସେସ ପାଇଁ ସ୍କାନ କରାଯାଉଛି"</string>
 </resources>

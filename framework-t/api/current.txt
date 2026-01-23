@@ -317,6 +317,7 @@ package android.net.nsd {
     method public void setAttribute(String, String);
     method @Deprecated public void setHost(java.net.InetAddress);
     method public void setHostAddresses(@NonNull java.util.List<java.net.InetAddress>);
+    method @FlaggedApi("com.android.tethering.flags.nsd_mdns_scan_offload") public void setHostname(@Nullable String);
     method public void setNetwork(@Nullable android.net.Network);
     method public void setPort(int);
     method public void setServiceName(String);

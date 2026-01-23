@@ -137,13 +137,13 @@ open class TestableNetworkAgent(
          * Convenience method to initialize a [TestableNetworkAgent] on a given interface.
          *
          * This waits for link-local addresses to be setup and ensures LinkProperties are updated
-         * with the addresses.
+         * with the addresses. The wait happens only when linkLocalAddressTimeout > 0.
          */
         fun createOnInterface(
             context: Context,
             looper: Looper,
             ifaceName: String,
-            timeoutMs: Long
+            linkLocalAddressTimeout: Long
         ): TestableNetworkAgent {
             val lp = LinkProperties().apply {
                 interfaceName = ifaceName
@@ -168,35 +168,40 @@ open class TestableNetworkAgent(
 
             // Wait until the link-local address can be used. Address flags are not available
             // without elevated permissions, so check that bindSocket works.
-            assertEventuallyTrue("No usable v6 address after $timeoutMs ms", timeoutMs) {
-                // To avoid race condition between socket connection succeeding and interface
-                // returning a non-empty address list. Verify that interface returns a non-empty
-                // list, before trying the socket connection.
-                if (NetworkInterface.getByName(ifaceName).interfaceAddresses.isEmpty()) {
-                    return@assertEventuallyTrue false
-                }
+            if (linkLocalAddressTimeout > 0) {
+                assertEventuallyTrue(
+                    "No usable v6 address after $linkLocalAddressTimeout ms",
+                    linkLocalAddressTimeout
+                ) {
+                    // To avoid race condition between socket connection succeeding and interface
+                    // returning a non-empty address list. Verify that interface returns a non-empty
+                    // list, before trying the socket connection.
+                    if (NetworkInterface.getByName(ifaceName).interfaceAddresses.isEmpty()) {
+                        return@assertEventuallyTrue false
+                    }
 
-                val sock = Os.socket(OsConstants.AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
-                tryTest {
-                    network.bindSocket(sock)
-                    Os.connect(sock, parseNumericAddress("ff02::fb%$ifaceName"), 12345)
-                    true
-                }.catch<ErrnoException> {
-                    if (it.errno != ENETUNREACH && it.errno != EADDRNOTAVAIL) {
-                        throw it
+                    val sock = Os.socket(OsConstants.AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
+                    tryTest {
+                        network.bindSocket(sock)
+                        Os.connect(sock, parseNumericAddress("ff02::fb%$ifaceName"), 12345)
+                        true
+                    }.catch<ErrnoException> {
+                        if (it.errno != ENETUNREACH && it.errno != EADDRNOTAVAIL) {
+                            throw it
+                        }
+                        false
+                    }.catch<SocketException> {
+                        // OnNetworkCreated does not exist on R, so a SocketException caused by ENONET
+                        // may be seen before the network is created
+                        if (isAtLeastS()) throw it
+                        val cause = it.cause as? ErrnoException ?: throw it
+                        if (cause.errno != ENONET) {
+                            throw it
+                        }
+                        false
+                    } cleanup {
+                        Os.close(sock)
                     }
-                    false
-                }.catch<SocketException> {
-                    // OnNetworkCreated does not exist on R, so a SocketException caused by ENONET
-                    // may be seen before the network is created
-                    if (isAtLeastS()) throw it
-                    val cause = it.cause as? ErrnoException ?: throw it
-                    if (cause.errno != ENONET) {
-                        throw it
-                    }
-                    false
-                } cleanup {
-                    Os.close(sock)
                 }
             }
 

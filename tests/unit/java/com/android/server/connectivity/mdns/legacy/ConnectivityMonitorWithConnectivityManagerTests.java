@@ -14,7 +14,7 @@
  * limitations under the License
  */
 
-package com.android.server.connectivity.mdns;
+package com.android.server.connectivity.mdns.legacy;
 
 import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
 import static android.net.InetAddresses.parseNumericAddress;
@@ -39,6 +39,8 @@ import android.net.RouteInfo;
 import android.os.Build;
 
 import com.android.net.module.util.SharedLog;
+import com.android.server.connectivity.mdns.NetworkInterfaceWrapper;
+import com.android.server.connectivity.mdns.SocketKey;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
 

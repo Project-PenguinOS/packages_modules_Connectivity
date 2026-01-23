@@ -41,10 +41,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -110,6 +112,7 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
         super.setUp();
 
         mNetworkAgent = mock(VcnNetworkAgent.class);
+
         doReturn(mNetworkAgent)
                 .when(mDeps)
                 .newNetworkAgent(any(), any(), any(), any(), any(), any(), any(), any(), any());
@@ -622,23 +625,50 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
     }
 
     @Test
-    public void testValidatedTriggered_logsMetrics() throws Exception {
+    public void testValidationTriggered_logsMetrics() throws Exception {
+        // Relay calls to a real VcnNetworkAgent.
+        doAnswer(
+                        invocation -> {
+                            final VcnNetworkAgent agent =
+                                    new VcnNetworkAgent(
+                                            invocation.getArgument(0),
+                                            invocation.getArgument(1),
+                                            invocation.getArgument(2),
+                                            invocation.getArgument(3),
+                                            invocation.getArgument(4),
+                                            invocation.getArgument(5),
+                                            invocation.getArgument(6),
+                                            invocation.getArgument(7),
+                                            invocation.getArgument(8));
+                            mNetworkAgent = spy(agent);
+
+                            doReturn(mVcnNetwork).when(mNetworkAgent).getNetwork();
+                            doReturn(NETWORK_AGENT_ID).when(mNetworkAgent).getIdentityHashCode();
+                            return mNetworkAgent;
+                        })
+                .when(mDeps)
+                .newNetworkAgent(any(), any(), any(), any(), any(), any(), any(), any(), any());
+
         triggerChildOpened();
         mTestLooper.dispatchAll();
 
+        // Network was first validated.
         triggerValidation(NetworkAgent.VALIDATION_STATUS_VALID);
-
-        verify(mVcnMetrics).logVcnNetworkValidated(anyInt(), eq(NETWORK_AGENT_ID));
-    }
-
-    @Test
-    public void testNotValidatedTriggered_logsMetrics() throws Exception {
-        triggerChildOpened();
-        mTestLooper.dispatchAll();
-
+        // Network then becomes invalid.
         triggerValidation(NetworkAgent.VALIDATION_STATUS_NOT_VALID);
 
-        verify(mVcnMetrics).logVcnNetworkNotValidated(anyInt(), eq(NETWORK_AGENT_ID));
+        verify(mVcnMetrics)
+                .logVcnNetworkValidationStatus(
+                        anyInt(),
+                        anyInt(),
+                        eq(VcnMetrics.VALIDATION_STATUS_PENDING),
+                        eq(VcnMetrics.VALIDATION_STATUS_VALID));
+        verify(mVcnMetrics)
+                .logVcnNetworkValidationStatus(
+                        anyInt(),
+                        anyInt(),
+                        eq(VcnMetrics.VALIDATION_STATUS_VALID),
+                        eq(VcnMetrics.VALIDATION_STATUS_NOT_VALID));
     }
 
     @Test

@@ -24,7 +24,6 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.Network;
 import android.net.nsd.NsdServiceInfo;
-import android.net.nsd.OffloadEngine;
 import android.net.nsd.OffloadServiceInfo;
 import android.os.Build;
 import android.os.SystemClock;
@@ -415,19 +414,21 @@ public class MdnsUtils {
 
     /**
      * Creates an {@link OffloadServiceInfo} object from a
-     * {@link MdnsServiceTypeClient.FilterRepliesInfo} instance.
+     * {@link MdnsServiceTypeClient.DiscoveryOffloadInfo} instance.
      *
      * This method facilitates the conversion of filtering criteria into a service information
      * object suitable for offloading mechanisms.
      *
-     * @param info The {@link MdnsServiceTypeClient.FilterRepliesInfo} containing the filtering
+     * @param info The {@link MdnsServiceTypeClient.DiscoveryOffloadInfo} containing the filtering
      *             criteria.
-     * @return A new {@link OffloadServiceInfo} instance populated with data from the
-     *        {@code FilterRepliesInfo}.
+     * @param offloadType The type of the {@link android.net.nsd.OffloadEngine.OffloadType}
+     * @return A new {@link OffloadServiceInfo} instance populated with data from the given
+     *        {@code OffloadType}.
      */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    public static OffloadServiceInfo createOffloadServiceInfoFromFilterReplies(
-            @NonNull MdnsServiceTypeClient.FilterRepliesInfo info) {
+    public static OffloadServiceInfo createOffloadServiceInfoFromDiscoveryOffload(
+            @NonNull MdnsServiceTypeClient.DiscoveryOffloadInfo info,
+            long offloadType) {
         return new OffloadServiceInfo(
                 new OffloadServiceInfo.Key(info.serviceName, info.serviceType),
                 new ArrayList<>(info.subtypes),
@@ -437,7 +438,7 @@ public class MdnsUtils {
                 // would simply allow every mDNS reply to pass through if there are too many
                 // offloaded services, so there is no point in setting priorities.
                 0 /* priority */,
-                OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES);
+                offloadType);
     }
 
     /**

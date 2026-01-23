@@ -43,4 +43,7 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"未知网络类型"</string>
+    <string name="connect_to_service_title" msgid="2417012530980077322">"连接到服务"</string>
+    <string name="connect_to_service_summary" msgid="8059566528115046359">"“<xliff:g id="APP_NAME">%1$s</xliff:g>”想要连接到本地网络中的其他设备"</string>
+    <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"正在扫描服务"</string>
 </resources>

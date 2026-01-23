@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.android.server.connectivity.mdns;
+package com.android.server.connectivity.mdns.legacy;
 
 import android.net.Network;
 

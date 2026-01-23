@@ -22,9 +22,11 @@ import static android.Manifest.permission.NETWORK_SETTINGS;
 import static android.Manifest.permission.NETWORK_STACK;
 import static android.content.pm.PackageManager.FEATURE_LEANBACK;
 import static android.net.ConnectivityManager.NETID_UNSET;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_LOCAL_NETWORK;
 import static android.net.NetworkCapabilities.TRANSPORT_VPN;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 import static android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK;
+import static android.net.connectivity.ConnectivityCompatChanges.ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS;
 import static android.net.connectivity.ConnectivityCompatChanges.RESTRICT_LOCAL_NETWORK;
 import static android.net.nsd.AdvertisingRequest.FLAG_OFFLOAD_ONLY;
 import static android.net.nsd.AdvertisingRequest.FLAG_SKIP_PROBING;
@@ -55,8 +57,9 @@ import static com.android.server.connectivity.mdns.MdnsRecord.MAX_LABEL_LENGTH;
 import static com.android.server.connectivity.mdns.MdnsSearchOptions.AGGRESSIVE_QUERY_MODE;
 import static com.android.server.connectivity.mdns.MdnsSearchOptions.PASSIVE_QUERY_MODE;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.Clock;
-import static com.android.server.connectivity.mdns.util.MdnsUtils.createOffloadServiceInfoFromFilterReplies;
+import static com.android.server.connectivity.mdns.util.MdnsUtils.createOffloadServiceInfoFromDiscoveryOffload;
 import static com.android.tethering.flags.Flags.FLAG_NSD_SERVICE_PICKER;
+import static com.android.tethering.flags.Flags.nsdMdnsScanOffload;
 
 import android.Manifest;
 import android.annotation.NonNull;
@@ -118,6 +121,7 @@ import com.android.internal.util.IndentingPrintWriter;
 import com.android.metrics.NetworkNsdReportedMetrics;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.CollectionUtils;
+import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.DnsUtils;
 import com.android.net.module.util.HandlerUtils;
@@ -134,7 +138,7 @@ import com.android.server.connectivity.mdns.MdnsMultinetworkSocketClient;
 import com.android.server.connectivity.mdns.MdnsSearchOptions;
 import com.android.server.connectivity.mdns.MdnsServiceBrowserListener;
 import com.android.server.connectivity.mdns.MdnsServiceInfo;
-import com.android.server.connectivity.mdns.MdnsServiceTypeClient.FilterRepliesInfo;
+import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOffloadInfo;
 import com.android.server.connectivity.mdns.MdnsSocketProvider;
 import com.android.server.connectivity.mdns.OffloadCallback;
 import com.android.server.connectivity.mdns.util.MdnsUtils;
@@ -213,6 +217,10 @@ public class NsdService extends INsdManager.Stub {
     private static final String MDNS_ALLOWLIST_FLAG_SUFFIX = "_version";
 
     private static final String FORCE_ENABLE_FLAG_FOR_TEST_PREFIX = "test_";
+
+    // Copied from com.android.networkstack.tethering.TetheringFeatureFlags.
+    private static final String TETHERING_AND_P2P_GO_LOCAL_AGENT =
+            "tethering_and_p2p_go_local_agent";
 
     @VisibleForTesting
     static final String MDNS_CONFIG_RUNNING_APP_ACTIVE_IMPORTANCE_CUTOFF =
@@ -520,7 +528,7 @@ public class NsdService extends INsdManager.Stub {
                 return;
             }
             final NsdServiceInfo nsdServiceInfo = buildNsdServiceInfoFromMdnsEvent(
-                    serviceInfo, eventCode);
+                    serviceInfo, eventCode, mClientInfo);
             if (nsdServiceInfo == null) {
                 // Errors are already logged if null
                 return;
@@ -1135,6 +1143,10 @@ public class NsdService extends INsdManager.Stub {
                         (OffloadEngineInfo) msg.obj);
                 case NsdManager.UNREGISTER_OFFLOAD_ENGINE -> handleUnregisterOffloadEngine(
                         (IOffloadEngine) msg.obj);
+                case NsdManager.INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE ->
+                        handleInjectProxyOffloadEngineResponse(
+                                (ProxyOffloadEngineResponse) msg.obj
+                        );
                 case NsdManager.REGISTER_CLIENT -> handleRegisterClient(clientRequestId,
                         (ConnectorArgs) msg.obj);
                 case NsdManager.UNREGISTER_CLIENT -> handleUnregisterClient(
@@ -1747,6 +1759,17 @@ public class NsdService extends INsdManager.Stub {
         }
     }
 
+    private void handleInjectProxyOffloadEngineResponse(
+            ProxyOffloadEngineResponse response) {
+        final NsdServiceInfo serviceInfo = response.serviceInfo;
+        final boolean isServiceLost = response.isServiceLost;
+        final String ifaceName = response.interfaceName;
+        mMdnsDiscoveryManager.handleProxyOffloadEngineResponse(
+                serviceInfo,
+                isServiceLost,
+                ifaceName);
+    }
+
     private void handleRegisterClient(int clientRequestId, ConnectorArgs arg) {
         final INsdManagerCallback cb = arg.callback;
         try {
@@ -2020,7 +2043,8 @@ public class NsdService extends INsdManager.Stub {
     }
 
     @Nullable
-    private NsdServiceInfo buildNsdServiceInfoFromMdnsEvent(MdnsServiceInfo serviceInfo, int code) {
+    private NsdServiceInfo buildNsdServiceInfoFromMdnsEvent(
+            final MdnsServiceInfo serviceInfo, int code, ClientInfo clientInfo) {
         final String[] typeArray = serviceInfo.getServiceType();
         final String joinedType;
         if (typeArray.length == 0
@@ -2051,7 +2075,19 @@ public class NsdService extends INsdManager.Stub {
         }
         final String serviceName = serviceInfo.getServiceInstanceName();
         final NsdServiceInfo servInfo = new NsdServiceInfo(serviceName, serviceType);
-        final Network network = serviceInfo.getNetwork();
+
+        final long caps = serviceInfo.getCreationCapabilitiesBits();
+        final boolean isLocalNetwork = (caps & (1L << NET_CAPABILITY_LOCAL_NETWORK)) != 0L;
+
+        final Network network;
+        if (!isLocalNetwork || (mMdnsFeatureFlags.mUseNetworkCallbackForLocalNetworks
+                && CompatChanges.isChangeEnabled(
+                ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS, clientInfo.getUid()))) {
+            network = serviceInfo.getNetwork();
+        } else {
+            network = null;
+        }
+
         // In MdnsDiscoveryManagerEvent, the Network can be null which means it is a
         // network for Tethering interface. In other words, the network == null means the
         // network has netId = INetd.LOCAL_NET_ID.
@@ -2088,7 +2124,8 @@ public class NsdService extends INsdManager.Stub {
         }
 
         // Deal with other callbacks.
-        final NsdServiceInfo info = buildNsdServiceInfoFromMdnsEvent(event.mMdnsServiceInfo, code);
+        final NsdServiceInfo info = buildNsdServiceInfoFromMdnsEvent(event.mMdnsServiceInfo,
+                code, clientInfo);
         // Errors are already logged if null
         if (info == null) return false;
         mServiceLogs.log(String.format(
@@ -2425,7 +2462,9 @@ public class NsdService extends INsdManager.Stub {
                 .setIsSelectiveMdnsResponseOffloadEnabled(mDeps.isAconfigFlagEnabled(
                         com.android.tethering.mainline.beta
                                 .Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD))
-                .setUseNetworkCallbackForLocalNetworksEnabled(mDeps.isAconfigFlagEnabled(
+                .setUseNetworkCallbackForLocalNetworksEnabled(
+                        mDeps.isSupportTetheringAndP2pGoLocalAgent(mContext)
+                        && mDeps.isAconfigFlagEnabled(
                         Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS))
                 .setIsMdnsScanOffloadEnabled(mDeps.isAconfigFlagEnabled(
                         com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD))
@@ -2533,6 +2572,34 @@ public class NsdService extends INsdManager.Stub {
         }
 
         /** Get whether a feature config is enabled. */
+        /** Get whether tethering and P2P GO local agent is enabled. */
+        public boolean isSupportTetheringAndP2pGoLocalAgent(Context context) {
+            // Determines support for the Tethering/P2P GO local network agent. This feature is
+            // gated on Android V+ because it requires NET_CAPABILITY_LOCAL_NETWORK.
+            // For 25Q4+, it is enabled by default with a kill switch to prevent impacting
+            // existing devices if issues arise. For older V+ devices, rollout is controlled
+            // by a mainline beta flag.
+
+            // This flag is also used by IpServer. Because the flag value is read during service
+            // construction and cached, the service will continue to use the old value even if the
+            // aconfig flag is changed on a running device. The service would need to be restarted
+            // to pick up the new value, and a reboot is the most common way for that to happen.
+            // If the flag's value changed between IpServer and NsdService initializations, their
+            // flags may be out-of-sync since they read the value separately.
+            // a. IpServer(false), NsdService(true): NsdService expects the tethering event from
+            //    the network callback, but IpServer does not send it. Thus, NsdService breaks on
+            //    downstream interfaces.
+            // b. IpServer(true), NsdService(false): NsdService learns downstream events from
+            //    the tethering callback, so nothing breaks.
+            return SdkLevel.isAtLeastV()
+                    && (SdkUtil.isAtLeast25Q4()
+                    ? isTetheringFeatureNotChickenedOut(context,
+                            TETHERING_AND_P2P_GO_LOCAL_AGENT)
+                    : isAconfigFlagEnabled(com.android.tethering.mainline.beta.Flags
+                            .FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT));
+        }
+
+        /** Get whether a feature config is enabled. */
         public boolean isAconfigFlagEnabled(String feature) {
             return switch (feature) {
                 case com.android.tethering.mainline.beta
@@ -2546,6 +2613,9 @@ public class NsdService extends INsdManager.Stub {
                         com.android.tethering.flags.Flags.nsdMdnsScanOffload();
                 case FLAG_NSD_SERVICE_PICKER ->
                         com.android.tethering.flags.Flags.nsdServicePicker();
+                case com.android.tethering.mainline.beta.Flags
+                        .FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT ->
+                        com.android.tethering.mainline.beta.Flags.tetheringAndP2pGoLocalAgent();
                 default -> throw new IllegalStateException("Unknown flag " + feature);
             };
         }
@@ -2726,21 +2796,47 @@ public class NsdService extends INsdManager.Stub {
                 mAdvertiser.notifyOffloadStart(targetInterface);
         for (MdnsAdvertiser.OffloadServiceInfoWrapper wrapper : offloadWrappers) {
             try {
-                offloadEngine.onOffloadServiceUpdated(wrapper.mOffloadServiceInfo);
+                if (nsdMdnsScanOffload()) {
+                    long updatedOffloadType = offloadEngineInfo.mOffloadType
+                            & wrapper.mOffloadServiceInfo.getOffloadType();
+                    if (updatedOffloadType != 0) {
+                        OffloadServiceInfo updatedOffloadServiceInfo =
+                                wrapper.mOffloadServiceInfo.withOffloadType(updatedOffloadType);
+                        offloadEngine.onOffloadServiceUpdated(updatedOffloadServiceInfo);
+                    }
+                } else {
+                    offloadEngine.onOffloadServiceUpdated(wrapper.mOffloadServiceInfo);
+                }
+
             } catch (RemoteException e) {
                 // Can happen in regular cases, do not log a stacktrace
                 Log.i(TAG, "Failed to send offload callback, remote died: " + e.getMessage());
             }
         }
 
-        // Check if the engine supports OFFLOAD_TYPE_FILTER_REPLIES
-        if ((offloadEngineInfo.mOffloadType & OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES) != 0) {
-            final List<FilterRepliesInfo> discoveryOffloadInfo =
+        // Check if the engine supports offload type for offloaded discovery
+        if ((offloadEngineInfo.mOffloadType
+                & DiscoveryOffloadInfo.OFFLOAD_TYPE) != 0) {
+            final List<DiscoveryOffloadInfo> discoveryOffloadInfo =
                     mMdnsDiscoveryManager.notifyOffloadStart(targetInterface);
-            for (FilterRepliesInfo info : discoveryOffloadInfo) {
+            for (DiscoveryOffloadInfo info : discoveryOffloadInfo) {
                 try {
-                    offloadEngine.onOffloadServiceUpdated(
-                            createOffloadServiceInfoFromFilterReplies(info));
+                    if (nsdMdnsScanOffload()) {
+                        offloadEngine.onOffloadServiceUpdated(
+                                createOffloadServiceInfoFromDiscoveryOffload(
+                                        info,
+                                        offloadEngineInfo.mOffloadType
+                                                & DiscoveryOffloadInfo.OFFLOAD_TYPE
+                                )
+                        );
+                    } else {
+                        offloadEngine.onOffloadServiceUpdated(
+                                createOffloadServiceInfoFromDiscoveryOffload(
+                                        info,
+                                        DiscoveryOffloadInfo.OFFLOAD_TYPE
+                                )
+                        );
+                    }
                 } catch (RemoteException e) {
                     // Can happen in regular cases, do not log a stacktrace
                     Log.i(TAG, "Failed to send offload callback, remote died: " + e.getMessage());
@@ -2762,13 +2858,21 @@ public class NsdService extends INsdManager.Stub {
                         & offloadServiceInfo.getOffloadType()) == 0)) {
                     continue;
                 }
+                OffloadServiceInfo updatedOffloadServiceInfo;
+                if (nsdMdnsScanOffload()) {
+                    updatedOffloadServiceInfo =
+                            offloadServiceInfo.withOffloadType(offloadEngineInfo.mOffloadType
+                                    & offloadServiceInfo.getOffloadType());
+                } else {
+                    updatedOffloadServiceInfo = offloadServiceInfo;
+                }
                 try {
                     if (isRemove) {
                         mOffloadEngines.getBroadcastItem(i).onOffloadServiceRemoved(
-                                offloadServiceInfo);
+                                updatedOffloadServiceInfo);
                     } else {
                         mOffloadEngines.getBroadcastItem(i).onOffloadServiceUpdated(
-                                offloadServiceInfo);
+                                updatedOffloadServiceInfo);
                     }
                 } catch (RemoteException e) {
                     // Can happen in regular cases, do not log a stacktrace
@@ -2894,6 +2998,19 @@ public class NsdService extends INsdManager.Stub {
         ListenerArgs(NsdServiceConnector connector, NsdServiceInfo serviceInfo) {
             this.connector = connector;
             this.serviceInfo = serviceInfo;
+        }
+    }
+
+    private static class ProxyOffloadEngineResponse {
+        public final NsdServiceInfo serviceInfo;
+        public final boolean isServiceLost;
+        public final String interfaceName;
+
+        ProxyOffloadEngineResponse(NsdServiceInfo serviceInfo,
+                boolean isServiceLost, String interfaceName) {
+            this.serviceInfo = serviceInfo;
+            this.isServiceLost = isServiceLost;
+            this.interfaceName = interfaceName;
         }
     }
 
@@ -3026,6 +3143,15 @@ public class NsdService extends INsdManager.Stub {
             checkOffloadEnginePermission(mContext);
             Objects.requireNonNull(cb);
             mHandler.sendMessage(mHandler.obtainMessage(NsdManager.UNREGISTER_OFFLOAD_ENGINE, cb));
+        }
+
+        @Override
+        public void injectOffloadEngineResponse(NsdServiceInfo serviceInfo,
+                boolean isServiceLost, String ifaceName) {
+            checkOffloadEnginePermission(mContext);
+            mHandler.sendMessage(
+                    mHandler.obtainMessage(NsdManager.INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE,
+                            new ProxyOffloadEngineResponse(serviceInfo, isServiceLost, ifaceName)));
         }
 
         private static void checkOffloadEnginePermission(Context context) {

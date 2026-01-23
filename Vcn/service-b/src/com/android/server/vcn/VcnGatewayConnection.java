@@ -1916,6 +1916,12 @@ public class VcnGatewayConnection extends StateMachine {
                                 switch (status) {
                                     case NetworkAgent.VALIDATION_STATUS_VALID:
                                         clearFailedAttemptCounterAndSafeModeAlarm();
+                                        mNetworkAgent.logAndUpdateValidationStatus(
+                                                mVcnMetrics,
+                                                mId,
+                                                VcnMetrics.VALIDATION_STATUS_VALID);
+                                        // TODO(b/460182066): Remove the old method of logging
+                                        // validation status once new method is fully rolled out.
                                         mVcnMetrics.logVcnNetworkValidated(
                                                 mId, mNetworkAgent.getIdentityHashCode());
                                         break;
@@ -1931,6 +1937,12 @@ public class VcnGatewayConnection extends StateMachine {
                                         // Will only set a new alarm if no safe mode alarm is
                                         // currently scheduled.
                                         setSafeModeAlarm();
+                                        mNetworkAgent.logAndUpdateValidationStatus(
+                                                mVcnMetrics,
+                                                mId,
+                                                VcnMetrics.VALIDATION_STATUS_NOT_VALID);
+                                        // TODO(b/460182066): Remove the old method of logging
+                                        // validation status once new method is fully rolled out.
                                         mVcnMetrics.logVcnNetworkNotValidated(
                                                 mId, mNetworkAgent.getIdentityHashCode());
                                         break;
@@ -1946,6 +1958,9 @@ public class VcnGatewayConnection extends StateMachine {
             agent.register();
             agent.markConnected();
             mVcnMetrics.logVcnNetworkConnected(mId, agent.getIdentityHashCode());
+            // Log that we're now pending for first validation since initial connection.
+            agent.logAndUpdateValidationStatus(
+                    mVcnMetrics, mId, VcnMetrics.VALIDATION_STATUS_PENDING);
 
             return agent;
         }
@@ -3065,6 +3080,7 @@ public class VcnGatewayConnection extends StateMachine {
     public static class VcnNetworkAgent {
         private final NetworkAgent mImpl;
         private final int mId;
+        private int mValidationStatus = VcnMetrics.VALIDATION_STATUS_PENDING;
 
         public VcnNetworkAgent(
                 @NonNull VcnContext vcnContext,
@@ -3138,6 +3154,19 @@ public class VcnGatewayConnection extends StateMachine {
         @Nullable
         public Network getNetwork() {
             return mImpl.getNetwork();
+        }
+
+        /**
+         * Logs the new validation status for the underlying NetworkAgent and updates internal
+         * state.
+         */
+        public void logAndUpdateValidationStatus(
+                @NonNull VcnMetrics vcnMetrics,
+                int gatewayConnectionId,
+                @VcnMetrics.ValidationStatus int status) {
+            vcnMetrics.logVcnNetworkValidationStatus(
+                    gatewayConnectionId, mId, mValidationStatus, status);
+            mValidationStatus = status;
         }
     }
 }

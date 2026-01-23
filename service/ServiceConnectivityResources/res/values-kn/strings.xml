@@ -43,4 +43,7 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"ಅಪರಿಚಿತ ನೆಟ್‌ವರ್ಕ್ ಪ್ರಕಾರ"</string>
+    <string name="connect_to_service_title" msgid="2417012530980077322">"ಸೇವೆಗೆ ಕನೆಕ್ಟ್ ಮಾಡಿ"</string>
+    <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> ಸ್ಥಳೀಯ ನೆಟ್‌ವರ್ಕ್‌ನಲ್ಲಿರುವ ಮತ್ತೊಂದು ಸಾಧನಕ್ಕೆ ಕನೆಕ್ಟ್ ಮಾಡಲು ಬಯಸುತ್ತದೆ"</string>
+    <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"ಸೇವೆಗಳಿಗಾಗಿ ಸ್ಕ್ಯಾನ್ ಮಾಡಲಾಗುತ್ತಿದೆ"</string>
 </resources>

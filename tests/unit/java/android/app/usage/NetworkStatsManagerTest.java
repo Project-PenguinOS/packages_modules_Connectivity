@@ -26,8 +26,13 @@ import static android.net.NetworkStats.SET_ALL;
 import static android.net.NetworkStats.SET_DEFAULT;
 import static android.net.NetworkStats.TAG_NONE;
 import static android.net.NetworkStatsHistory.FIELD_ALL;
+import static android.app.usage.NetworkStatsManager.FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN;
+import static android.app.usage.NetworkStatsManager.FLAG_POLL_ON_OPEN;
+import static android.app.usage.NetworkStatsManager.FLAG_POLL_FORCE;
 import static android.net.NetworkTemplate.MATCH_MOBILE;
 import static android.net.NetworkTemplate.MATCH_WIFI;
+
+import static com.android.testutils.MiscAsserts.assertThrows;
 
 import static junit.framework.Assert.assertEquals;
 import static junit.framework.Assert.assertFalse;
@@ -38,6 +43,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -266,11 +272,91 @@ public class NetworkStatsManagerTest {
         assertFalse(stats.hasNextBucket());
     }
 
+    @Test
+    public void testQueryApis_usePerQueryFlags() throws Exception {
+        final int testFlags = FLAG_POLL_ON_OPEN;
+        final NetworkTemplate template = mock(NetworkTemplate.class);
+        final long startTime = 1234L;
+        final long endTime = 5678L;
+        final int testUid = 123;
+        final int testTag = 456;
+        final int testState = 789;
+
+        when(mService.openSessionForUsageStats(anyInt(), anyString())).thenReturn(mStatsSession);
+        when(mStatsSession.getDeviceSummaryForNetwork(any(), anyLong(), anyLong()))
+                .thenReturn(new android.net.NetworkStats(0, 0));
+        when(mStatsSession.getSummaryForAllUid(any(), anyLong(), anyLong(), eq(false)))
+                .thenReturn(new android.net.NetworkStats(0, 0));
+        when(mStatsSession.getTaggedSummaryForAllUid(any(), anyLong(), anyLong()))
+                .thenReturn(new android.net.NetworkStats(0, 0));
+        when(mStatsSession.getHistoryIntervalForNetwork(any(), anyInt(), anyLong(), anyLong()))
+                .thenReturn(new NetworkStatsHistory(10, 0));
+        when(mStatsSession.getHistoryIntervalForUid(any(), anyInt(), anyInt(), anyInt(),
+                anyInt(), anyLong(), anyLong()))
+                .thenReturn(new NetworkStatsHistory(10, 0));
+
+        mManager.querySummaryForDevice(template, startTime, endTime, testFlags);
+        mManager.querySummary(template, startTime, endTime, testFlags);
+        mManager.queryTaggedSummary(template, startTime, endTime, testFlags);
+        mManager.queryDetailsForDevice(template, startTime, endTime, testFlags);
+        mManager.queryDetailsForUidTagState(template, startTime, endTime,
+                testUid, testTag, testState, testFlags);
+
+        final int expectedFlags = NetworkStatsManager.sanitizeQueryFlags(testFlags);
+        verify(mService, times(5)).openSessionForUsageStats(eq(expectedFlags), anyString());
+    }
+
+    @Test
+    public void testFlaggedApis_remoteException() throws Exception {
+        final int testFlags = 0;
+        final NetworkTemplate template = mock(NetworkTemplate.class);
+        final long startTime = 1234L;
+        final long endTime = 5678L;
+        final int testUid = 123;
+        final int testTag = 456;
+        final int testState = 789;
+
+        when(mService.openSessionForUsageStats(anyInt(), anyString()))
+                .thenThrow(new RemoteException("Test Exception"));
+
+        assertThrows(RuntimeException.class, () -> mManager.querySummaryForDevice(
+                template, startTime, endTime, testFlags));
+        assertThrows(RuntimeException.class, () -> mManager.querySummary(
+                template, startTime, endTime, testFlags));
+        assertThrows(RuntimeException.class, () -> mManager.queryTaggedSummary(
+                template, startTime, endTime, testFlags));
+        assertThrows(RuntimeException.class, () -> mManager.queryDetailsForDevice(
+                template, startTime, endTime, testFlags));
+        assertThrows(RuntimeException.class, () -> mManager.queryDetailsForUidTagState(
+                template, startTime, endTime, testUid, testTag, testState, testFlags));
+    }
+
     private void assertBucketMatches(Entry expected, NetworkStats.Bucket actual) {
         assertEquals(expected.uid, actual.getUid());
         assertEquals(expected.rxBytes, actual.getRxBytes());
         assertEquals(expected.rxPackets, actual.getRxPackets());
         assertEquals(expected.txBytes, actual.getTxBytes());
         assertEquals(expected.txPackets, actual.getTxPackets());
+    }
+
+    @Test
+    public void testSanitizeQueryFlags() throws Exception {
+        // Test that valid flags are preserved.
+        int flags = FLAG_POLL_ON_OPEN | FLAG_POLL_FORCE;
+        int sanitizedFlags = mManager.sanitizeQueryFlags(flags);
+        assertTrue((sanitizedFlags & FLAG_POLL_ON_OPEN) != 0);
+        assertTrue((sanitizedFlags & FLAG_POLL_FORCE) != 0);
+
+        // Test that invalid flags are rejected.
+        assertThrows(IllegalArgumentException.class,
+                () -> mManager.sanitizeQueryFlags(0xFFFFFFFF));
+        final int anotherInvalidFlag = 1 << 3;
+        assertThrows(IllegalArgumentException.class,
+                () -> mManager.sanitizeQueryFlags(FLAG_POLL_ON_OPEN | anotherInvalidFlag));
+
+        // Test that FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN is always added.
+        flags = 0;
+        sanitizedFlags = mManager.sanitizeQueryFlags(flags);
+        assertTrue((sanitizedFlags & FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN) != 0);
     }
 }

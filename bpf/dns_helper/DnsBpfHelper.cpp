@@ -56,11 +56,6 @@ static inline void waitForNetProgsLoaded() {
 }
 
 base::Result<void> DnsBpfHelper::init() {
-  if (!android::modules::sdklevel::IsAtLeastS()) {
-    LOG(ERROR) << __func__ << ": Unsupported before Android S.";
-    return base::Error(EOPNOTSUPP);
-  }
-
   if (!android::modules::sdklevel::IsAtLeastT()) {
     LOG(INFO) << "performing Android S mainline NetBpfload magic!";
     if (!mainlineNetBpfLoadDone()) {

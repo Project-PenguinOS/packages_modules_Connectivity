@@ -82,6 +82,7 @@ import com.android.net.module.util.NetworkStackConstants.ETHER_SRC_ADDR_OFFSET
 import com.android.net.module.util.NetworkStackConstants.ICMPV6_HEADER_MIN_LEN
 import com.android.net.module.util.NetworkStackConstants.IPV6_ADDR_LEN
 import com.android.net.module.util.PacketReader
+import com.android.testutils.ConnectivityDiagnosticsCollector
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
@@ -559,6 +560,7 @@ class ApfIntegrationTest {
     // APF integration is mostly broken before V
     @VsrTest(requirements = ["VSR-5.3.12-002", "VSR-5.3.12-005"])
     @IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @ConnectivityDiagnosticsCollector.CollectTcpdumpOnFailure
     @Test
     fun testDropPingReply() {
         // VSR-14 mandates APF to be turned on when the screen is off and the Wi-Fi link
@@ -629,6 +631,7 @@ class ApfIntegrationTest {
     // APF integration is mostly broken before V
     @VsrTest(requirements = ["VSR-5.3.12-002", "VSR-5.3.12-005"])
     @IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @ConnectivityDiagnosticsCollector.CollectTcpdumpOnFailure
     @Test
     fun testPrefilledMemorySlotsV4() {
         // VSR-14 mandates APF to be turned on when the screen is off and the Wi-Fi link
@@ -700,6 +703,7 @@ class ApfIntegrationTest {
     // APF integration is mostly broken before V
     @VsrTest(requirements = ["VSR-5.3.12-002", "VSR-5.3.12-005"])
     @IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @ConnectivityDiagnosticsCollector.CollectTcpdumpOnFailure
     @Test
     fun testFilterAgeIncreasesBetweenPackets() {
         // VSR-14 mandates APF to be turned on when the screen is off and the Wi-Fi link
@@ -751,6 +755,7 @@ class ApfIntegrationTest {
     }
 
     @VsrTest(requirements = ["VSR-5.3.12-002", "VSR-5.3.12-005"])
+    @ConnectivityDiagnosticsCollector.CollectTcpdumpOnFailure
     @Test
     fun testFilterAge16384thsIncreasesBetweenPackets() {
         assumeApfVersionSupportAtLeast(6000)
@@ -801,6 +806,7 @@ class ApfIntegrationTest {
                 "VSR-5.3.12-014", "VSR-5.3.12-015", "VSR-5.3.12-016", "VSR-5.3.12-017"]
     )
     @IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @ConnectivityDiagnosticsCollector.CollectTcpdumpOnFailure
     @Test
     fun testReplyPing() {
         assumeApfVersionSupportAtLeast(6000)

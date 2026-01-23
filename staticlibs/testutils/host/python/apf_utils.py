@@ -14,6 +14,7 @@
 
 from dataclasses import dataclass
 import functools
+import os
 import re
 from mobly import asserts
 from mobly.controllers import android_device
@@ -181,6 +182,63 @@ def get_exclude_all_host_ipv6_multicast_addresses(
     return [addr for addr in matches if addr not in ('ff02::1', 'ff01::1')]
   else:
     return []
+
+
+def get_ipv4_multicast_addresses(
+    ad: android_device.AndroidDevice, iface_name: str
+) -> list[str]:
+  """Retrieves the IPv4 multicast addresses of a given interface on an Android device.
+
+  This function executes an ADB shell command (`ip -4 maddr show`) to get the
+  network interface information and extracts the IPv4 multicast address from the
+  output.
+
+  Args:
+      ad: The Android device object.
+      iface_name: The name of the network interface (e.g., "wlan0").
+
+  Returns:
+      The IPv4 multicast addresses of the interface as a list of string.
+      Return empty list if no IPv4 multicast address.
+  """
+  # output format
+  # 2:      enp1s0
+  #         inet  239.255.255.250 users 24
+  #         inet  224.0.0.251 users 25
+  #         inet  224.0.0.1
+  output = adb_utils.adb_shell(ad, f'ip -4 maddr show {iface_name}')
+  pattern = r'inet\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+  matches = re.findall(pattern, output)
+
+  if matches:
+    return [addr for addr in matches if addr != '224.0.0.1']
+  else:
+    return []
+
+
+def get_hop_limit(ad: android_device.AndroidDevice, iface_name: str) -> int:
+  """Retrieves the hop limit of a given interface on an Android device.
+
+  This function executes an ADB shell command (`cat
+  /proc/sys/net/ipv6/conf/{iface_name}/hop_limit`)
+  to get the hop limit.
+
+  Args:
+      ad: The Android device object.
+      iface_name: The name of the network interface (e.g., "wlan0").
+
+  Returns:
+      The hop limit of the interface as an integer.
+  """
+  output = adb_utils.adb_shell(
+      ad, f'cat /proc/sys/net/ipv6/conf/{iface_name}/hop_limit'
+  )
+  try:
+    return int(output.strip())
+  except ValueError:
+    raise assert_utils.UnexpectedBehaviorError(
+        f'Got unexpected output: {output}.'
+    )
 
 
 def get_hardware_address(
@@ -460,6 +518,41 @@ def assume_apf_version_support_at_least(
       f'Supported apf version {caps.apf_version_supported} < expected version'
       f' {expected_version}',
   )
+
+
+def start_tcpdump_capture(
+    ad: android_device.AndroidDevice, iface_name: str, output_file: str
+) -> None:
+  adb_utils.adb_shell(
+      ad,
+      f'nohup su 0 tcpdump -i {iface_name} -U -w {output_file} > /dev/null'
+      ' 2>&1 &',
+  )
+
+
+def stop_tcpdump_capture(
+    ad: android_device.AndroidDevice, iface_name: str
+) -> None:
+  try:
+    adb_utils.adb_shell(ad, f'su 0 pkill -f "tcpdump -i {iface_name}"')
+  except AdbError:
+    # Ignore errors when stopping tcpdump, as the process might have already exited
+    # or pkill might return a non-zero exit code (e.g., 143).
+    pass
+
+
+def pull_file_from_device(
+    ad: android_device.AndroidDevice,
+    file_name: str,
+    extension_name: str,
+    src_path: str,
+    dst_path: str,
+) -> None:
+  filename = ad.generate_filename(
+      file_type=file_name, extension_name=extension_name
+  )
+  fullpath_file = os.path.join(dst_path, filename)
+  ad.adb.pull([src_path, fullpath_file])
 
 
 def at_least_B():

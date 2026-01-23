@@ -93,6 +93,7 @@ static const set<string> MAINLINE_FOR_T_PLUS = {
     NETD "map_netd_iface_index_name_map",
     NETD "map_netd_iface_stats_map",
     NETD "map_netd_ingress_discard_map",
+    NETD "map_netd_loopback_access_metrics_enabled_map",
     NETD "map_netd_netd_pid_map",
     NETD "map_netd_permission_propagation_enabled_map",
     NETD "map_netd_stats_map_A",
@@ -174,6 +175,12 @@ static const set<string> MAINLINE_FOR_25Q2_5_10_PLUS = {
     NETD "map_netd_local_net_note_op_ringbuf",
 };
 
+// Provided by *current* mainline module for 25Q4+ devices
+static const set<string> MAINLINE_FOR_25Q4_PLUS = {
+    NETD "map_netd_loopback_access_cache_map",
+    NETD "map_netd_loopback_access_ringbuf",
+};
+
 // Provided by *current* mainline module for 26Q2+ devices
 static const set<string> MAINLINE_FOR_26Q2_PLUS = {
     NETD "map_netd_l4s_accecn_byte_map",
@@ -214,15 +221,14 @@ TEST_F(BpfExistenceTest, TestPrograms) {
     ASSERT_TRUE(isAtLeastS);  // Q & R are no longer supported by mainline
 
     // S requires Linux Kernel 4.9+ and thus requires eBPF support.
-    if (isAtLeastS) ASSERT_TRUE(isAtLeastKernelVersion(4, 9));
+    ASSERT_TRUE(isAtLeastKernelVersion(4, 9));
 
     // on S without a new enough DnsResolver apex, NetBpfLoad doesn't get triggered,
     // and thus no mainline programs get loaded.
     bool mainlineBpfCapableResolve = !access("/apex/com.android.resolv/NetBpfLoad-S.flag", F_OK);
-    bool mainlineNetBpfLoad = isAtLeastT || mainlineBpfCapableResolve;
-    DO_EXPECT(isAtLeastS && mainlineNetBpfLoad, MAINLINE_FOR_S_PLUS);
+    DO_EXPECT(mainlineBpfCapableResolve || isAtLeastT, MAINLINE_FOR_S_PLUS);
 
-    // Nothing added or removed in SCv2.
+    // Nothing added or removed in Sv2.
 
     // T still only requires Linux Kernel 4.9+.
     DO_EXPECT(isAtLeastT, MAINLINE_FOR_T_PLUS);
@@ -246,6 +252,7 @@ TEST_F(BpfExistenceTest, TestPrograms) {
     DO_EXPECT(isAtLeast25Q2 && isAtLeastKernelVersion(5, 10), MAINLINE_FOR_25Q2_5_10_PLUS);
 
     if (isAtLeast25Q4) ASSERT_TRUE(isAtLeastKernelVersion(5, 10));
+    DO_EXPECT(isAtLeast25Q4, MAINLINE_FOR_25Q4_PLUS);
 
     DO_EXPECT(isAtLeast26Q2, MAINLINE_FOR_26Q2_PLUS);
     DO_EXPECT(isAtLeast26Q2 && isAtLeastKernelVersion(6, 1), MAINLINE_FOR_26Q2_6_1_PLUS);

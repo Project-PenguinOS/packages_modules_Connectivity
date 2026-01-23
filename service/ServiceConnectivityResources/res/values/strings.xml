@@ -85,5 +85,7 @@
 
     <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. This is the text of the dialog, before the list of devices. Devices displayed in the list may be from different networks (for example, one on local Wi-Fi and one on local Ethernet). -->
     <string name="connect_to_service_summary"><xliff:g id="app_name" example="Google Home">%1$s</xliff:g> wants to connect to another device on a local network</string>
+    <!-- When an app tries to find another device on the network (for example a printer or smart home device), a dialog is shown to the user for them to select a device to let the app access it. Before the devices are found a ProgressBar spinner is shown. This is the accessibility text for that ProgressBar. -->
+    <string name="scanning_for_services_progress_description">Scanning for services</string>
 
 </resources>

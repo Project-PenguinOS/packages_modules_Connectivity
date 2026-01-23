@@ -203,7 +203,7 @@ public abstract class NetworkStatsProvider {
      * will not call {@link #onSetLimit}. When this method is called, the implementation
      * should behave as follows:
      *   1. If {@code warningBytes} is reached on {@code iface}, block all further traffic on
-     *      {@code iface} and call {@link NetworkStatsProvider@notifyWarningReached()}.
+     *      {@code iface} and call {@link NetworkStatsProvider#notifyWarningReached()}.
      *   2. If {@code limitBytes} is reached on {@code iface}, block all further traffic on
      *   {@code iface} and call {@link NetworkStatsProvider#notifyLimitReached()}.
      *

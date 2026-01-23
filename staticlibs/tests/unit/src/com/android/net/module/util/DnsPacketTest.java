@@ -80,9 +80,6 @@ public class DnsPacketTest {
             super(header, qd, an);
         }
 
-        public DnsHeader getHeader() {
-            return mHeader;
-        }
         public List<DnsRecord> getRecordList(int secType) {
             return mRecords[secType];
         }

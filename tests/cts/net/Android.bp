@@ -62,9 +62,12 @@ java_defaults {
     jarjar_rules: "jarjar-rules-shared.txt",
     static_libs: [
         "android.permission.flags-aconfig-java-export",
+        "com.android.tethering.flags-aconfig-java",
         "ApfGeneratorLib",
         "bouncycastle-unbundled",
         "FrameworksNetCommonTests",
+        "com.android.tethering.flags-aconfig-java",
+        "conscrypt-exported-networksecurity-aconfig-flags-lib",
         "core-tests-support",
         "cts-net-utils",
         "CtsNetTestsNonUpdatableLib",
