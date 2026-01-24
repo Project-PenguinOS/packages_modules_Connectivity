@@ -88,6 +88,9 @@
       ]
     },
     {
+      "name": "libeventpolling_test"
+    },
+    {
       "name": "libnetworkstats_test"
     },
     {
@@ -219,6 +222,9 @@
     },
     {
       "name": "libclat_test"
+    },
+    {
+      "name": "libeventpolling_test"
     },
     {
       "name": "netd_updatable_unit_test"
@@ -392,6 +398,9 @@
     },
     {
       "name": "libnetworkstats_test[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]"
+    },
+    {
+      "name": "libeventpolling_test[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]"
     },
     {
       "name": "CtsTetheringTest[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",

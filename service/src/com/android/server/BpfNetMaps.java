@@ -30,6 +30,7 @@ import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
+import static android.net.BpfNetMapsConstants.LOOPBACK_ACCESS_METRICS_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.PERMISSION_PROPAGATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_MIGRATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_OWNER_MAP_PATH;
@@ -186,6 +187,7 @@ public class BpfNetMaps {
     private static IBpfMap<U32, Bool> sLocalNetBlockedUidMap = null;
     private static IBpfMap<LocalNetUidHostAllowlistKey, Bool> sLocalNetUidHostAllowlistMap = null;
     private static BpfBoolean sL4sEnabledMap = null;
+    private static BpfBoolean sLoopbackAccessMetricsEnabledBpfBoolean = null;
 
     private static final List<Pair<Integer, String>> PERMISSION_LIST = Arrays.asList(
             Pair.create(TRAFFIC_PERMISSION_INTERNET, "PERMISSION_INTERNET"),
@@ -194,6 +196,7 @@ public class BpfNetMaps {
     );
     private final InterfaceTracker mInterfaceTracker;
     private static boolean sPermissionMapUidMigrationEnabled = false;
+    private static boolean sLoopbackAccessMetricsEnabled = false;
 
     /**
      * Get the cached com.android.tethering.flags.Flags#permissionMapUidMigration() so the flag
@@ -201,6 +204,14 @@ public class BpfNetMaps {
      */
     public boolean isUidMigrationEnabled() {
         return sPermissionMapUidMigrationEnabled;
+    }
+
+    /**
+     * Get the cached com.android.tethering.flags.Flags#loopbackAccessMetrics() so the flag
+     * value is process stable.
+     */
+    public boolean isLoopbackAccessMetricsEnabled() {
+        return sLoopbackAccessMetricsEnabled;
     }
 
     /**
@@ -267,6 +278,15 @@ public class BpfNetMaps {
     public static void setUidMigrationEnabledBpfBooleanForTest(
             BpfBoolean uidMigrationEnabledBpfBoolean) {
         sUidMigrationEnabledBpfBoolean = uidMigrationEnabledBpfBoolean;
+    }
+
+    /**
+     * Set loopbackAccessMetricsEnabledBpfBoolean for test.
+     */
+    @VisibleForTesting
+    public static void setLoopbackAccessMetricsEnabledBpfBooleanForTest(
+            BpfBoolean loopbackAccessMetricsEnabledBpfBoolean) {
+        sLoopbackAccessMetricsEnabledBpfBoolean = loopbackAccessMetricsEnabledBpfBoolean;
     }
 
     /**
@@ -431,6 +451,15 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private static BpfBoolean getLoopbackAccessMetricsEnabledBpfBoolean() {
+        try {
+            return new BpfBoolean(LOOPBACK_ACCESS_METRICS_ENABLED_MAP_PATH, true);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open loopback access metrics enabled map", e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.BAKLAVA)
     private static BpfBoolean getPermissionPropagationEnabledBpfBoolean() {
         try {
@@ -592,6 +621,19 @@ public class BpfNetMaps {
         } catch (ErrnoException e) {
             throw new IllegalStateException("Cannot clear uid permission chunk map", e);
         }
+
+        if (SdkUtil.isAtLeast25Q4()) {
+            if (sLoopbackAccessMetricsEnabledBpfBoolean == null) {
+                sLoopbackAccessMetricsEnabledBpfBoolean =
+                        getLoopbackAccessMetricsEnabledBpfBoolean();
+            }
+            try {
+                sLoopbackAccessMetricsEnabledBpfBoolean.set(sLoopbackAccessMetricsEnabled);
+            } catch (ErrnoException e) {
+                throw new IllegalStateException("Failed to set loopback access metrics enabled map",
+                        e);
+            }
+        }
     }
 
     /**
@@ -602,6 +644,8 @@ public class BpfNetMaps {
             final Dependencies deps) {
         if (sInitialized) return;
         sPermissionMapUidMigrationEnabled = deps.isPermissionMapUidMigrationEnabled();
+        sLoopbackAccessMetricsEnabled = deps.isLoopbackAccessMetricsEnabled();
+
         if (SdkLevel.isAtLeastT()) {
             initBpfMaps(deps);
         }
@@ -658,6 +702,19 @@ public class BpfNetMaps {
          */
         public boolean isPermissionMapUidMigrationEnabled() {
             return com.android.tethering.flags.Flags.permissionMapUidMigration();
+        }
+
+        /**
+         * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than loopback access
+         * metrics enabling. Wrapper around loopbackAccessMetrics() so that it can be mocked
+         * in unit test.
+         *
+         * @see com.android.tethering.flags.Flags#loopbackAccessMetrics()
+         */
+        public boolean isLoopbackAccessMetricsEnabled() {
+            // TODO: return SdkUtil.isAtLeast25Q4() && loopbackAccessMetrics() flag when we're ready
+            // to turn the feature on
+            return false;
         }
 
         /**
@@ -2000,6 +2057,16 @@ public class BpfNetMaps {
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private void dumpLoopbackAccessMetricsConfig(final IndentingPrintWriter pw) {
+        try {
+            final boolean enabled = sLoopbackAccessMetricsEnabledBpfBoolean.get();
+            pw.println("sLoopbackAccessMetricsEnabledBpfBoolean: " + enabled);
+        } catch (ErrnoException e) {
+            pw.println("Failed to read loopback access metrics enabled map: " + e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private void dumpUidPermissionChunkMap(final IndentingPrintWriter pw) {
         pw.println("sUidPermissionChunkMap:" );
         pw.increaseIndent();
@@ -2078,6 +2145,9 @@ public class BpfNetMaps {
                 BpfDump.dumpMap(sLocalNetUidHostAllowlistMap, pw,
                         "sLocalNetUidHostAllowlistMap",
                         (key, value) -> "" + key + ": " + value.val);
+            }
+            if (sLoopbackAccessMetricsEnabledBpfBoolean != null) {
+                dumpLoopbackAccessMetricsConfig(pw);
             }
             dumpDataSaverConfig(pw);
             dumpUidMigrationConfig(pw);

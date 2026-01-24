@@ -68,6 +68,13 @@ import static com.android.internal.annotations.VisibleForTesting.Visibility.PRIV
 import static com.android.net.module.util.DeviceConfigUtils.getDeviceConfigPropertyInt;
 import static com.android.net.module.util.NetworkCapabilitiesUtils.getDisplayTransport;
 import static com.android.net.module.util.NetworkStatsUtils.LIMIT_GLOBAL_ALERT;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_COMPARISON_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_FAST_DATA_INPUT_COLLECTION_LOAD_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_FAST_DATA_INPUT_COUNTERS_CREATE_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_FAST_DATA_INPUT_COUNTERS_READ_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_FAST_DATA_INPUT_COUNTERS_UPDATE_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_LEGACY_STATS_READ_ERROR;
 import static com.android.server.net.NetworkStatsEventLogger.POLL_REASON_DUMPSYS;
 import static com.android.server.net.NetworkStatsEventLogger.POLL_REASON_FORCE_UPDATE;
 import static com.android.server.net.NetworkStatsEventLogger.POLL_REASON_GLOBAL_ALERT;
@@ -184,6 +191,7 @@ import com.android.net.module.util.PermissionUtils;
 import com.android.net.module.util.SharedLog;
 import com.android.net.module.util.SkDestroyListener;
 import com.android.net.module.util.Struct;
+import com.android.net.module.util.TerribleErrorLog;
 import com.android.net.module.util.Struct.S32;
 import com.android.net.module.util.Struct.S64;
 import com.android.net.module.util.Struct.U8;
@@ -193,6 +201,7 @@ import com.android.net.module.util.netlink.StructInetDiagSockId;
 import com.android.networkstack.apishim.BroadcastOptionsShimImpl;
 import com.android.networkstack.apishim.ConstantsShim;
 import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
+import com.android.server.ConnectivityStatsLog;
 import com.android.server.connectivity.ConnectivityResources;
 
 import java.io.File;
@@ -1132,7 +1141,10 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             mFastDataInputFallbacksCounter = mDeps.createPersistentCounter(mStatsDir.toPath(),
                     NETSTATS_FASTDATAINPUT_FALLBACKS_COUNTER_NAME);
         } catch (IOException e) {
-            Log.wtf(TAG, "Failed to create persistent counters, skip.", e);
+            TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                    "Failed to create persistent counters, skip: " + e,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_FAST_DATA_INPUT_COUNTERS_CREATE_ERROR);
             useFastDataInput = false;
         }
 
@@ -1145,7 +1157,10 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             // not successful.
             fallbacks = mFastDataInputFallbacksCounter.get();
         } catch (IOException e) {
-            Log.wtf(TAG, "Failed to read counters, skip.", e);
+            TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                    "Failed to read counters, skip: " + e,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_FAST_DATA_INPUT_COUNTERS_READ_ERROR);
             useFastDataInput = false;
         }
 
@@ -1190,7 +1205,10 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             try {
                 migrations[i].collection = migrations[i].recorder.getOrLoadCompleteLocked();
             } catch (Throwable t) {
-                Log.wtf(TAG, "Failed to load collection, skip.", t);
+                TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                        "Failed to load collection, skip: " + t,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_FAST_DATA_INPUT_COLLECTION_LOAD_ERROR);
                 success = false;
                 break;
             }
@@ -1212,7 +1230,10 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                 mFastDataInputFallbacksCounter.set(fallbacks + 1);
             }
         } catch (IOException e) {
-            Log.wtf(TAG, "Failed to update counters. success = " + success, e);
+            TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                    "Failed to update counters. success = " + success + ": " + e,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_FAST_DATA_INPUT_COUNTERS_UPDATE_ERROR);
         }
     }
 
@@ -1495,8 +1516,11 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         try {
             legacyStats = legacyRecorder.getOrLoadCompleteLocked();
         } catch (Throwable e) {
-            Log.wtf(TAG, "Failed to read stats with legacy method for recorder "
-                    + legacyRecorder.getCookie(), e);
+            TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                    "Failed to read stats with legacy method for recorder "
+                    + legacyRecorder.getCookie() + ": " + e,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_LEGACY_STATS_READ_ERROR);
             // Cannot read data from legacy method, skip comparison.
             return false;
         }
@@ -1506,13 +1530,19 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             final String error = mDeps.compareStats(migration.collection, legacyStats,
                     allowKeyChange);
             if (error != null) {
-                Log.wtf(TAG, "Unexpected comparison result for recorder "
-                        + legacyRecorder.getCookie() + ": " + error);
+                TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                        "Unexpected comparison result for recorder "
+                        + legacyRecorder.getCookie() + ": " + error,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_COMPARISON_ERROR);
                 return false;
             }
         } catch (Throwable e) {
-            Log.wtf(TAG, "Failed to compare migrated stats with legacy stats for recorder "
-                    + legacyRecorder.getCookie(), e);
+            TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                    "Failed to compare migrated stats with legacy stats for recorder "
+                    + legacyRecorder.getCookie() + ": " + e,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_COMPARISON_ERROR);
             return false;
         }
         return true;

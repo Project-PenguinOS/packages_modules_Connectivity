@@ -32,6 +32,7 @@ import static android.net.nsd.AdvertisingRequest.FLAG_OFFLOAD_ONLY;
 import static android.net.nsd.AdvertisingRequest.FLAG_SKIP_PROBING;
 import static android.net.nsd.AdvertisingRequest.FLAG_SKIP_SUBTYPE_ANNOUNCEMENTS;
 import static android.net.nsd.DiscoveryRequest.FLAG_NO_PICKER;
+import static android.net.nsd.DiscoveryRequest.FLAG_SHOW_PICKER;
 import static android.net.nsd.NsdManager.FAILURE_INTERNAL_ERROR;
 import static android.net.nsd.NsdManager.FAILURE_PERMISSION_DENIED;
 import static android.net.nsd.NsdManager.MDNS_DISCOVERY_MANAGER_EVENT;
@@ -458,7 +459,7 @@ public class NsdService extends INsdManager.Stub {
             mClientInfo = clientInfo;
         }
 
-        void startPicker() {
+        void startPicker(@NonNull DiscoveryRequest request) {
             final Intent intent = new Intent();
             intent.setAction(NsdPickerConnector.ACTION_PICKER);
             intent.setFlags(Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT | Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -466,6 +467,7 @@ public class NsdService extends INsdManager.Stub {
             final Bundle bundle = new Bundle();
             bundle.putBinder(NsdPickerConnector.EXTRA_CONNECTOR, mConnector);
             bundle.putString(NsdPickerConnector.EXTRA_APP_NAME, getAppName());
+            bundle.putParcelable(NsdPickerConnector.EXTRA_REQUEST, request);
             intent.putExtras(bundle);
             mContext.startActivityAsUser(intent, UserHandle.CURRENT);
         }
@@ -1190,12 +1192,25 @@ public class NsdService extends INsdManager.Stub {
                 parseTypeAndSubtype(discoveryRequest.getServiceType());
         final String serviceType = typeAndSubtype == null ? null : typeAndSubtype.first;
         final boolean useJavaBackend = useDiscoveryManager(clientInfo, serviceType);
-        final boolean noPicker = !mEnablePicker
-                || ((discoveryRequest.getFlags() & FLAG_NO_PICKER) != 0);
-        final boolean usingPermission = checkDataDeliveryPermissions(
-                clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
-        final boolean usingFallbackPermission =
-                !usingPermission && hasFallbackPermission(clientInfo.mUid, clientInfo.mPid);
+        final boolean forcePicker = mEnablePicker
+                && ((discoveryRequest.getFlags() & FLAG_SHOW_PICKER) != 0);
+
+        final boolean noPicker;
+        final boolean usingPermission;
+        final boolean usingFallbackPermission;
+        if (forcePicker && useJavaBackend) {
+            // If the picker is used, no permission is required, and no permission checks are done
+            // so the app does not get blamed for using permissions.
+            noPicker = false;
+            usingPermission = false;
+            usingFallbackPermission = false;
+        } else {
+            noPicker = !mEnablePicker || ((discoveryRequest.getFlags() & FLAG_NO_PICKER) != 0);
+            usingPermission = checkDataDeliveryPermissions(
+                    clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
+            usingFallbackPermission =
+                    !usingPermission && hasFallbackPermission(clientInfo.mUid, clientInfo.mPid);
+        }
         final boolean usePicker = !usingPermission && !usingFallbackPermission;
         // The local network permission enforcement only exists on 25Q2+, which always uses the Java
         // backend (the legacy path is only for apps targeting T- running on T-). Fail early if
@@ -1238,7 +1253,7 @@ public class NsdService extends INsdManager.Stub {
                 final PickerListener pickerListener = new PickerListener(clientRequestId,
                         transactionId, listenServiceType, clientInfo);
                 listener = pickerListener;
-                pickerListener.startPicker();
+                pickerListener.startPicker(discoveryRequest);
                 clientInfo.log("Register a PickerListener " + transactionId
                         + " for service type:" + listenServiceType);
             } else {

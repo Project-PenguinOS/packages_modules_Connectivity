@@ -401,6 +401,7 @@ import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabiliti
 import com.android.server.connectivity.AutodestructReference;
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker;
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker.AutomaticOnOffKeepalive;
+import com.android.server.connectivity.BpfEventPoller;
 import com.android.server.connectivity.BroadcastReceiveHelper;
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator;
 import com.android.server.connectivity.ClatCoordinator;
@@ -4603,6 +4604,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 CONNECTIVITY_STATE_SAMPLE, this::sampleConnectivityStateToStatsEvent);
         if (mSatisfiedByLocalNetworkMetrics != null) {
             mSatisfiedByLocalNetworkMetrics.start();
+        }
+
+        if (mBpfNetMaps.isLoopbackAccessMetricsEnabled()) {
+            BpfEventPoller.nativeInitLoopbackEventConsumer();
         }
 
         // Clear all clsact stubs on all interfaces.
