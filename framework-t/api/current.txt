@@ -229,17 +229,28 @@ package android.net.nsd {
 
   @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public final class DiscoveryRequest implements android.os.Parcelable {
     method public int describeContents();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public java.util.Map<java.lang.String,android.os.PatternMatcher> getAttributeFilters();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @Nullable public String getDisplayNameAttribute();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public long getFlags();
     method @Nullable public android.net.Network getNetwork();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @Nullable public android.os.PatternMatcher getServiceNameFilter();
     method @NonNull public String getServiceType();
     method @Nullable public String getSubtype();
     method public void writeToParcel(@NonNull android.os.Parcel, int);
     field @NonNull public static final android.os.Parcelable.Creator<android.net.nsd.DiscoveryRequest> CREATOR;
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_NO_PICKER = 1L; // 0x1L
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_SHOW_PICKER = 2L; // 0x2L
   }
 
   public static final class DiscoveryRequest.Builder {
     ctor public DiscoveryRequest.Builder(@NonNull String);
     method @NonNull public android.net.nsd.DiscoveryRequest build();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setAttributeFilters(@Nullable java.util.Map<java.lang.String,android.os.PatternMatcher>);
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setDisplayNameAttribute(@Nullable String);
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setFlags(long);
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setFlags(long, long);
     method @NonNull public android.net.nsd.DiscoveryRequest.Builder setNetwork(@Nullable android.net.Network);
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setServiceNameFilter(@Nullable android.os.PatternMatcher);
     method @NonNull public android.net.nsd.DiscoveryRequest.Builder setSubtype(@Nullable String);
   }
 

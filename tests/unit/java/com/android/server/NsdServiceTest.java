@@ -40,6 +40,7 @@ import static android.net.connectivity.ConnectivityCompatChanges.ENABLE_PLATFORM
 import static android.net.connectivity.ConnectivityCompatChanges.RESTRICT_LOCAL_NETWORK;
 import static android.net.connectivity.ConnectivityCompatChanges.RUN_NATIVE_NSD_ONLY_IF_LEGACY_APPS_T_AND_LATER;
 import static android.net.nsd.DiscoveryRequest.FLAG_NO_PICKER;
+import static android.net.nsd.DiscoveryRequest.FLAG_SHOW_PICKER;
 import static android.net.nsd.NsdManager.FAILURE_BAD_PARAMETERS;
 import static android.net.nsd.NsdManager.FAILURE_INTERNAL_ERROR;
 import static android.net.nsd.NsdManager.FAILURE_MAX_LIMIT;
@@ -49,6 +50,9 @@ import static android.net.nsd.OffloadEngine.OFFLOAD_CAPABILITY_BYPASS_MULTICAST_
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_QUERY;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_REPLY;
+import static android.os.PatternMatcher.PATTERN_LITERAL;
+import static android.os.PatternMatcher.PATTERN_PREFIX;
+import static android.os.PatternMatcher.PATTERN_SUFFIX;
 
 import static androidx.test.platform.app.InstrumentationRegistry.getInstrumentation;
 
@@ -132,6 +136,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
+import android.os.PatternMatcher;
 import android.os.Process;
 import android.os.RemoteException;
 import android.permission.PermissionManager;
@@ -189,6 +194,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
@@ -1624,6 +1630,41 @@ public class NsdServiceTest {
         inOrder.verify(discListener, timeout(TIMEOUT_MS)).onDiscoveryStopped(SERVICE_TYPE);
         verify(mPermissionManager, never()).finishDataDelivery(ACCESS_LOCAL_NETWORK,
                 getAttributionSource());
+    }
+
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDiscovery_usingPicker_sendsDiscoveryFilters() throws Exception {
+        setMdnsDiscoveryManagerEnabled();
+        final NsdManager client = connectClient(mService);
+
+        final PatternMatcher serviceNameFilter =
+                new PatternMatcher("test", PATTERN_LITERAL);
+        final PatternMatcher attrFilter1 = new PatternMatcher("prefix", PATTERN_PREFIX);
+        final PatternMatcher attrFilter2 = new PatternMatcher("suffix", PATTERN_SUFFIX);
+        final DiscoveryRequest request = new DiscoveryRequest.Builder(SERVICE_TYPE)
+                .setNetwork(TEST_NETWORK)
+                .setFlags(FLAG_SHOW_PICKER)
+                .setServiceNameFilter(serviceNameFilter)
+                .setAttributeFilters(Map.of(
+                        "attrkey1", attrFilter1,
+                        "attrkey2", attrFilter2
+                ))
+                .setDisplayNameAttribute("displayattr")
+                .build();
+        startDiscoveryWithPicker(client, request);
+
+        final ArgumentCaptor<Intent> intentCaptor = ArgumentCaptor.forClass(Intent.class);
+        verify(mContext).startActivityAsUser(intentCaptor.capture(), any());
+        final Intent intent = intentCaptor.getValue();
+        final DiscoveryRequest sentRequest =
+                intent.getParcelableExtra(NsdPickerConnector.EXTRA_REQUEST, DiscoveryRequest.class);
+        assertEquals(serviceNameFilter.toString(), sentRequest.getServiceNameFilter().toString());
+        final Map<String, PatternMatcher> sentAttrFilters = sentRequest.getAttributeFilters();
+        assertEquals(2, sentAttrFilters.size());
+        assertEquals(attrFilter1.toString(), sentAttrFilters.get("attrkey1").toString());
+        assertEquals(attrFilter2.toString(), sentAttrFilters.get("attrkey2").toString());
+        assertEquals("displayattr", sentRequest.getDisplayNameAttribute());
     }
 
     @Test
@@ -3106,14 +3147,18 @@ public class NsdServiceTest {
     }
 
     private DiscoveryListener startDiscoveryWithPicker(NsdManager client) {
+        return startDiscoveryWithPicker(client, new DiscoveryRequest.Builder(SERVICE_TYPE)
+                .setNetwork(TEST_NETWORK)
+                .build());
+    }
+
+    private DiscoveryListener startDiscoveryWithPicker(NsdManager client,
+            DiscoveryRequest request) {
         final AttributionSource attributionSource = getAttributionSource();
         doReturn(PermissionManager.PERMISSION_SOFT_DENIED).when(mPermissionManager)
                 .checkPermissionForStartDataDelivery(ACCESS_LOCAL_NETWORK, attributionSource, null);
 
         final DiscoveryListener discListener = mock(DiscoveryListener.class);
-        final DiscoveryRequest request = new DiscoveryRequest.Builder(SERVICE_TYPE)
-                .setNetwork(TEST_NETWORK)
-                .build();
         client.discoverServices(request, Runnable::run, discListener);
         waitForIdle();
         return discListener;

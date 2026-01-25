@@ -136,6 +136,7 @@ cc_library_shared {
     ],
     srcs: [
         ":services.connectivity-netstats-jni-sources",
+        "jni/com_android_server_connectivity_BpfEventPoller.cpp",
         "jni/com_android_server_connectivity_ClatCoordinator.cpp",
         "jni/onload.cpp",
     ],
@@ -144,6 +145,7 @@ cc_library_shared {
     ],
     static_libs: [
         "libclat",
+        "libeventpolling",
         "libip_checksum",
         "libmodules-utils-build",
         "libnetjniutils",

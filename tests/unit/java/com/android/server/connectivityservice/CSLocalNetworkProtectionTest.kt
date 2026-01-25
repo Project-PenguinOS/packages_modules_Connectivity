@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.android.server
+package com.android.server.connectivityservice
 
 import android.net.InetAddresses
 import android.net.IpPrefix
@@ -30,13 +30,18 @@ import android.net.NetworkRequest
 import android.net.RouteInfo
 import android.os.Build
 import androidx.test.filters.SmallTest
+import com.android.server.CSTest
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.TestableNetworkCallback.Event.LinkPropertiesChanged
 import com.android.testutils.TestableNetworkCallback.Event.Lost
+import java.net.InetAddress
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
@@ -89,57 +94,23 @@ private fun nr(transport: Int) = NetworkRequest.Builder()
 @SmallTest
 @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 class CSLocalNetworkProtectionTest : CSTest() {
-    private val LOCAL_IPV6_IP_ADDRESS_PREFIX = IpPrefix("fe80::1cf1:35ff:fe8c:db87/64")
-    private val LOCAL_IPV6_LINK_ADDRESS = LinkAddress(
-        LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress(),
-        LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()
-    )
+    private val LINK_LOCAL_PREFIX = IpPrefix("fe80::/64")
 
-    private val LOCAL_IPV6_IP_ADDRESS_2_PREFIX =
-            IpPrefix("2601:19b:67f:e220:1cf1:35ff:fe8c:db87/64")
-    private val LOCAL_IPV6_LINK_ADDRESS_2 = LinkAddress(
-            LOCAL_IPV6_IP_ADDRESS_2_PREFIX.getAddress(),
-            LOCAL_IPV6_IP_ADDRESS_2_PREFIX.getPrefixLength()
-    )
+    private val LINK_LOCAL_ADDRESS = LinkAddress("fe80::1cf1:35ff:fe8c:db87/64")
 
-    private val LOCAL_IPV6_IP_ADDRESS_3_PREFIX =
-            IpPrefix("fe80::/10")
-    private val LOCAL_IPV6_LINK_ADDRESS_3 = LinkAddress(
-            LOCAL_IPV6_IP_ADDRESS_3_PREFIX.getAddress(),
-            LOCAL_IPV6_IP_ADDRESS_3_PREFIX.getPrefixLength()
-    )
-    private val LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_1 = IpPrefix("2001:db8:1:a00::/56")
-    private val LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_2 = IpPrefix("2601:19b:67f:e220::/56")
-    private val LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_3 = IpPrefix("2601:19b:67f:e220::/64")
-    private val LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_4 = IpPrefix("fe80::/64")
-    private val IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX = IpPrefix("::/0")
+    private val IPV6_HOME_PREFIX = IpPrefix("2601:19b:67f:e200::/56")
+    private val IPV6_ONLINK_PREFIX = IpPrefix("2601:19b:67f:e220::/64")
+    private val IPV6_GLOBAL_ADDRESS = LinkAddress("2601:19b:67f:e220:1cf1:35ff:fe8c:db87/64")
 
-    private val LOCAL_IPV4_IP_ADDRESS_PREFIX_1 = IpPrefix("10.0.0.184/24")
-    private val LOCAL_IPV4_LINK_ADDRRESS_1 =
-        LinkAddress(
-            LOCAL_IPV4_IP_ADDRESS_PREFIX_1.getAddress(),
-            LOCAL_IPV4_IP_ADDRESS_PREFIX_1.getPrefixLength()
-        )
+    private val IPV6_HOME_PREFIX_2 = IpPrefix("2001:db8:1:a00::/56")
+    private val IPV6_DEFAULT_ROUTE_PREFIX = IpPrefix("::/0")
 
-    private val LOCAL_IPV4_IP_ADDRESS_PREFIX_2 = IpPrefix("10.0.255.184/24")
-    private val LOCAL_IPV4_LINK_ADDRRESS_2 =
-        LinkAddress(
-            LOCAL_IPV4_IP_ADDRESS_PREFIX_2.getAddress(),
-            LOCAL_IPV4_IP_ADDRESS_PREFIX_2.getPrefixLength()
-        )
-    private val LOCAL_IPV4_IP_ADDRESS_PREFIX_3 = IpPrefix("10.255.255.184/24")
-    private val LOCAL_IPV4_LINK_ADDRRESS_3 =
-        LinkAddress(
-            LOCAL_IPV4_IP_ADDRESS_PREFIX_3.getAddress(),
-            LOCAL_IPV4_IP_ADDRESS_PREFIX_3.getPrefixLength()
-        )
-    private val LOCAL_IPV4_ROUTE_ADDRESS_PREFIX = IpPrefix("10.255.0.0/16")
-    private val LOCAL_IPV4_ROUTE_LINK_ADDRRESS =
-        LinkAddress(
-            LOCAL_IPV4_ROUTE_ADDRESS_PREFIX.getAddress(),
-            LOCAL_IPV4_ROUTE_ADDRESS_PREFIX.getPrefixLength()
-        )
-    private val IPV4_DEFAULT_ROUTE_ADDRESS_PREFIX = IpPrefix("0.0.0.0/0")
+    private val IPV4_PREFIX_1 = IpPrefix("10.0.0.0/24")
+    private val IPV4_ADDRESS_1 = LinkAddress("10.0.0.184/24")
+    private val IPV4_ADDRESS_2 = LinkAddress("10.0.255.184/24")
+    private val IPV4_ADDRESS_3 = LinkAddress("10.255.255.184/24")
+    private val IPV4_COVERING_PREFIX = IpPrefix("10.255.0.0/16")
+    private val IPV4_DEFAULT_ROUTE_PREFIX = IpPrefix("0.0.0.0/0")
 
     @Test
     fun testNetworkWithIPv6LocalAddress_AddressAddedToBpfMap() {
@@ -148,7 +119,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         cm.requestNetwork(nr, cb)
 
         // Connecting to network with IPv6 local address in LinkProperties
-        val wifiLp = lp(WIFI_IFNAME, LOCAL_IPV6_LINK_ADDRESS)
+        val wifiLp = lp(WIFI_IFNAME, LINK_LOCAL_ADDRESS)
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
         cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
@@ -157,9 +128,9 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyPopulationOfMulticastAndBroadcastAddress()
         // Verifying IPv6 address should be populated in local_net_access map
         verify(bpfNetMaps).addLocalNetAccess(
-            eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+            eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)
@@ -172,7 +143,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val cb = TestableNetworkCallback()
         cm.requestNetwork(nr, cb)
 
-        val wifiLp = lp(WIFI_IFNAME, LOCAL_IPV4_LINK_ADDRRESS_1)
+        val wifiLp = lp(WIFI_IFNAME, IPV4_ADDRESS_1)
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
         cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
@@ -198,14 +169,14 @@ class CSLocalNetworkProtectionTest : CSTest() {
         cm.requestNetwork(nr, cb)
 
         val routes = listOf(RouteInfo(
-            LOCAL_IPV4_ROUTE_LINK_ADDRRESS,
+            IPV4_COVERING_PREFIX,
             null,
             WIFI_IFNAME
         ))
         val wifiLp = lpWithRoutes(
             WIFI_IFNAME,
             routes,
-            LOCAL_IPV4_LINK_ADDRRESS_3
+            IPV4_ADDRESS_3
         )
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
@@ -232,14 +203,14 @@ class CSLocalNetworkProtectionTest : CSTest() {
         cm.requestNetwork(nr, cb)
 
         val routes = listOf(RouteInfo(
-                IPV4_DEFAULT_ROUTE_ADDRESS_PREFIX,
-                LOCAL_IPV4_LINK_ADDRRESS_3.address,
+                IPV4_DEFAULT_ROUTE_PREFIX,
+                IPV4_ADDRESS_3.address,
                 WIFI_IFNAME
         ))
         val wifiLp = lpWithRoutes(
                 WIFI_IFNAME,
                 routes,
-                LOCAL_IPV4_LINK_ADDRRESS_3
+                IPV4_ADDRESS_3
         )
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
@@ -252,7 +223,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verify(bpfNetMaps, never()).addLocalNetAccess(
                 eq(PREFIX_LENGTH_IPV4),
                 eq(WIFI_IFNAME),
-                eq(IPV4_DEFAULT_ROUTE_ADDRESS_PREFIX.address),
+                eq(IPV4_DEFAULT_ROUTE_PREFIX.address),
                 eq(0),
                 eq(0),
                 eq(false)
@@ -265,7 +236,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val cb = TestableNetworkCallback()
         cm.requestNetwork(nr, cb)
 
-        val wifiLp = lp(WIFI_IFNAME, LOCAL_IPV6_LINK_ADDRESS)
+        val wifiLp = lp(WIFI_IFNAME, LINK_LOCAL_ADDRESS)
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
         cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
@@ -274,16 +245,16 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyPopulationOfMulticastAndBroadcastAddress()
         // Verifying IPv6 address should be populated in local_net_access map
         verify(bpfNetMaps).addLocalNetAccess(
-            eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+            eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)
         )
 
         // Updating Link Property from IPv6 in Link Address to IPv4 in Link Address
-        val wifiLp2 = lp(WIFI_IFNAME, LOCAL_IPV4_LINK_ADDRRESS_1)
+        val wifiLp2 = lp(WIFI_IFNAME, IPV4_ADDRESS_1)
         wifiAgent.sendLinkProperties(wifiLp2)
         cb.expect<LinkPropertiesChanged>(wifiAgent.network)
 
@@ -298,9 +269,9 @@ class CSLocalNetworkProtectionTest : CSTest() {
         )
         // Verifying IPv6 address should be removed from local_net_access map
         verify(bpfNetMaps).removeLocalNetAccess(
-            eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+            eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0)
         )
@@ -312,8 +283,8 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val cb = TestableNetworkCallback()
         cm.requestNetwork(nr, cb)
 
-        val wifiLp = lp(WIFI_IFNAME, LOCAL_IPV6_LINK_ADDRESS)
-        val wifiLp2 = lp(WIFI_IFNAME_2, LOCAL_IPV4_LINK_ADDRRESS_1)
+        val wifiLp = lp(WIFI_IFNAME, LINK_LOCAL_ADDRESS)
+        val wifiLp2 = lp(WIFI_IFNAME_2, IPV4_ADDRESS_1)
         // Adding stacked link
         wifiLp.addStackedLink(wifiLp2)
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
@@ -324,9 +295,9 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyPopulationOfMulticastAndBroadcastAddress()
         // Verifying IPv6 address should be populated in local_net_access map
         verify(bpfNetMaps).addLocalNetAccess(
-                eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+                eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
                 eq(WIFI_IFNAME),
-                eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+                eq(LINK_LOCAL_PREFIX.getAddress()),
                 eq(0),
                 eq(0),
                 eq(false)
@@ -346,10 +317,19 @@ class CSLocalNetworkProtectionTest : CSTest() {
                 eq(false)
         )
         // As both addresses are in stacked links, so no address should be removed from the map.
-        verify(bpfNetMaps, never()).removeLocalNetAccess(any(), any(), any(), any(), any())
+        verify(
+            bpfNetMaps,
+            never()
+        ).removeLocalNetAccess(
+            anyInt(),
+            anyString(),
+            any(InetAddress::class.java),
+            anyInt(),
+            anyInt()
+        )
 
         // replacing link properties without stacked links
-        val wifiLp_3 = lp(WIFI_IFNAME, LOCAL_IPV6_LINK_ADDRESS)
+        val wifiLp_3 = lp(WIFI_IFNAME, LINK_LOCAL_ADDRESS)
         wifiAgent.sendLinkProperties(wifiLp_3)
         cb.expect<LinkPropertiesChanged>(wifiAgent.network)
 
@@ -369,8 +349,8 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val cb = TestableNetworkCallback()
         cm.requestNetwork(nr, cb)
 
-        val wifiLp = lp(WIFI_IFNAME, LOCAL_IPV6_LINK_ADDRESS)
-        val wifiLp2 = lp(WIFI_IFNAME_2, LOCAL_IPV4_LINK_ADDRRESS_1)
+        val wifiLp = lp(WIFI_IFNAME, LINK_LOCAL_ADDRESS)
+        val wifiLp2 = lp(WIFI_IFNAME_2, IPV4_ADDRESS_1)
         // populating stacked link
         wifiLp.addStackedLink(wifiLp2)
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
@@ -381,9 +361,9 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyPopulationOfMulticastAndBroadcastAddress()
         // Verifying IPv6 address should be populated in local_net_access map
         verify(bpfNetMaps).addLocalNetAccess(
-                eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+                eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
                 eq(WIFI_IFNAME),
-                eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+                eq(LINK_LOCAL_PREFIX.getAddress()),
                 eq(0),
                 eq(0),
                 eq(false)
@@ -403,12 +383,21 @@ class CSLocalNetworkProtectionTest : CSTest() {
                 eq(false)
         )
         // As both addresses are in stacked links, so no address should be removed from the map.
-        verify(bpfNetMaps, never()).removeLocalNetAccess(any(), any(), any(), any(), any())
+        verify(
+            bpfNetMaps,
+            never()
+        ).removeLocalNetAccess(
+            anyInt(),
+            anyString(),
+            any(InetAddress::class.java),
+            anyInt(),
+            anyInt()
+        )
 
         // replacing link properties multiple stacked links
-        val wifiLp_3 = lp(WIFI_IFNAME, LOCAL_IPV6_LINK_ADDRESS_2)
-        val wifiLp_4 = lp(WIFI_IFNAME_2, LOCAL_IPV4_LINK_ADDRRESS_2)
-        val wifiLp_5 = lp(WIFI_IFNAME_3, LOCAL_IPV6_LINK_ADDRESS_3)
+        val wifiLp_3 = lp(WIFI_IFNAME, IPV6_GLOBAL_ADDRESS)
+        val wifiLp_4 = lp(WIFI_IFNAME_2, IPV4_ADDRESS_2)
+        val wifiLp_5 = lp(WIFI_IFNAME_3, LINK_LOCAL_ADDRESS)
         wifiLp_3.addStackedLink(wifiLp_4)
         wifiLp_3.addStackedLink(wifiLp_5)
         wifiAgent.sendLinkProperties(wifiLp_3)
@@ -419,9 +408,9 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME_3)
         // Verifying new base IPv6 address should be populated in local_net_access map
         verify(bpfNetMaps).addLocalNetAccess(
-                eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_2_PREFIX.getPrefixLength()),
+                eq(PREFIX_LENGTH_IPV6 + IPV6_ONLINK_PREFIX.getPrefixLength()),
                 eq(WIFI_IFNAME),
-                eq(LOCAL_IPV6_IP_ADDRESS_2_PREFIX.getAddress()),
+                eq(IPV6_ONLINK_PREFIX.getAddress()),
                 eq(0),
                 eq(0),
                 eq(false)
@@ -438,18 +427,18 @@ class CSLocalNetworkProtectionTest : CSTest() {
         )
         // Verifying newly stacked IPv6 address should be populated in local_net_access map
         verify(bpfNetMaps).addLocalNetAccess(
-                eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_3_PREFIX.getPrefixLength()),
+                eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
                 eq(WIFI_IFNAME_3),
-                eq(LOCAL_IPV6_IP_ADDRESS_3_PREFIX.getAddress()),
+                eq(LINK_LOCAL_PREFIX.getAddress()),
                 eq(0),
                 eq(0),
                 eq(false)
         )
         // Verifying old base IPv6 address should be removed from local_net_access map
         verify(bpfNetMaps).removeLocalNetAccess(
-                eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+                eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
                 eq(WIFI_IFNAME),
-                eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+                eq(LINK_LOCAL_PREFIX.getAddress()),
                 eq(0),
                 eq(0)
         )
@@ -470,7 +459,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val cb = TestableNetworkCallback()
         cm.requestNetwork(nr, cb)
 
-        val wifiLp = lp(WIFI_IFNAME, LOCAL_IPV4_LINK_ADDRRESS_1)
+        val wifiLp = lp(WIFI_IFNAME, IPV4_ADDRESS_1)
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
         cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
@@ -481,14 +470,14 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verify(bpfNetMaps).addLocalNetAccess(
             eq(PREFIX_LENGTH_IPV4 + 8),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV4_IP_ADDRESS_PREFIX_1.getAddress()),
+            eq(IPV4_PREFIX_1.getAddress()),
             eq(0),
             eq(0),
             eq(false)
         )
 
         // Updating Link Property from one IPv4 to another IPv4 within same range(10.0.0.0/8)
-        val wifiLp2 = lp(WIFI_IFNAME, LOCAL_IPV4_LINK_ADDRRESS_2)
+        val wifiLp2 = lp(WIFI_IFNAME, IPV4_ADDRESS_2)
         wifiAgent.sendLinkProperties(wifiLp2)
         cb.expect<LinkPropertiesChanged>(wifiAgent.network)
 
@@ -509,7 +498,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val cb = TestableNetworkCallback()
         cm.requestNetwork(nr, cb)
 
-        val wifiLp = lp(WIFI_IFNAME, LOCAL_IPV6_LINK_ADDRESS)
+        val wifiLp = lp(WIFI_IFNAME, LINK_LOCAL_ADDRESS)
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
         cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
@@ -518,16 +507,16 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyPopulationOfMulticastAndBroadcastAddress()
         // Verifying IPv6 address should be populated in local_net_access map
         verify(bpfNetMaps).addLocalNetAccess(
-            eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+            eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)
         )
 
         // Updating Link Property by changing interface name which has IPv4 instead of IPv6
-        val wifiLp2 = lp(WIFI_IFNAME_2, LOCAL_IPV4_LINK_ADDRRESS_1)
+        val wifiLp2 = lp(WIFI_IFNAME_2, IPV4_ADDRESS_1)
         wifiAgent.sendLinkProperties(wifiLp2)
         cb.expect<LinkPropertiesChanged>(wifiAgent.network)
 
@@ -548,9 +537,9 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyRemovalOfMulticastAndBroadcastAddress()
         // Verifying IPv6 address should be removed from local_net_access map
         verify(bpfNetMaps).removeLocalNetAccess(
-            eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+            eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0)
         )
@@ -562,7 +551,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val cb = TestableNetworkCallback()
         cm.requestNetwork(nr, cb)
 
-        val wifiLp = lp(WIFI_IFNAME, LOCAL_IPV6_LINK_ADDRESS)
+        val wifiLp = lp(WIFI_IFNAME, LINK_LOCAL_ADDRESS)
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
         cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
@@ -571,16 +560,16 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyPopulationOfMulticastAndBroadcastAddress()
         // Verifying IPv6 address should be populated in local_net_access map
         verify(bpfNetMaps).addLocalNetAccess(
-            eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+            eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)
         )
 
         // Adding another network with LinkProperty having IPv4 in LinkAddress
-        val wifiLp2 = lp(WIFI_IFNAME_2, LOCAL_IPV4_LINK_ADDRRESS_1)
+        val wifiLp2 = lp(WIFI_IFNAME_2, IPV4_ADDRESS_1)
         val wifiAgent2 = Agent(nc = wifiNc, lp = wifiLp2)
         wifiAgent2.connect()
 
@@ -596,7 +585,16 @@ class CSLocalNetworkProtectionTest : CSTest() {
             eq(false)
         )
         // Verifying nothing should be removed from local_net_access map
-        verify(bpfNetMaps, never()).removeLocalNetAccess(any(), any(), any(), any(), any())
+        verify(
+            bpfNetMaps,
+            never()
+        ).removeLocalNetAccess(
+            anyInt(),
+            anyString(),
+            any(InetAddress::class.java),
+            anyInt(),
+            anyInt()
+        )
     }
 
     @Test
@@ -605,7 +603,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val cb = TestableNetworkCallback()
         cm.requestNetwork(nr, cb)
 
-        val wifiLp = lp(WIFI_IFNAME, LOCAL_IPV6_LINK_ADDRESS)
+        val wifiLp = lp(WIFI_IFNAME, LINK_LOCAL_ADDRESS)
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
         cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
@@ -614,9 +612,9 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyPopulationOfMulticastAndBroadcastAddress()
         // Verifying IPv6 address should be populated in local_net_access map
         verify(bpfNetMaps).addLocalNetAccess(
-            eq( PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+            eq( PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)
@@ -631,9 +629,9 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verifyRemovalOfMulticastAndBroadcastAddress()
         // Verifying IPv6 address should be removed from local_net_access map
         verify(bpfNetMaps).removeLocalNetAccess(
-            eq(PREFIX_LENGTH_IPV6 + LOCAL_IPV6_IP_ADDRESS_PREFIX.getPrefixLength()),
+            eq(PREFIX_LENGTH_IPV6 + LINK_LOCAL_PREFIX.getPrefixLength()),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_IP_ADDRESS_PREFIX.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0)
         )
@@ -646,8 +644,8 @@ class CSLocalNetworkProtectionTest : CSTest() {
         cm.requestNetwork(nr, cb)
 
         val routes = listOf(RouteInfo(
-            IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX,
-            LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_1.getAddress(),
+            IPV6_DEFAULT_ROUTE_PREFIX,
+            IPV6_HOME_PREFIX_2.getAddress(),
             WIFI_IFNAME
         ))
 
@@ -655,7 +653,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val wifiLp = lpWithRoutes(
             WIFI_IFNAME,
             routes,
-            LOCAL_IPV6_LINK_ADDRESS
+            LINK_LOCAL_ADDRESS
         )
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
@@ -668,7 +666,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verify(bpfNetMaps, never()).addLocalNetAccess(
             eq(PREFIX_LENGTH_IPV6),
             eq(WIFI_IFNAME),
-            eq(IPV6_DEFAULT_ROUTE_ADDRESS_PREFIX.getAddress()),
+            eq(IPV6_DEFAULT_ROUTE_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)
@@ -682,7 +680,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         cm.requestNetwork(nr, cb)
 
         val routes = listOf(RouteInfo(
-            LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_4,
+            LINK_LOCAL_PREFIX,
             null,
             WIFI_IFNAME
         ))
@@ -691,7 +689,7 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val wifiLp = lpWithRoutes(
             WIFI_IFNAME,
             routes,
-            LOCAL_IPV6_LINK_ADDRESS
+            LINK_LOCAL_ADDRESS
         )
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
@@ -704,10 +702,10 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verify(bpfNetMaps).addLocalNetAccess(
             eq(
                 PREFIX_LENGTH_IPV6 +
-                    LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_4.getPrefixLength()
+                    LINK_LOCAL_PREFIX.getPrefixLength()
             ),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_4.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)
@@ -722,22 +720,22 @@ class CSLocalNetworkProtectionTest : CSTest() {
 
         val routes = listOf(
             RouteInfo(
-            LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_1,
+            IPV6_HOME_PREFIX_2,
             null,
             WIFI_IFNAME
             ),
             RouteInfo(
-                LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_2,
+                IPV6_HOME_PREFIX,
                 null,
                 WIFI_IFNAME
             ),
             RouteInfo(
-                LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_3,
+                IPV6_ONLINK_PREFIX,
                 null,
                 WIFI_IFNAME
             ),
             RouteInfo(
-            LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_4,
+            LINK_LOCAL_PREFIX,
             null,
             WIFI_IFNAME
         )
@@ -747,8 +745,8 @@ class CSLocalNetworkProtectionTest : CSTest() {
         val wifiLp = lpWithRoutes(
             WIFI_IFNAME,
             routes,
-            LOCAL_IPV6_LINK_ADDRESS,
-            LOCAL_IPV6_LINK_ADDRESS_2
+            LINK_LOCAL_ADDRESS,
+            IPV6_GLOBAL_ADDRESS
         )
         val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
         wifiAgent.connect()
@@ -761,10 +759,10 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verify(bpfNetMaps).addLocalNetAccess(
             eq(
                 PREFIX_LENGTH_IPV6 +
-                    LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_2.getPrefixLength()
+                    IPV6_HOME_PREFIX.getPrefixLength()
             ),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_2.getAddress()),
+            eq(IPV6_HOME_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)
@@ -772,10 +770,10 @@ class CSLocalNetworkProtectionTest : CSTest() {
         verify(bpfNetMaps).addLocalNetAccess(
             eq(
                 PREFIX_LENGTH_IPV6 +
-                    LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_4.getPrefixLength()
+                    LINK_LOCAL_PREFIX.getPrefixLength()
             ),
             eq(WIFI_IFNAME),
-            eq(LOCAL_IPV6_ROUTE_ADDRESS_PREFIX_4.getAddress()),
+            eq(LINK_LOCAL_PREFIX.getAddress()),
             eq(0),
             eq(0),
             eq(false)

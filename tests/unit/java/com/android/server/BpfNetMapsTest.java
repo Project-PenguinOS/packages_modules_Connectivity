@@ -84,6 +84,7 @@ import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISS
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_INTERNET;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UNINSTALLED;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
+import static com.android.tethering.flags.Flags.FLAG_LOOPBACK_ACCESS_METRICS;
 import static com.android.tethering.flags.Flags.FLAG_PERMISSION_MAP_UID_MIGRATION;
 
 import static org.junit.Assert.assertEquals;
@@ -244,6 +245,8 @@ public final class BpfNetMapsTest {
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
     private final BpfBoolean mL4sEnabledMap =
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
+    private final BpfBoolean mLoopbackAccessMetricsEnabledBpfBoolean =
+            new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
 
     @Before
     public void setUp() throws Exception {
@@ -257,6 +260,8 @@ public final class BpfNetMapsTest {
         doAnswer(invocation -> mFeatureFlags.getOrDefault(
                         FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, true))
                 .when(mDeps).isAccessLocalNetworkPermissionEnabled();
+        doAnswer(invocation -> mFeatureFlags.getOrDefault(FLAG_LOOPBACK_ACCESS_METRICS, false))
+                .when(mDeps).isLoopbackAccessMetricsEnabled();
         BpfNetMaps.setConfigurationMapForTest(mConfigurationMap);
         mConfigurationMap.updateEntry(UID_RULES_CONFIGURATION_KEY, new U32(0));
         mConfigurationMap.updateEntry(
@@ -275,6 +280,8 @@ public final class BpfNetMapsTest {
         BpfNetMaps.setPermissionPropagationEnabledBpfBooleanForTest(
                 mPermissionPropagationEnabledBpfBoolean);
         BpfNetMaps.setUidPermissionChunkMapForTest(mUidPermissionChunkMap);
+        BpfNetMaps.setLoopbackAccessMetricsEnabledBpfBooleanForTest(
+                mLoopbackAccessMetricsEnabledBpfBoolean);
         BpfNetMaps.setInitializedForTest(false);
         mBpfNetMaps = new BpfNetMaps(mContext, mNetd, mDeps, mInterfaceTracker);
     }
@@ -1785,6 +1792,34 @@ public final class BpfNetMapsTest {
                 DATA_SAVER_ENABLED,
                 false /* expectRestricted */
         );
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_LOOPBACK_ACCESS_METRICS, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testLoopbackAccessMetricsDisabled() throws Exception {
+        assertFalse(mLoopbackAccessMetricsEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_LOOPBACK_ACCESS_METRICS, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testLoopbackAccessMetricsEnabled() throws Exception {
+        assertTrue(mLoopbackAccessMetricsEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_LOOPBACK_ACCESS_METRICS, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpLoopbackAccessMetricsDisabled() throws Exception {
+        assertDumpContains(getDump(), "sLoopbackAccessMetricsEnabledBpfBoolean: false");
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_LOOPBACK_ACCESS_METRICS, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpLoopbackAccessMetricsEnabled() throws Exception {
+        assertDumpContains(getDump(), "sLoopbackAccessMetricsEnabledBpfBoolean: true");
     }
 
     @Test

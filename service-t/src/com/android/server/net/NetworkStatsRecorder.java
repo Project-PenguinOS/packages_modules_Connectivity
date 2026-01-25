@@ -21,6 +21,12 @@ import static android.net.TrafficStats.KB_IN_BYTES;
 import static android.net.TrafficStats.MB_IN_BYTES;
 import static android.text.format.DateUtils.YEAR_IN_MILLIS;
 
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_READ_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_REMOVE_DATA_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_REMOVE_UID_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_WRITE_ERROR;
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.NetworkIdentitySet;
@@ -42,6 +48,8 @@ import android.util.proto.ProtoOutputStream;
 import com.android.internal.util.FileRotator;
 import com.android.metrics.NetworkStatsMetricsLogger;
 import com.android.net.module.util.NetworkStatsUtils;
+import com.android.net.module.util.TerribleErrorLog;
+import com.android.server.ConnectivityStatsLog;
 
 import libcore.io.IoUtils;
 
@@ -235,11 +243,11 @@ public class NetworkStatsRecorder {
         try {
             mRotator.readMatching(res, start, end);
             res.recordCollection(mPending);
-        } catch (IOException e) {
-            Log.wtf(TAG, "problem completely reading network stats", e);
-            recoverAndDeleteData();
-        } catch (OutOfMemoryError e) {
-            Log.wtf(TAG, "problem completely reading network stats", e);
+        } catch (IOException | OutOfMemoryError e) {
+            TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                    "problem completely reading network stats: " + e,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                    CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_READ_ERROR);
             recoverAndDeleteData();
         }
         return res;
@@ -346,11 +354,11 @@ public class NetworkStatsRecorder {
                 mRotator.rewriteActive(mPendingRewriter, currentTimeMillis);
                 mRotator.maybeRotate(currentTimeMillis);
                 mPending.reset();
-            } catch (IOException e) {
-                Log.wtf(TAG, "problem persisting pending stats", e);
-                recoverAndDeleteData();
-            } catch (OutOfMemoryError e) {
-                Log.wtf(TAG, "problem persisting pending stats", e);
+            } catch (IOException | OutOfMemoryError e) {
+                TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                        "problem persisting pending stats: " + e,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_WRITE_ERROR);
                 recoverAndDeleteData();
             }
         }
@@ -367,11 +375,11 @@ public class NetworkStatsRecorder {
                 final NetworkStatsCollection temp = new NetworkStatsCollection(mBucketDuration,
                         mUseFastDataInput, mStoreTransportTypes);
                 mRotator.rewriteAll(new RemoveUidRewriter(temp, uids));
-            } catch (IOException e) {
-                Log.wtf(TAG, "problem removing UIDs " + Arrays.toString(uids), e);
-                recoverAndDeleteData();
-            } catch (OutOfMemoryError e) {
-                Log.wtf(TAG, "problem removing UIDs " + Arrays.toString(uids), e);
+            } catch (IOException | OutOfMemoryError e) {
+                TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                        "problem removing UIDs " + Arrays.toString(uids) + ": " + e,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_REMOVE_UID_ERROR);
                 recoverAndDeleteData();
             }
         }
@@ -525,11 +533,11 @@ public class NetworkStatsRecorder {
                 final NetworkStatsCollection temp = new NetworkStatsCollection(mBucketDuration,
                         mUseFastDataInput, mStoreTransportTypes);
                 mRotator.rewriteAll(new RemoveDataBeforeRewriter(temp, cutoffMillis));
-            } catch (IOException e) {
-                Log.wtf(TAG, "problem importing netstats", e);
-                recoverAndDeleteData();
-            } catch (OutOfMemoryError e) {
-                Log.wtf(TAG, "problem importing netstats", e);
+            } catch (IOException | OutOfMemoryError e) {
+                TerribleErrorLog.logTerribleError(ConnectivityStatsLog::write,
+                        "problem removing old data from netstats: " + e,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
+                        CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_NETWORK_STATS_REMOVE_DATA_ERROR);
                 recoverAndDeleteData();
             }
         }

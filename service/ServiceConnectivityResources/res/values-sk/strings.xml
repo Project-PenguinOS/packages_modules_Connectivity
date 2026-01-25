@@ -43,7 +43,9 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"neznámy typ siete"</string>
-    <string name="connect_to_service_title" msgid="2417012530980077322">"Pripojenie k službe"</string>
-    <string name="connect_to_service_summary" msgid="8059566528115046359">"Aplikácia <xliff:g id="APP_NAME">%1$s</xliff:g> sa chce pripojiť k inému zariadeniu v miestnej sieti"</string>
+    <string name="choose_device_title" msgid="1326677343980771265">"Pripojenie k službe"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"Aplikácia <xliff:g id="APP_NAME">%1$s</xliff:g> sa chce pripojiť k inému zariadeniu v miestnej sieti"</string>
+    <!-- no translation found for choose_device_cancel (6916104929345443557) -->
+    <skip />
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"Hľadajú sa služby"</string>
 </resources>
