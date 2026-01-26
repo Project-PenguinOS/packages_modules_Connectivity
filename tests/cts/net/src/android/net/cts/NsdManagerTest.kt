@@ -48,6 +48,7 @@ import android.net.nsd.NsdManager.PROTOCOL_DNS_SD
 import android.net.nsd.NsdServiceInfo
 import android.net.nsd.OffloadEngine
 import android.net.nsd.OffloadServiceInfo
+import android.net.nsd.OffloadSession
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
@@ -246,6 +247,7 @@ class NsdManagerTest {
         sealed class OffloadEvent : NsdEvent {
             data class AddOrUpdateEvent(val info: OffloadServiceInfo) : OffloadEvent()
             data class RemoveEvent(val info: OffloadServiceInfo) : OffloadEvent()
+            data class SessionCreateEvent(val offloadSession: OffloadSession) : OffloadEvent()
         }
 
         override fun onOffloadServiceUpdated(info: OffloadServiceInfo) {
@@ -254,6 +256,10 @@ class NsdManagerTest {
 
         override fun onOffloadServiceRemoved(info: OffloadServiceInfo) {
             add(OffloadEvent.RemoveEvent(info))
+        }
+
+        override fun onOffloadSessionCreated(offloadSession: OffloadSession) {
+            add(OffloadEvent.SessionCreateEvent(offloadSession))
         }
     }
 
@@ -921,13 +927,17 @@ class NsdManagerTest {
                 discoveryRecord1
             )
             discoveryRecord1.expectCallback<DiscoveryStarted>()
-            val offloadSession = runAsShell(NETWORK_SETTINGS) {
-                nsdManager.registerOffloadSession(
+            runAsShell(NETWORK_SETTINGS) {
+                nsdManager.registerOffloadEngine(
                     NOT_MDNS_CAPABLE_INTERFACE,
                     OffloadEngine.OFFLOAD_TYPE_QUERY.toLong(),
                     0L,
                     { it.run() }, offloadEngine)
             }
+            val sessionCreateEvent = offloadEngine
+                .expectCallback<TestNsdOffloadEngine.OffloadEvent.SessionCreateEvent>()
+            val offloadSession = sessionCreateEvent.offloadSession
+            assertNotNull(offloadSession)
             val addOrUpdateEvent1 = offloadEngine
                 .expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
             assertThat(addOrUpdateEvent1.info.key.serviceName).isEmpty()
@@ -976,7 +986,7 @@ class NsdManagerTest {
                     it.subtypes = setOf("_subtype1", "_subtype2")
             }
             runAsShell(NETWORK_SETTINGS) {
-                offloadSession?.onServiceFound(nsdServiceInfo)
+                offloadSession.notifyServiceFound(nsdServiceInfo)
             }
             val foundInfo1 = discoveryRecord1.waitForServiceDiscovered("MyService", serviceType)
             val foundInfo2 = discoveryRecord2.waitForServiceDiscovered("MyService", serviceType)
@@ -1006,7 +1016,7 @@ class NsdManagerTest {
                 )
             }
             runAsShell(NETWORK_SETTINGS) {
-                offloadSession?.onServiceUpdated(nsdServiceInfoWithHostname)
+                offloadSession.notifyServiceUpdated(nsdServiceInfoWithHostname)
             }
             val serviceInfoCb = cbRecord.expectCallback<ServiceUpdated>()
             assertEquals(
@@ -1028,7 +1038,7 @@ class NsdManagerTest {
             }
             nsdServiceInfoWithHostname.serviceType = serviceTypeWithDotSuffix
             runAsShell(NETWORK_SETTINGS) {
-                offloadSession?.onServiceLost(nsdServiceInfoWithHostname)
+                offloadSession.notifyServiceLost(nsdServiceInfoWithHostname)
             }
             cbRecord.expectCallback<ServiceUpdatedLost>()
             val serviceLostEvent = discoveryRecord3.expectCallback<ServiceLost>()
@@ -1287,6 +1297,9 @@ class NsdManagerTest {
                     0L, /* offloadCapability */
                     { it.run() }, offloadEngine)
             }
+            val sessionCreateEvent =
+                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.SessionCreateEvent>()
+            assertThat(sessionCreateEvent).isNotNull()
 
             // Check discovery info is offloaded.
             val discoveryInfoEvent =
@@ -1378,6 +1391,9 @@ class NsdManagerTest {
                     0L, /* offloadCapability */
                     { it.run() }, offloadEngine)
             }
+            val sessionCreateEvent =
+                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.SessionCreateEvent>()
+            assertThat(sessionCreateEvent).isNotNull()
 
             // Start a discovery
             val discoveryRequest = DiscoveryRequest.Builder(serviceType)

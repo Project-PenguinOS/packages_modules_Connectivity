@@ -152,6 +152,7 @@ import androidx.test.filters.SmallTest;
 import com.android.connectivity.resources.aidl.NsdPickerConnector;
 import com.android.connectivity.resources.aidl.NsdServiceReceiver;
 import com.android.metrics.NetworkNsdReportedMetrics;
+import com.android.net.module.util.SharedLog;
 import com.android.server.NsdService.Dependencies;
 import com.android.server.connectivity.mdns.MdnsAdvertiser;
 import com.android.server.connectivity.mdns.MdnsAdvertisingOptions;
@@ -164,6 +165,7 @@ import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOfflo
 import com.android.server.connectivity.mdns.MdnsSocketProvider;
 import com.android.server.connectivity.mdns.MdnsSocketProvider.SocketRequestMonitor;
 import com.android.server.connectivity.mdns.OffloadCallback;
+import com.android.server.connectivity.mdns.internal.ServiceAccessRepository;
 import com.android.server.connectivity.mdns.util.MdnsUtils;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRunner;
@@ -198,6 +200,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 // TODOs:
 //  - test client can send requests and receive replies
@@ -269,6 +275,7 @@ public class NsdServiceTest {
     PermissionManager mPermissionManager;
     @Mock NetworkNsdReportedMetrics mMetrics;
     @Mock MdnsUtils.Clock mClock;
+    ServiceAccessRepository mAccessRepository;
     SocketRequestMonitor mSocketRequestMonitor;
     OnUidImportanceListener mUidImportanceListener;
     HandlerThread mThread;
@@ -294,6 +301,7 @@ public class NsdServiceTest {
         mThread = new HandlerThread("mock-service-handler");
         mThread.start();
         mHandler = new Handler(mThread.getLooper());
+        mAccessRepository = new ServiceAccessRepository(new SharedLog("TestAccessRepo"));
         when(mContext.getContentResolver()).thenReturn(mResolver);
         when(mContext.getSystemService(PermissionManager.class)).thenReturn(mPermissionManager);
         mockService(mContext, MDnsManager.class, MDnsManager.MDNS_SERVICE, mMockMDnsM);
@@ -361,7 +369,7 @@ public class NsdServiceTest {
                 com.android.tethering.mainline.beta.Flags.FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT,
                 false))
                 .when(mDeps).isSupportTetheringAndP2pGoLocalAgent(any(Context.class));
-
+        doReturn(mAccessRepository).when(mDeps).makeAccessRepository(any());
         mService = makeService();
         final ArgumentCaptor<SocketRequestMonitor> cbMonitorCaptor =
                 ArgumentCaptor.forClass(SocketRequestMonitor.class);
@@ -1220,6 +1228,7 @@ public class NsdServiceTest {
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     public void testRegisterServiceInfoCallback_MissingLocalNetworkPermission_Fails() {
+        mAccessRepository.unloadUid(Process.myUid());
         final AttributionSource attributionSource = getAttributionSource();
         doReturn(PermissionManager.PERMISSION_SOFT_DENIED).when(
                 mPermissionManager).checkPermissionForStartDataDelivery(
@@ -1240,10 +1249,33 @@ public class NsdServiceTest {
     }
 
     @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    public void testRegisterServiceInfoCallback_ChosenViaPicker_Succeeds() throws Exception {
+        setMdnsDiscoveryManagerEnabled();
+        mAccessRepository.unloadUid(Process.myUid());
+        final NsdManager client = connectClient(mService);
+        final ServiceInfoCallback serviceInfoCallback = mock(ServiceInfoCallback.class);
+        final NsdServiceInfo serviceInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        serviceInfo.setNetwork(TEST_NETWORK);
+
+        startDiscoveryWithPicker(client);
+        final NsdPickerConnector connector = verifyPickerStarted();
+        connector.notifyServiceSelected(serviceInfo);
+        client.registerServiceInfoCallback(serviceInfo, Runnable::run, serviceInfoCallback);
+        waitForIdle();
+
+        verify(mDiscoveryManager).registerListener(eq(SERVICE_TYPE_WITH_LOCAL_TLD), any(),
+                argThat(options -> SERVICE_NAME.equals(options.getResolveInstanceName())));
+        verify(serviceInfoCallback, never()).onServiceInfoCallbackRegistrationFailed(anyInt());
+    }
+
+    @Test
     @DisableCompatChanges(RESTRICT_LOCAL_NETWORK)
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     public void testRegisterServiceInfoCallback_HasLocalNetworkPermission_Succeeds() {
+        mAccessRepository.unloadUid(Process.myUid());
         final AttributionSource attributionSource = getAttributionSource();
         doReturn(PermissionManager.PERMISSION_GRANTED).when(
                 mPermissionManager).checkPermissionForStartDataDelivery(
@@ -1942,6 +1974,32 @@ public class NsdServiceTest {
                 .onResolveFailed(any(), eq(FAILURE_PERMISSION_DENIED));
         verify(mPermissionManager, never()).finishDataDelivery(ACCESS_LOCAL_NETWORK,
                 attributionSource);
+    }
+
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    public void testResolutionWithMdnsDiscoveryManager_ChosenViaPicker_Succeeds()
+            throws Exception {
+        setMdnsDiscoveryManagerEnabled();
+        mAccessRepository.unloadUid(Process.myUid());
+
+        final NsdManager client = connectClient(mService);
+        final ResolveListener resolveListener = mock(ResolveListener.class);
+        final NsdServiceInfo serviceInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        serviceInfo.setNetwork(TEST_NETWORK);
+
+        startDiscoveryWithPicker(client);
+        final NsdPickerConnector connector = verifyPickerStarted();
+        connector.notifyServiceSelected(serviceInfo);
+        waitForIdle();
+
+        client.resolveService(serviceInfo, resolveListener);
+        waitForIdle();
+
+        verify(mDiscoveryManager).registerListener(eq(SERVICE_TYPE_WITH_LOCAL_TLD), any(),
+                argThat(options -> SERVICE_NAME.equals(options.getResolveInstanceName())));
+        verify(resolveListener, never()).onResolveFailed(any(), anyInt());
     }
 
     @Test
@@ -2887,7 +2945,7 @@ public class NsdServiceTest {
         return offloadEngine;
     }
 
-    private OffloadSession registerOffloadSession(
+    private void registerOffloadEngine(
             String interfaceName,
             OffloadEngine offloadEngine,
             @OffloadEngine.OffloadType long offloadType
@@ -2895,12 +2953,11 @@ public class NsdServiceTest {
         final NsdManager client = connectClient(mService);
         doReturn(PERMISSION_GRANTED).when(mContext).checkCallingOrSelfPermission(
                 REGISTER_NSD_OFFLOAD_ENGINE);
-        OffloadSession offloadSession = client.registerOffloadSession(interfaceName,
+        client.registerOffloadEngine(interfaceName,
                 offloadType,
                 OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run,
                 offloadEngine);
         waitForIdle();
-        return offloadSession;
     }
 
     @Test
@@ -3007,8 +3064,7 @@ public class NsdServiceTest {
                 );
         doReturn(List.of(discoveryOffloadInfo)).when(mDiscoveryManager)
                 .notifyOffloadStart(eq(interfaceName));
-        final OffloadEngine offloadEngine = mock(OffloadEngine.class);
-        registerOffloadSession(interfaceName, offloadEngine, offloadType);
+        final OffloadEngine offloadEngine = registerOffloadEngine(interfaceName, offloadType);
         // Verify that the OffloadServiceInfo retrieves from the advertiser and discoveryManager and
         // then sends it to the OffloadEngine.
         verify(mAdvertiser).notifyOffloadStart(interfaceName);
@@ -3018,18 +3074,38 @@ public class NsdServiceTest {
 
     @Test
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    public void testInjectProxyOffloadEngineResponse() {
+    public void testInjectProxyOffloadEngineResponse()
+            throws ExecutionException, InterruptedException, TimeoutException {
         NsdServiceInfo serviceInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE + ".");
         boolean isServiceLost = false;
         String interfaceName = "lo";
-        final OffloadEngine offloadEngine = mock(OffloadEngine.class);
-        OffloadSession offloadSession = registerOffloadSession(
+        final CompletableFuture<OffloadSession> sessionFuture = new CompletableFuture<>();
+
+
+        OffloadEngine offloadEngine = new OffloadEngine() {
+            @Override
+            public void onOffloadServiceUpdated(@NonNull OffloadServiceInfo info) {
+
+            }
+
+            @Override
+            public void onOffloadServiceRemoved(@NonNull OffloadServiceInfo info) {
+
+            }
+
+            @Override
+            public void onOffloadSessionCreated(@NonNull OffloadSession offloadSession) {
+                sessionFuture.complete(offloadSession);
+            }
+        };
+        registerOffloadEngine(
                 interfaceName,
                 offloadEngine,
                 OFFLOAD_TYPE_QUERY
         );
 
-        offloadSession.onServiceFound(serviceInfo);
+        OffloadSession offloadSession = sessionFuture.get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        offloadSession.notifyServiceFound(serviceInfo);
 
         ArgumentCaptor<NsdServiceInfo> serviceInfoCaptor =
                 ArgumentCaptor.forClass(NsdServiceInfo.class);
@@ -3114,10 +3190,8 @@ public class NsdServiceTest {
                 OFFLOAD_TYPE_FILTER_REPLIES | OFFLOAD_TYPE_QUERY);
         doReturn(Collections.emptyList()).when(mDiscoveryManager)
                 .notifyOffloadStart(eq(interfaceName));
-        final OffloadEngine offloadEngine = mock(OffloadEngine.class);
-        registerOffloadSession(
+        final OffloadEngine offloadEngine = registerOffloadEngine(
                 interfaceName,
-                offloadEngine,
                 OFFLOAD_TYPE_FILTER_REPLIES | OFFLOAD_TYPE_QUERY
         );
         // Verify that the OffloadServiceInfo retrieved from the DiscoveryManager and that no info
@@ -3300,7 +3374,7 @@ public class NsdServiceTest {
                 SERVICE_NAME, /* serviceInstanceName */
                 serviceTypeWithLocalDomain.split("\\."), /* serviceType */
                 List.of(), /* subtypes */
-                new String[] {"android", "local"}, /* hostName */
+                new String[]{"android", "local"}, /* hostName */
                 12345, /* port */
                 List.of(), /* ipv4Addresses */
                 List.of(), /* ipv6Addresses */
@@ -3319,5 +3393,20 @@ public class NsdServiceTest {
             verify(discListener, timeout(TIMEOUT_MS)).onServiceFound(argThat(info ->
                     info.getNetwork() == null && info.getInterfaceIndex() == ifaceIndex));
         }
+    }
+
+    @Test
+    public void testServiceAccessRepository_UnloadOnDisconnect() throws Exception {
+        setMdnsDiscoveryManagerEnabled();
+        connectClient(mService);
+        final INsdManagerCallback cb = getCallback();
+        final IBinder.DeathRecipient deathRecipient = verifyLinkToDeath(cb);
+        mHandler.post(() ->
+                mAccessRepository.addAllowedService(Process.myUid(), SERVICE_NAME, SERVICE_TYPE));
+        deathRecipient.binderDied();
+        waitForIdle();
+
+        assertFalse(HandlerUtils.visibleOnHandlerThread(mHandler, () ->
+                mAccessRepository.isServiceAllowed(Process.myUid(), SERVICE_NAME, SERVICE_TYPE)));
     }
 }

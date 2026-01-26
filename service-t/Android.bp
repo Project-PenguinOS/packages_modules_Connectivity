@@ -121,7 +121,7 @@ java_library {
 java_library {
     name: "service-connectivity-mdns-standalone-build-test",
     sdk_version: "core_platform",
-    min_sdk_version: "21",
+    min_sdk_version: "23",
     lint: {
         error_checks: ["NewApi"],
         baseline_filename: "lint-baseline-service-connectivity-mdns-standalone-build-test.xml",
@@ -132,6 +132,7 @@ java_library {
     ],
     exclude_srcs: [
         "src/com/android/server/connectivity/mdns/internal/MdnsRealtimeScheduler.java",
+        "src/com/android/server/connectivity/mdns/internal/ServiceAccessRepository.java",
         "src/com/android/server/connectivity/mdns/internal/SocketNetlinkMonitor.java",
         "src/com/android/server/connectivity/mdns/MdnsAdvertiser.java",
         "src/com/android/server/connectivity/mdns/MdnsAnnouncer.java",

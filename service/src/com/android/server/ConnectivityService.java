@@ -10904,6 +10904,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
         return effectivePrefixes;
     }
 
+    private static boolean hasGatewayedRoute(Collection<RouteInfo> routes) {
+        for (RouteInfo route : routes) {
+            if (route.hasGateway()) return true;
+        }
+        return false;
+    }
+
     /**
      * Identifies and retrieves all prefixes for network links that provide access to a
      * local network.
@@ -10932,6 +10939,17 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         final List<RouteInfo> routes = lp.getRoutes();
+
+        // On point-to-point links such as cellular and VPNs, assume that nothing is local except
+        // the subnets corresponding to local IP addresses. NetworkAgents don't specify whether
+        // their network is point-to-point, and the IFF_POINTOPOINT flag is likely unreliable, so
+        // use a simple heuristic: if there are no gatewayed routes, then the network is
+        // point-to-point. This seems better than excluding specific network types such as VPNs and
+        // cellular. Don't look at clat, which is always gatewayed.
+        if (!hasGatewayedRoute(routes)) return new ArrayList<>();
+
+        // TODO: Add all directly-connected routes.
+
         final List<IpPrefix> localPrefixes = new ArrayList<>();
 
         // Rule 1: Check for a ULA route with a nexthop that is not a default router.

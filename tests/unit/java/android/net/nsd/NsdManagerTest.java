@@ -26,7 +26,6 @@ import static libcore.junit.util.compat.CoreCompatChangeRule.DisableCompatChange
 import static libcore.junit.util.compat.CoreCompatChangeRule.EnableCompatChanges;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
@@ -45,7 +44,6 @@ import android.content.Context;
 import android.net.connectivity.ConnectivityCompatChanges;
 import android.os.Build;
 
-import androidx.annotation.NonNull;
 import androidx.test.filters.SmallTest;
 
 import com.android.modules.utils.build.SdkLevel;
@@ -260,23 +258,13 @@ public class NsdManagerTest {
     public void testOffloadSessionRegistration() throws Exception {
         final NsdManager manager = mManager;
         String interfaceName = "lo";
-        long offloadType = OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
-        OffloadEngine offloadEngine = new OffloadEngine() {
-            @Override
-            public void onOffloadServiceUpdated(@NonNull OffloadServiceInfo info) {
+        long offloadType = OffloadEngine.OFFLOAD_TYPE_QUERY;
+        OffloadEngine offloadEngine = mock(OffloadEngine.class);
 
-            }
-
-            @Override
-            public void onOffloadServiceRemoved(@NonNull OffloadServiceInfo info) {
-
-            }
-        };
-
-        OffloadSession offloadSession = manager.registerOffloadSession(
+        manager.registerOffloadEngine(
                 interfaceName,
                 offloadType,
-                1L,
+                0L,
                 Runnable::run,
                 offloadEngine
         );
@@ -284,10 +272,9 @@ public class NsdManagerTest {
         verify(mServiceConn).registerOffloadEngine(
                 eq(interfaceName),
                 any(),
-                eq(1L),
+                eq(0L),
                 eq(offloadType)
         );
-        assertNotNull(offloadSession);
     }
 
     private void doTestRegisterService() throws Exception {

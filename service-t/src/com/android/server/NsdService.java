@@ -143,6 +143,7 @@ import com.android.server.connectivity.mdns.MdnsServiceInfo;
 import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOffloadInfo;
 import com.android.server.connectivity.mdns.MdnsSocketProvider;
 import com.android.server.connectivity.mdns.OffloadCallback;
+import com.android.server.connectivity.mdns.internal.ServiceAccessRepository;
 import com.android.server.connectivity.mdns.util.MdnsUtils;
 import com.android.tethering.flags.Flags;
 
@@ -164,6 +165,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -265,6 +267,7 @@ public class NsdService extends INsdManager.Stub {
     @NonNull
     private final Clock mClock;
     private final SharedLog mServiceLogs = LOGGER.forSubComponent(TAG);
+    private final ServiceAccessRepository mAccessRepository;
     // WARNING : Accessing these values in any thread is not safe, it must only be changed in the
     // handler thread.
     private boolean mIsDaemonStarted = false;
@@ -586,8 +589,8 @@ public class NsdService extends INsdManager.Stub {
                 Log.d(TAG, "Client request unregistered, ignoring selected service");
                 return;
             }
-            // TODO: allowlist the service name for resolution without local network permissions
-            //  now that it has been selected
+            mAccessRepository.addAllowedService(mClientInfo.mUid, service.getServiceName(),
+                    service.getServiceType());
             mClientInfo.log("Service selected for request " + mClientRequestId + ": " + service);
             // Metrics are already recorded when the service was discovered; only call the
             // client callbacks without recording metrics.
@@ -1019,9 +1022,9 @@ public class NsdService extends INsdManager.Stub {
 
     private ClientRequest storeDiscoveryManagerRequestMap(int clientRequestId,
             int transactionId, MdnsListener listener, ClientInfo clientInfo,
-            @Nullable Network requestedNetwork, boolean usingFallbackPermission) {
+            @Nullable Network requestedNetwork, boolean usingPermissionExemption) {
         final DiscoveryManagerRequest request = new DiscoveryManagerRequest(transactionId,
-                listener, requestedNetwork, mClock.elapsedRealtime(), usingFallbackPermission);
+                listener, requestedNetwork, mClock.elapsedRealtime(), usingPermissionExemption);
         clientInfo.mClientRequests.put(clientRequestId, request);
         mTransactionIdToClientInfoMap.put(transactionId, clientInfo);
         updateMulticastLock();
@@ -1569,32 +1572,51 @@ public class NsdService extends INsdManager.Stub {
                     false /* usingLocalNetworkPermission */);
             return;
         }
-
-        // First check for local network permission. If it is not granted, still allow resolving if
-        // the app has a fallback permission.
-        // NsdService needs to track whether the local network permission or a fallback permission
-        // is being used, as if checkDataDeliveryPermissions returned PERMISSION_GRANTED,
-        // finishDataDelivery will need to be called when the request is unregistered to stop
-        // blaming the app for using the local network permission.
-        final boolean usingFallbackPermission;
-        final boolean usingLocalNetworkPermission = checkDataDeliveryPermissions(
-                clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
-        if (usingLocalNetworkPermission) {
-            usingFallbackPermission = false;
-        } else if (hasFallbackPermission(clientInfo.mUid, clientInfo.mPid)) {
-            usingFallbackPermission = true;
-        } else {
+        final Runnable disallowedCb = () -> {
+            clientInfo.mClientLogs.w("Not allowed to resolve service " + args.serviceInfo);
             clientInfo.onResolveServiceFailedPermissions(clientRequestId);
+        };
+        final Consumer<Boolean> allowedCb = usingPermissionExemption -> {
+            if (useJavaBackend) {
+                handleResolveServiceAfterPermissionCheck(clientRequestId, args.serviceInfo,
+                        clientInfo, serviceType, usingPermissionExemption);
+            } else {
+                final boolean usingLocalNetworkPermission = !usingPermissionExemption;
+                handleResolveServiceWithLegacyBackendAfterPermissionCheck(clientRequestId,
+                        args.serviceInfo, clientInfo, usingLocalNetworkPermission);
+            }
+        };
+        checkQueryServicePermissions(clientInfo, args.serviceInfo.getServiceName(), serviceType,
+                disallowedCb, allowedCb);
+    }
+
+    private void checkQueryServicePermissions(@NonNull ClientInfo clientInfo,
+            @Nullable String serviceName, @Nullable String serviceType,
+            @NonNull Runnable disallowedCb, @NonNull Consumer<Boolean> allowedCb) {
+        final boolean isServiceAllowed = mDeps.isAconfigFlagEnabled(FLAG_NSD_SERVICE_PICKER)
+                && serviceName != null && serviceType != null
+                && mAccessRepository.isServiceAllowed(clientInfo.mUid, serviceName, serviceType);
+
+        // If the service is in the allowlist, no need for permissions.
+        // Otherwise first check for local network permission. If it is not granted, still allow
+        // resolving if the app has a fallback permission.
+        // NsdService needs to track whether the local network permission or a fallback
+        // permission is being used, as if checkDataDeliveryPermissions returned
+        // PERMISSION_GRANTED, finishDataDelivery will need to be called when the request is
+        // unregistered to stop blaming the app for using the local network permission.
+        final boolean usingPermissionExemption;
+        if (isServiceAllowed) {
+            usingPermissionExemption = true;
+        } else if (checkDataDeliveryPermissions(
+                clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED) {
+            usingPermissionExemption = false;
+        } else if (hasFallbackPermission(clientInfo.mUid, clientInfo.mPid)) {
+            usingPermissionExemption = true;
+        } else {
+            disallowedCb.run();
             return;
         }
-
-        if (useJavaBackend) {
-            handleResolveServiceAfterPermissionCheck(clientRequestId, args.serviceInfo,
-                    clientInfo, serviceType, usingFallbackPermission);
-        } else {
-            handleResolveServiceWithLegacyBackendAfterPermissionCheck(clientRequestId,
-                    args.serviceInfo, clientInfo, usingLocalNetworkPermission);
-        }
+        allowedCb.accept(usingPermissionExemption);
     }
 
     private void handleResolveServiceAfterPermissionCheck(int clientRequestId, NsdServiceInfo info,
@@ -1704,27 +1726,17 @@ public class NsdService extends INsdManager.Stub {
                     NsdManager.FAILURE_BAD_PARAMETERS, /* usingLocalNetworkPermission= */false);
             return;
         }
-        // First check for local network permission. If it is not granted, still allow resolving if
-        // the app has a fallback permission.
-        // NsdService needs to track whether the local network permission or a fallback permission
-        // is being used, as if checkDataDeliveryPermissions returned PERMISSION_GRANTED,
-        // finishDataDelivery will need to be called when the request is unregistered to stop
-        // blaming the app for using the local network permission.
-        final boolean usingFallbackPermission;
-        final boolean usingLocalNetworkPermission = checkDataDeliveryPermissions(
-                clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
-        if (usingLocalNetworkPermission) {
-            usingFallbackPermission = false;
-        } else if (hasFallbackPermission(clientInfo.mUid, clientInfo.mPid)) {
-            usingFallbackPermission = true;
-        } else {
+
+        Runnable disallowedCb = () -> {
             clientInfo.mClientLogs.w("Not allowed to watch service " + info);
             clientInfo.onServiceInfoCallbackRegistrationFailedPermissions(clientRequestId);
-            return;
-        }
-        handleRegisterServiceCallbackAfterPermissionCheck(
-                clientRequestId, args.serviceInfo, clientInfo, serviceType,
-                usingFallbackPermission);
+        };
+        Consumer<Boolean> allowedCb = usingPermissionExemption ->
+                handleRegisterServiceCallbackAfterPermissionCheck(
+                        clientRequestId, args.serviceInfo, clientInfo, serviceType,
+                        usingPermissionExemption);
+        checkQueryServicePermissions(
+                clientInfo, info.getServiceName(), serviceType, disallowedCb, allowedCb);
     }
 
     private void handleRegisterServiceCallbackAfterPermissionCheck(int clientRequestId,
@@ -1848,6 +1860,10 @@ public class NsdService extends INsdManager.Stub {
             clientInfo.expungeAllRequests();
             if (clientInfo.isPreSClient()) {
                 mLegacyClientCount -= 1;
+            }
+            if (mDeps.isAconfigFlagEnabled(FLAG_NSD_SERVICE_PICKER)
+                    && !CollectionUtils.any(mClients.values(), c -> c.mUid == clientInfo.mUid)) {
+                mAccessRepository.unloadUid(clientInfo.mUid);
             }
         }
         maybeStopMonitoringSocketsIfNoActiveRequest();
@@ -2581,6 +2597,7 @@ public class NsdService extends INsdManager.Stub {
         mPermissionManager = Objects.requireNonNull(
                 mContext.getSystemService(PermissionManager.class));
         mClock = deps.makeClock();
+        mAccessRepository = deps.makeAccessRepository(LOGGER.forSubComponent("MdnsAccess"));
     }
 
     /**
@@ -2765,6 +2782,13 @@ public class NsdService extends INsdManager.Stub {
          */
         public Clock makeClock() {
             return new Clock();
+        }
+
+        /**
+         * @see ServiceAccessRepository
+         */
+        public ServiceAccessRepository makeAccessRepository(@NonNull SharedLog sharedLog) {
+            return new ServiceAccessRepository(sharedLog);
         }
     }
 
@@ -3464,6 +3488,13 @@ public class NsdService extends INsdManager.Stub {
         pw.increaseIndent();
         HandlerUtils.runWithScissorsForDump(mHandler, () -> mMdnsDiscoveryManager.dump(pw), 10_000);
         pw.decreaseIndent();
+
+        if (mDeps.isAconfigFlagEnabled(FLAG_NSD_SERVICE_PICKER)) {
+            pw.println("ServiceAccessRepository:");
+            pw.increaseIndent();
+            HandlerUtils.runWithScissorsForDump(mHandler, () -> mAccessRepository.dump(pw), 10_000);
+            pw.decreaseIndent();
+        }
     }
 
     private abstract static class ClientRequest {
@@ -3579,8 +3610,8 @@ public class NsdService extends INsdManager.Stub {
         private final Network mRequestedNetwork;
 
         private JavaBackendClientRequest(int transactionId, @Nullable Network requestedNetwork,
-                long startTimeMs, boolean usingFallbackPermission) {
-            super(transactionId, startTimeMs, usingFallbackPermission);
+                long startTimeMs, boolean usingPermissionExemption) {
+            super(transactionId, startTimeMs, usingPermissionExemption);
             mRequestedNetwork = requestedNetwork;
         }
 
@@ -3620,8 +3651,8 @@ public class NsdService extends INsdManager.Stub {
 
         private DiscoveryManagerRequest(int transactionId, @NonNull MdnsListener listener,
                 @Nullable Network requestedNetwork, long startTimeMs,
-                boolean usingFallbackPermission) {
-            super(transactionId, requestedNetwork, startTimeMs, usingFallbackPermission);
+                boolean usingPermissionExemption) {
+            super(transactionId, requestedNetwork, startTimeMs, usingPermissionExemption);
             mListener = listener;
         }
 

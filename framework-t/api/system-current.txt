@@ -386,13 +386,17 @@ package android.net.nsd {
 
   public final class NsdManager {
     method @FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api") @RequiresPermission(anyOf={android.Manifest.permission.NETWORK_SETTINGS, android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK, android.Manifest.permission.NETWORK_STACK}) public void registerOffloadEngine(@NonNull String, long, long, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.OffloadEngine);
-    method @FlaggedApi("com.android.tethering.flags.nsd_mdns_scan_offload") @Nullable @RequiresPermission(anyOf={android.Manifest.permission.NETWORK_SETTINGS, android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK, android.Manifest.permission.NETWORK_STACK, android.Manifest.permission.REGISTER_NSD_OFFLOAD_ENGINE}) public android.net.nsd.OffloadSession registerOffloadSession(@NonNull String, long, long, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.OffloadEngine);
     method @FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api") @RequiresPermission(anyOf={android.Manifest.permission.NETWORK_SETTINGS, android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK, android.Manifest.permission.NETWORK_STACK}) public void unregisterOffloadEngine(@NonNull android.net.nsd.OffloadEngine);
+  }
+
+  public final class NsdServiceInfo implements android.os.Parcelable {
+    method @FlaggedApi("com.android.tethering.flags.nsd_mdns_scan_offload") public void setHostname(@Nullable String);
   }
 
   public interface OffloadEngine {
     method public void onOffloadServiceRemoved(@NonNull android.net.nsd.OffloadServiceInfo);
     method public void onOffloadServiceUpdated(@NonNull android.net.nsd.OffloadServiceInfo);
+    method @FlaggedApi("com.android.tethering.flags.nsd_mdns_scan_offload") public default void onOffloadSessionCreated(@NonNull android.net.nsd.OffloadSession);
     field public static final int OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK = 1; // 0x1
     field public static final int OFFLOAD_TYPE_FILTER_QUERIES = 2; // 0x2
     field public static final int OFFLOAD_TYPE_FILTER_REPLIES = 4; // 0x4
@@ -422,10 +426,11 @@ package android.net.nsd {
     field @NonNull public static final android.os.Parcelable.Creator<android.net.nsd.OffloadServiceInfo.Key> CREATOR;
   }
 
-  @FlaggedApi("com.android.tethering.flags.nsd_mdns_scan_offload") public interface OffloadSession {
-    method public void onServiceFound(@NonNull android.net.nsd.NsdServiceInfo);
-    method public void onServiceLost(@NonNull android.net.nsd.NsdServiceInfo);
-    method public void onServiceUpdated(@NonNull android.net.nsd.NsdServiceInfo);
+  @FlaggedApi("com.android.tethering.flags.nsd_mdns_scan_offload") public interface OffloadSession extends java.lang.AutoCloseable {
+    method public void close();
+    method public void notifyServiceFound(@NonNull android.net.nsd.NsdServiceInfo);
+    method public void notifyServiceLost(@NonNull android.net.nsd.NsdServiceInfo);
+    method public void notifyServiceUpdated(@NonNull android.net.nsd.NsdServiceInfo);
   }
 
 }
