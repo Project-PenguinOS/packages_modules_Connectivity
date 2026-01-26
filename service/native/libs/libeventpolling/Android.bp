@@ -19,24 +19,31 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-cc_library {
-    name: "libeventpolling",
-    vendor_available: false,
-    host_supported: false,
-    header_libs: ["bpf_connectivity_headers"],
-    srcs: ["LoopbackEventHandler.cpp"],
-    shared_libs: [
-        "libbase",
-        "libcutils",
-        "liblog",
-    ],
-    export_include_dirs: ["include"],
+cc_defaults {
+    name: "libstatslog_defaults",
     cflags: [
         "-Wall",
         "-Werror",
         "-Wno-unused-parameter",
         "-Wthread-safety",
     ],
+    static_libs: ["libstatslog_connectivity_sdk30"],
+    shared_libs: [
+        "libbase",
+        "libcutils",
+        "liblog",
+        "libstatssocket",
+    ],
+}
+
+cc_library_static {
+    name: "libeventpolling",
+    vendor_available: false,
+    host_supported: false,
+    header_libs: ["bpf_connectivity_headers"],
+    srcs: ["LoopbackEventHandler.cpp"],
+    defaults: ["libstatslog_defaults"],
+    export_include_dirs: ["include"],
     sanitize: {
         cfi: true,
     },
@@ -54,23 +61,12 @@ cc_test {
     ],
     test_config_template: ":net_native_test_config_template",
     header_libs: ["bpf_connectivity_headers"],
-    srcs: [
-        "LoopbackEventHandlerTest.cpp",
-    ],
-    cflags: [
-        "-Wall",
-        "-Werror",
-        "-Wno-unused-parameter",
-        "-Wthread-safety",
-    ],
+    srcs: ["LoopbackEventHandlerTest.cpp"],
+    defaults: ["libstatslog_defaults"],
     version_script: ":connectivity_mainline_test_map",
     stl: "libc++_static",
     static_libs: [
-        "libbase",
         "libeventpolling",
-    ],
-    shared_libs: [
-        "liblog",
     ],
     compile_multilib: "both",
     multilib: {

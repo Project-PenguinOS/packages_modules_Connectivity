@@ -97,4 +97,11 @@ public interface OffloadEngine {
      * @param info The OffloadServiceInfo to remove.
      */
     void onOffloadServiceRemoved(@NonNull OffloadServiceInfo info);
+
+    /**
+     * To be called when the OffloadEngine is successfully registered.
+     * @param session The OffloadSession which will be used to inject response into NsdManager
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD)
+    default void onOffloadSessionCreated(@NonNull OffloadSession session) {}
 }

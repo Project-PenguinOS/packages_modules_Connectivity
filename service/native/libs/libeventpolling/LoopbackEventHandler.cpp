@@ -22,6 +22,7 @@
 #include <bpf/BpfRingbuf.h>
 #include <bpf/BpfUtils.h>
 #include <log/log.h>
+#include <statslog_connectivity_sdk30.h>
 
 #include "netd.h"
 
@@ -42,6 +43,9 @@ LoopbackEventHandler::GetPoller() {
             for (const LoopbackAccessEvent &event : events) {
                 ALOGD("LoopbackEventPoller stream got src: %d, dst: %d",
                       event.src_uid, event.dst_uid);
+                android::connectivity::stats::stats_write(
+                    android::connectivity::stats::LOOPBACK_USAGE_REPORTED,
+                    event.src_uid, event.dst_uid, event.result);
             }
         };
 

@@ -430,27 +430,39 @@ public final class NsdManager {
     }
 
     /**
-     * Registers an OffloadEngine with NsdManager.
+     * Registers an {@link OffloadEngine} with the NsdManager to handle mDNS offloading.
      *
-     * A caller can register itself as an OffloadEngine if it supports mDns hardware offload.
-     * The caller must implement the {@link OffloadEngine} interface and update hardware offload
-     * state property when the {@link OffloadEngine#onOffloadServiceUpdated} and
-     * {@link OffloadEngine#onOffloadServiceRemoved} callback are called. Multiple engines may be
-     * registered for the same interface, and that the same engine cannot be registered twice.
+     * <p>This method allows components to register as an mDNS offload engine if they can handle
+     * mDNS operations on an interface on behalf of the system, such as filtering, sending or
+     * receiving packets.
      *
-     * @param ifaceName  indicates which network interface the hardware offload runs on
-     * @param offloadType    the type of offload that the offload engine support
-     * @param offloadCapability    the capabilities of the offload engine
-     * @param executor   the executor on which to receive the offload callbacks
-     * @param engine     the OffloadEngine that will receive the offload callbacks
-     * @throws IllegalStateException if the engine is already registered.
+     * <p>The NsdManager will invoke {@link OffloadEngine#onOffloadServiceUpdated} and
+     * {@link OffloadEngine#onOffloadServiceRemoved} on the registered {@code engine}. The engine is
+     * expected to handle these events, for example, by updating hardware offload configurations
+     * or generating appropriate mDNS responses.
+     *
+     * <p>To inject generated mDNS responses back into the NsdManager, the engine should use the
+     * {@link OffloadSession} instance provided via the
+     * {@link OffloadEngine#onOffloadSessionCreated} callback.
+     *
+     * <p>It is possible to register multiple different {@code OffloadEngine} instances for the same
+     * network interface ({@code ifaceName}). However, attempting to register the exact same
+     * {@code engine} instance more than once will result in an exception.
+     *
+     * @param ifaceName The name of the network interface on which the offload engine operates.
+     * @param offloadType The type of mDNS offload supported by the engine.
+     * @param offloadCapability The specific capabilities of the offload engine.
+     * @param executor The Executor on which the {@link OffloadEngine} callbacks will be invoked.
+     * @param engine The {@link OffloadEngine} instance being registered.
+     * @throws IllegalStateException if the provided {@code engine} instance is already registered.
      *
      * @hide
      */
     @FlaggedApi(Flags.FLAG_REGISTER_NSD_OFFLOAD_ENGINE_API)
     @SystemApi
-    @RequiresPermission(anyOf = {NETWORK_SETTINGS, PERMISSION_MAINLINE_NETWORK_STACK,
-            NETWORK_STACK})
+    @RequiresPermission(
+            anyOf = {NETWORK_SETTINGS, PERMISSION_MAINLINE_NETWORK_STACK, NETWORK_STACK}
+    )
     public void registerOffloadEngine(@NonNull String ifaceName,
             @OffloadEngine.OffloadType long offloadType,
             @OffloadEngine.OffloadCapability long offloadCapability, @NonNull Executor executor,
@@ -458,60 +470,22 @@ public final class NsdManager {
         final OffloadEngineProxy cbImpl = createOffloadEngineProxy(ifaceName, executor,
                 engine);
         try {
+            OffloadSession session = createOffloadSession(ifaceName, cbImpl);
+            executor.execute(() -> engine.onOffloadSessionCreated(session));
             mService.registerOffloadEngine(ifaceName, cbImpl, offloadCapability, offloadType);
         } catch (RemoteException e) {
             e.rethrowFromSystemServer();
         }
     }
 
-    /**
-     * Registers a OffloadEngine Session with NsdManager.
-     *
-     * A caller can register itself as an OffloadEngine if it supports generating replies to mDns
-     * queries. The caller must implement the {@link OffloadEngine} interface and generate the mDNS
-     * reply when the {@link OffloadEngine#onOffloadServiceUpdated} and
-     * {@link OffloadEngine#onOffloadServiceRemoved} callback are called. Multiple engines may be
-     * registered for the same interface, and the same engine cannot be registered twice.
-     *
-     * @param ifaceName  indicates which network interface the hardware offload runs on
-     * @param offloadType    the type of offload that the offload engine support
-     * @param offloadCapability    the capabilities of the offload engine
-     * @param executor   the executor on which to receive the offload callbacks
-     * @param engine     the OffloadEngine that will receive the offload callbacks
-     * @throws IllegalStateException if the engine is already registered.
-     *
-     * @hide
-     */
-    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD)
-    @SystemApi
-    @RequiresPermission(
-            anyOf = {NETWORK_SETTINGS, PERMISSION_MAINLINE_NETWORK_STACK,
-                    NETWORK_STACK, REGISTER_NSD_OFFLOAD_ENGINE}
-    )
-    @Nullable
-    public OffloadSession registerOffloadSession(@NonNull String ifaceName,
-            @OffloadEngine.OffloadType long offloadType,
-            @OffloadEngine.OffloadCapability long offloadCapability, @NonNull Executor executor,
-            @NonNull OffloadEngine engine) {
-        final OffloadEngineProxy cbImpl = createOffloadEngineProxy(
-                ifaceName,
-                executor,
-                engine
-        );
-
-        try {
-            mService.registerOffloadEngine(ifaceName, cbImpl, offloadCapability, offloadType);
-        } catch (RemoteException e) {
-            e.rethrowFromSystemServer();
-        }
-
+    private OffloadSession createOffloadSession(String ifaceName, OffloadEngineProxy proxy) {
         return new OffloadSession() {
 
             @Override
             @RequiresPermission(
                     anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
             )
-            public void onServiceFound(@NonNull NsdServiceInfo nsdServiceInfo) {
+            public void notifyServiceFound(@NonNull NsdServiceInfo nsdServiceInfo) {
                 String serviceType = nsdServiceInfo.getServiceType();
                 String updatedServiceType = parseDiscoveryServiceType(serviceType);
                 nsdServiceInfo.setServiceType(updatedServiceType);
@@ -527,9 +501,9 @@ public final class NsdManager {
             @RequiresPermission(
                     anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
             )
-            public void onServiceUpdated(@NonNull NsdServiceInfo nsdServiceInfo) {
+            public void notifyServiceUpdated(@NonNull NsdServiceInfo nsdServiceInfo) {
                 // As per contract for ServiceInfoCallback#onServiceUpdated,
-                // OffloadSession#onServiceUpdated should not contain "." as a suffix.
+                // OffloadSession#notifyServiceUpdated should not contain "." as a suffix.
                 String serviceType = nsdServiceInfo.getServiceType();
                 if (TextUtils.isEmpty(serviceType)
                         || serviceType.endsWith(".")) {
@@ -543,7 +517,7 @@ public final class NsdManager {
             @RequiresPermission(
                     anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
             )
-            public void onServiceLost(@NonNull NsdServiceInfo nsdServiceInfo) {
+            public void notifyServiceLost(@NonNull NsdServiceInfo nsdServiceInfo) {
                 String serviceType = nsdServiceInfo.getServiceType();
                 String updatedServiceType = parseDiscoveryServiceType(serviceType);
                 nsdServiceInfo.setServiceType(updatedServiceType);
@@ -551,13 +525,21 @@ public final class NsdManager {
                 handleOffloadedServiceInfoResponse(serviceLostServiceInfo, true);
             }
 
+            @Override
+            @RequiresPermission(
+                    anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
+            )
+            public void close() {
+                unregisterOffloadEngineInternal(proxy.mEngine);
+            }
+
             /**
              * Parses and validates the service type received from discovery.
              *
              * <p>As per the contract for {@link DiscoveryListener#onServiceFound} and
              * {@link DiscoveryListener#onServiceLost}, the service type in
-             * {@link OffloadSession#onServiceFound} and {@link OffloadSession#onServiceLost}
-             * should contain a "." as a suffix.
+             * {@link OffloadSession#notifyServiceFound} and
+             * {@link OffloadSession#notifyServiceLost} should contain a "." as a suffix.
              *
              * @param serviceType the service type to be parsed and validated
              * @return the parsed service type with the trailing dot removed
@@ -580,7 +562,7 @@ public final class NsdManager {
                     if (TextUtils.isEmpty(nsdServiceInfo.getServiceType())) {
                         throw new IllegalArgumentException("Service type cannot be null.");
                     }
-                    if (isOffloadEngineRegistered(engine)) {
+                    if (isOffloadEngineRegistered(proxy.mEngine)) {
                         Log.d(TAG, "ServiceInfo injected is " + nsdServiceInfo);
                         mService.injectOffloadEngineResponse(
                                 nsdServiceInfo,
@@ -588,7 +570,7 @@ public final class NsdManager {
                                 ifaceName
                         );
                     } else {
-                        throw new IllegalStateException("This engine is not registered");
+                        Log.w(TAG, "This engine is not registered, hence ignoring the call");
                     }
                 } catch (RemoteException e) {
                     e.rethrowFromSystemServer();
@@ -626,12 +608,14 @@ public final class NsdManager {
     /**
      * Unregisters an OffloadEngine from NsdService.
      *
-     * A caller can unregister itself as an OffloadEngine when it doesn't want to receive the
+     * <p>A caller can unregister itself as an OffloadEngine when it doesn't want to receive the
      * callback anymore. The OffloadEngine must have been previously registered with the system
      * using the {@link NsdManager#registerOffloadEngine} method.
      *
-     * @param engine OffloadEngine object to be removed from NsdService
-     * @throws IllegalStateException if the engine is not registered.
+     * <p>Starting from the 26Q2 SDK extension if the specified engine is not currently registered,
+     * or if it has already been unregistered, calling this method is a no-op.
+     *
+     * @param engine OffloadEngine object to be removed from NsdService.
      *
      * @hide
      */
@@ -640,13 +624,18 @@ public final class NsdManager {
     @RequiresPermission(anyOf = {NETWORK_SETTINGS, PERMISSION_MAINLINE_NETWORK_STACK,
             NETWORK_STACK})
     public void unregisterOffloadEngine(@NonNull OffloadEngine engine) {
+        unregisterOffloadEngineInternal(engine);
+    }
+
+    private void unregisterOffloadEngineInternal(OffloadEngine engine) {
         Objects.requireNonNull(engine);
         final OffloadEngineProxy cbImpl;
         synchronized (mOffloadEngines) {
             final int index = CollectionUtils.indexOf(mOffloadEngines,
                     impl -> impl.mEngine == engine);
             if (index < 0) {
-                throw new IllegalStateException("This engine is not registered");
+                Log.w(TAG, "This engine is not registered, hence ignoring the call");
+                return;
             }
             cbImpl = mOffloadEngines.remove(index);
         }
