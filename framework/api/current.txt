@@ -176,7 +176,8 @@ package android.net {
   }
 
   public final class DnsResolver {
-    method @NonNull public static android.net.DnsResolver getInstance();
+    method @Deprecated @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") @NonNull public static android.net.DnsResolver getInstance();
+    method @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") @NonNull public static android.net.DnsResolver getInstance(@NonNull android.content.Context, @Nullable android.os.Looper);
     method public void query(@Nullable android.net.Network, @NonNull String, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super java.util.List<java.net.InetAddress>>);
     method public void query(@Nullable android.net.Network, @NonNull String, int, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super java.util.List<java.net.InetAddress>>);
     method @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public void query(@Nullable android.net.Network, @NonNull String, int, @NonNull java.util.concurrent.Executor, int, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<android.net.dns.HttpsEndpoint>);

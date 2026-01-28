@@ -22,6 +22,7 @@ import android.net.nsd.INsdManagerCallback;
 import android.net.nsd.IOffloadEngine;
 import android.net.nsd.NsdServiceInfo;
 import android.os.Messenger;
+import android.os.ResultReceiver;
 
 /**
  * Interface that NsdService implements for each NsdManager client.
@@ -41,4 +42,6 @@ interface INsdServiceConnector {
     void registerOffloadEngine(String ifaceName, in IOffloadEngine cb, long offloadCapabilities, long offloadType);
     void unregisterOffloadEngine(in IOffloadEngine cb);
     void injectOffloadEngineResponse(in NsdServiceInfo serviceInfo, boolean isServiceLost, String ifaceName);
+    void checkPermissionForService(String serviceName, String serviceType,
+            in ResultReceiver resultReceiver);
 }

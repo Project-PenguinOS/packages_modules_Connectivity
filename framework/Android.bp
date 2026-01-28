@@ -202,10 +202,7 @@ java_sdk_library {
         "httpengine_java_defaults",
     ],
     optimize: {
-        enabled: select(release_flag("RELEASE_FRAMEWORK_CONNECTIVITY_SHRINKING"), {
-            true: true,
-            default: false,
-        }),
+        enabled: true,
         ignore_warnings: false,
         shrink: true,
         trace_references_from: [
@@ -218,6 +215,10 @@ java_sdk_library {
         include: "r8_include_list.txt",
         proguard_compatibility: false,
     },
+    // R8 runs in --release mode by default, which strips local variable debug info.
+    // We override this to preserve debugging capabilities, as the impact of
+    // losing this data was not evaluated during the initial R8 integration.
+    // TODO(b/478801159): Investigate whether `--debug` is needed.
     dxflags: ["--debug"],
     installable: true,
     // Depending on `framework-connectivity-post-jarjar` directly is complicated because the

@@ -52,6 +52,7 @@ import android.net.dns.HttpsRecord;
 import android.os.Build;
 import android.os.CancellationSignal;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.platform.test.annotations.AppModeFull;
 import android.platform.test.annotations.RequiresFlagsEnabled;
@@ -860,27 +861,34 @@ public class DnsResolverTest {
 
     @Test
     @ConnectivityModuleTest
-    public void testQueryForHttpsRecord() throws Exception {
+    public void testQueryForHttpsRecordWithCustomLooper() throws Exception {
         // Because this test is annotated with @ConnectivityModuleTest, it will use the latest
         // tethering code. There is no need for a flag read.
-        doTestQueryForHttpsRecord(mExecutor);
+        HandlerThread handlerThread = new HandlerThread("testQueryForHttpsRecord");
+        handlerThread.start();
+        Looper handlerLooper = handlerThread.getLooper();
+        // Use a separate DnsResolver instance because we are modifying which looper is used, which
+        // would affect the other tests.
+        DnsResolver dns = DnsResolver.getInstance(mContext, handlerLooper);
+
+        doTestQueryForHttpsRecord(dns, mExecutorInline);
     }
 
     @Test
     @ConnectivityModuleTest
-    public void testQueryForHttpsRecordInline() throws Exception {
+    public void testQueryForHttpsRecordWithMainLooper() throws Exception {
         // Because this test is annotated with @ConnectivityModuleTest, it will use the latest
         // tethering code. There is no need for a flag read.
-        doTestQueryForHttpsRecord(mExecutorInline);
+        doTestQueryForHttpsRecord(mDns, mExecutorInline);
     }
 
-    private void doTestQueryForHttpsRecord(Executor executor) throws Exception {
+    private void doTestQueryForHttpsRecord(DnsResolver dns, Executor executor) throws Exception {
         final String msg = "Test query for HTTPS record " + TEST_HTTPS_RECORD_DOMAIN;
         mCtsNetUtils.setPrivateDnsStrictMode(GOOGLE_PRIVATE_DNS_SERVER);
         for (Network network : getTestableNetworksAndNull()) {
             final VerifyCancelHttpsEndpointInfoCallback callback =
                     new VerifyCancelHttpsEndpointInfoCallback(msg, /* cancellationSignal= */ null);
-            mDns.query(network, TEST_HTTPS_RECORD_DOMAIN, FLAG_NO_CACHE_LOOKUP,
+            dns.query(network, TEST_HTTPS_RECORD_DOMAIN, FLAG_NO_CACHE_LOOKUP,
                     executor, /* timeoutMillis= */ 0, /* cancellationSignal= */ null, callback);
 
             assertTrue(msg + " but no answer after " + TIMEOUT_MS + "ms.",

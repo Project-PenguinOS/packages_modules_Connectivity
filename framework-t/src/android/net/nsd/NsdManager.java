@@ -31,6 +31,7 @@ import android.annotation.Nullable;
 import android.annotation.RequiresPermission;
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
+import android.annotation.SuppressLint;
 import android.annotation.SystemApi;
 import android.annotation.SystemService;
 import android.app.compat.CompatChanges;
@@ -40,10 +41,12 @@ import android.net.ConnectivityManager.NetworkCallback;
 import android.net.ConnectivityThread;
 import android.net.Network;
 import android.net.NetworkRequest;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
+import android.os.ResultReceiver;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
@@ -62,6 +65,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Objects;
 import java.util.concurrent.Executor;
+import java.util.function.IntConsumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -314,6 +318,8 @@ public final class NsdManager {
     public static final int UNREGISTER_OFFLOAD_ENGINE               = 34;
     /** @hide */
     public static final int INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE    = 35;
+    /** @hide */
+    public static final int CHECK_PERMISSION_FOR_SERVICE            = 36;
 
     /** Dns based service discovery protocol */
     public static final int PROTOCOL_DNS_SD = 0x0001;
@@ -1060,6 +1066,33 @@ public final class NsdManager {
     })
     public @interface ResolutionFailureCode {
     }
+
+    /** @hide */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(value = {
+            SERVICE_PERMISSION_GRANTED,
+            SERVICE_PERMISSION_DENIED,
+    })
+    public @interface PermissionCheckCode {
+    }
+
+    /**
+     * Indicates the caller can register service info callbacks or resolve a service.
+     *
+     * <p>This is a result code for
+     * {@link #checkPermissionForService(String, String, Executor, IntConsumer)}.
+     */
+    @FlaggedApi(android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    public static final int SERVICE_PERMISSION_GRANTED = 1;
+
+    /**
+     * Indicates the caller is not allowed to register service info callbacks or resolve a service.
+     *
+     * <p>This is a result code for
+     * {@link #checkPermissionForService(String, String, Executor, IntConsumer)}.
+     */
+    @FlaggedApi(android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    public static final int SERVICE_PERMISSION_DENIED = 2;
 
     /** Interface for callback invocation for service discovery */
     public interface DiscoveryListener {
@@ -1894,6 +1927,52 @@ public final class NsdManager {
         if (id == -1) return;
         try {
             mService.unregisterServiceInfoCallback(id);
+        } catch (RemoteException e) {
+            e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Check whether the caller can register service info callbacks or resolve a service.
+     *
+     * <p>Starting from target SDK {@link android.os.Build.VERSION_CODES#CINNAMON_BUN}, unless apps
+     * have the {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK} permission, they can only
+     * register service info callbacks or resolve services that were selected in a UI picker, as
+     * per {@link DiscoveryRequest#FLAG_SHOW_PICKER}.
+     *
+     * <p>The system will remember whether a user has selected a service in the past, but access
+     * may be revoked for storage reasons or by the user. This method allows checking whether
+     * access to the service was granted in the picker and not revoked.
+     *
+     * <p>The {@code resultReceiver} will be called using the provided {@link Executor} with either
+     * {@link #SERVICE_PERMISSION_GRANTED} or {@link #SERVICE_PERMISSION_DENIED}.
+     *
+     * @param serviceName Instance name of the service
+     * @param serviceType Type of the service, e.g. _ipp._tcp
+     * @param executor The {@link Executor} on which to invoke the receiver.
+     * @param resultReceiver The {@link IntConsumer} to receive the permission check result code;
+     *                       will be either {@link #SERVICE_PERMISSION_GRANTED} or
+     *                       {@link #SERVICE_PERMISSION_DENIED}.
+     */
+    @FlaggedApi(android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    // The RequiresPermission linter flags any API method that mentions android.Manifest.permission
+    // in its javadoc but doesn't have a @RequiresPermission annotation. This is expected here as
+    // this method does not require any permission to be called.
+    @SuppressLint("RequiresPermission")
+    public void checkPermissionForService(@NonNull String serviceName, @NonNull String serviceType,
+            @NonNull Executor executor, @NonNull IntConsumer resultReceiver) {
+        Objects.requireNonNull(serviceName);
+        Objects.requireNonNull(serviceType);
+        Objects.requireNonNull(executor);
+        Objects.requireNonNull(resultReceiver);
+        try {
+            mService.checkPermissionForService(serviceName, serviceType,
+                    new ResultReceiver(/* handler= */null) {
+                        @Override
+                        protected void onReceiveResult(int resultCode, Bundle resultData) {
+                            executor.execute(() -> resultReceiver.accept(resultCode));
+                        }
+                    });
         } catch (RemoteException e) {
             e.rethrowFromSystemServer();
         }

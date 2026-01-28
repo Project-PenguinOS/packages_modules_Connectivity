@@ -712,9 +712,8 @@ public class BpfNetMaps {
          * @see com.android.tethering.flags.Flags#loopbackAccessMetrics()
          */
         public boolean isLoopbackAccessMetricsEnabled() {
-            // TODO: return SdkUtil.isAtLeast25Q4() && loopbackAccessMetrics() flag when we're ready
-            // to turn the feature on
-            return false;
+            return SdkUtil.isAtLeast25Q4()
+                    && com.android.tethering.flags.Flags.loopbackAccessMetrics();
         }
 
         /**
