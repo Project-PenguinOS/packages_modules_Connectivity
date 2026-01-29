@@ -52,6 +52,7 @@ public final class DiscoveryRequest implements Parcelable {
     @LongDef(flag = true, prefix = { "FLAG_" }, value = {
             FLAG_NO_PICKER,
             FLAG_SHOW_PICKER,
+            FLAG_USER_APPROVED_ONLY,
     })
     @Retention(RetentionPolicy.SOURCE)
     public @interface DiscoveryFlags {}
@@ -61,13 +62,14 @@ public final class DiscoveryRequest implements Parcelable {
      *
      * <p>Starting from target SDK {@link android.os.Build.VERSION_CODES#CINNAMON_BUN}, if the
      * caller does not have the {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK}
-     * permission, this will cause the request to fail with
+     * permission and does not specify {@link #FLAG_USER_APPROVED_ONLY}, this will cause the request
+     * to fail with
      * {@link android.net.nsd.NsdManager.DiscoveryListener#onStartDiscoveryFailed(String, int)} and
      * {@link NsdManager#FAILURE_PERMISSION_DENIED}.
      *
      * <p>If neither {@link #FLAG_NO_PICKER} nor {@link #FLAG_SHOW_PICKER} is set, the picker will
      * be shown if the app does not have {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK}
-     * permission. If both are set, {@link #FLAG_NO_PICKER} is ignored.
+     * permission.
      */
     @FlaggedApi(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     @DiscoveryFlags
@@ -92,18 +94,31 @@ public final class DiscoveryRequest implements Parcelable {
      *
      * <p>If neither {@link #FLAG_NO_PICKER} nor {@link #FLAG_SHOW_PICKER} is set, the picker will
      * be shown if the app does not have {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK}
-     * permission. If both are set, {@link #FLAG_NO_PICKER} is ignored.
+     * permission.
+     *
+     * <p>This flag cannot be combined with {@link #FLAG_NO_PICKER} or
+     * {@link #FLAG_USER_APPROVED_ONLY}.
      */
     @FlaggedApi(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     @DiscoveryFlags
     public static final long FLAG_SHOW_PICKER = 1L << 1;
 
-    // TODO: consider a FLAG_INCLUDE_USER_APPROVED which would allow the caller to discover
-    // any services that were previously allow-listed for the app (through the picker).
-    // FLAG_NO_PICKER | FLAG_INCLUDE_USER_APPROVED would only discover these services and not
-    // send an error callback if the caller doesn't have permissions.
-    // FLAG_SHOW_PICKER | FLAG_INCLUDE_USER_APPROVED would discover both services that the user
-    // previously approved, plus the additional service the user may choose in the picker.
+    /**
+     * Indicates that only services previously approved by the user must be discovered.
+     *
+     * <p>If this flag is set, only services that have been selected by the user in previous
+     * requests that used the service picker UI will be discovered.
+     * {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK} permission is *not* necessary when
+     * discovering with this flag.
+     *
+     * <p>This flag implies {@link #FLAG_NO_PICKER}, and it cannot be combined with
+     * {@link #FLAG_SHOW_PICKER}.
+     *
+     * @see #FLAG_SHOW_PICKER
+     */
+    @FlaggedApi(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    @DiscoveryFlags
+    public static final long FLAG_USER_APPROVED_ONLY = 1L << 2;
 
     private final int mProtocolType;
 
@@ -552,6 +567,16 @@ public final class DiscoveryRequest implements Parcelable {
          */
         @NonNull
         public DiscoveryRequest build() {
+            if ((mFlags & FLAG_SHOW_PICKER) != 0) {
+                if ((mFlags & FLAG_NO_PICKER) != 0) {
+                    throw new IllegalArgumentException(
+                            "Cannot combine FLAG_SHOW_PICKER and FLAG_NO_PICKER");
+                }
+                if ((mFlags & FLAG_USER_APPROVED_ONLY) != 0) {
+                    throw new IllegalArgumentException(
+                            "Cannot combine FLAG_SHOW_PICKER and FLAG_USER_APPROVED_ONLY");
+                }
+            }
             return new DiscoveryRequest(mProtocolType, mServiceType, mSubtype, mNetwork, mFlags,
                     mServiceNameFilter, mAttributeFilters, mDisplayNameAttribute);
         }

@@ -240,6 +240,7 @@ package android.net.nsd {
     field @NonNull public static final android.os.Parcelable.Creator<android.net.nsd.DiscoveryRequest> CREATOR;
     field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_NO_PICKER = 1L; // 0x1L
     field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_SHOW_PICKER = 2L; // 0x2L
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_USER_APPROVED_ONLY = 4L; // 0x4L
   }
 
   public static final class DiscoveryRequest.Builder {
@@ -255,6 +256,7 @@ package android.net.nsd {
   }
 
   public final class NsdManager {
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public void checkPermissionForService(@NonNull String, @NonNull String, @NonNull java.util.concurrent.Executor, @NonNull java.util.function.IntConsumer);
     method public void discoverServices(String, int, android.net.nsd.NsdManager.DiscoveryListener);
     method public void discoverServices(@NonNull String, int, @Nullable android.net.Network, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.DiscoveryListener);
     method @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public void discoverServices(@NonNull android.net.nsd.DiscoveryRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.DiscoveryListener);
@@ -280,6 +282,8 @@ package android.net.nsd {
     field public static final int NSD_STATE_DISABLED = 1; // 0x1
     field public static final int NSD_STATE_ENABLED = 2; // 0x2
     field public static final int PROTOCOL_DNS_SD = 1; // 0x1
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final int SERVICE_PERMISSION_DENIED = 2; // 0x2
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final int SERVICE_PERMISSION_GRANTED = 1; // 0x1
   }
 
   public static interface NsdManager.DiscoveryListener {

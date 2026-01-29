@@ -10198,18 +10198,20 @@ public class ConnectivityService extends IConnectivityManager.Stub
             throw new IllegalArgumentException("Local agents are not supported in this version");
         }
         final boolean hasLocalNetworkConfig = null != localNetworkConfig;
-        if (hasLocalCap != hasLocalNetworkConfig) {
-            throw new IllegalArgumentException(null != localNetworkConfig
-                    ? "Only local network agents can have a LocalNetworkConfig"
-                    : "Local network agents must have a LocalNetworkConfig"
-            );
+        if (hasLocalNetworkConfig && !hasLocalCap) {
+            throw new IllegalArgumentException(
+                    "Only local network agents can have a LocalNetworkConfig");
         }
+        final boolean needsDefaultLnc = hasLocalCap && !hasLocalNetworkConfig;
+        final LocalNetworkConfig lnc = needsDefaultLnc
+                ? new LocalNetworkConfig.Builder().build()
+                : localNetworkConfig;
 
         final int uid = mDeps.getCallingUid();
         final long token = Binder.clearCallingIdentity();
         try {
             return registerNetworkAgentInternal(na, networkInfo, linkProperties,
-                    networkCapabilities, initialScore, networkAgentConfig, localNetworkConfig,
+                    networkCapabilities, initialScore, networkAgentConfig, lnc,
                     providerId, uid, isAppSpecificNetwork);
         } finally {
             Binder.restoreCallingIdentity(token);
@@ -10879,10 +10881,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // Get the on-link prefixes for all addresses on the link.
         final Set<IpPrefix> prefixes = new ArraySet<>();
         for (LinkAddress linkAddress : lp.getLinkAddresses()) {
-            IpPrefix prefix = getLocalNetworkPrefixForAddress(linkAddress.getAddress(),
+            final IpPrefix onlinkPrefix = new IpPrefix(linkAddress.getAddress(),
                     linkAddress.getPrefixLength());
-            if (prefix != null) {
-                prefixes.add(prefix);
+            if (isPrefixLocal(onlinkPrefix)) {
+                prefixes.add(onlinkPrefix);
             }
         }
 
@@ -10985,31 +10987,19 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     /**
-     * Gets the local network prefix, if any, corresponding to the specified prefix.
-     * @param prefix address used for filtering
-     * @param prefixLength prefix length of address
-     * @return IpPrefix that is local address.
+     * @return whether a prefix is local for the purposes of Local Network Protection.
      */
-    // TODO: just return a boolean that specifies whether the prefix is local.
-    @Nullable
-    public static IpPrefix getLocalNetworkPrefixForAddress(InetAddress prefix,
-            int prefixLength) {
-        if (prefix instanceof Inet6Address) {
-            // For IPv6, if the prefix length is greater than zero then they are part of local
-            // network
-            if (prefixLength != 0) {
-                return new IpPrefix(prefix, prefixLength);
-            }
-        } else {
-            // For IPv4, if the linkAddress is part of IpPrefix adding prefix to result.
-            for (IpPrefix ipv4LocalPrefix : IPV4_LOCAL_PREFIXES) {
-                if (ipv4LocalPrefix.containsPrefix(new IpPrefix(prefix, prefixLength))) {
-                    // TODO: return prefix instead.
-                    return ipv4LocalPrefix;
-                }
+    private static boolean isPrefixLocal(IpPrefix prefix) {
+        if (prefix.getAddress() instanceof Inet6Address) {
+            return prefix.getPrefixLength() != 0;
+        }
+
+        for (IpPrefix ipv4LocalPrefix : IPV4_LOCAL_PREFIXES) {
+            if (ipv4LocalPrefix.containsPrefix(prefix)) {
+                return true;
             }
         }
-        return null;
+        return false;
     }
 
     /**
@@ -11210,9 +11200,18 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // LOCAL_NETWORK routing table, which has no corresponding local table for
         // local routes to be added to.
         if (netId == LOCAL_NET_ID) return false;
+
+        // TODO: this code assumes that local routes can *only* be directly-connected routes created
+        // by IP addresses being assigned on the interface. This is not the case - for example:
+        // - A ULA routed to a Thread network is a local route.
+        // - On a home network that is assigned a 2001:db8:aaaa::/56, if the router announces an RIO
+        //   for the whole /56 and also announces a PIO for, e.g.,  2001:db8:aaaa:1::/64, then
+        //   getEffectiveLocalPrefixes will include 2001:db8:aaaa::/56 in the list of prefixes, but
+        //   isLocalRoute will return false.
+        // Not clear how to fix tis. This code could call getEffectiveLocalPrefixes, which is more
+        // sophisticated, but that method is not cheap.
         IpPrefix routeDestination = new IpPrefix(route.destination);
-        return getLocalNetworkPrefixForAddress(routeDestination.getAddress(),
-                routeDestination.getPrefixLength()) != null;
+        return isPrefixLocal(routeDestination);
     }
 
     private void updateVpnFiltering(@NonNull LinkProperties newLp, @Nullable LinkProperties oldLp,

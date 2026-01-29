@@ -77,23 +77,30 @@ class CSLocalAgentTests : CSTest() {
                 .build()
 
     @Test
-    fun testBadAgents() {
+    fun testNonLocalAgentWithLocalConfig() {
         deps.setBuildSdk(VERSION_V)
 
-        assertFailsWith<IllegalArgumentException> {
-            Agent(
-                    nc = NetworkCapabilities.Builder()
-                            .addCapability(NET_CAPABILITY_LOCAL_NETWORK)
-                            .build(),
-                    lnc = null
-            )
-        }
         assertFailsWith<IllegalArgumentException> {
             Agent(
                     nc = NetworkCapabilities.Builder().build(),
                     lnc = FromS(LocalNetworkConfig.Builder().build())
             )
         }
+    }
+
+    @Test
+    fun testLocalAgent_NullConfig() {
+        deps.setBuildSdk(VERSION_V)
+        deps.setChangeIdEnabled(true, ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS)
+        // This is now allowed, and an empty LocalNetworkConfig should be created.
+        val agent = Agent(
+                nc = NetworkCapabilities.Builder()
+                        .addCapability(NET_CAPABILITY_LOCAL_NETWORK)
+                        .build(),
+                lnc = null
+        )
+        agent.connect()
+        agent.disconnect()
     }
 
     @Test

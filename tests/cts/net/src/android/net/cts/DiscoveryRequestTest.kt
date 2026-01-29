@@ -19,6 +19,8 @@ package android.net.cts
 import android.net.Network
 import android.net.nsd.DiscoveryRequest
 import android.net.nsd.DiscoveryRequest.FLAG_NO_PICKER
+import android.net.nsd.DiscoveryRequest.FLAG_SHOW_PICKER
+import android.net.nsd.DiscoveryRequest.FLAG_USER_APPROVED_ONLY
 import android.os.Build
 import android.os.PatternMatcher
 import android.os.PatternMatcher.PATTERN_ADVANCED_GLOB
@@ -101,6 +103,19 @@ class DiscoveryRequestTest {
     fun testBuilderConstructor_emptyServiceType_throwsIllegalArgument() {
         assertThrows(IllegalArgumentException::class.java) {
             DiscoveryRequest.Builder("")
+        }
+    }
+
+    @Test
+    fun testBuilder_invalidFlags_throwsIllegalArgumentException() {
+        val builder = DiscoveryRequest.Builder("_ipps._tcp")
+
+        assertThrows(IllegalArgumentException::class.java) {
+            builder.setFlags(FLAG_SHOW_PICKER or FLAG_NO_PICKER).build()
+        }
+
+        assertThrows(IllegalArgumentException::class.java) {
+            builder.setFlags(FLAG_SHOW_PICKER or FLAG_USER_APPROVED_ONLY).build()
         }
     }
 

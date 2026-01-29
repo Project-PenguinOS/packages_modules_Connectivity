@@ -34,6 +34,7 @@ import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.TargetApi;
+import android.content.Context;
 import android.net.NetworkUtils;
 import android.net.dns.HttpsEndpoint;
 import android.net.dns.HttpsRecord;
@@ -54,6 +55,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Executor;
 
 /**
@@ -162,15 +164,46 @@ public final class DnsResolver {
     private static final int NETID_UNSET = 0;
 
     private static final DnsResolver sInstance = new DnsResolver();
+    private final @Nullable Context mContext;
+    private final @NonNull Looper mLooper;
 
     /**
      * Get instance for DnsResolver
+     *
+     * @deprecated Use {@link #getInstance(Context, Looper)} instead.
      */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
+    @Deprecated
     public static @NonNull DnsResolver getInstance() {
         return sInstance;
     }
 
-    private DnsResolver() {}
+    /**
+     * Returns a {@link DnsResolver} instance.
+     *
+     * @param context used for internal interactions with other system services.
+     * @param looper {@link Looper} for monitoring incoming replies to DNS queries. If null, then
+     *     uses the value returned by {@link Looper#getMainLooper()}.
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
+    public static @NonNull DnsResolver getInstance(@NonNull Context context,
+            @Nullable Looper looper) {
+        Objects.requireNonNull(context, "Context cannot be null");
+        // TODO: consider caching this using a Map<Pair<Context, Looper>, DnsResolver>
+        return new DnsResolver(context, looper);
+    }
+
+    private DnsResolver() {
+        // We don't have a context, but still need to initialize the variable as there will be
+        // build errors. This is only used in the legacy implementation.
+        mContext = null;
+        mLooper = Looper.getMainLooper();
+    }
+
+    private DnsResolver(@NonNull Context context, @Nullable Looper looper) {
+        mContext = context;
+        mLooper = looper == null ? Looper.getMainLooper() : looper;
+    }
 
     /**
      * Base interface for answer callbacks
@@ -639,8 +672,8 @@ public final class DnsResolver {
     private void registerFDListener(@NonNull Executor executor,
             @NonNull FileDescriptor queryfd, @NonNull Callback<? super byte[]> answerCallback,
             @Nullable CancellationSignal cancellationSignal, @NonNull Object lock) {
-        final MessageQueue mainThreadMessageQueue = Looper.getMainLooper().getQueue();
-        mainThreadMessageQueue.addOnFileDescriptorEventListener(
+        final MessageQueue messageQueue = mLooper.getQueue();
+        messageQueue.addOnFileDescriptorEventListener(
                 queryfd,
                 FD_EVENTS,
                 (fd, events) -> {
@@ -651,7 +684,7 @@ public final class DnsResolver {
                     // and the fd is closed before the second request starts, which might return
                     // the same fd for the second request. By that time, the looper must have
                     // unregistered the fd, otherwise another event listener can't be registered.
-                    mainThreadMessageQueue.removeOnFileDescriptorEventListener(fd);
+                    messageQueue.removeOnFileDescriptorEventListener(fd);
 
                     executor.execute(() -> {
                         DnsResponse resp = null;
@@ -684,7 +717,7 @@ public final class DnsResolver {
 
     private void cancelQuery(@NonNull FileDescriptor queryfd) {
         if (!queryfd.valid()) return;
-        Looper.getMainLooper().getQueue().removeOnFileDescriptorEventListener(queryfd);
+        mLooper.getQueue().removeOnFileDescriptorEventListener(queryfd);
         resNetworkCancel(queryfd);  // Closes fd, marks it invalid.
     }
 

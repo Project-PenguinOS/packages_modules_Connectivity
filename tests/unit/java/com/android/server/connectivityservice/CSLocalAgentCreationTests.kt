@@ -119,19 +119,4 @@ class CSLocalAgentCreationTests : CSTest() {
         localAgent.disconnect()
         netdInOrder.verify(netd, timeout(TIMEOUT_MS)).networkDestroy(localAgent.network.netId)
     }
-
-    @Test
-    fun testBadAgents() {
-        assertFailsWith<IllegalArgumentException> {
-            Agent(
-                    nc = NetworkCapabilities.Builder()
-                            .addCapability(NET_CAPABILITY_LOCAL_NETWORK)
-                            .build(),
-                    lnc = null
-            )
-        }
-        assertFailsWith<IllegalArgumentException> {
-            Agent(nc = NetworkCapabilities.Builder().build(), lnc = defaultLnc())
-        }
-    }
 }
