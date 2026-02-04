@@ -42,6 +42,7 @@ using bpf::isAtLeastT;
 using bpf::isAtLeastU;
 using bpf::isAtLeastV;
 using bpf::isAtLeast25Q2;
+using bpf::isUser;
 using bpf::queryProgram;
 using bpf::retrieveProgram;
 using netdutils::Status;
@@ -79,7 +80,7 @@ static Status checkProgramAccessible(const char* programPath) {
 
 static void getsockoptTest() {
     // getsockopt bpf hook is not called if the device is running in compat mode.
-    if (bpf::isKernel64Bit() != bpf::isUserspace64bit()) return;
+    if (bpf::isKernel64Bit() != bpf::isUserspace64bit() && !isAtLeastKernelVersion(6, 13)) return;
 
     // SO_ANDROID_DROP_REASON option is only supported on 5.10+.
     if (!isAtLeastKernelVersion(5, 10)) return;
@@ -346,9 +347,7 @@ static void mapLockTest(void) {
 
 Status BpfHandler::initMaps() {
     // bpfLock() requires bpfGetFdMapId which is only available on 4.14+ kernels.
-    if (isAtLeastKernelVersion(4, 14)) {
-        mapLockTest();
-    }
+    if (bpf::lockingEnabled && isAtLeastKernelVersion(4, 14)) mapLockTest();
 
     RETURN_IF_NOT_OK(mStatsMapA.init(STATS_MAP_A_PATH));
     RETURN_IF_NOT_OK(mStatsMapB.init(STATS_MAP_B_PATH));

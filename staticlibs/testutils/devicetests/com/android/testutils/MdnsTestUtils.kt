@@ -216,7 +216,7 @@ class NsdServiceInfoCallbackRecord : NsdManager.ServiceInfoCallback,
     sealed class ServiceInfoCallbackEvent : NsdEvent {
         data class RegisterCallbackFailed(val errorCode: Int) : ServiceInfoCallbackEvent()
         data class ServiceUpdated(val serviceInfo: NsdServiceInfo) : ServiceInfoCallbackEvent()
-        object ServiceUpdatedLost : ServiceInfoCallbackEvent()
+        data class ServiceUpdatedLost(val serviceInfo: NsdServiceInfo) : ServiceInfoCallbackEvent()
         object UnregisterCallbackSucceeded : ServiceInfoCallbackEvent()
     }
 
@@ -228,8 +228,8 @@ class NsdServiceInfoCallbackRecord : NsdManager.ServiceInfoCallback,
         add(ServiceInfoCallbackEvent.ServiceUpdated(si))
     }
 
-    override fun onServiceLost() {
-        add(ServiceInfoCallbackEvent.ServiceUpdatedLost)
+    override fun onServiceLost(si: NsdServiceInfo) {
+        add(ServiceInfoCallbackEvent.ServiceUpdatedLost(si))
     }
 
     override fun onServiceInfoCallbackUnregistered() {
@@ -275,6 +275,11 @@ fun PollPacketReader.pollForMdnsPacket(
         TestDnsPacket(getMdnsPayload(it), getDstAddr(it))
     }
 }
+
+fun PollPacketReader.backtraceMdnsPackets() = backtrace().filter {
+    IPv4UdpFilter(srcPort = MDNS_PORT, dstPort = MDNS_PORT)
+        .or(IPv6UdpFilter(srcPort = MDNS_PORT, dstPort = MDNS_PORT)).test(it)
+}.map { TestDnsPacket(getMdnsPayload(it), getDstAddr(it)) }
 
 fun PollPacketReader.pollForProbe(
     serviceName: String,

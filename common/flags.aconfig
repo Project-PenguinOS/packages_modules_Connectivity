@@ -66,6 +66,7 @@ flag {
   namespace: "com_android_tethering"
   description: "Enable usage of a service picker for mDNS discovery"
   bug: "454248446"
+  is_exported: true
 }
 
 flag {

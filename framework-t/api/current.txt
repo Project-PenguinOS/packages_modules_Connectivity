@@ -265,6 +265,7 @@ package android.net.nsd {
     method public void registerService(@NonNull android.net.nsd.NsdServiceInfo, int, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.RegistrationListener);
     method @FlaggedApi("com.android.net.flags.mdns_advertising_improvement") public void registerService(@NonNull android.net.nsd.AdvertisingRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.RegistrationListener);
     method public void registerServiceInfoCallback(@NonNull android.net.nsd.NsdServiceInfo, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ServiceInfoCallback);
+    method @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public void registerServiceInfoCallback(@NonNull android.net.nsd.DiscoveryRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ServiceInfoCallback);
     method @Deprecated public void resolveService(android.net.nsd.NsdServiceInfo, android.net.nsd.NsdManager.ResolveListener);
     method @Deprecated public void resolveService(@NonNull android.net.nsd.NsdServiceInfo, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ResolveListener);
     method public void stopServiceDiscovery(android.net.nsd.NsdManager.DiscoveryListener);
@@ -312,7 +313,8 @@ package android.net.nsd {
   public static interface NsdManager.ServiceInfoCallback {
     method public void onServiceInfoCallbackRegistrationFailed(int);
     method public void onServiceInfoCallbackUnregistered();
-    method public void onServiceLost();
+    method @Deprecated @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public default void onServiceLost();
+    method @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public default void onServiceLost(@NonNull android.net.nsd.NsdServiceInfo);
     method public void onServiceUpdated(@NonNull android.net.nsd.NsdServiceInfo);
   }
 

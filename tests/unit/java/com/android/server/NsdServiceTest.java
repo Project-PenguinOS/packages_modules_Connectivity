@@ -3309,7 +3309,7 @@ public class NsdServiceTest {
         ArgumentCaptor<Boolean> isServiceLostCaptor = ArgumentCaptor.forClass(Boolean.class);
         ArgumentCaptor<String> interfaceNameCaptor = ArgumentCaptor.forClass(String.class);
 
-        verify(mDiscoveryManager).handleProxyOffloadEngineResponse(
+        verify(mDiscoveryManager, timeout(TIMEOUT_MS)).handleProxyOffloadEngineResponse(
                 serviceInfoCaptor.capture(),
                 isServiceLostCaptor.capture(),
                 interfaceNameCaptor.capture()
@@ -3319,15 +3319,17 @@ public class NsdServiceTest {
         assertEquals("lo", interfaceNameCaptor.getValue());
     }
 
-    private static void verifyOffloadServiceUpdatedAndRemoved(String interfaceName,
+    private void verifyOffloadServiceUpdatedAndRemoved(String interfaceName,
             OffloadServiceInfo info, OffloadCallback cb, OffloadEngine offloadEngine) {
         // onOffloadStartOrUpdate callback triggered. The OffloadServiceInfo update should be sent
         // to the OffloadEngine.
         cb.onOffloadStartOrUpdate(interfaceName, info);
+        waitForIdle();
         verify(offloadEngine).onOffloadServiceUpdated(info);
         // onOffloadStop callback triggered. The OffloadServiceInfo removal should be sent to the
         // OffloadEngine.
         cb.onOffloadStop(interfaceName, info);
+        waitForIdle();
         verify(offloadEngine).onOffloadServiceRemoved(info);
     }
 
@@ -3395,6 +3397,7 @@ public class NsdServiceTest {
         // is sent to the OffloadEngine.
         verify(mDiscoveryManager).notifyOffloadStart(eq(interfaceName));
         verify(offloadEngine, never()).onOffloadServiceUpdated(any());
+        verify(offloadEngine, times(1)).onOffloadSessionCreated(any());
 
         verifyOffloadServiceUpdatedAndRemoved(
                 interfaceName, info, mOffloadCallback, offloadEngine);

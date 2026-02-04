@@ -37,10 +37,12 @@ import android.net.thread.ActiveOperationalDataset;
 import android.net.thread.ThreadNetworkSpecifier;
 import android.net.thread.utils.ThreadFeatureCheckerRule.RequiresThreadFeature;
 import android.net.thread.utils.ThreadNetworkControllerWrapper;
+import android.os.Build;
 import android.platform.test.annotations.RequiresFlagsEnabled;
 
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.filters.LargeTest;
+import androidx.test.filters.SdkSuppress;
 
 import com.android.testutils.TestableNetworkCallback;
 import com.android.testutils.TestableNetworkCallback.Event;
@@ -61,7 +63,11 @@ import java.util.Set;
  */
 @LargeTest
 @RequiresThreadFeature
-@RequiresFlagsEnabled(FLAG_THREAD_MOBILE_ENABLED)
+@RequiresFlagsEnabled({
+    FLAG_THREAD_MOBILE_ENABLED,
+    com.android.net.thread.platform.flags.Flags.FLAG_THREAD_MOBILE_ENABLED
+})
+@SdkSuppress(minSdkVersion = Build.VERSION_CODES.VANILLA_ICE_CREAM)
 public final class ThreadNetworkRequestTest {
     private static final int JOIN_TIMEOUT_MILLIS = 30_000;
     private static final Duration STOP_TIMEOUT = Duration.ofSeconds(2_000);

@@ -25,10 +25,43 @@
 # 2025 2 36 0 0 # 25q2 sdk/api level 36.0 - Android 16 Baklava QPR0
 # (versions before A16 do not include anything here)
 
+# It is important that we start bpfloader after:
+#   - /sys/fs/bpf is already mounted,
+#   - apex (incl. rollback) is initialized (so that we can load bpf
+#     programs shipped as part of apex mainline modules)
+#   - logd is ready for us to log stuff
+#
+# At the same time we want to be as early as possible to reduce races and thus
+# failures (before memory is fragmented, and cpu is busy running tons of other
+# stuff) and we absolutely want to be before netd and the system boot slot is
+# considered to have booted successfully.
+on load-bpf-programs
+    # Temporarily relax access to kallsyms so that bpfloader can resolve kernel symbols
+    # at load time.
+    #
+    # NOTE: Still requires CAP_SYSLOG and sepolicy allow rules to read /proc/kallsyms
+    write /proc/sys/kernel/kptr_restrict 1
+
+    # 'exec_start' is synchronous, a successful bpfloader invocation will
+    # result in 'bpf.progs_loaded' property being set to '1'.
+    exec_start bpfloader
+
+    # Wait for bpf programs to be loaded before proceeding.
+    # (this will hang if bpfloader fails)
+    wait_for_prop bpf.progs_loaded 1
+
+    # Restore kallsyms protection after bpf programs have been loaded.
+    # This has to happen after bpfloader has already terminated.
+    write /proc/sys/kernel/kptr_restrict 2
+
+    # At this point 'bpf.progs_loaded' is guaranteed to be '1'
+    trigger bpf-progs-loaded
+
 # Note: This will actually execute /apex/com.android.tethering/bin/netbpfload
 # by virtue of 'service bpfloader' being overridden by the apex shipped .rc
 # Warning: the below settings are irrelevant unless the apex is missing.
 service bpfloader /system/bin/false
+    disabled # started on demand via trigger
     user root
     oneshot
     reboot_on_failure reboot,netbpfload-missing

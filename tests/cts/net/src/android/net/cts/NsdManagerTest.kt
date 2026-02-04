@@ -110,6 +110,7 @@ import com.android.testutils.TestableNetworkCallback.Event.CapabilitiesChanged
 import com.android.testutils.TestableNetworkCallback.Event.LinkPropertiesChanged
 import com.android.testutils.assertEmpty
 import com.android.testutils.assertThrows
+import com.android.testutils.backtraceMdnsPackets
 import com.android.testutils.filters.CtsNetTestCasesLocalNetNoPermissions
 import com.android.testutils.filters.CtsNetTestCasesMaxTargetSdk30
 import com.android.testutils.filters.CtsNetTestCasesMaxTargetSdk33
@@ -155,6 +156,9 @@ import org.junit.runner.RunWith
 
 private const val TAG = "NsdManagerTest"
 private const val TIMEOUT_MS = 2000L
+
+// Use a longer timeout for UI operations, which may take a while due to UI transitions for example
+private const val UI_TIMEOUT_MS = 30_000L
 
 // Registration may take a long time if there are devices with the same hostname on the network,
 // as the device needs to try another name and probe again. This is especially true since when using
@@ -3429,11 +3433,14 @@ class NsdManagerTest {
      * Replaces occurrences of "NsdTest123456789" and "_nmt123456789" in mDNS payload with the
      * actual random name and type that are used by the test.
      */
-    private fun replaceServiceNameAndTypeWithTestSuffix(mdnsPayload: ByteArray) {
+    private fun replaceServiceNameAndTypeWithTestSuffix(
+        mdnsPayload: ByteArray,
+        serviceNameReplacement: String = serviceName
+    ) {
         // Test service name and types have consistent length and are always ASCII
         val testPacketName = "NsdTest123456789".encodeToByteArray()
         val testPacketTypePrefix = "_nmt123456789".encodeToByteArray()
-        val encodedServiceName = serviceName.encodeToByteArray()
+        val encodedServiceName = serviceNameReplacement.encodeToByteArray()
         val encodedTypePrefix = serviceType.split('.')[0].encodeToByteArray()
 
         val packetBuffer = ByteBuffer.wrap(mdnsPayload)
@@ -3532,6 +3539,129 @@ class NsdManagerTest {
         assertEquals(discoveredInfo.serviceName, resolvedCb.serviceInfo.serviceName)
 
         return resolvedCb.serviceInfo
+    }
+
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsEnabled(FLAG_NSD_SERVICE_PICKER)
+    fun testRegisterServiceInfoCallback_withDiscoveryRequest_sendsFollowupQueries() {
+        val cbRecord = NsdServiceInfoCallbackRecord()
+        val packetReader = makePacketReader()
+        val discoveryRequest = DiscoveryRequest.Builder(serviceType)
+            .setNetwork(testNetwork1.network)
+            .build()
+        nsdManager.registerServiceInfoCallback(discoveryRequest, { it.run() }, cbRecord)
+
+        tryTest {
+            packetReader.pollForQuery("$serviceType.local", DnsResolver.TYPE_PTR) ?: fail(
+                "PTR query not received, received packets: " + packetReader.backtraceMdnsPackets())
+
+            /*
+            Send PTR, SRV and TXT response, but no address records. Generated with:
+            scapy.raw(scapy.dns_compress(scapy.DNS(rd=0, qr=1, aa=1, qd = None,
+                an = [scapy.DNSRR(rrname='_nmt123456789._tcp.local', type='PTR', ttl=120,
+                            rdata='NsdTest123456789._nmt123456789._tcp.local')],
+                ar = [scapy.DNSRRSRV(rrname='NsdTest123456789._nmt123456789._tcp.local',
+                            rclass=0x8001, port=31234, target='testhost.local', ttl=120),
+                    scapy.DNSRR(rrname='NsdTest123456789._nmt123456789._tcp.local', type='TXT',
+                            ttl=120, rdata='testkey=testvalue')]
+            ))).hex()
+             */
+            val srvTxtResponsePayload = hexStringToByteArray(
+                "0000840000000001000000020d5f6e6d74313233343536373839045f746370056c6f63616c00000c" +
+                        "0001000000780013104e736454657374313233343536373839c00cc03000210001000000" +
+                        "780011000000007a020874657374686f7374c01fc0300010000100000078001211746573" +
+                        "746b65793d7465737476616c7565"
+            )
+            replaceServiceNameAndTypeWithTestSuffix(srvTxtResponsePayload)
+            packetReader.sendResponse(buildMdnsPacket(srvTxtResponsePayload))
+
+            // Verify followup address query is received
+            val testHostname = "testhost.local"
+            val addressQuery = packetReader.pollForQuery(
+                testHostname,
+                DnsResolver.TYPE_A,
+                DnsResolver.TYPE_AAAA
+            )
+            assertNotNull(addressQuery)
+            // No callback is called yet since addresses are missing
+            cbRecord.assertNoCallback(timeoutMs = 0L)
+
+            /*
+             Send address response. Generated with:
+             scapy.raw(scapy.dns_compress(scapy.DNS(rd=0, qr=1, aa=1, qd = None, an = [
+                 scapy.DNSRR(rrname='testhost.local', type='A', ttl=120,
+                     rdata='192.0.2.123'),
+                 scapy.DNSRR(rrname='testhost.local', type='AAAA', ttl=120,
+                     rdata='2001:db8::123')]
+             ))).hex()
+             */
+            val addressPayload = hexStringToByteArray(
+                "0000840000000002000000000874657374686f7374056c6f63616c0000010001000000780004c000" +
+                        "027bc00c001c000100000078001020010db8000000000000000000000123"
+            )
+            packetReader.sendResponse(buildMdnsPacket(addressPayload))
+
+            val serviceUpdated = cbRecord.expectCallback<ServiceUpdated>()
+            serviceUpdated.serviceInfo.let {
+                assertEquals(serviceName, it.serviceName)
+                assertEquals(serviceType, it.serviceType)
+                assertEquals(testNetwork1.network, it.network)
+                assertEquals(31234, it.port)
+                assertEquals(1, it.attributes.size)
+                assertArrayEquals("testvalue".encodeToByteArray(), it.attributes["testkey"])
+                assertAddressEquals(
+                    listOf(
+                        parseNumericAddress("192.0.2.123"),
+                        parseNumericAddress("2001:db8::123")
+                    ),
+                    it.hostAddresses
+                )
+            }
+
+            // Send goodbye packet (TTL 0 for the SRV record)
+            /*
+            Generated with:
+            scapy.raw(scapy.dns_compress(scapy.DNS(rd=0, qr=1, aa=1, qd = None, an =
+                [scapy.DNSRRSRV(rrname='NsdTest123456789._nmt123456789._tcp.local',
+                    rclass=0x8001, port=31234, target='testhost.local', ttl=0)]
+            ))).hex()
+             */
+            val goodbyePayload = hexStringToByteArray(
+                "000084000000000100000000104e7364546573743132333435363738390d5f6e6d74313233343536" +
+                        "373839045f746370056c6f63616c0000210001000000000011000000007a020874657374" +
+                        "686f7374c030"
+            )
+            replaceServiceNameAndTypeWithTestSuffix(goodbyePayload)
+            packetReader.sendResponse(buildMdnsPacket(goodbyePayload))
+
+            val serviceLost = cbRecord.expectCallback<ServiceUpdatedLost>()
+            assertEquals(serviceName, serviceLost.serviceInfo.serviceName)
+
+            nsdManager.unregisterServiceInfoCallback(cbRecord)
+            cbRecord.expectCallback<UnregisterCallbackSucceeded>()
+        } cleanup {
+            packetReader.handler.post { packetReader.stop() }
+            handlerThread.waitForIdle(TIMEOUT_MS)
+        }
+    }
+
+    @Test
+    @RequiresFlagsEnabled(FLAG_NSD_SERVICE_PICKER)
+    @CtsNetTestCasesLocalNetNoPermissions
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    fun testRegisterServiceInfoCallback_missingPermissions_registrationError() {
+        assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
+
+        val cbRecord = NsdServiceInfoCallbackRecord()
+        val discoveryRequest = DiscoveryRequest.Builder(serviceType)
+            .setNetwork(testNetwork1.network)
+            .setFlags(DiscoveryRequest.FLAG_NO_PICKER)
+            .build()
+        nsdManager.registerServiceInfoCallback(discoveryRequest, { it.run() }, cbRecord)
+
+        val failCb = cbRecord.expectCallback<RegisterCallbackFailed>()
+        assertEquals(NsdManager.FAILURE_PERMISSION_DENIED, failCb.errorCode)
     }
 }
 

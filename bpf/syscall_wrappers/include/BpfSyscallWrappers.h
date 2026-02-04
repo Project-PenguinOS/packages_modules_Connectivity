@@ -18,10 +18,12 @@
 
 #include <android-base/unique_fd.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <linux/bpf.h>
 #include <linux/unistd.h>
 #include <sys/file.h>
+#include <sys/system_properties.h>
 
 
 namespace android {
@@ -29,6 +31,17 @@ namespace bpf {
 
 using ::android::base::borrowed_fd;
 using ::android::base::unique_fd;
+
+static inline bool check_build_type(const char* const build_type) {
+    char value[92] = {};
+    if (__system_property_get("ro.build.type", value) < 1) abort();
+    return !strcmp(value, build_type);
+}
+
+// The following classify the 3 Android build types.
+const bool isEng = check_build_type("eng");
+const bool isUser = check_build_type("user");
+const bool isUserdebug = check_build_type("userdebug");
 
 inline uint64_t ptr_to_u64(const void * const x) {
     return (uint64_t)(uintptr_t)x;
@@ -183,11 +196,23 @@ inline int bpfFdGet(const char* pathname, uint32_t flag) {
 
 int bpfGetFdMapId(const borrowed_fd& map_fd);
 
+// disable use of bpf locking on:
+//   - all user builds
+//   - arm userdebug builds
+// as it is only needed for correctness verification on dev/test builds
+const bool lockingEnabled =
+#if defined(__arm__) || defined(__aarch64__)
+  isEng;
+#else
+  !isUser;
+#endif
+
 inline int bpfLock(int fd, short type) {
-    if (fd < 0) return fd;  // pass any errors straight through
 #ifdef BPF_MAP_LOCKLESS_FOR_TEST
     return fd;
 #endif
+    if (!lockingEnabled) return fd;
+    if (fd < 0) return fd;  // pass any errors straight through
     int mapId = bpfGetFdMapId(fd);
     int saved_errno = errno;
     // 4.14+ required to fetch map id, but we don't want to call isAtLeastKernelVersion

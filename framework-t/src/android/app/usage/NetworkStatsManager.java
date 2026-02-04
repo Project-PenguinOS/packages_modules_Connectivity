@@ -210,11 +210,14 @@ public class NetworkStatsManager {
      * be omitted in case of rate limiting.
      *
      * @param pollOnOpen true if poll is needed.
+     * @deprecated Use APIs with per-query flag instead.
      * @hide
      */
     // The system will ignore any non-default values for non-privileged
     // processes, so processes that don't hold the appropriate permissions
     // can make no use of this API.
+    @Deprecated
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
     @SystemApi(client = MODULE_LIBRARIES)
     @RequiresPermission(anyOf = {
             NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK,
@@ -232,8 +235,11 @@ public class NetworkStatsManager {
     /**
      * Set poll force flag to indicate that calling any subsequent query method will force a stats
      * poll.
+     * @deprecated Use APIs with per-query flag instead.
      * @hide
      */
+    @Deprecated
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     @SystemApi(client = MODULE_LIBRARIES)
     public void setPollForce(boolean pollForce) {

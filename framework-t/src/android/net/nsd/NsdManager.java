@@ -23,6 +23,8 @@ import static android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK;
 import static android.net.connectivity.ConnectivityCompatChanges.ENABLE_PLATFORM_MDNS_BACKEND;
 import static android.net.connectivity.ConnectivityCompatChanges.RUN_NATIVE_NSD_ONLY_IF_LEGACY_APPS_T_AND_LATER;
 
+import static com.android.tethering.flags.Flags.FLAG_NSD_SERVICE_PICKER;
+
 import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
@@ -319,6 +321,8 @@ public final class NsdManager {
     public static final int INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE    = 35;
     /** @hide */
     public static final int CHECK_PERMISSION_FOR_SERVICE            = 36;
+    /** @hide */
+    public static final int OFFLOAD_ENGINE_SERVICE_INFO_UPDATE      = 37;
 
     /** Dns based service discovery protocol */
     public static final int PROTOCOL_DNS_SD = 0x0001;
@@ -992,8 +996,8 @@ public final class NsdManager {
         }
 
         @Override
-        public void onServiceUpdatedLost(int listenerKey) {
-            sendNoArg(SERVICE_UPDATED_LOST, listenerKey);
+        public void onServiceUpdatedLost(int listenerKey, NsdServiceInfo info) {
+            sendInfo(SERVICE_UPDATED_LOST, listenerKey, info);
         }
 
         @Override
@@ -1062,6 +1066,7 @@ public final class NsdManager {
     @IntDef(value = {
             FAILURE_ALREADY_ACTIVE,
             FAILURE_BAD_PARAMETERS,
+            FAILURE_PERMISSION_DENIED
     })
     public @interface ResolutionFailureCode {
     }
@@ -1191,17 +1196,57 @@ public final class NsdManager {
          * service updates will be notified via this callback until
          * {@link NsdManager#unregisterServiceInfoCallback} is called. This will only be called once
          * the service is found, so may never be called if the service is never present.
+         *
+         * <p>For each service (as identified by {@link NsdServiceInfo#getServiceName()}) and
+         * network (as per {@link NsdServiceInfo#getNetwork()}), this will be called when the
+         * service is first found on the {@link Network}, and then every time {@link NsdServiceInfo}
+         * is updated for that service.
+         *
+         * <p>Note the same service name may be found multiple times on different networks, if
+         * {@link DiscoveryRequest#getNetwork()} (when registered via
+         * {@link #registerServiceInfoCallback(DiscoveryRequest, Executor, ServiceInfoCallback)}) or
+         * {@link NsdServiceInfo#getNetwork()} (when registered via
+         * {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)}) was
+         * not specified. The {@link NsdServiceInfo} contents may differ in that
+         * case; in particular {@link NsdServiceInfo#getHostAddresses()} may depend on the network.
          */
         void onServiceUpdated(@NonNull NsdServiceInfo serviceInfo);
 
         /**
          * Reports when the service that this callback listens to becomes unavailable.
          *
-         * Called on the executor passed to {@link NsdManager#registerServiceInfoCallback}. The
+         * <p>Called on the executor passed to {@link NsdManager#registerServiceInfoCallback}. The
          * service may become available again, in which case {@link #onServiceUpdated} will be
          * called.
+         *
+         * <p>This method is never called if {@link #onServiceLost(NsdServiceInfo)} is implemented.
+         *
+         * @deprecated This does not indicate which service was lost or on which {@code Network} the
+         *             service was lost on. Use {@link #onServiceLost(NsdServiceInfo)} instead.
          */
-        void onServiceLost();
+        @FlaggedApi(FLAG_NSD_SERVICE_PICKER)
+        @Deprecated
+        default void onServiceLost() {}
+
+        /**
+         * Reports when the service that this callback listens to becomes unavailable.
+         *
+         * <p>Called on the executor passed to {@link NsdManager#registerServiceInfoCallback}. The
+         * service may become available again, in which case {@link #onServiceUpdated} will be
+         * called.
+         *
+         * <p>This is called every time a service (as per {@link NsdServiceInfo#getServiceName()})
+         * is lost on any {@link Network} (as per {@link NsdServiceInfo#getNetwork()}) on which it
+         * was previously discovered. Therefore, this method may be called multiple times for a
+         * given service name, if multiple {@link #onServiceUpdated(NsdServiceInfo)} callbacks were
+         * received for that service name on different networks.
+         *
+         * @param serviceInfo The service that was lost.
+         */
+        @FlaggedApi(FLAG_NSD_SERVICE_PICKER)
+        default void onServiceLost(@NonNull NsdServiceInfo serviceInfo) {
+            onServiceLost();
+        }
 
         /**
          * Reports that service info updates have stopped.
@@ -1257,8 +1302,17 @@ public final class NsdManager {
                     break;
                 case DISCOVER_SERVICES_FAILED:
                     removeListener(key);
-                    executor.execute(() -> ((DiscoveryListener) listener).onStartDiscoveryFailed(
-                            getNsdServiceInfoType(discoveryRequest), errorCode));
+                    // DiscoveryListener and ServiceInfoCallback with DiscoveryRequest use the same
+                    // registration code path as they have the same discovery options.
+                    // Note ServiceInfoCallback does not have a "discovery started" callback.
+                    if (listener instanceof DiscoveryListener) {
+                        executor.execute(() -> ((DiscoveryListener) listener)
+                                .onStartDiscoveryFailed(getNsdServiceInfoType(
+                                        discoveryRequest), errorCode));
+                    } else {
+                        executor.execute(() -> ((ServiceInfoCallback) listener)
+                                .onServiceInfoCallbackRegistrationFailed(errorCode));
+                    }
                     break;
                 case SERVICE_FOUND:
                     executor.execute(() -> ((DiscoveryListener) listener).onServiceFound(
@@ -1277,8 +1331,13 @@ public final class NsdManager {
                     break;
                 case STOP_DISCOVERY_SUCCEEDED:
                     removeListener(key);
-                    executor.execute(() -> ((DiscoveryListener) listener).onDiscoveryStopped(
-                            getNsdServiceInfoType(discoveryRequest)));
+                    if (listener instanceof DiscoveryListener) {
+                        executor.execute(() -> ((DiscoveryListener) listener).onDiscoveryStopped(
+                                getNsdServiceInfoType(discoveryRequest)));
+                    } else {
+                        executor.execute(() -> ((ServiceInfoCallback) listener)
+                                .onServiceInfoCallbackUnregistered());
+                    }
                     break;
                 case REGISTER_SERVICE_FAILED:
                     removeListener(key);
@@ -1331,7 +1390,8 @@ public final class NsdManager {
                             .onServiceUpdated((NsdServiceInfo) obj));
                     break;
                 case SERVICE_UPDATED_LOST:
-                    executor.execute(() -> ((ServiceInfoCallback) listener).onServiceLost());
+                    executor.execute(() -> ((ServiceInfoCallback) listener)
+                            .onServiceLost((NsdServiceInfo) obj));
                     break;
                 case UNREGISTER_SERVICE_CALLBACK_SUCCEEDED:
                     removeListener(key);
@@ -1879,9 +1939,9 @@ public final class NsdManager {
      *
      * This is different from {@link #resolveService} which provides one shot service information.
      *
-     * <p> An application can listen to a service once a time. It needs to cancel the registration
-     * before registering other callbacks. Upon failure to register a callback for example if
-     * it's a duplicated registration, the application is notified through
+     * <p>This API listens to updates for one service at a time. Applications need to cancel the
+     * registration before registering the same callback instance again. Upon failure to register a
+     * callback for example if it's a duplicated registration, the application is notified through
      * {@link ServiceInfoCallback#onServiceInfoCallbackRegistrationFailed} with
      * {@link #FAILURE_BAD_PARAMETERS}.
      *
@@ -1896,6 +1956,43 @@ public final class NsdManager {
         int key = putListener(listener, executor, serviceInfo);
         try {
             mService.registerServiceInfoCallback(key, serviceInfo);
+        } catch (RemoteException e) {
+            e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Register a callback to discover and track updates of services.
+     *
+     * <p>This method combines
+     * {@link #discoverServices(DiscoveryRequest, Executor, DiscoveryListener)} and
+     * {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)} by
+     * finding services as per the provided {@link DiscoveryRequest}, and continuously monitoring
+     * availability and properties of the discovered services.
+     *
+     * <p>This API may cause more network traffic than using
+     * {@link #discoverServices(DiscoveryRequest, Executor, DiscoveryListener)} and only calling
+     * {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)} for
+     * select services, because it automatically queries all service information for all discovered
+     * services. However most mDNS advertisers reply with their full service information in one
+     * discovery reply, in which case there is no additional traffic, and this API saves the cost of
+     * registering multiple listeners for discovering and resolving services.
+     *
+     * <p>Applications need to cancel the registration before registering the same callback instance
+     * again. Upon failure to register a callback, the application is notified through
+     * {@link ServiceInfoCallback#onServiceInfoCallbackRegistrationFailed}.
+     *
+     * @param discoveryRequest the {@link DiscoveryRequest} object which specifies the discovery
+     *                         parameters such as service type, subtype and network
+     * @param executor Executor to run listener callbacks with
+     * @param listener The listener to be notified of found, updated or lost services.
+     */
+    @FlaggedApi(FLAG_NSD_SERVICE_PICKER)
+    public void registerServiceInfoCallback(@NonNull DiscoveryRequest discoveryRequest,
+            @NonNull Executor executor, @NonNull ServiceInfoCallback listener) {
+        int key = putListener(listener, executor, discoveryRequest);
+        try {
+            mService.registerServiceInfoCallbackWithRequest(key, discoveryRequest);
         } catch (RemoteException e) {
             e.rethrowFromSystemServer();
         }

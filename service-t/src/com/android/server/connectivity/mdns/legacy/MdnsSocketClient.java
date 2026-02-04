@@ -254,9 +254,8 @@ public class MdnsSocketClient implements MdnsSocketClientBase {
                     + "specific networks");
         }
         // This class is only used by gmscore, network capabilities is not used and supported.
-        socketCreationCallback.onSocketCreated(new SocketKey(null /* network */,
-                multicastSocket.getInterfaceIndex(), multicastSocket.getInterfaceName(),
-                EMPTY_NETWORK_CAPABILITIES));
+        socketCreationCallback.onSocketCreated(new SocketKey(
+                multicastSocket.getInterfaceIndex(), multicastSocket.getInterfaceName()));
     }
 
     @Override

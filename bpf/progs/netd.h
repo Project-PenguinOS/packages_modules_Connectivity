@@ -187,6 +187,8 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define LOCAL_NET_NOTE_OP_RINGBUF_PATH BPF_NETD_PATH "map_netd_local_net_note_op_ringbuf"
 #define LOCAL_NET_NOTE_OP_CACHE_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_cache_map"
 #define LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_enabled_map"
+#define LOCAL_NET_CACHE_GENERATION_ID_MAP_PATH                                 \
+    BPF_NETD_PATH "map_netd_local_net_cache_generation_id_map"
 #define LOOPBACK_ACCESS_RINGBUF_NETD_PATH BPF_NETD_PATH "map_netd_loopback_access_ringbuf"
 #define LOOPBACK_ACCESS_CACHE_MAP_NETD_PATH BPF_NETD_PATH "map_netd_loopback_access_cache_map"
 #define LOOPBACK_ACCESS_METRICS_ENABLED_MAP_NETD_PATH                                         \

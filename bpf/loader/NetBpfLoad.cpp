@@ -1598,10 +1598,10 @@ static int doLoad(char** argv, char * const envp[]) {
     // first in U QPR2 beta~2
     const bool has_platform_netbpfload_rc = exists("/system/etc/init/netbpfload.rc");
 
-    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s) libbpf: v%u.%u uid:%d rc:%d%d user:%d%d%d",
+    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%d rc:%d%d user:%d%d%d",
           argv[0], android_get_device_api_level(), api_level_full,
-          kernelVer, describeArch(), libbpf_major_version(),
-          libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
+          kernelVer, describeArch(), page_size >> 10,
+          libbpf_major_version(), libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
           has_platform_netbpfload_rc, isUser, isUserdebug, isEng);
 
     if (!has_platform_bpfloader_rc && !has_platform_netbpfload_rc) {
@@ -1656,6 +1656,12 @@ static int doLoad(char** argv, char * const envp[]) {
         return 7;
     }
 
+    // 26Q4 bumps the kernel requirement up to 5.15
+    if (isAtLeast26Q4 && !isAtLeastKernelVersion(5, 15)) {
+        ALOGE("Android 26Q4 requires kernel 5.15.");
+        return 7;
+    }
+
     // Technically already required by U, but only enforce on V+
     // see also: //system/netd/tests/kernel_test.cpp TestKernel64Bit
     if (isAtLeastV && isKernel32Bit() && isAtLeastKernelVersion(5, 16)) {
@@ -1701,6 +1707,7 @@ static int doLoad(char** argv, char * const envp[]) {
         REQUIRE(6, 1, 57)
         REQUIRE(6, 6, 0)
         REQUIRE(6, 12, 0)
+        REQUIRE(6, 18, 4)
 
 #undef REQUIRE
 
@@ -1785,8 +1792,7 @@ static int doLoad(char** argv, char * const envp[]) {
 
     // Ensure we can determine the Android build type.
     if (!isEng && !isUser && !isUserdebug) {
-        ALOGE("Failed to determine the build type: got %s, want 'eng', 'user', or 'userdebug'",
-              getBuildType().c_str());
+        ALOGE("Failed to determine the build type.");
         return 22;
     }
 
