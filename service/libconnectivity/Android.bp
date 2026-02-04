@@ -25,6 +25,9 @@ cc_library_shared {
     srcs: [
         "src/**/*.cpp",
     ],
+    header_libs: [
+        "bpf_prog_mainline_headers",
+    ],
     min_sdk_version: "30",
     static_libs: [
         "connectivity_native_aidl_interface-V1-ndk",

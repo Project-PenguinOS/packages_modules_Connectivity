@@ -43,9 +43,8 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"loại mạng không xác định"</string>
-    <string name="choose_device_title" msgid="1326677343980771265">"Kết nối với dịch vụ"</string>
-    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> muốn kết nối với một thiết bị khác trên mạng cục bộ"</string>
-    <!-- no translation found for choose_device_cancel (6916104929345443557) -->
-    <skip />
+    <string name="choose_device_title" msgid="1326677343980771265">"Chọn một thiết bị để kết nối"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> muốn kết nối với một thiết bị trên mạng cục bộ của bạn"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"Không kết nối"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"Đang quét tìm dịch vụ"</string>
 </resources>

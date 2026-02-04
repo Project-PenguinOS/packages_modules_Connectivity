@@ -19,6 +19,7 @@
 
 #include <arpa/inet.h>
 #include <arpa/nameser.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <jni.h>
@@ -38,6 +39,7 @@
 #include <android/log.h>
 #include <android/multinetwork.h>
 #include <nativehelper/JNIHelp.h>
+#include <nativehelper/scoped_utf_chars.h>
 
 using android::base::make_scope_guard;
 using android::base::unique_fd;
@@ -567,4 +569,91 @@ JNIEXPORT jobject Java_android_net_cts_MultinetworkApiTest_runDatagramCheck(
 
     // TODO: Replace this quick 'n' dirty test with proper QUIC-capable code.
     return create_query_test_result(env, socket_src_port, i + 1, 0);
+}
+
+using ndkGetBlockedReason = int (*)(int);
+ndkGetBlockedReason getNdkGetBlockedReason(JNIEnv *env) {
+    void *dl = dlopen("libandroid.so", RTLD_NOLOAD | RTLD_NODELETE);
+    if (dl == nullptr) {
+        jniThrowException(env, "java/lang/UnsatisfiedLinkError", dlerror());
+        return nullptr;
+    }
+    auto getBlockedReason = reinterpret_cast<ndkGetBlockedReason>(
+            dlsym(dl, "android_getnetworkblockedreason"));
+    if (getBlockedReason == nullptr) {
+        jniThrowException(env, "java/lang/UnsatisfiedLinkError", dlerror());
+        return nullptr;
+    }
+    return getBlockedReason;
+}
+
+enum SocketType { TCP = 0, UDP_UNCONNECTED = 1, UDP_CONNECTED = 2 };
+
+extern "C" JNIEXPORT void
+Java_android_net_cts_NetworkNdkTest_nativeTestGetBlockedReason(
+        JNIEnv* env, jclass, jlong netHandle, jstring addrStr, jint socketType,
+        jboolean useDynamicLoading, jboolean expectBlocked) {
+    ScopedUtfChars addr(env, addrStr);
+    if (!addr.c_str()) {
+        jniThrowNullPointerException(env, "address is null");
+        return;
+    }
+
+    struct sockaddr_in6 dst = {
+            .sin6_family = AF_INET6,
+            .sin6_port = htons(443),
+    };
+    if (inet_pton(AF_INET6, addr.c_str(), &dst.sin6_addr) <= 0) {
+        jniThrowErrnoException(env, "inet_pton", errno);
+        return;
+    }
+
+    auto sock = unique_fd(socket(
+            AF_INET6, (socketType == TCP ? SOCK_STREAM : SOCK_DGRAM) | SOCK_NONBLOCK, 0));
+    if (!sock.ok()) {
+        jniThrowErrnoException(env, "socket", errno);
+        return;
+    }
+    if (android_setsocknetwork(netHandle, sock) < 0) {
+        jniThrowErrnoException(env, "android_setsocknetwork", errno);
+        return;
+    }
+
+    ndkGetBlockedReason getBlockedReason = nullptr;
+    if (useDynamicLoading) {
+        getBlockedReason = getNdkGetBlockedReason(env);
+        if (getBlockedReason == nullptr) return;
+    } else if (__builtin_available(android 37, *)) {
+        // __builtin_available check is not necessary as this test runs only on 26Q2+.
+        // But having this check to avoid build error.
+        getBlockedReason = android_getnetworkblockedreason;
+    }
+    EXPECT_EQ(env, ANDROID_NETWORK_BLOCKED_REASON_NONE, getBlockedReason(sock),
+              "unexpected blocked reason before sending packet");
+
+    if (socketType == TCP) {
+        int ret = connect(sock, (const struct sockaddr *)&dst, sizeof(dst));
+        int savedErrno = errno;
+        EXPECT_EQ(env, -1, ret, "connect returned unexpected value");
+        EXPECT_EQ(env, EINPROGRESS, savedErrno, "connect set unexpected errno");
+    } else {
+        int ret;
+        if (socketType == UDP_CONNECTED) {
+            ret = connect(sock, (const struct sockaddr *)&dst, sizeof(dst));
+            EXPECT_EQ(env, 0, ret, "connect returned unexpected value");
+            ret = send(sock, nullptr, 0, 0);
+        } else {
+            ret = sendto(sock, nullptr, 0, 0, (const struct sockaddr *)&dst, sizeof(dst));
+        }
+        if (expectBlocked) {
+            int savedErrno = errno;
+            EXPECT_EQ(env, -1, ret, "send/sendto returned unexpected value");
+            EXPECT_EQ(env, EPERM, savedErrno, "send/sendto set unexpected errno");
+        }
+    }
+
+    int expectedBlockedReason = expectBlocked ? ANDROID_NETWORK_BLOCKED_REASON_LNP
+                                              : ANDROID_NETWORK_BLOCKED_REASON_NONE;
+    EXPECT_EQ(env, expectedBlockedReason, getBlockedReason(sock),
+              "unexpected blocked reason after sending packet");
 }

@@ -43,9 +43,8 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"不明網絡類型"</string>
-    <string name="choose_device_title" msgid="1326677343980771265">"連接至服務"</string>
-    <string name="choose_device_summary" msgid="1896271770783251097">"「<xliff:g id="APP_NAME">%1$s</xliff:g>」想連接本地網絡上的其他裝置"</string>
-    <!-- no translation found for choose_device_cancel (6916104929345443557) -->
-    <skip />
+    <string name="choose_device_title" msgid="1326677343980771265">"選擇要連接的裝置"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"「<xliff:g id="APP_NAME">%1$s</xliff:g>」想連接本地網絡上的裝置"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"不要連接"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"正在掃瞄服務"</string>
 </resources>

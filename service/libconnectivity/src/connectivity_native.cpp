@@ -15,8 +15,10 @@
  */
 
 #include "connectivity_native.h"
+#include "internal_net_api.h"
 
 #include <android/binder_manager.h>
+#include <android/multinetwork.h>
 #include <android-modules-utils/sdk_level.h>
 #include <aidl/android/net/connectivity/aidl/ConnectivityNative.h>
 
@@ -88,4 +90,14 @@ int AConnectivityNative_getPortsBlockedForBind(in_port_t *ports, size_t *count) 
     }
     *count = actualBlockedPorts.size();
     return 0;
+}
+
+int32_t AConnectivityNative_getNetworkBlockedReason(int fd) {
+    uint64_t reason;
+    socklen_t len = sizeof(reason);
+    if (getsockopt(fd, SOL_SOCKET, SO_ANDROID_DROP_REASON, &reason, &len)) {
+        return -errno;
+    }
+    return reason & DROP_REASON_LNP ? ANDROID_NETWORK_BLOCKED_REASON_LNP
+                                    : ANDROID_NETWORK_BLOCKED_REASON_NONE;
 }

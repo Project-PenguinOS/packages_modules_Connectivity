@@ -1302,8 +1302,14 @@ class NsdManagerTest {
             assertThat(sessionCreateEvent).isNotNull()
 
             // Check discovery info is offloaded.
+            // Use expectCallbackEventually because if another component on the
+            // device is discovering services on all networks, the offloadEngine
+            // would receive callbacks for unrelated discovery.
             val discoveryInfoEvent =
-                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
+                offloadEngine.expectCallbackEventually<
+                    TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                        it.info.key.serviceType == "$serviceType.local"
+                }
             checkSelectiveMdnsResponseOffloadServiceInfo(
                 "" /* serviceName */,
                 "$serviceType.local" /* serviceType */,
@@ -1318,7 +1324,10 @@ class NsdManagerTest {
 
             // Check resolution info is offloaded.
             val resolutionInfoEvent =
-                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
+                offloadEngine.expectCallbackEventually<
+                    TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                        it.info.key.serviceType == "$serviceType.local"
+                    }
             checkSelectiveMdnsResponseOffloadServiceInfo(
                 si.serviceName /* serviceName */,
                 "$serviceType.local" /* serviceType */,
@@ -1332,7 +1341,10 @@ class NsdManagerTest {
             nsdManager.stopServiceResolution(resolveRecord)
             resolveRecord.expectCallback<ResolutionStopped>()
             val removeResolutionInfoEvent =
-                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.RemoveEvent>()
+                offloadEngine.expectCallbackEventually<
+                    TestNsdOffloadEngine.OffloadEvent.RemoveEvent> {
+                        it.info.key.serviceType == "$serviceType.local"
+                }
             checkSelectiveMdnsResponseOffloadServiceInfo(
                 si.serviceName /* serviceName */,
                 "$serviceType.local" /* serviceType */,
@@ -1346,7 +1358,10 @@ class NsdManagerTest {
             nsdManager.stopServiceDiscovery(discoveryRecord)
             discoveryRecord.expectCallback<DiscoveryStopped>()
             val removeDiscoveryInfoEvent =
-                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.RemoveEvent>()
+                offloadEngine.expectCallbackEventually<
+                    TestNsdOffloadEngine.OffloadEvent.RemoveEvent> {
+                        it.info.key.serviceType == "$serviceType.local"
+                }
             checkSelectiveMdnsResponseOffloadServiceInfo(
                 "" /* serviceName */,
                 "$serviceType.local" /* serviceType */,
@@ -1404,8 +1419,14 @@ class NsdManagerTest {
             discoveryRecord.expectCallback<DiscoveryStarted>()
 
             // Check discovery info is offloaded.
+            // Use expectCallbackEventually because if another component on the
+            // device is discovering services on all networks, the offloadEngine
+            // would receive callbacks for unrelated discovery.
             val discoveryInfoEvent =
-                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
+                offloadEngine.expectCallbackEventually<
+                    TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                        it.info.key.serviceType == "$serviceType.local"
+                }
             checkSelectiveMdnsResponseOffloadServiceInfo(
                 "" /* serviceName */,
                 "$serviceType.local" /* serviceType */,
@@ -1420,7 +1441,10 @@ class NsdManagerTest {
 
             // Check resolution info is offloaded.
             val resolutionInfoEvent =
-                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
+                offloadEngine.expectCallbackEventually<
+                    TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                        it.info.key.serviceType == "$serviceType.local"
+                }
             checkSelectiveMdnsResponseOffloadServiceInfo(
                 si.serviceName /* serviceName */,
                 "$serviceType.local" /* serviceType */,
@@ -1438,9 +1462,15 @@ class NsdManagerTest {
             // Check that remove offload callbacks are received for both resolution and discovery.
             // The order is not guaranteed.
             val removeEvent1 =
-                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.RemoveEvent>()
+                offloadEngine.expectCallbackEventually<
+                    TestNsdOffloadEngine.OffloadEvent.RemoveEvent> {
+                        it.info.key.serviceType == "$serviceType.local"
+                }
             val removeEvent2 =
-                offloadEngine.expectCallback<TestNsdOffloadEngine.OffloadEvent.RemoveEvent>()
+                offloadEngine.expectCallbackEventually<
+                    TestNsdOffloadEngine.OffloadEvent.RemoveEvent> {
+                        it.info.key.serviceType == "$serviceType.local"
+                }
 
             val (resolutionEvent, discoveryEvent) =
                 if (removeEvent1.info.key.serviceName == si.serviceName) {

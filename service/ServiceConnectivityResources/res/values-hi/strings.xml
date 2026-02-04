@@ -43,9 +43,8 @@
     <item msgid="5734728378097476003">"वीपीएन"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"अज्ञात नेटवर्क टाइप"</string>
-    <string name="choose_device_title" msgid="1326677343980771265">"सेवा से कनेक्ट करें"</string>
-    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g>, लोकल नेटवर्क पर मौजूद किसी दूसरे डिवाइस से कनेक्ट करना चाहता है"</string>
-    <!-- no translation found for choose_device_cancel (6916104929345443557) -->
-    <skip />
+    <string name="choose_device_title" msgid="1326677343980771265">"कनेक्ट करने के लिए कोई डिवाइस चुनें"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g>, लोकल नेटवर्क पर मौजूद किसी डिवाइस से कनेक्ट करना चाहता है"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"कनेक्ट न करें"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"उपलब्ध सेवाओं के लिए स्कैन किया जा रहा है"</string>
 </resources>

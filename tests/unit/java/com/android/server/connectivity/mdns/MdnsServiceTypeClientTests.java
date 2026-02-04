@@ -19,10 +19,10 @@ package com.android.server.connectivity.mdns;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_QUERY;
 
+import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
 import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_GOODBYE_RECEIVED;
 import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_SOCKET_DESTROYED;
 import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_TTL_EXPIRED;
-import static com.android.server.connectivity.mdns.MdnsConstants.EMPTY_NETWORK_CAPABILITIES;
 import static com.android.server.connectivity.mdns.MdnsQueryScheduler.INITIAL_AGGRESSIVE_TIME_BETWEEN_BURSTS_MS;
 import static com.android.server.connectivity.mdns.MdnsQueryScheduler.MAX_TIME_BETWEEN_AGGRESSIVE_BURSTS_MS;
 import static com.android.server.connectivity.mdns.MdnsQueryScheduler.TIME_BETWEEN_RETRANSMISSION_QUERIES_IN_BURST_MS;
@@ -1737,6 +1737,85 @@ public class MdnsServiceTypeClientTests {
         // should contain the record that have update last receipt time.
         doReturn(updatedReceiptTime + 1).when(mockDecoderClock).elapsedRealtime();
         currentThreadExecutor.getAndClearLastScheduledRunnable().run();
+        inOrder.verifyNoMoreInteractions();
+    }
+
+    @Test
+    public void testResolveAllServices() throws Exception {
+        final String instanceName = "service-instance";
+        final String[] hostname = new String[] { "testhost "};
+        final String ipV4Address = "192.0.2.0";
+        final String ipV6Address = "2001:db8::";
+        final MdnsSearchOptions resolveOptions = MdnsSearchOptions.newBuilder()
+                .setResolveAllServices(true).build();
+        doCallRealMethod().when(mockDeps).getDatagramPacketsFromMdnsPacket(
+                any(), any(MdnsPacket.class), any(InetSocketAddress.class), anyBoolean());
+
+        startSendAndReceive(mockListenerOne, resolveOptions);
+        InOrder inOrder = inOrder(mockListenerOne, mockSocketClient);
+
+        // Get a first query for PTR
+        final ArgumentCaptor<List<DatagramPacket>> ptrQueryCaptor =
+                ArgumentCaptor.forClass(List.class);
+        currentThreadExecutor.getAndClearLastScheduledRunnable().run();
+        // Sent twice for IPv4 and IPv6
+        inOrder.verify(mockSocketClient, times(2)).sendPacketRequestingUnicastResponse(
+                ptrQueryCaptor.capture(), eq(socketKey), eq(false));
+        final MdnsPacket ptrQueryPacket = MdnsPacket.parse(
+                new MdnsPacketReader(ptrQueryCaptor.getValue().get(0)));
+
+        final String[] serviceName = getTestServiceName(instanceName);
+        assertTrue(hasQuestion(ptrQueryPacket, MdnsRecord.TYPE_PTR, SERVICE_TYPE_LABELS));
+
+        // Process a response with just a PTR record
+        final MdnsPacket ptrResponse = new MdnsPacket(
+                0 /* flags */,
+                Collections.emptyList() /* questions */,
+                List.of(new MdnsPointerRecord(SERVICE_TYPE_LABELS, TEST_ELAPSED_REALTIME,
+                        false /* cacheFlush */, TEST_TTL, serviceName)),
+                Collections.emptyList() /* authorityRecords */,
+                Collections.emptyList() /* additionalRecords */);
+        processResponse(ptrResponse, socketKey);
+        dispatchMessage();
+        inOrder.verify(mockListenerOne).onServiceNameDiscovered(
+                any(), eq(false) /* isServiceFromCache */);
+
+        // Expect a query for SRV/TXT
+        final ArgumentCaptor<List<DatagramPacket>> srvTxtQueryCaptor =
+                ArgumentCaptor.forClass(List.class);
+        currentThreadExecutor.getAndClearLastScheduledRunnable().run();
+        inOrder.verify(mockSocketClient, times(2)).sendPacketRequestingMulticastResponse(
+                srvTxtQueryCaptor.capture(), eq(socketKey), eq(false));
+        final MdnsPacket srvTxtQueryPacket = MdnsPacket.parse(
+                new MdnsPacketReader(srvTxtQueryCaptor.getValue().get(0)));
+        assertTrue(hasQuestion(srvTxtQueryPacket, MdnsRecord.TYPE_ANY, serviceName));
+
+        // Process a response with SRV/TXT/addresses
+        final MdnsPacket srvTxtResponse = new MdnsPacket(
+                0 /* flags */,
+                Collections.emptyList() /* questions */,
+                // Answers:
+                List.of(
+                        new MdnsServiceRecord(serviceName, TEST_ELAPSED_REALTIME,
+                                true /* cacheFlush */, TEST_TTL, 0 /* servicePriority */,
+                                0 /* serviceWeight */, 1234 /* servicePort */, hostname),
+                        new MdnsTextRecord(serviceName, TEST_ELAPSED_REALTIME,
+                                true /* cacheFlush */, TEST_TTL,
+                                Collections.emptyList() /* entries */)),
+                Collections.emptyList() /* authorityRecords */,
+                // Additional records:
+                List.of(
+                        new MdnsInetAddressRecord(hostname, TEST_ELAPSED_REALTIME,
+                                true /* cacheFlush */, TEST_TTL,
+                                InetAddresses.parseNumericAddress(ipV4Address)),
+                        new MdnsInetAddressRecord(hostname, TEST_ELAPSED_REALTIME,
+                                true /* cacheFlush */, TEST_TTL,
+                                InetAddresses.parseNumericAddress(ipV6Address))
+                ));
+        processResponse(srvTxtResponse, socketKey);
+        dispatchMessage();
+
+        inOrder.verify(mockListenerOne).onServiceFound(any(), eq(false) /* isServiceFromCache */);
         inOrder.verifyNoMoreInteractions();
     }
 

@@ -43,9 +43,8 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"ਕੋਈ ਅਗਿਆਤ ਨੈੱਟਵਰਕ ਦੀ ਕਿਸਮ"</string>
-    <string name="choose_device_title" msgid="1326677343980771265">"ਸੇਵਾ ਨਾਲ ਕਨੈਕਟ ਕਰੋ"</string>
-    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> ਐਪ ਸਥਾਨਕ ਨੈੱਟਵਰਕ \'ਤੇ ਕਿਸੇ ਹੋਰ ਡੀਵਾਈਸ ਨਾਲ ਕਨੈਕਟ ਕਰਨਾ ਚਾਹੁੰਦੀ ਹੈ"</string>
-    <!-- no translation found for choose_device_cancel (6916104929345443557) -->
-    <skip />
+    <string name="choose_device_title" msgid="1326677343980771265">"ਕਨੈਕਟ ਕਰਨ ਲਈ ਕੋਈ ਡੀਵਾਈਸ ਚੁਣੋ"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> ਤੁਹਾਡੇ ਸਥਾਨਕ ਨੈੱਟਵਰਕ \'ਤੇ ਕਿਸੇ ਡੀਵਾਈਸ ਨਾਲ ਕਨੈਕਟ ਕਰਨਾ ਚਾਹੁੰਦੀ ਹੈ"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"ਕਨੈਕਟ ਨਾ ਕਰੋ"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"ਸੇਵਾਵਾਂ ਲਈ ਸਕੈਨ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ"</string>
 </resources>
