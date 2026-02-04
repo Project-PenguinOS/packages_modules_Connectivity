@@ -16,15 +16,16 @@
 
 package com.android.server.connectivity.mdns;
 
+import static com.android.net.module.util.CollectionUtils.prependArray;
 import static com.android.net.module.util.HandlerUtils.ensureRunningOnHandlerThread;
-import static com.android.server.connectivity.mdns.MdnsConstants.getServiceRemovedMessage;
-import static com.android.server.connectivity.mdns.MdnsSearchOptions.AGGRESSIVE_QUERY_MODE;
-import static com.android.server.connectivity.mdns.MdnsServiceCache.ServiceExpiredCallback;
-import static com.android.server.connectivity.mdns.MdnsServiceCache.findMatchedResponse;
-import static com.android.server.connectivity.mdns.MdnsQueryScheduler.ScheduledQueryTaskArgs;
 import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_GOODBYE_RECEIVED;
 import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_SOCKET_DESTROYED;
 import static com.android.server.connectivity.mdns.MdnsConstants.SERVICE_REMOVED_BY_TTL_EXPIRED;
+import static com.android.server.connectivity.mdns.MdnsConstants.getServiceRemovedMessage;
+import static com.android.server.connectivity.mdns.MdnsQueryScheduler.ScheduledQueryTaskArgs;
+import static com.android.server.connectivity.mdns.MdnsSearchOptions.AGGRESSIVE_QUERY_MODE;
+import static com.android.server.connectivity.mdns.MdnsServiceCache.ServiceExpiredCallback;
+import static com.android.server.connectivity.mdns.MdnsServiceCache.findMatchedResponse;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.Clock;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.buildMdnsServiceInfoFromResponse;
 import static com.android.server.connectivity.mdns.util.MdnsUtils.convertNsdServiceInfoToMdnsResponse;
@@ -46,7 +47,6 @@ import android.util.Pair;
 
 import androidx.annotation.VisibleForTesting;
 
-import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.DnsUtils;
 import com.android.net.module.util.SharedLog;
 import com.android.server.connectivity.mdns.util.MdnsUtils;
@@ -56,7 +56,6 @@ import java.io.PrintWriter;
 import java.net.DatagramPacket;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -65,6 +64,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Function;
 
 /**
  * Instance of this class sends and receives mDNS packets of a given service type and invoke
@@ -292,7 +292,8 @@ public class MdnsServiceTypeClient {
                     // advance). Because the result of "makeResponsesForResolve" depends on answers
                     // that were received before it is called, so to take into account all answers
                     // before sending the query, it needs to be called just before sending it.
-                    final List<MdnsResponse> servicesToResolve = makeResponsesForResolve(socketKey);
+                    final List<MdnsResponse> servicesToResolve = makeResponsesForResolve(
+                            /* resolveAllInCache= */hasResolveAllQuery());
                     final QueryTask queryTask = new QueryTask(taskArgs, servicesToResolve,
                             getAllDiscoverySubtypes(), needSendDiscoveryQueries(listeners),
                             getExistingServices(), searchOptions.onlyUseIpv6OnIpv6OnlyNetworks(),
@@ -691,7 +692,8 @@ public class MdnsServiceTypeClient {
                         timeToNextTaskMs);
             }
         } else {
-            final List<MdnsResponse> servicesToResolve = makeResponsesForResolve(socketKey);
+            final List<MdnsResponse> servicesToResolve = makeResponsesForResolve(
+                    /* resolveAllInCache= */hasResolveAllQuery());
             final QueryTask queryTask = new QueryTask(
                     mdnsQueryScheduler.scheduleFirstRun(taskConfig, now,
                             minRemainingTtl, currentSessionId), servicesToResolve,
@@ -786,19 +788,12 @@ public class MdnsServiceTypeClient {
     public synchronized void processResponse(@NonNull MdnsPacket packet,
             @NonNull SocketKey socketKey) {
         ensureRunningOnHandlerThread(handler);
-        // Augment the list of current known responses, and generated responses for resolve
-        // requests if there is no known response
+        // Combine the received answer with everything that is already known, meaning every service
+        // in cache + responses generated from resolve requests.
         // Expired services are also needed because the response may include them.
-        final List<MdnsResponse> cachedList = serviceCache.getCachedServices(
-                cacheKey, false /* excludeExpiredServices */);
-        final List<MdnsResponse> currentList = new ArrayList<>(cachedList);
-        List<MdnsResponse> additionalResponses = makeResponsesForResolve(socketKey);
-        for (MdnsResponse additionalResponse : additionalResponses) {
-            if (findMatchedResponse(
-                    cachedList, additionalResponse.getServiceInstanceName()) == null) {
-                currentList.add(additionalResponse);
-            }
-        }
+        final List<MdnsResponse> cachedList =
+                serviceCache.getCachedServices(cacheKey, false /* excludeExpiredServices */);
+        final List<MdnsResponse> currentList = makeResponsesFromCacheAndResolveQueries(cachedList);
         final Pair<Set<MdnsResponse>, ArrayList<MdnsResponse>> augmentedResult =
                 responseDecoder.augmentResponses(packet, currentList,
                         socketKey.getInterfaceIndex(), socketKey.getNetwork(), featureFlags);
@@ -984,35 +979,116 @@ public class MdnsServiceTypeClient {
         return searchOptions != null && searchOptions.removeExpiredService();
     }
 
-    private List<MdnsResponse> makeResponsesForResolve(@NonNull SocketKey socketKey) {
-        final List<MdnsResponse> resolveResponses = new ArrayList<>();
+    private boolean hasResolveAllQuery() {
+        for (int i = 0; i < listeners.size(); i++) {
+            if (listeners.valueAt(i).searchOptions.resolveAllServices()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Generate a list of {@link MdnsResponse} representing services to resolve.
+     *
+     * <p>Resolve queries specify the service name so querying the PTR record is not necessary, and
+     * only SRV/TXT/address records may be received. However MdnsResponse objects are normally only
+     * created when a PTR record is received, so if only SRV/TXT/address records are received, they
+     * cannot be added to a service.
+     *
+     * <p>This method generates a list of MdnsResponse for services that should be resolved, using
+     * records from the cache, but creating a MdnsResponse without a PTR record if there is a
+     * resolve query but no information in cache for the service.
+     *
+     * <p>The list can be used to track which SRV/TXT/address records need to be queried for
+     * resolving.
+     */
+    private List<MdnsResponse> makeResponsesForResolve(boolean resolveAllInCache) {
+        // Known responses are used by queries to understand what information the cache already
+        // holds, allowing it to determine which records need to be renewed. Therefore, expired
+        // services should always be included in the returned responses to ensure all their records
+        // are renewed.
+        final List<MdnsResponse> cachedServices =
+                serviceCache.getCachedServices(cacheKey, false /* excludeExpiredServices */);
+        if (resolveAllInCache) {
+            return makeResponsesFromCacheAndResolveQueries(cachedServices);
+        }
+
+        final ArrayMap<String, MdnsResponse> resolveResponses = new ArrayMap<>();
+        addUniqueResponsesForResolveListeners(resolveResponses, serviceName -> {
+            MdnsResponse response = findMatchedResponse(cachedServices, serviceName);
+            if (response == null) {
+                return makeResolveResponse(serviceName);
+            }
+            return response;
+        });
+
+        return makeValuesList(resolveResponses);
+    }
+
+    /**
+     * Generate a map of (uppercase service name) -> MdnsResponse representing all known services.
+     *
+     * <p>Services may be known by being in cache, or be inferred as documented in
+     * {@link #makeResponsesForResolve(boolean)}.
+     *
+     * <p>The list can be used as a base list of services to update with the received records and
+     * add to the cache. Expired services in the cache are also included as the received records
+     * may reference / refresh them.
+     */
+    private List<MdnsResponse> makeResponsesFromCacheAndResolveQueries(
+            @NonNull List<MdnsResponse> cachedServices) {
+        final ArrayMap<String, MdnsResponse> resolveResponses = new ArrayMap<>();
+        for (MdnsResponse response : cachedServices) {
+            resolveResponses.put(
+                    DnsUtils.toDnsUpperCase(response.getServiceInstanceName()), response);
+        }
+        addUniqueResponsesForResolveListeners(resolveResponses, this::makeResolveResponse);
+
+        return makeValuesList(resolveResponses);
+    }
+
+    /**
+     * For each resolve listener, add a response to a (resolve instance name) -> MdnsResponse map.
+     *
+     * <p>No duplicates are added, so if a resolve instance name is already in a map, it will not
+     * be overwritten.
+     *
+     * @param responses Map of (DNS uppercase instance name) -> MdnsResponse
+     * @param responseProvider Provider of the MdnsResponse based on the resolve instance name
+     */
+    private void addUniqueResponsesForResolveListeners(ArrayMap<String, MdnsResponse> responses,
+            Function<String, MdnsResponse> responseProvider) {
         for (int i = 0; i < listeners.size(); i++) {
             final String resolveName = listeners.valueAt(i).searchOptions.getResolveInstanceName();
             if (resolveName == null) {
                 continue;
             }
-            if (CollectionUtils.any(resolveResponses,
-                    r -> DnsUtils.equalsIgnoreDnsCase(resolveName, r.getServiceInstanceName()))) {
+            final String uppercaseResolveName = DnsUtils.toDnsUpperCase(resolveName);
+            if (responses.containsKey(uppercaseResolveName)) {
                 continue;
             }
-            // The "knownResponse" is used by the query to understand what information the cache
-            // already holds, allowing it to determine which records need to be renewed. Therefore,
-            // expired services should always be included in the returned responses to ensure all
-            // their records are renewed.
-            MdnsResponse knownResponse = serviceCache.getCachedService(
-                    resolveName, cacheKey, false /* excludeExpiredServices */);
-            if (knownResponse == null) {
-                final ArrayList<String> instanceFullName = new ArrayList<>(
-                        serviceTypeLabels.length + 1);
-                instanceFullName.add(resolveName);
-                instanceFullName.addAll(Arrays.asList(serviceTypeLabels));
-                knownResponse = new MdnsResponse(
-                        0L /* lastUpdateTime */, instanceFullName.toArray(new String[0]),
-                        socketKey.getInterfaceIndex(), socketKey.getNetwork());
-            }
-            resolveResponses.add(knownResponse);
+            responses.put(uppercaseResolveName, responseProvider.apply(resolveName));
         }
-        return resolveResponses;
+    }
+
+    /**
+     * Make a list of values from an {@link ArrayMap}.
+     *
+     * <p>Iterators are documented to be inefficient for {@link ArrayMap}, so this leverages
+     * more efficient {@link ArrayMap} methods.
+     */
+    private <T> List<T> makeValuesList(ArrayMap<?, T> map) {
+        final ArrayList<T> list = new ArrayList<>(map.size());
+        map.forEach((k, v) -> list.add(v));
+        return list;
+    }
+
+    private MdnsResponse makeResolveResponse(String resolveName) {
+        final String[] instanceFullName = prependArray(
+                String.class, serviceTypeLabels, resolveName);
+        return new MdnsResponse(0L /* lastUpdateTime */, instanceFullName,
+                socketKey.getInterfaceIndex(), socketKey.getNetwork());
     }
 
     private static boolean needSendDiscoveryQueries(

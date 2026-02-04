@@ -76,6 +76,7 @@ cc_library_headers {
     // Platform code should use bpf_prog_platform_headers instead.
     visibility: [
         "//packages/modules/Connectivity/bpf:__subpackages__",
+        "//packages/modules/Connectivity/service/libconnectivity",
     ],
     apex_available: [
         "com.android.tethering",

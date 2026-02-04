@@ -19,6 +19,7 @@ LIBCONNECTIVITY_NATIVE {
     AConnectivityNative_getPortsBlockedForBind; # apex llndk
     AConnectivityNative_unblockPortForBind; # apex llndk
     AConnectivityNative_unblockAllPortsForBind; # apex llndk
+    AConnectivityNative_getNetworkBlockedReason; # apex
   local:
     *;
 };

@@ -1222,8 +1222,8 @@ public class NsdServiceTest {
         final NsdManager client = connectClient(mService);
         final ServiceInfoCallback serviceInfoCallback = mock(ServiceInfoCallback.class);
 
-        assertThrows(IllegalArgumentException.class, () ->
-                client.unregisterServiceInfoCallback(serviceInfoCallback));
+        // This should not throw
+        client.unregisterServiceInfoCallback(serviceInfoCallback);
     }
 
     @Test

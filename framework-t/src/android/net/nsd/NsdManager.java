@@ -20,7 +20,6 @@ import static android.Manifest.permission.NETWORK_SETTINGS;
 import static android.Manifest.permission.NETWORK_STACK;
 import static android.Manifest.permission.REGISTER_NSD_OFFLOAD_ENGINE;
 import static android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK;
-import static android.net.connectivity.ConnectivityCompatChanges.ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS;
 import static android.net.connectivity.ConnectivityCompatChanges.ENABLE_PLATFORM_MDNS_BACKEND;
 import static android.net.connectivity.ConnectivityCompatChanges.RUN_NATIVE_NSD_ONLY_IF_LEGACY_APPS_T_AND_LATER;
 
@@ -1405,8 +1404,7 @@ public final class NsdManager {
         synchronized (mMapLock) {
             int valueIndex = mListenerMap.indexOfValue(listener);
             if (valueIndex == -1) {
-                if (ignoreNotFound && CompatChanges.isChangeEnabled(
-                        ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS)) {
+                if (ignoreNotFound) {
                     return -1;
                 }
                 throw new IllegalArgumentException("listener not registered");
@@ -1582,9 +1580,8 @@ public final class NsdManager {
      * there is no entirely reliable way to know when a listener may be re-used, and a new
      * listener should be created for each service registration request.
      *
-     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
-     * running on devices with T SDK extension < 21, this will throw with
-     * {@link IllegalArgumentException}.
+     * <p>If the listener is not already registered, for apps running on devices with T SDK
+     * extension < 22, this will throw with {@link IllegalArgumentException}.
      */
     public void unregisterService(RegistrationListener listener) {
         int id = getListenerKey(listener, /* ignoreNotFound= */true);
@@ -1773,9 +1770,8 @@ public final class NsdManager {
      * <p> Upon failure to stop service discovery, application is notified through
      * {@link DiscoveryListener#onStopDiscoveryFailed}.
      *
-     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
-     * running on devices with T SDK extension < 21, this will throw with
-     * {@link IllegalArgumentException}.
+     * <p>If the listener is not already registered, for apps running on devices with T SDK
+     * extension < 22, this will throw with {@link IllegalArgumentException}.
      *
      * @param listener This should be the listener object that was passed to {@link #discoverServices}.
      * It identifies the discovery that should be stopped and notifies of a successful or
@@ -1857,9 +1853,8 @@ public final class NsdManager {
      * requester stops resolution repeatedly, the application is notified
      * {@link ResolveListener#onStopResolutionFailed} with {@link #FAILURE_OPERATION_NOT_RUNNING}
      *
-     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
-     * running on devices with T SDK extension < 21, this will throw with
-     * {@link IllegalArgumentException}.
+     * <p>If the listener is not already registered, for apps running on devices with T SDK
+     * extension < 22, this will throw with {@link IllegalArgumentException}.
      *
      * @param listener This should be a listener object that was passed to {@link #resolveService}.
      *                 It identifies the resolution that should be stopped and notifies of a
@@ -1913,9 +1908,8 @@ public final class NsdManager {
      * {@link ServiceInfoCallback#onServiceInfoCallbackUnregistered}. The same callback can only be
      * reused after this is called.
      *
-     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
-     * running on devices with T SDK extension < 21, this will throw with
-     * {@link IllegalArgumentException}.
+     * <p>If the listener is not already registered, for apps running on devices with T SDK
+     * extension < 22, this will throw with {@link IllegalArgumentException}.
      *
      * @param listener This should be a listener object that was passed to
      *                 {@link #registerServiceInfoCallback}. It identifies the registration that

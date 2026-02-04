@@ -146,9 +146,30 @@ class ApfApiTest : ApfTestBase() {
             8
         }
 
-        // The minReadWriteSize is 2 bytes. The first byte always stays PASS.
         val program = ByteArray(caps.maximumApfProgramSize)
-        for (i in caps.maximumApfProgramSize downTo minReadWriteSize) {
+
+        // On userdebug builds, iterate in steps of 31 to make the test run faster.
+        // On user builds, iterate through every value for full coverage.
+        val testSizes = if (Build.isDebuggable()) {
+            // For userdebug: iterate in steps of 31, but always include min and max values
+            val sizes = mutableListOf<Int>()
+            sizes.add(caps.maximumApfProgramSize)
+            var current = caps.maximumApfProgramSize - 31
+            while (current > minReadWriteSize) {
+                sizes.add(current)
+                current -= 31
+            }
+            if (sizes.last() != minReadWriteSize) {
+                sizes.add(minReadWriteSize)
+            }
+            sizes
+        } else {
+            // For user builds: test every size for full coverage
+            (caps.maximumApfProgramSize downTo minReadWriteSize).toList()
+        }
+
+        // The minReadWriteSize is 2 bytes. The first byte always stays PASS.
+        for (i in testSizes) {
             // Randomize bytes in range [1, i). And install first [0, i) bytes of program.
             // Note that only the very first instruction (PASS) is valid APF bytecode.
             Random.nextBytes(program, 1 /* fromIndex */, i /* toIndex */)

@@ -43,9 +43,8 @@
     <item msgid="5734728378097476003">"VPNa"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"sare mota ezezaguna"</string>
-    <string name="choose_device_title" msgid="1326677343980771265">"Konektatu zerbitzura"</string>
-    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> aplikazioak tokiko sare bateko beste gailu batera konektatu nahi du"</string>
-    <!-- no translation found for choose_device_cancel (6916104929345443557) -->
-    <skip />
+    <string name="choose_device_title" msgid="1326677343980771265">"Aukeratu konektatu nahi duzun gailu bat"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> aplikazioak tokiko sareko gailu batera konektatu nahi du"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"Ez konektatu"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"Zerbitzuak bilatzen"</string>
 </resources>

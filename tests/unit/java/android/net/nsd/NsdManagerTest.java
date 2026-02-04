@@ -17,7 +17,6 @@
 package android.net.nsd;
 
 import static android.net.InetAddresses.parseNumericAddress;
-import static android.net.connectivity.ConnectivityCompatChanges.ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS;
 import static android.net.nsd.NsdManager.checkServiceInfoForRegistration;
 
 import static com.android.net.module.util.HexDump.hexStringToByteArray;
@@ -782,8 +781,6 @@ public class NsdManagerTest {
                         .setNoPublicKey().build()));
     }
 
-    @EnableCompatChanges(ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS)
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
     @Test
     public void testUnregisterNonRegisteredCallback() {
         mManager.stopServiceDiscovery(mock(NsdManager.DiscoveryListener.class));
