@@ -38,6 +38,7 @@ interface INsdServiceConnector {
     void startDaemon();
     void stopResolution(int listenerKey);
     void registerServiceInfoCallback(int listenerKey, in NsdServiceInfo serviceInfo);
+    void registerServiceInfoCallbackWithRequest(int listenerKey, in DiscoveryRequest discoveryRequest);
     void unregisterServiceInfoCallback(int listenerKey);
     void registerOffloadEngine(String ifaceName, in IOffloadEngine cb, long offloadCapabilities, long offloadType);
     void unregisterOffloadEngine(in IOffloadEngine cb);

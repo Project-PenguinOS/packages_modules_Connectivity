@@ -1,6 +1,7 @@
 # This takes effect on Android 15+ (V+ 25Q2+)
 # Note that 'capabilities SYSLOG' lacks sepolicy prior to 25Q4
 service bpfloader /apex/com.android.tethering/bin/netbpfload
+    disabled # started on demand via trigger
     # netbpfload will do network bpf loading, then execute /system/bin/bpfloader
     capabilities CHOWN SYS_ADMIN NET_ADMIN SYSLOG
     # The following group memberships are a workaround for lack of DAC_OVERRIDE
