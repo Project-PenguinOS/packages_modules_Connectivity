@@ -311,9 +311,10 @@ package android.net.nsd {
   }
 
   public static interface NsdManager.ServiceInfoCallback {
+    method @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public default void onServiceInfoCallbackRegistered();
     method public void onServiceInfoCallbackRegistrationFailed(int);
     method public void onServiceInfoCallbackUnregistered();
-    method @Deprecated @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public default void onServiceLost();
+    method public void onServiceLost();
     method @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public default void onServiceLost(@NonNull android.net.nsd.NsdServiceInfo);
     method public void onServiceUpdated(@NonNull android.net.nsd.NsdServiceInfo);
   }

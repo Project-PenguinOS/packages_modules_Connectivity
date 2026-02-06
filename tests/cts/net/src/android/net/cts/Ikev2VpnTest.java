@@ -55,6 +55,10 @@ import android.net.ipsec.ike.IkeTunnelConnectionParams;
 import android.os.Build;
 import android.os.Process;
 import android.platform.test.annotations.AppModeFull;
+import android.platform.test.annotations.RequiresFlagsEnabled;
+import android.platform.test.flag.junit.CheckFlagsRule;
+import android.platform.test.flag.junit.DeviceFlagsValueProvider;
+import android.provider.Flags;
 import android.text.TextUtils;
 
 import androidx.test.InstrumentationRegistry;
@@ -101,8 +105,12 @@ public class Ikev2VpnTest {
     private static final int OP_ACTIVATE_VPN = 47;
     private static final int OP_ACTIVATE_PLATFORM_VPN = 94;
 
-    @Rule
-    public final DevSdkIgnoreRule ignoreRule = new DevSdkIgnoreRule();
+    @Rule(order = 0)
+    public final DevSdkIgnoreRule mIgnoreRule = new DevSdkIgnoreRule();
+
+    @Rule(order = 1)
+    public final CheckFlagsRule mCheckFlagsRule =
+            DeviceFlagsValueProvider.createCheckFlagsRule();
 
     // Test vectors for IKE negotiation in test mode.
     private static final String SUCCESSFUL_IKE_INIT_RESP_V4 =
@@ -759,6 +767,28 @@ public class Ikev2VpnTest {
                 true /* automaticIpVersionSelectionEnabled */,
                 false /* automaticNattKeepaliveTimerEnabled */);
         assertTrue(profile.isAutomaticIpVersionSelectionEnabled());
+    }
+
+    @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    @RequiresFlagsEnabled(Flags.FLAG_EXPOSE_VPN_APP_EXCLUSION_SETTINGS)
+    @Test
+    public void testGetAppExclusionList_throwsSecurityException() throws Exception {
+        assertThrows(
+                SecurityException.class,
+                () ->
+                        sVpnMgr.getAppExclusionList(
+                                sContext.getUser(), sContext.getPackageName()));
+    }
+
+    @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    @RequiresFlagsEnabled(Flags.FLAG_EXPOSE_VPN_APP_EXCLUSION_SETTINGS)
+    @Test
+    public void testSetAppExclusionList_throwsSecurityException() throws Exception {
+        assertThrows(
+                SecurityException.class,
+                () ->
+                        sVpnMgr.setAppExclusionList(
+                                sContext.getUser(), sContext.getPackageName(), List.of()));
     }
 
     private static class CertificateAndKey {

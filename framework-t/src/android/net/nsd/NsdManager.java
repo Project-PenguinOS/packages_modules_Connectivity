@@ -305,24 +305,26 @@ public final class NsdManager {
     /** @hide */
     public static final int REGISTER_SERVICE_CALLBACK_FAILED        = 28;
     /** @hide */
-    public static final int SERVICE_UPDATED                         = 29;
+    public static final int REGISTER_SERVICE_CALLBACK_SUCCEEDED     = 29;
     /** @hide */
-    public static final int SERVICE_UPDATED_LOST                    = 30;
+    public static final int SERVICE_UPDATED                         = 30;
+    /** @hide */
+    public static final int SERVICE_UPDATED_LOST                    = 31;
 
     /** @hide */
-    public static final int UNREGISTER_SERVICE_CALLBACK             = 31;
+    public static final int UNREGISTER_SERVICE_CALLBACK             = 32;
     /** @hide */
-    public static final int UNREGISTER_SERVICE_CALLBACK_SUCCEEDED   = 32;
+    public static final int UNREGISTER_SERVICE_CALLBACK_SUCCEEDED   = 33;
     /** @hide */
-    public static final int REGISTER_OFFLOAD_ENGINE                 = 33;
+    public static final int REGISTER_OFFLOAD_ENGINE                 = 34;
     /** @hide */
-    public static final int UNREGISTER_OFFLOAD_ENGINE               = 34;
+    public static final int UNREGISTER_OFFLOAD_ENGINE               = 35;
     /** @hide */
-    public static final int INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE    = 35;
+    public static final int INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE    = 36;
     /** @hide */
-    public static final int CHECK_PERMISSION_FOR_SERVICE            = 36;
+    public static final int CHECK_PERMISSION_FOR_SERVICE            = 37;
     /** @hide */
-    public static final int OFFLOAD_ENGINE_SERVICE_INFO_UPDATE      = 37;
+    public static final int OFFLOAD_ENGINE_SERVICE_INFO_UPDATE      = 38;
 
     /** Dns based service discovery protocol */
     public static final int PROTOCOL_DNS_SD = 0x0001;
@@ -375,6 +377,7 @@ public final class NsdManager {
         EVENT_NAMES.put(STOP_RESOLUTION_SUCCEEDED, "STOP_RESOLUTION_SUCCEEDED");
         EVENT_NAMES.put(REGISTER_SERVICE_CALLBACK, "REGISTER_SERVICE_CALLBACK");
         EVENT_NAMES.put(REGISTER_SERVICE_CALLBACK_FAILED, "REGISTER_SERVICE_CALLBACK_FAILED");
+        EVENT_NAMES.put(REGISTER_SERVICE_CALLBACK_SUCCEEDED, "REGISTER_SERVICE_CALLBACK_SUCCEEDED");
         EVENT_NAMES.put(SERVICE_UPDATED, "SERVICE_UPDATED");
         EVENT_NAMES.put(UNREGISTER_SERVICE_CALLBACK, "UNREGISTER_SERVICE_CALLBACK");
         EVENT_NAMES.put(UNREGISTER_SERVICE_CALLBACK_SUCCEEDED,
@@ -991,6 +994,11 @@ public final class NsdManager {
         }
 
         @Override
+        public void onServiceInfoCallbackRegistered(int listenerKey) {
+            sendNoArg(REGISTER_SERVICE_CALLBACK_SUCCEEDED, listenerKey);
+        }
+
+        @Override
         public void onServiceUpdated(int listenerKey, NsdServiceInfo info) {
             sendInfo(SERVICE_UPDATED, listenerKey, info);
         }
@@ -1178,6 +1186,16 @@ public final class NsdManager {
      * {@link NsdManager#unregisterServiceInfoCallback} to stop listening.
      */
     public interface ServiceInfoCallback {
+        /**
+         * Reports that the callback was successfully registered.
+         *
+         * <p>Called on the executor passed to {@link NsdManager#registerServiceInfoCallback}.
+         *
+         * <p>This indicates that onServiceInfoCallbackRegistrationFailed will not be called, and
+         * service update callbacks will be sent.
+         */
+        @FlaggedApi(FLAG_NSD_SERVICE_PICKER)
+        default void onServiceInfoCallbackRegistered() {}
 
         /**
          * Reports that registering the callback failed with an error.
@@ -1221,12 +1239,18 @@ public final class NsdManager {
          *
          * <p>This method is never called if {@link #onServiceLost(NsdServiceInfo)} is implemented.
          *
-         * @deprecated This does not indicate which service was lost or on which {@code Network} the
-         *             service was lost on. Use {@link #onServiceLost(NsdServiceInfo)} instead.
+         * <p>When registering through
+         * {@link #registerServiceInfoCallback(DiscoveryRequest, Executor, ServiceInfoCallback)},
+         * {@link #onServiceLost(NsdServiceInfo)} should be used instead, as multiple services
+         * may be found and this method does not indicate which one was lost.
+         *
+         * <p>Additionally, when registering through
+         * {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)}, if
+         * {@link NsdServiceInfo#getNetwork()} is null, the service may be found on multiple
+         * networks, so {@link #onServiceLost(NsdServiceInfo)} should also be preferred as it
+         * allows identifying on which network the service was lost.
          */
-        @FlaggedApi(FLAG_NSD_SERVICE_PICKER)
-        @Deprecated
-        default void onServiceLost() {}
+        void onServiceLost();
 
         /**
          * Reports when the service that this callback listens to becomes unavailable.
@@ -1297,14 +1321,21 @@ public final class NsdManager {
             }
             switch (what) {
                 case DISCOVER_SERVICES_STARTED:
+                    // DiscoveryListener and ServiceInfoCallback with DiscoveryRequest use the same
+                    // registration code path as they have the same discovery options.
                     final String s = getNsdServiceInfoType((DiscoveryRequest) obj);
-                    executor.execute(() -> ((DiscoveryListener) listener).onDiscoveryStarted(s));
+                    if (listener instanceof DiscoveryListener) {
+                        executor.execute(() -> ((DiscoveryListener) listener)
+                                .onDiscoveryStarted(s));
+                    } else {
+                        executor.execute(() -> ((ServiceInfoCallback) listener)
+                                .onServiceInfoCallbackRegistered());
+                    }
                     break;
                 case DISCOVER_SERVICES_FAILED:
                     removeListener(key);
                     // DiscoveryListener and ServiceInfoCallback with DiscoveryRequest use the same
                     // registration code path as they have the same discovery options.
-                    // Note ServiceInfoCallback does not have a "discovery started" callback.
                     if (listener instanceof DiscoveryListener) {
                         executor.execute(() -> ((DiscoveryListener) listener)
                                 .onStartDiscoveryFailed(getNsdServiceInfoType(
@@ -1384,6 +1415,10 @@ public final class NsdManager {
                     removeListener(key);
                     executor.execute(() -> ((ServiceInfoCallback) listener)
                             .onServiceInfoCallbackRegistrationFailed(errorCode));
+                    break;
+                case REGISTER_SERVICE_CALLBACK_SUCCEEDED:
+                    executor.execute(() -> ((ServiceInfoCallback) listener)
+                            .onServiceInfoCallbackRegistered());
                     break;
                 case SERVICE_UPDATED:
                     executor.execute(() -> ((ServiceInfoCallback) listener)

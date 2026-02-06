@@ -379,7 +379,7 @@ public class IpServer extends SyncStateMachine {
             RoutingCoordinatorManager routingCoordinatorManager, Callback callback,
             TetheringConfiguration config,
             TetheringMetrics tetheringMetrics, Dependencies deps) {
-        super(ifaceName, Thread.currentThread());
+        super(ifaceName, handler.getLooper().getThread());
         mContext = Objects.requireNonNull(context);
         mHandler = handler;
         mLog = log.forSubComponent(ifaceName);

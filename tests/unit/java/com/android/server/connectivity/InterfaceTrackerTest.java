@@ -17,6 +17,8 @@
 package com.android.server.connectivity;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.doReturn;
 
 import android.content.Context;
@@ -87,7 +89,7 @@ public class InterfaceTrackerTest {
     public void testRemovingInterface_InterfaceNameIndexMappingRemoved() {
         mInterfaceTracker.addInterface(TEST_IF_NAME);
         assertEquals(TEST_IF_INDEX, mInterfaceTracker.getInterfaceIndex(TEST_IF_NAME));
-        mInterfaceTracker.removeInterface(TEST_IF_NAME);
+        assertEquals(TEST_IF_INDEX, mInterfaceTracker.removeInterface(TEST_IF_NAME));
         assertEquals(0, mInterfaceTracker.getInterfaceIndex(TEST_IF_NAME));
     }
 
@@ -95,7 +97,7 @@ public class InterfaceTrackerTest {
     @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void testRemovingNullInterface_InterfaceNameIndexMappingNotRemoved() {
         mInterfaceTracker.addInterface(TEST_IF_NAME);
-        mInterfaceTracker.removeInterface(null);
+        assertEquals(0, mInterfaceTracker.removeInterface(null));
         assertEquals(TEST_IF_INDEX, mInterfaceTracker.getInterfaceIndex(TEST_IF_NAME));
     }
 
@@ -103,8 +105,19 @@ public class InterfaceTrackerTest {
     @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void testRemovingIncorrectInterface_InterfaceNameIndexMappingNotRemoved() {
         mInterfaceTracker.addInterface(TEST_IF_NAME);
-        mInterfaceTracker.removeInterface(TEST_INCORRECT_IF_NAME);
+        assertEquals(0, mInterfaceTracker.removeInterface(TEST_INCORRECT_IF_NAME));
         assertEquals(TEST_IF_INDEX, mInterfaceTracker.getInterfaceIndex(TEST_IF_NAME));
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testHasInterface() {
+        mInterfaceTracker.addInterface(TEST_IF_NAME);
+        assertTrue(mInterfaceTracker.hasInterface(TEST_IF_INDEX));
+        assertFalse(mInterfaceTracker.hasInterface(TEST_IF_INDEX + 1));
+
+        mInterfaceTracker.removeInterface(TEST_IF_NAME);
+        assertFalse(mInterfaceTracker.hasInterface(TEST_IF_INDEX));
     }
 
 }

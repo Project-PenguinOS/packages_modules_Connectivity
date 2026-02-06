@@ -101,6 +101,7 @@ import android.util.StatsEvent;
 
 import androidx.annotation.RequiresApi;
 
+import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.BackgroundThread;
 import com.android.modules.utils.build.SdkLevel;
@@ -185,6 +186,9 @@ public class BpfNetMaps {
 
     private static IBpfMap<LocalNetAccessKey, Bool> sLocalNetAccessMap = null;
     private static IBpfMap<U32, Bool> sLocalNetBlockedUidMap = null;
+    private static final Object sLocalNetUidHostAllowlistMapLock = new Object();
+    // The allowlist map is accessed on different threads in ConnectivityService#allowLocalNetAccess
+    @GuardedBy("sLocalNetUidHostAllowlistMapLock")
     private static IBpfMap<LocalNetUidHostAllowlistKey, Bool> sLocalNetUidHostAllowlistMap = null;
     private static BpfBoolean sL4sEnabledMap = null;
     private static BpfBoolean sLoopbackAccessMetricsEnabledBpfBoolean = null;
@@ -340,7 +344,9 @@ public class BpfNetMaps {
     @VisibleForTesting
     public static void setLocalNetUidHostAllowlistMapForTest(
             IBpfMap<LocalNetUidHostAllowlistKey, Bool> localNetUidHostAllowlistMap) {
-        sLocalNetUidHostAllowlistMap = localNetUidHostAllowlistMap;
+        synchronized (sLocalNetUidHostAllowlistMapLock) {
+            sLocalNetUidHostAllowlistMap = localNetUidHostAllowlistMap;
+        }
     }
 
     /**
@@ -562,14 +568,16 @@ public class BpfNetMaps {
                         e);
             }
 
-            if (sLocalNetUidHostAllowlistMap == null) {
-                sLocalNetUidHostAllowlistMap = getLocalNetUidHostAllowlistMap();
-            }
-            try {
-                sLocalNetUidHostAllowlistMap.clear();
-            } catch (ErrnoException e) {
-                throw new IllegalStateException(
-                        "Failed to initialize local_net_uid_host_allowlist map", e);
+            synchronized (sLocalNetUidHostAllowlistMapLock) {
+                if (sLocalNetUidHostAllowlistMap == null) {
+                    sLocalNetUidHostAllowlistMap = getLocalNetUidHostAllowlistMap();
+                }
+                try {
+                    sLocalNetUidHostAllowlistMap.clear();
+                } catch (ErrnoException e) {
+                    throw new IllegalStateException(
+                            "Failed to initialize local_net_uid_host_allowlist map", e);
+                }
             }
         }
 
@@ -1732,7 +1740,9 @@ public class BpfNetMaps {
         final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(
                 uid, ifIndex, address);
         try {
-            sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(true));
+            synchronized (sLocalNetUidHostAllowlistMapLock) {
+                sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(true));
+            }
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to add local network access for key: " + key);
         }
@@ -1745,11 +1755,13 @@ public class BpfNetMaps {
     public void removeLocalNetHostAllowlistForInterface(final int ifIndex) {
         throwIfPre25Q2("removeLocalNetHostAllowlistForUid is not available on pre-B devices");
         try {
-            sLocalNetUidHostAllowlistMap.forEach((key, value) -> {
-                if (key.ifIndex == ifIndex) {
-                    sLocalNetUidHostAllowlistMap.deleteEntry(key);
-                }
-            });
+            synchronized (sLocalNetUidHostAllowlistMapLock) {
+                sLocalNetUidHostAllowlistMap.forEach((key, value) -> {
+                    if (key.ifIndex == ifIndex) {
+                        sLocalNetUidHostAllowlistMap.deleteEntry(key);
+                    }
+                });
+            }
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed removing local net allowlist entries for ifIndex " + ifIndex, e);
         }
@@ -2140,10 +2152,12 @@ public class BpfNetMaps {
                 BpfDump.dumpMap(sLocalNetBlockedUidMap, pw, "sLocalNetBlockedUidMap",
                         (key, value) -> "" + key + ": " + value.val);
             }
-            if (sLocalNetUidHostAllowlistMap != null) {
-                BpfDump.dumpMap(sLocalNetUidHostAllowlistMap, pw,
-                        "sLocalNetUidHostAllowlistMap",
-                        (key, value) -> "" + key + ": " + value.val);
+            synchronized (sLocalNetUidHostAllowlistMapLock) {
+                if (sLocalNetUidHostAllowlistMap != null) {
+                    BpfDump.dumpMap(sLocalNetUidHostAllowlistMap, pw,
+                            "sLocalNetUidHostAllowlistMap",
+                            (key, value) -> "" + key + ": " + value.val);
+                }
             }
             if (sLoopbackAccessMetricsEnabledBpfBoolean != null) {
                 dumpLoopbackAccessMetricsConfig(pw);
