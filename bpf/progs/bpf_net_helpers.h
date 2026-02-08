@@ -185,6 +185,10 @@ struct updatetime_bool { bool updatetime; };
 #define NO_UPDATETIME ((struct updatetime_bool){ .updatetime = false })
 #define UPDATETIME ((struct updatetime_bool){ .updatetime = true })
 
+struct undo_bool { bool undo; };
+#define ACCOUNT ((struct undo_bool){ .undo = false })
+#define UNDO ((struct undo_bool){ .undo = true })
+
 // Return value for xt_bpf (netfilter match extension) programs
 static const int XTBPF_NOMATCH = 0;
 static const int XTBPF_MATCH = 1;

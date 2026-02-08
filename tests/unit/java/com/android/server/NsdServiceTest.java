@@ -110,6 +110,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
 import android.net.INetd;
 import android.net.Network;
 import android.net.mdns.aidl.DiscoveryInfo;
@@ -140,11 +141,13 @@ import android.os.IBinder;
 import android.os.PatternMatcher;
 import android.os.Process;
 import android.os.RemoteException;
+import android.os.UserHandle;
 import android.permission.PermissionManager;
 import android.platform.test.annotations.RequiresFlagsDisabled;
 import android.platform.test.annotations.RequiresFlagsEnabled;
 import android.platform.test.flag.junit.CheckFlagsRule;
 import android.platform.test.flag.junit.DeviceFlagsValueProvider;
+import android.util.ArraySet;
 import android.util.Pair;
 
 import androidx.annotation.NonNull;
@@ -274,6 +277,7 @@ public class NsdServiceTest {
     @Mock WifiManager mWifiManager;
     @Mock WifiManager.MulticastLock mMulticastLock;
     @Mock ActivityManager mActivityManager;
+    @Mock ConnectivityManager mConnectivityManager;
     @Mock
     PermissionManager mPermissionManager;
     @Mock NetworkNsdReportedMetrics mMetrics;
@@ -310,6 +314,8 @@ public class NsdServiceTest {
         mockService(mContext, MDnsManager.class, MDnsManager.MDNS_SERVICE, mMockMDnsM);
         mockService(mContext, WifiManager.class, Context.WIFI_SERVICE, mWifiManager);
         mockService(mContext, ActivityManager.class, Context.ACTIVITY_SERVICE, mActivityManager);
+        mockService(mContext, ConnectivityManager.class, Context.CONNECTIVITY_SERVICE,
+                mConnectivityManager);
         doReturn(mPackageManager).when(mContext).getPackageManager();
         doReturn(PERMISSION_DENIED).when(mContext)
                 .checkPermission(eq(CONNECTIVITY_USE_RESTRICTED_NETWORKS), anyInt(), anyInt());
@@ -330,6 +336,7 @@ public class NsdServiceTest {
             doCallRealMethod().when(mContext).getSystemService(MDnsManager.class);
             doCallRealMethod().when(mContext).getSystemService(WifiManager.class);
             doCallRealMethod().when(mContext).getSystemService(ActivityManager.class);
+            doCallRealMethod().when(mContext).getSystemService(ConnectivityManager.class);
         }
         doReturn(true).when(mMockMDnsM).registerService(
                 anyInt(), anyString(), anyString(), anyInt(), any(), anyInt());
@@ -1400,6 +1407,22 @@ public class NsdServiceTest {
         assertEquals(packageName, intent.getStringExtra(NsdPickerConnector.EXTRA_APP_NAME));
     }
 
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testPickerStart_SecondaryUser() {
+        final UserHandle user = UserHandle.of(11);
+        doReturn(user.getUid(123)).when(mDeps).getCallingUid();
+        setMdnsDiscoveryManagerEnabled();
+        final NsdManager client = connectClient(mService);
+
+        client.discoverServices(new DiscoveryRequest.Builder(SERVICE_TYPE)
+                .setFlags(FLAG_SHOW_PICKER)
+                .build(), Runnable::run, mock(DiscoveryListener.class));
+        waitForIdle();
+
+        verify(mContext).startActivityAsUser(any(), eq(user));
+    }
+
     private void setMdnsDiscoveryManagerEnabled() {
         doReturn(true).when(mDeps).isMdnsDiscoveryManagerEnabled(any(Context.class));
     }
@@ -1655,13 +1678,16 @@ public class NsdServiceTest {
 
         final NsdServiceInfo selectedService = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE + ".");
         selectedService.setNetwork(TEST_NETWORK);
+        selectedService.setInterfaceIndex(TEST_INTERFACE_INDEX);
         connector.notifyServiceSelected(selectedService);
         waitForIdle();
 
         final InOrder inOrder = inOrder(discListener);
         inOrder.verify(discListener, timeout(TIMEOUT_MS)).onDiscoveryStarted(SERVICE_TYPE);
         inOrder.verify(discListener, timeout(TIMEOUT_MS)).onServiceFound(argThat(info ->
-                info.getServiceName().equals(SERVICE_NAME)));
+                info.getServiceName().equals(SERVICE_NAME)
+                        && Objects.equals(info.getNetwork(), TEST_NETWORK)
+                        && info.getInterfaceIndex() == 0));
         inOrder.verify(discListener, timeout(TIMEOUT_MS)).onDiscoveryStopped(SERVICE_TYPE);
         verify(mPermissionManager, never()).finishDataDelivery(ACCESS_LOCAL_NETWORK,
                 getAttributionSource());
@@ -3641,5 +3667,127 @@ public class NsdServiceTest {
 
         client.checkPermissionForService(SERVICE_NAME, SERVICE_TYPE, Runnable::run, resultReceiver);
         verify(resultReceiver, timeout(TIMEOUT_MS)).accept(NsdManager.SERVICE_PERMISSION_GRANTED);
+    }
+
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    public void testLocalNetAccessAllowlist_resolveService_addsToAllowlist() throws Exception {
+        setMdnsDiscoveryManagerEnabled();
+        final NsdManager client = connectClient(mService);
+        final AttributionSource attributionSource = getAttributionSource();
+        doReturn(PermissionManager.PERMISSION_SOFT_DENIED).when(mPermissionManager)
+                .checkPermissionForStartDataDelivery(ACCESS_LOCAL_NETWORK, attributionSource, null);
+        mAccessRepository.addAllowedService(Process.myUid(), SERVICE_NAME, SERVICE_TYPE);
+        final NsdServiceInfo request = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        final ResolveListener resolveListener = mock(ResolveListener.class);
+        client.resolveService(request, resolveListener);
+        waitForIdle();
+
+        final ArgumentCaptor<MdnsServiceBrowserListener> listenerCaptor =
+                ArgumentCaptor.forClass(MdnsServiceBrowserListener.class);
+        verify(mDiscoveryManager).registerListener(eq(SERVICE_TYPE + ".local"),
+                listenerCaptor.capture(), any());
+        final MdnsListener listener = (MdnsListener) listenerCaptor.getValue();
+
+        final MdnsServiceInfo mdnsServiceInfo = makeTestServiceInfo();
+        listener.onServiceFound(mdnsServiceInfo, false /* isServiceFromCache */);
+        waitForIdle();
+
+        final InOrder inOrder = inOrder(mConnectivityManager, resolveListener);
+        final Set<InetAddress> expectedAddrs =
+                Set.of(parseNumericAddress(IPV4_ADDRESS), parseNumericAddress(IPV6_ADDRESS));
+        inOrder.verify(mConnectivityManager).allowLocalNetAccess(eq(Process.myUid()),
+                eq(TEST_INTERFACE_INDEX),
+                argThat(addrs -> new ArraySet<>(addrs).equals(expectedAddrs)));
+        inOrder.verify(resolveListener, timeout(TIMEOUT_MS)).onServiceResolved(any());
+    }
+
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testLocalNetAccessAllowlist_serviceInfoCallback_addsToAllowlist() {
+        setMdnsDiscoveryManagerEnabled();
+        final NsdManager client = connectClient(mService);
+        final AttributionSource attributionSource = getAttributionSource();
+        doReturn(PermissionManager.PERMISSION_SOFT_DENIED).when(mPermissionManager)
+                .checkPermissionForStartDataDelivery(ACCESS_LOCAL_NETWORK, attributionSource, null);
+        mAccessRepository.addAllowedService(Process.myUid(), SERVICE_NAME, SERVICE_TYPE);
+        final NsdServiceInfo request = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        final ServiceInfoCallback serviceInfoCallback = mock(ServiceInfoCallback.class);
+        client.registerServiceInfoCallback(request, Runnable::run, serviceInfoCallback);
+        waitForIdle();
+
+        final ArgumentCaptor<MdnsServiceBrowserListener> listenerCaptor =
+                ArgumentCaptor.forClass(MdnsServiceBrowserListener.class);
+        verify(mDiscoveryManager).registerListener(eq(SERVICE_TYPE + ".local"),
+                listenerCaptor.capture(), any());
+        final MdnsListener listener = (MdnsListener) listenerCaptor.getValue();
+
+        final MdnsServiceInfo mdnsServiceInfo = makeTestServiceInfo();
+        listener.onServiceFound(mdnsServiceInfo, false /* isServiceFromCache */);
+        waitForIdle();
+
+        final Set<InetAddress> expectedAddrs =
+                Set.of(parseNumericAddress(IPV4_ADDRESS), parseNumericAddress(IPV6_ADDRESS));
+        final InOrder inOrder = inOrder(mConnectivityManager, serviceInfoCallback);
+        inOrder.verify(mConnectivityManager).allowLocalNetAccess(eq(Process.myUid()),
+                eq(TEST_INTERFACE_INDEX),
+                argThat(addrs -> new ArraySet<>(addrs).equals(expectedAddrs)));
+        inOrder.verify(serviceInfoCallback, timeout(TIMEOUT_MS)).onServiceUpdated(any());
+
+        // Update service
+        final String newV4Addr = "192.0.2.1";
+        final String newV6Addr = "2001:db8::1";
+        final MdnsServiceInfo updatedServiceInfo = new MdnsServiceInfo(
+                SERVICE_NAME,
+                SERVICE_TYPE_WITH_LOCAL_TLD.split("\\."),
+                List.of(), /* subtypes */
+                new String[]{"android", "local"}, /* hostName */
+                PORT,
+                List.of(newV4Addr),
+                List.of(newV6Addr),
+                List.of() /* textEntries */,
+                TEST_INTERFACE_INDEX,
+                TEST_NETWORK,
+                Instant.MAX /* expirationTime */,
+                0L /* creationCapabilitiesBits */);
+        listener.onServiceUpdated(updatedServiceInfo);
+        waitForIdle();
+
+        final Set<InetAddress> expectedNewAddrs =
+                Set.of(parseNumericAddress(newV4Addr), parseNumericAddress(newV6Addr));
+        inOrder.verify(mConnectivityManager).allowLocalNetAccess(eq(Process.myUid()),
+                eq(TEST_INTERFACE_INDEX),
+                argThat(addrs -> new ArraySet<>(addrs).equals(expectedNewAddrs)));
+        inOrder.verify(serviceInfoCallback, timeout(TIMEOUT_MS)).onServiceUpdated(any());
+    }
+
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testLocalNetAccessAllowlist_servicePicker_addsToAllowlist() throws Exception {
+        setMdnsDiscoveryManagerEnabled();
+        final NsdManager client = connectClient(mService);
+
+        final ServiceInfoCallback listener = mock(ServiceInfoCallback.class);
+        client.registerServiceInfoCallback(new DiscoveryRequest.Builder(SERVICE_TYPE)
+                .setNetwork(TEST_NETWORK)
+                .setFlags(FLAG_SHOW_PICKER)
+                .build(), Runnable::run, listener);
+
+        waitForIdle();
+        final NsdPickerConnector connector = verifyPickerStarted();
+        final NsdServiceInfo selectedService = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE + ".");
+        selectedService.setHostAddresses(List.of(parseNumericAddress(IPV6_ADDRESS)));
+        selectedService.setPort(PORT);
+        selectedService.setNetwork(TEST_NETWORK);
+        selectedService.setInterfaceIndex(TEST_INTERFACE_INDEX);
+        connector.notifyServiceSelected(selectedService);
+        waitForIdle();
+
+        final Set<InetAddress> expectedAddrs =
+                Set.of(parseNumericAddress(IPV6_ADDRESS));
+        verify(mConnectivityManager).allowLocalNetAccess(eq(Process.myUid()),
+                eq(TEST_INTERFACE_INDEX),
+                argThat(addrs -> new ArraySet<>(addrs).equals(expectedAddrs)));
     }
 }

@@ -190,6 +190,7 @@ public class NetworkStatsManager {
     public static final int NETWORK_TYPE_5G_NSA = -2;
 
     private int mFlags;
+    private boolean mAugmentWithSubscriptionPlan = true;
 
     /** @hide */
     @VisibleForTesting
@@ -255,6 +256,7 @@ public class NetworkStatsManager {
     /** @hide */
     // TODO: Remove this method as the feature cannot be disabled in any case.
     public void setAugmentWithSubscriptionPlan(boolean augmentWithSubscriptionPlan) {
+        mAugmentWithSubscriptionPlan = augmentWithSubscriptionPlan;
         if (augmentWithSubscriptionPlan) {
             mFlags |= FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN;
         } else {
@@ -905,11 +907,13 @@ public class NetworkStatsManager {
      * @hide
      */
     @VisibleForTesting
-    public static int sanitizeQueryFlags(@NetworkStatsQueryFlags int flags) {
+    public int sanitizeQueryFlags(@NetworkStatsQueryFlags int flags) {
         if ((flags & ~MASK_REQUESTABLE_FLAGS) != 0) {
             throw new IllegalArgumentException("Invalid flags specified: " + flags);
         }
-        return flags | FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN;
+        return mAugmentWithSubscriptionPlan
+                ? (flags | FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN)
+                : flags;
     }
 
     /**

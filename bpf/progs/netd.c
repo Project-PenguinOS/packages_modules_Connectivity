@@ -228,7 +228,8 @@ DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, boo
     static __always_inline inline void update_##the_stats_map(const struct __sk_buff* const skb, \
                                                               const TypeOfKey* const key,        \
                                                               const struct egress_bool egress,   \
-                                                     __unused const struct kver_uint kver) {     \
+                                                     __unused const struct kver_uint kver,       \
+                                                              const struct undo_bool undo) {     \
         StatsValue* value = bpf_##the_stats_map##_lookup_elem(key);                              \
         if (!value) {                                                                            \
             StatsValue newValue = {};                                                            \
@@ -252,6 +253,10 @@ DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, boo
                 const uint64_t payload = bytes - overhead;                                       \
                 packets = is5_4 ? gso_segs : (payload + mss - 1) / mss;                          \
                 bytes = overhead * packets + payload;                                            \
+            }                                                                                    \
+            if (undo.undo) {                                                                     \
+                packets = -packets;                                                              \
+                bytes = -bytes;                                                                  \
             }                                                                                    \
             if (egress.egress) {                                                                 \
                 __sync_fetch_and_add(&value->txPackets, packets);                                \
@@ -803,11 +808,12 @@ static __always_inline inline void update_stats_with_config(const uint32_t selec
                                                             const struct __sk_buff* const skb,
                                                             const StatsKey* const key,
                                                             const struct egress_bool egress,
-                                                            const struct kver_uint kver) {
+                                                            const struct kver_uint kver,
+                                                            const struct undo_bool undo) {
     if (selectedMap == SELECT_MAP_A) {
-        update_stats_map_A(skb, key, egress, kver);
+        update_stats_map_A(skb, key, egress, kver, undo);
     } else {
-        update_stats_map_B(skb, key, egress, kver);
+        update_stats_map_B(skb, key, egress, kver, undo);
     }
 }
 
@@ -883,7 +889,12 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
     }
 
     // If an outbound packet is going to be dropped, we do not count that traffic.
-    if (egress.egress && (match == DROP)) return DROP;
+    if (egress.egress && (match == DROP)) {
+        // TODO(maze): enable interface stats undo
+        // uint32_t key = skb->ifindex;
+        // update_iface_stats_map(skb, &key, EGRESS, KVER_4_9, UNDO);
+        return DROP;
+    }
 
     StatsKey key = {.uid = statsUid, .tag = tag, .counterSet = 0, .ifaceIndex = skb->ifindex};
 
@@ -897,8 +908,8 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     // TODO(b/467964186): use the parsed skb
     do_packet_tracing(skb, egress, statsUid, tag, kver);
-    update_stats_with_config(*selectedMap, skb, &key, egress, kver);
-    update_app_uid_stats_map(skb, &statsUid, egress, kver);
+    update_stats_with_config(*selectedMap, skb, &key, egress, kver, ACCOUNT);
+    update_app_uid_stats_map(skb, &statsUid, egress, kver, ACCOUNT);
 
     // We've already handled DROP_UNLESS_DNS up above, thus when we reach here the only
     // possible values of match are DROP(0) or PASS(1), however we need to use
@@ -1036,7 +1047,7 @@ DEFINE_XTBPF_PROG(skfilter, egress_xtbpf, )
     }
 
     uint32_t key = skb->ifindex;
-    update_iface_stats_map(skb, &key, EGRESS, KVER_4_9);
+    update_iface_stats_map(skb, &key, EGRESS, KVER_4_9, ACCOUNT);
     return XTBPF_MATCH;
 }
 
@@ -1049,7 +1060,7 @@ DEFINE_XTBPF_PROG(skfilter, ingress_xtbpf, )
     // Keep that in mind when moving this out of iptables xt_bpf and into tc ingress (or xdp).
 
     uint32_t key = skb->ifindex;
-    update_iface_stats_map(skb, &key, INGRESS, KVER_4_9);
+    update_iface_stats_map(skb, &key, INGRESS, KVER_4_9, ACCOUNT);
     return XTBPF_MATCH;
 }
 
@@ -1058,7 +1069,7 @@ DEFINE_SYS_BPF_PROG(schedact, ingress_account, )
     if (is_received_skb(skb)) {
         // Account for ingress traffic before tc drops it.
         uint32_t key = skb->ifindex;
-        update_iface_stats_map(skb, &key, INGRESS, KVER_4_9);
+        update_iface_stats_map(skb, &key, INGRESS, KVER_4_9, ACCOUNT);
     }
     return TC_ACT_UNSPEC;
 }

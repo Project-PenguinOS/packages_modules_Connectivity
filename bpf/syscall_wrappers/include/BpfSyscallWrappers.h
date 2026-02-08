@@ -32,16 +32,28 @@ namespace bpf {
 using ::android::base::borrowed_fd;
 using ::android::base::unique_fd;
 
-static inline bool check_build_type(const char* const build_type) {
+enum class BuildType {
+    UNKNOWN,
+    USER,
+    USERDEBUG,
+    ENG,
+};
+
+static inline BuildType getBuildType() {
     char value[92] = {};
     if (__system_property_get("ro.build.type", value) < 1) abort();
-    return !strcmp(value, build_type);
+    if (!strcmp(value, "eng")) return BuildType::ENG;
+    if (!strcmp(value, "user")) return BuildType::USER;
+    if (!strcmp(value, "userdebug")) return BuildType::USERDEBUG;
+    return BuildType::UNKNOWN;
 }
 
+const BuildType build_type = getBuildType();
+
 // The following classify the 3 Android build types.
-const bool isEng = check_build_type("eng");
-const bool isUser = check_build_type("user");
-const bool isUserdebug = check_build_type("userdebug");
+const bool isEng = (build_type == BuildType::ENG);
+const bool isUser = (build_type == BuildType::USER);
+const bool isUserdebug = (build_type == BuildType::USERDEBUG);
 
 inline uint64_t ptr_to_u64(const void * const x) {
     return (uint64_t)(uintptr_t)x;

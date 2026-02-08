@@ -62,6 +62,7 @@ java_defaults {
     jarjar_rules: "jarjar-rules-shared.txt",
     static_libs: [
         "android.permission.flags-aconfig-java-export",
+        "android.provider.flags-aconfig-java",
         "com.android.tethering.flags-aconfig-java",
         "ApfGeneratorLib",
         "bouncycastle-unbundled",

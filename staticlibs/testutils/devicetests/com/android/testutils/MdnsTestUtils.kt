@@ -214,6 +214,7 @@ class NsdResolveRecord : NsdManager.ResolveListener,
 class NsdServiceInfoCallbackRecord : NsdManager.ServiceInfoCallback,
     NsdRecord<NsdServiceInfoCallbackRecord.ServiceInfoCallbackEvent>() {
     sealed class ServiceInfoCallbackEvent : NsdEvent {
+        object RegisterCallbackSucceeded : ServiceInfoCallbackEvent()
         data class RegisterCallbackFailed(val errorCode: Int) : ServiceInfoCallbackEvent()
         data class ServiceUpdated(val serviceInfo: NsdServiceInfo) : ServiceInfoCallbackEvent()
         data class ServiceUpdatedLost(val serviceInfo: NsdServiceInfo) : ServiceInfoCallbackEvent()
@@ -224,8 +225,17 @@ class NsdServiceInfoCallbackRecord : NsdManager.ServiceInfoCallback,
         add(ServiceInfoCallbackEvent.RegisterCallbackFailed(err))
     }
 
+    override fun onServiceInfoCallbackRegistered() {
+        add(ServiceInfoCallbackEvent.RegisterCallbackSucceeded)
+    }
+
     override fun onServiceUpdated(si: NsdServiceInfo) {
         add(ServiceInfoCallbackEvent.ServiceUpdated(si))
+    }
+
+    override fun onServiceLost() {
+        fail("onServiceLost() should not be called when onServiceLost(NsdServiceInfo) is " +
+                "implemented")
     }
 
     override fun onServiceLost(si: NsdServiceInfo) {

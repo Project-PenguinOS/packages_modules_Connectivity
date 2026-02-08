@@ -94,6 +94,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -6940,6 +6941,37 @@ public class ConnectivityManager {
     public void onOttCallStateChanged(int uid, boolean isAdded) {
         try {
             mService.onOttCallStateChanged(uid, isAdded);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Add entries to the UID/interface/addresses BPF map allowlist for local network access.
+     *
+     * @param uid The UID that should be allowed
+     * @param ifIndex The interface on which communication should be allowed
+     * @param addresses The destination addresses that should be allowed
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void allowLocalNetAccess(int uid, int ifIndex, List<InetAddress> addresses) {
+        if (addresses.isEmpty()) {
+            return;
+        }
+        final ArrayList<String> addrStrings = new ArrayList<>(addresses.size());
+        for (InetAddress addr : addresses) {
+            try {
+                // Address scope, lifetime etc. do not matter as they are unused in the BPF map.
+                // Ensure they are stripped out so getHostAddress does not include the scope.
+                addrStrings.add(InetAddress.getByAddress(addr.getAddress()).getHostAddress());
+            } catch (UnknownHostException e) {
+                // This should never happen since the bytes come from an InetAddress
+                Log.e(TAG, "Invalid address bytes", e);
+            }
+        }
+        try {
+            mService.allowLocalNetAccess(uid, ifIndex, addrStrings);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

@@ -366,6 +366,26 @@ class BpfMapRW : public BpfMapRO<Key, Value> {
 #endif
 };
 
+template <class Value>
+class BpfArrayRW : public BpfMapRW<uint32_t, Value> {
+  public:
+    using BpfMapRW<uint32_t, Value>::getFirstKey;
+    using BpfMapRW<uint32_t, Value>::getNextKey;
+    using BpfMapRW<uint32_t, Value>::writeValue;
+
+    Result<void> wipe() {
+        const Value v = {};
+        auto k = getFirstKey();
+        while (k.ok()) {
+            auto res = writeValue(k.value(), v, BPF_EXIST);
+            if (!res.ok()) return res.error();
+            k = getNextKey(k.value());
+        }
+        if (k.error().code() == ENOENT) return {};  // end
+        return k.error();
+    }
+};
+
 template <class Key, class Value>
 class BpfMap : public BpfMapRW<Key, Value> {
   protected:

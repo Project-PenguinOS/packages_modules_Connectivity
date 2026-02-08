@@ -1583,6 +1583,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
             return Binder.getCallingUid();
         }
 
+        public int getCallingPid() {
+            return Binder.getCallingPid();
+        }
+
         public boolean isAtLeastS() {
             return SdkLevel.isAtLeastS();
         }
@@ -6312,7 +6316,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         // Removes the interfaces associated with the network being destroyed from the tracker.
         for (String interfaceName : nai.linkProperties.getAllInterfaceNames()) {
-            mInterfaceTracker.removeInterface(interfaceName);
+            final int ifIndex = mInterfaceTracker.removeInterface(interfaceName);
+            if (ifIndex != 0 && mDeps.isAtLeastB()) {
+                mBpfNetMaps.removeLocalNetHostAllowlistForInterface(ifIndex);
+            }
         }
         nai.setDestroyed();
         nai.onNetworkDestroyed();
@@ -10776,9 +10783,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 wakeupModifyInterface(iface, nai, false);
                 mRoutingCoordinatorService.removeInterfaceFromNetwork(netId, iface);
                 maybeModifyQdiscClsact(iface, nai, false /* add */);
-                mInterfaceTracker.removeInterface(iface);
             } catch (Exception e) {
                 loge("Exception removing interface: " + e);
+            }
+            final int ifIndex = mInterfaceTracker.removeInterface(iface);
+            // Local protection maps are B+ (developer opt-in on B).
+            if (ifIndex != 0 && mDeps.isAtLeastB()) {
+                mBpfNetMaps.removeLocalNetHostAllowlistForInterface(ifIndex);
             }
         }
     }
@@ -11100,6 +11111,46 @@ public class ConnectivityService extends IConnectivityManager.Stub
                         IPPROTO_TCP, 853);  // DNS over TLS
             }
         }
+    }
+
+    @Override
+    public void allowLocalNetAccess(int uid, int ifIndex, List<String> addresses) {
+        // This is only for usage within system_server
+        if (mDeps.getCallingPid() != Process.myPid()) {
+            throw new SecurityException("Not allowed to call allowLocalNetAccess");
+        }
+        if (!mDeps.isAtLeastB()) {
+            throw new UnsupportedOperationException("allowLocalNetAccess is only available on B+");
+        }
+
+        // Optimistically add entries in the allowlist map synchronously (not on the handler thread)
+        // so callers can rely on the allowlist being in place when this returns.
+        // This means entries might be added for interfaces that are not tracked (either because
+        // they never had a Network, such as Wi-Fi P2P interfaces, or they were destroyed already),
+        // so a cleanup is done on the handler thread after that.
+        // It is OK if there are entries in the map referencing a removed or untracked interface for
+        // a short while, as local network is not blocked on such interfaces so it does not matter
+        // if they have entries in the allowlist.
+        // If an entry is added before ConnectivityService hears about an interface, it may be
+        // cleared before a Network is created; ConnectivityService would not be able to handle such
+        // a request anyway, so for networks tracked by ConnectivityService, callers are expected to
+        // only add entries after a Network is created.
+        for (String addrStr : addresses) {
+            final InetAddress addr;
+            try {
+                addr = InetAddresses.parseNumericAddress(addrStr);
+            } catch (IllegalArgumentException e) {
+                loge("Invalid address: " + addrStr);
+                continue;
+            }
+            mBpfNetMaps.addLocalNetUidHostAccess(uid, ifIndex, addr);
+        }
+        mHandler.post(() -> {
+            if (!mInterfaceTracker.hasInterface(ifIndex)) {
+                Log.d(TAG, "Clearing local net access for untracked interface: " + ifIndex);
+                mBpfNetMaps.removeLocalNetHostAllowlistForInterface(ifIndex);
+            }
+        });
     }
 
     /**
