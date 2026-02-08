@@ -430,7 +430,7 @@ static long (*bpf_sk_storage_delete_unsafe) (const void* sk_storage,
 #define READ_ONCE(x) \
   ({ \
     _Static_assert(NATIVE_WORD(x), "READ_ONCE requires a native word size"); \
-    (*(const volatile typeof(x) *)&(x)) \
+    (*(const volatile typeof(x) *)&(x)); \
   })
 
 #define WRITE_ONCE(x, value) \

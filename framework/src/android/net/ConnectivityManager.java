@@ -26,6 +26,8 @@ import static android.net.NetworkRequest.Type.TRACK_DEFAULT;
 import static android.net.NetworkRequest.Type.TRACK_SYSTEM_DEFAULT;
 import static android.net.QosCallback.QosCallbackRegistrationException;
 
+import static com.android.tethering.flags.Flags.FLAG_NETSTATS_PER_QUERY_FLAGS;
+
 import android.annotation.CallbackExecutor;
 import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
@@ -917,7 +919,7 @@ public class ConnectivityManager {
      * @see #FIREWALL_CHAIN_OEM_DENY_3
      * @hide
      */
-    @FlaggedApi(Flags.FLAG_BLOCKED_REASON_OEM_DENY_CHAINS)
+    @FlaggedApi(FLAG_NETSTATS_PER_QUERY_FLAGS)
     @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
     public static final int BLOCKED_REASON_OEM_DENY = 1 << 7;
 

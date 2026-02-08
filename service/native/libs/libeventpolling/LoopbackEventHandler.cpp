@@ -27,9 +27,26 @@
 #include "netd.h"
 
 namespace android::net::eventpolling {
+namespace {
 
 using bpf::BpfRingbuf;
 using bpf::RingbufEventPoller;
+
+uint32_t convertLoopbackResult(uint32_t result) {
+    switch (result) {
+    case LoopbackAccessResult::LOOPBACK_ACCESS_ALLOWED:
+        return android::connectivity::stats::
+            LOOPBACK_USAGE_REPORTED__RESULT__LOOPBACK_ACCESS_RESULT_ALLOWED;
+    case LoopbackAccessResult::LOOPBACK_ACCESS_BLOCKED:
+        return android::connectivity::stats::
+            LOOPBACK_USAGE_REPORTED__RESULT__LOOPBACK_ACCESS_RESULT_BLOCKED;
+    default:
+        return android::connectivity::stats::
+            LOOPBACK_USAGE_REPORTED__RESULT__LOOPBACK_ACCESS_RESULT_UNSPECIFIED;
+    }
+}
+
+} // namespace
 
 // static
 bpf::RingbufEventPoller<LoopbackAccessEvent> *
@@ -41,11 +58,10 @@ LoopbackEventHandler::GetPoller() {
 
         auto callback = [](const std::vector<LoopbackAccessEvent> &events) {
             for (const LoopbackAccessEvent &event : events) {
-                ALOGD("LoopbackEventPoller stream got src: %d, dst: %d",
-                      event.src_uid, event.dst_uid);
                 android::connectivity::stats::stats_write(
                     android::connectivity::stats::LOOPBACK_USAGE_REPORTED,
-                    event.src_uid, event.dst_uid, event.result);
+                    event.src_uid, event.dst_uid,
+                    convertLoopbackResult(event.result));
             }
         };
 
