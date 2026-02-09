@@ -91,6 +91,18 @@ typedef struct {
 STRUCT_SIZE(PacketTrace, 8+4+4 + 4+4 + 2+2 + 1+1+1+1);
 
 typedef struct {
+    // Longest prefix match length in bits (value from 0 to 192).
+    uint32_t lpm_bitlen;
+    uint32_t if_index;
+    // IPv4 uses IPv4-mapped IPv6 address format.
+    struct in6_addr remote_ip6;
+    // u16 instead of u8 to avoid padding due to alignment requirement.
+    uint16_t protocol;
+    __be16 remote_port;
+} LocalNetAccessKey;
+STRUCT_SIZE(LocalNetAccessKey, 4 + 4 + 16 + 2 + 2); // 28
+
+typedef struct {
     uint64_t cookie;
     // Store gid and uid to make them available outside the program types that
     // support `bpf_get_socket_uid`
@@ -98,8 +110,16 @@ typedef struct {
     uint32_t uid;
     // A bitmask of enum values in DropReasonType.
     uint64_t dropReasons;
+    // Generation ID of the LNP cache when the `lnpResult` was stored
+    uint64_t lnpGenerationId;
+    LocalNetAccessKey lnpTrieLookupKey;
+    // Whether this socket is currently connected. Can only be true for TCP
+    bool tcpIsConnected;
+    // The cached result of LNP permission checks for the lnpTrieLookupKey
+    bool lnpResult;
+    uint8_t padding[2];
 } SkStorageValue;
-STRUCT_SIZE(SkStorageValue, 8 + 4 + 4 + 8);
+STRUCT_SIZE(SkStorageValue, 8 + 4 + 4 + 8 + 8 + 28 + 1 + 1 + 2); // 64
 
 enum LoopbackAccessResult : uint32_t {
   LOOPBACK_ACCESS_ALLOWED = 0,
@@ -272,18 +292,6 @@ typedef struct {
     uint32_t iif[2];
 } IngressDiscardValue;
 STRUCT_SIZE(IngressDiscardValue, 2 * 4);  // 8
-
-typedef struct {
-  // Longest prefix match length in bits (value from 0 to 192).
-  uint32_t lpm_bitlen;
-  uint32_t if_index;
-  // IPv4 uses IPv4-mapped IPv6 address format.
-  struct in6_addr remote_ip6;
-  // u16 instead of u8 to avoid padding due to alignment requirement.
-  uint16_t protocol;
-  __be16 remote_port;
-} LocalNetAccessKey;
-STRUCT_SIZE(LocalNetAccessKey, 4 + 4 + 16 + 2 + 2);  // 28
 
 typedef struct {
     // Longest prefix match length in bits (value from 0 to 192).
