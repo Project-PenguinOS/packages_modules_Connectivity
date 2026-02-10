@@ -154,6 +154,13 @@ class ApfTestBase(multi_devices_test_base.MultiDevicesTestBase):
         'Client does not have IPv6 address, fail the test.',
     )
 
+  def check_and_mdns_reply_filter_enabled(self):
+    asserts.skip_if(
+        not self.clientDevice.connectivity_multi_devices_snippet.isApfHandleMdnsReplyFilterEnabled(),
+        'Apf Handle Mdns Reply Filter is not enabled on client'
+        f' {self.clientDevice.serial}.',
+    )
+
   def _check_counter_and_packet(
       self,
       counter_name: str,
@@ -234,8 +241,8 @@ class ApfTestBase(multi_devices_test_base.MultiDevicesTestBase):
       errors = []
       if not is_counter_increased:
         errors.append(
-            f'APF counter "{counter_name}" did not increase.'
-            f' (before: {count_before_test}, last: {results["last_count"]})'
+            f'APF counter "{counter_name}" did not increase. (before:'
+            f' {count_before_test}, last: {results["last_apf_counter_value"]})'
         )
       if expected_reply_packet and not is_reply_packet_received:
         errors.append(
@@ -256,6 +263,35 @@ class ApfTestBase(multi_devices_test_base.MultiDevicesTestBase):
     assert_utils.expect_with_retry(
         lambda: offload
         in apf_utils.get_apf_config_from_cmd(
-            self.clientDevice, self.client_iface_name
+            self.clientDevice, self.client_iface_name, 'offloads'
         )
+    )
+
+  def expect_apf_mdns_reply_filter_enabled(
+      self, mdns_reply_filter: str, test_case_name
+  ):
+    unexpected_behavior_error = None
+    try:
+      assert_utils.expect_with_retry(
+          lambda: mdns_reply_filter
+          in apf_utils.get_apf_config_from_cmd(
+              self.clientDevice, self.client_iface_name, 'mDNS reply filter'
+          )
+      )
+    except assert_utils.UnexpectedBehaviorError as e:
+      unexpected_behavior_error = e
+
+    if unexpected_behavior_error:
+      asserts.fail(
+          f'{test_case_name} failed. mDNS reply filter "{mdns_reply_filter}" is'
+          f' not enabled. Original error: {unexpected_behavior_error}'
+      )
+
+  def expect_no_multicast_lock_held(self):
+    mcast_mode = apf_utils.get_apf_mcast_mode(
+        self.clientDevice, self.client_iface_name
+    )
+    asserts.skip_if(
+        mcast_mode != 'DROP',
+        f'Multicast lock is still held on {self.clientDevice.serial}.',
     )

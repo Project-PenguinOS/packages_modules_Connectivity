@@ -18,6 +18,7 @@ package com.google.snippet.connectivity
 
 import android.Manifest.permission.NETWORK_SETTINGS
 import android.Manifest.permission.OVERRIDE_WIFI_CONFIG
+import android.Manifest.permission.READ_DEVICE_CONFIG
 import android.content.pm.PackageManager.FEATURE_AUTOMOTIVE
 import android.content.pm.PackageManager.FEATURE_PC
 import android.content.pm.PackageManager.FEATURE_TELEPHONY
@@ -111,6 +112,13 @@ class ConnectivityMultiDevicesSnippet : Snippet {
 
     @Rpc(description = "Check whether the device SDK is at least B.")
     fun isAtLeastB() = SdkLevel.isAtLeastB()
+
+    @Rpc(description = "Check whether the apf handle mDNS reply filter feature is enabled")
+    fun isApfHandleMdnsReplyFilterEnabled(): Boolean {
+        return runAsShell(READ_DEVICE_CONFIG) {
+            com.android.networkstack.flags.Flags.apfHandleMdnsReplyFilter()
+        }
+    }
 
     @Rpc(description = "Return the API level that the VSR requirement must be fulfilled.")
     fun getVsrApiLevel() = PropertyUtil.getVsrApiLevel()
