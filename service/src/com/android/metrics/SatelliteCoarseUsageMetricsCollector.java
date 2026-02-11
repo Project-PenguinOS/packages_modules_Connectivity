@@ -143,7 +143,7 @@ public class SatelliteCoarseUsageMetricsCollector {
             final NetworkStats stats;
             if (Flags.netstatsPerQueryFlags()) {
                 stats = nsm.querySummary(SATELLITE_TEMPLATE, startTime,
-                        Long.MAX_VALUE, 0 /* flags */);
+                        Long.MAX_VALUE, 0 /* explicitly disable FLAG_POLL_ON_OPEN */);
             } else {
                 stats = nsm.querySummary(SATELLITE_TEMPLATE, startTime, Long.MAX_VALUE);
             }
