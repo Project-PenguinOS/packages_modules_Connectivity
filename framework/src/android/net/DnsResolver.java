@@ -41,6 +41,7 @@ import android.net.dns.HttpsRecord;
 import android.net.util.HttpsEndpointAccumulator;
 import android.os.Build;
 import android.os.CancellationSignal;
+import android.os.Handler;
 import android.os.Looper;
 import android.os.MessageQueue;
 import android.system.ErrnoException;
@@ -639,7 +640,7 @@ public final class DnsResolver {
 
         final HttpsEndpointAccumulator accumulator =
                 new HttpsEndpointAccumulator(queryNetwork, callback, allFds.size(),
-                        httpsTimeoutMillis, queryIpv4, queryIpv6);
+                        httpsTimeoutMillis, queryIpv4, queryIpv6, new Handler(mLooper));
 
         synchronized (lock) {
             for (FileDescriptor fd : allFds) {

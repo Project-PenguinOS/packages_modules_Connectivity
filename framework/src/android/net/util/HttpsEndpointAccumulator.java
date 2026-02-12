@@ -34,6 +34,7 @@ import android.net.Network;
 import android.net.ParseException;
 import android.net.dns.HttpsEndpoint;
 import android.net.dns.HttpsRecord;
+import android.os.Handler;
 import android.util.Log;
 
 import com.android.internal.annotations.GuardedBy;
@@ -61,12 +62,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
 
+    // As specified in RFC 9460 section 5.1, clients should wait 50 ms before starting optimistic
+    // pre-connection. Depending on metric results, this value may be adjusted in the future.
+    private static final int DEFAULT_HTTPS_TIMEOUT_MILLIS = 50;
+
     private final Network mNetwork;
     private final DnsResolver.Callback<HttpsEndpoint> mUserCallback;
     private final int mTargetQueryCount;
-    private final int mHttpsTimeoutMillis;
     private final boolean mHasIpv4;
     private final boolean mHasIpv6;
+
+    private final int mHttpsTimeoutMillis;
+    private final Handler mHttpsTimeoutHandler;
 
     @GuardedBy("mResult")
     private final HttpsEndpointAccumulatorResult mResult;
@@ -90,14 +97,22 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
 
     public HttpsEndpointAccumulator(@NonNull Network network,
             @NonNull DnsResolver.Callback<HttpsEndpoint> callback, int queryCount,
-            int timeoutMillis, boolean hasIpv4, boolean hasIpv6) {
+            int timeoutMillis, boolean hasIpv4, boolean hasIpv6, @NonNull Handler handler) {
         mNetwork = network;
         mUserCallback = callback;
         mTargetQueryCount = queryCount;
-        mHttpsTimeoutMillis = timeoutMillis;
         mHasIpv4 = hasIpv4;
         mHasIpv6 = hasIpv6;
         mResult = new HttpsEndpointAccumulatorResult();
+
+        mHttpsTimeoutMillis = switch(timeoutMillis) {
+            case DnsResolver.HTTPS_QUERY_WAIT_NONE -> 0;
+            case DnsResolver.HTTPS_QUERY_WAIT_AUTO -> DEFAULT_HTTPS_TIMEOUT_MILLIS;
+            // Indicate that we should wait indefinitely for the HTTPS record.
+            case DnsResolver.HTTPS_QUERY_WAIT_UNTIL_TIMEOUT -> -1;
+            default -> timeoutMillis;
+        };
+        mHttpsTimeoutHandler = handler;
     }
 
     @Override
@@ -165,6 +180,10 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
             }
         }
 
+        HttpsEndpoint endpoint = null;
+        DnsException exceptionToReport = null;
+        boolean shouldStartHttpsTimeout = false;
+
         synchronized (mResult) {
             mResult.mAddresses.addAll(addresses);
             mResult.mHttpsRecords.addAll(httpsRecords);
@@ -175,48 +194,75 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                 mResult.mDnsException = exception;
             }
 
-            if (!mResult.mHttpsRecords.isEmpty() && hasEnoughAddressInfo()) {
-                // Disregard any exceptions and return if we got valid HTTPS and IP data.
-                reportAnswer(rcode);
+            if (mCallbackInvoked.get()) return; // Skip if the callback has already been invoked.
+
+            exceptionToReport = mResult.mDnsException;
+            if (hasEnoughAddressInfo()) {
+                if (mResult.mHttpsRecords.isEmpty()) {
+                    // If we have received all but the HTTPS records, decide whether to return
+                    // immediately or wait the given amount of time before returning incomplete
+                    // results.
+                    if (mHttpsTimeoutMillis == DnsResolver.HTTPS_QUERY_WAIT_NONE) {
+                        endpoint = createHttpsEndpoint(rcode);
+                    } else if (mHttpsTimeoutMillis > 0) {
+                        shouldStartHttpsTimeout = true;
+                    }
+                } else {
+                    // Disregard any exceptions and return if we got valid HTTPS and IP data.
+                    exceptionToReport = null;
+                    endpoint = createHttpsEndpoint(rcode);
+                }
             } else if (mTargetQueryCount == mResult.mReceivedAnswersToQueryTypes.size()) {
                 // Return if we have gotten all the records as we expected.
-                tryReportResult(rcode);
+                endpoint = createHttpsEndpoint(rcode);
             }
+        }
+
+        if (endpoint != null || exceptionToReport != null) {
+            reportResult(endpoint, exceptionToReport, rcode);
+        } else if (shouldStartHttpsTimeout) {
+            mHttpsTimeoutHandler.postDelayed(() -> {
+                HttpsEndpoint timeoutEndpoint = null;
+                DnsException timeoutException = null;
+
+                synchronized (mResult) {
+                    timeoutEndpoint = createHttpsEndpoint(rcode);
+                    timeoutException = mResult.mDnsException;
+                }
+                reportResult(timeoutEndpoint, timeoutException, rcode);
+            }, mHttpsTimeoutMillis);
         }
         // TODO(b/448882639): handle filtering out HTTPS records with specified mandatory values
         // that are absent
-        // TODO(b/448882639): handle timeout logic for HTTPS record
         // TODO(b/448882639): handle if the HTTPS record name does not match the A/AAAA ones
         // TODO(b/448882639): handle parsing the CNAME chain for the A/AAAA records
     }
 
     @Override
     public void onError(@NonNull DnsException error) {
+        // Callback has already been invoked, skip.
+        if (mCallbackInvoked.get()) return;
+
+        DnsException exception = null;
         synchronized (mResult) {
             mResult.mDnsException = error;
-            // Doesn't matter what rcode we pass here, since we're reporting an error
-            tryReportResult(/* rcode= */ 0);
+            exception = mResult.mDnsException;
         }
+
+        reportResult(/* endpoint= */ null, exception, /* rcode= */ 0);
     }
 
     /**
-     * Reports the DNS query successful results as an {@link HttpsEndpoint} to the user callback.
-     *
-     * <p>If the user callback has already been invoked (regardless of success or failure), this
-     * method does nothing.
+     * Constructs the data to be returned via the user callback, whether success or failure.
      */
     @GuardedBy("mResult")
-    private void reportAnswer(int rcode) {
-        if (mCallbackInvoked.compareAndSet(false, true)) {
-            // Synchronize on the result object here as onError could also call this method.
-            Collections.sort(mResult.mHttpsRecords,
-                    Comparator.comparing(HttpsRecord::getPriority));
-            mUserCallback.onAnswer(
-                    new HttpsEndpoint(
-                            mNetwork,
-                            mResult.mHttpsRecords,
-                            new ArrayList<>(mResult.mAddresses)), rcode);
-        }
+    @NonNull
+    private HttpsEndpoint createHttpsEndpoint(int rcode) {
+        Collections.sort(mResult.mHttpsRecords, Comparator.comparing(HttpsRecord::getPriority));
+        return new HttpsEndpoint(
+                mNetwork,
+                mResult.mHttpsRecords,
+                new ArrayList<>(mResult.mAddresses));
     }
 
     /**
@@ -225,14 +271,23 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
      * <p>If the user callback has already been invoked (regardless of success or failure), this
      * method does nothing.
      */
-    @GuardedBy("mResult")
-    private void tryReportResult(int rcode) {
-        if (mResult.mDnsException != null && mCallbackInvoked.compareAndSet(false, true)) {
-            mUserCallback.onError(mResult.mDnsException);
+    private void reportResult(
+            @Nullable HttpsEndpoint endpoint, @Nullable DnsException exception, int rcode) {
+        if (!mCallbackInvoked.compareAndSet(false, true)) {
+            // Callback has already been invoked, do nothing.
             return;
         }
 
-        reportAnswer(rcode);
+        if (endpoint == null && exception == null) {
+            // No results (success or failure) to report. This should never happen.
+            return;
+        }
+
+        if (exception != null) {
+            mUserCallback.onError(exception);
+        } else {
+            mUserCallback.onAnswer(endpoint, rcode);
+        }
     }
 
     /**

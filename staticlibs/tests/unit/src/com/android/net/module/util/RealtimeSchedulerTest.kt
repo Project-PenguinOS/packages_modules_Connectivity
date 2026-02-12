@@ -26,6 +26,7 @@ import android.os.SystemClock
 import androidx.test.filters.SmallTest
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRunner
+import com.android.testutils.assertEventuallyTrue
 import com.android.testutils.tryTest
 import com.android.testutils.visibleOnHandlerThread
 import com.google.common.collect.Range
@@ -128,6 +129,78 @@ class RealtimeSchedulerTest {
                 .isIn(Range.closed(200L, 200 + TOLERANCE_MS))
             assertThat(executionTimes[3] - initialTimeMs)
                 .isIn(Range.closed(300L, 300 + TOLERANCE_MS))
+        } cleanup {
+            visibleOnHandlerThread(handler) { scheduler.close() }
+        }
+    }
+
+    @Test
+    fun testRemoveDelayedMessageRemovesFromHandler() {
+        val scheduler = RealtimeScheduler(handler)
+        tryTest {
+            val MSG_ID = 1
+            val executionTimes = mutableListOf<Long>()
+            val cv = ConditionVariable()
+
+            handler.post {
+                // 1. Schedule a message with 0 delay. It will be sent to the Handler immediately.
+                scheduler.sendDelayedMessage(MSG_ID, 0, 0, Pair(cv, executionTimes), 0)
+
+                // 2. Verify the message is in the Handler's queue.
+                assertEventuallyTrue("The message isn't in the Handler's queue", 100L) {
+                    handler.hasMessages(MSG_ID)
+                }
+
+                // 3. Remove the message.
+                // This should remove it from the Handler's queue.
+                scheduler.removeDelayedMessage(MSG_ID)
+
+                // 4. Verify the message is no longer in the Handler's queue.
+                assertThat(handler.hasMessages(MSG_ID)).isFalse()
+
+                cv.open()
+            }
+
+            cv.block(TIMEOUT_MS)
+            // Expect 0 executions because the message was removed before the delay expired.
+            assertEquals(0, executionTimes.size)
+        } cleanup {
+            visibleOnHandlerThread(handler) { scheduler.close() }
+        }
+    }
+
+    @Test
+    fun testRemoveDelayedRunnableRemovesFromHandler() {
+        val scheduler = RealtimeScheduler(handler)
+        tryTest {
+            val executionTimes = mutableListOf<Long>()
+            val cv = ConditionVariable()
+            val runnable = Runnable {
+                executionTimes.add(SystemClock.elapsedRealtime())
+            }
+
+            handler.post {
+                // 1. Schedule a runnable with 0 delay. It will be posted to the Handler immediately.
+                scheduler.postDelayed(runnable, 0)
+
+                // 2. Verify the runnable is in the Handler's queue.
+                assertEventuallyTrue("The runnable isn't in the Handler's queue", 100L) {
+                    handler.hasMessagesOrCallbacks()
+                }
+
+                // 3. Remove the runnable.
+                // This should remove it from the Handler's queue.
+                scheduler.removeDelayedRunnable(runnable)
+
+                // 4. Verify the runnable is no longer in the Handler's queue.
+                assertThat(handler.hasMessagesOrCallbacks()).isFalse()
+
+                cv.open()
+            }
+
+            cv.block(TIMEOUT_MS)
+            // Expect 0 executions because the runnable was removed before the delay expired.
+            assertEquals(0, executionTimes.size)
         } cleanup {
             visibleOnHandlerThread(handler) { scheduler.close() }
         }
