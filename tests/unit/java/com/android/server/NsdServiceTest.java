@@ -101,6 +101,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import android.app.ActivityManager;
 import android.app.ActivityManager.OnUidImportanceListener;
 import android.compat.testing.PlatformCompatChangeRule;
@@ -165,6 +167,7 @@ import com.android.server.connectivity.mdns.MdnsInterfaceSocket;
 import com.android.server.connectivity.mdns.MdnsSearchOptions;
 import com.android.server.connectivity.mdns.MdnsServiceBrowserListener;
 import com.android.server.connectivity.mdns.MdnsServiceInfo;
+import com.android.server.connectivity.mdns.MdnsServiceInfo.TextEntry;
 import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOffloadInfo;
 import com.android.server.connectivity.mdns.MdnsSocketProvider;
 import com.android.server.connectivity.mdns.MdnsSocketProvider.SocketRequestMonitor;
@@ -1785,6 +1788,82 @@ public class NsdServiceTest {
 
     @Test
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDiscovery_usingPickerAndDisplayNameAttribute_receivesFullServiceInfo()
+            throws Exception {
+        assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled());
+        setMdnsDiscoveryManagerEnabled();
+
+        final NsdManager client = connectClient(mService);
+        final DiscoveryRequest request = new DiscoveryRequest.Builder(SERVICE_TYPE)
+                .setNetwork(TEST_NETWORK)
+                .setFlags(FLAG_SHOW_PICKER)
+                .setDisplayNameAttribute("displayattr")
+                .build();
+        final DiscoveryListener listener = startDiscoveryWithPicker(client, request);
+
+        final ArgumentCaptor<MdnsListener> listenerCaptor =
+                ArgumentCaptor.forClass(MdnsListener.class);
+        verify(mDiscoveryManager).registerListener(eq(SERVICE_TYPE + ".local"),
+                listenerCaptor.capture(), argThat(MdnsSearchOptions::resolveAllServices));
+        final MdnsListener mdnsListener = listenerCaptor.getValue();
+
+        final NsdPickerConnector connector = verifyPickerStarted();
+        final NsdServiceReceiver receiver = setMockPickerReceiver(connector);
+
+        final byte[] displayName = "Display Name".getBytes(UTF_8);
+        final MdnsServiceInfo mdnsServiceInfo = new MdnsServiceInfo(
+                SERVICE_NAME,
+                SERVICE_TYPE_WITH_LOCAL_TLD.split("\\."),
+                List.of(), /* subtypes */
+                new String[]{"android", "local"}, /* hostName */
+                PORT,
+                List.of() /* ipv4Addresses */,
+                List.of(IPV6_ADDRESS),
+                List.of(new TextEntry("displayattr", displayName)),
+                TEST_INTERFACE_INDEX,
+                TEST_NETWORK,
+                Instant.MAX /* expirationTime */,
+                0L /* creationCapabilitiesBits */);
+
+        mdnsListener.onServiceNameDiscovered(mdnsServiceInfo, false /* isServiceFromCache */);
+        mdnsListener.onServiceFound(mdnsServiceInfo, false /* isServiceFromCache */);
+        mdnsListener.onServiceRemoved(mdnsServiceInfo, SERVICE_REMOVED_BY_GOODBYE_RECEIVED);
+        mdnsListener.onServiceNameRemoved(mdnsServiceInfo, SERVICE_REMOVED_BY_GOODBYE_RECEIVED);
+        mdnsListener.onServiceNameDiscovered(mdnsServiceInfo, false /* isServiceFromCache */);
+        mdnsListener.onServiceFound(mdnsServiceInfo, false /* isServiceFromCache */);
+        waitForIdle();
+
+        final InOrder inOrder = inOrder(receiver);
+        final ArgumentCaptor<NsdServiceInfo> serviceInfoCaptor =
+                ArgumentCaptor.forClass(NsdServiceInfo.class);
+        inOrder.verify(receiver).onServiceFound(serviceInfoCaptor.capture());
+        inOrder.verify(receiver).onServiceLost(serviceInfoCaptor.capture());
+        inOrder.verify(receiver).onServiceFound(serviceInfoCaptor.capture());
+        verifyNoMoreInteractions(receiver);
+
+        for (NsdServiceInfo info : serviceInfoCaptor.getAllValues()) {
+            assertEquals(SERVICE_NAME, info.getServiceName());
+            assertEquals(PORT, info.getPort());
+            assertEquals(1, info.getAttributes().size());
+            assertArrayEquals(displayName, info.getAttributes().get("displayattr"));
+            assertEquals(List.of(parseNumericAddress(IPV6_ADDRESS)), info.getHostAddresses());
+        }
+
+        connector.notifyServiceSelected(serviceInfoCaptor.getValue());
+        waitForIdle();
+        // Discovery callbacks do not have the full service info
+        verify(listener).onServiceFound(argThat(info ->
+                info.getServiceName().equals(SERVICE_NAME)
+                        && info.getNetwork().equals(TEST_NETWORK)
+                        && info.getInterfaceIndex() == 0
+                        && info.getPort() == 0
+                        && info.getAttributes().isEmpty()
+                        && info.getHostAddresses().isEmpty()
+        ));
+    }
+
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void testPickerCancelled_onUnregister() throws Exception {
         setMdnsDiscoveryManagerEnabled();
         final NsdManager client = connectClient(mService);
@@ -2136,7 +2215,7 @@ public class NsdServiceTest {
                 PORT,
                 List.of(IPV4_ADDRESS),
                 List.of("2001:db8::1", "2001:db8::2"),
-                List.of(MdnsServiceInfo.TextEntry.fromBytes(new byte[]{
+                List.of(TextEntry.fromBytes(new byte[]{
                         'k', 'e', 'y', '=', (byte) 0xFF, (byte) 0xFE})) /* textEntries */,
                 1234,
                 TEST_NETWORK,

@@ -28,6 +28,7 @@ import static android.net.BpfNetMapsConstants.INGRESS_DISCARD_MAP_PATH;
 import static android.net.BpfNetMapsConstants.L4S_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
+import static android.net.BpfNetMapsConstants.LOCAL_NET_CACHE_GENERATION_ID_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
 import static android.net.BpfNetMapsConstants.LOOPBACK_ACCESS_METRICS_ENABLED_MAP_PATH;
@@ -166,11 +167,17 @@ public class BpfNetMaps {
     // BpfNetMaps is an only writer of this entry.
     private static final Object sCurrentStatsMapConfigLock = new Object();
 
+    // Lock for updates to the local net access and generation ID maps.
+    // BpfNetMaps acquires this lock while sequence of read, modify, and write.
+    // BpfNetMaps is an only writer of this entry.
+    private static final Object sLocalNetAccessLock = new Object();
+
     private static final long UID_RULES_DEFAULT_CONFIGURATION = 0;
     private static final long STATS_SELECT_MAP_A = 0;
     private static final long STATS_SELECT_MAP_B = 1;
 
     private static final int AID_USER_OFFSET = 100000;
+    private static final U32 GENERATION_ID_KEY = new U32(0);
 
     private static IBpfMap<S32, U32> sConfigurationMap = null;
     // BpfMap for UID_OWNER_MAP_PATH. This map is not accessed by others.
@@ -184,12 +191,14 @@ public class BpfNetMaps {
     private static BpfBoolean sUidMigrationEnabledBpfBoolean = null;
     private static IBpfMap<IngressDiscardKey, IngressDiscardValue> sIngressDiscardMap = null;
 
+    @GuardedBy("sLocalNetAccessLock")
     private static IBpfMap<LocalNetAccessKey, Bool> sLocalNetAccessMap = null;
     private static IBpfMap<U32, Bool> sLocalNetBlockedUidMap = null;
-    private static final Object sLocalNetUidHostAllowlistMapLock = new Object();
     // The allowlist map is accessed on different threads in ConnectivityService#allowLocalNetAccess
-    @GuardedBy("sLocalNetUidHostAllowlistMapLock")
+    @GuardedBy("sLocalNetAccessLock")
     private static IBpfMap<LocalNetUidHostAllowlistKey, Bool> sLocalNetUidHostAllowlistMap = null;
+    @GuardedBy("sLocalNetAccessLock")
+    private static IBpfMap<U32, S64> sLocalNetCacheGenerationIdMap = null;
     private static BpfBoolean sL4sEnabledMap = null;
     private static BpfBoolean sLoopbackAccessMetricsEnabledBpfBoolean = null;
 
@@ -201,6 +210,8 @@ public class BpfNetMaps {
     private final InterfaceTracker mInterfaceTracker;
     private static boolean sPermissionMapUidMigrationEnabled = false;
     private static boolean sLoopbackAccessMetricsEnabled = false;
+    @GuardedBy("sLocalNetAccessLock")
+    private static long sLnpGenerationID = 0L;
 
     /**
      * Get the cached com.android.tethering.flags.Flags#permissionMapUidMigration() so the flag
@@ -317,7 +328,9 @@ public class BpfNetMaps {
     @VisibleForTesting
     public static void setLocalNetAccessMapForTest(
             IBpfMap<LocalNetAccessKey, Bool> localNetAccessMap) {
-        sLocalNetAccessMap = localNetAccessMap;
+        synchronized (sLocalNetAccessLock) {
+            sLocalNetAccessMap = localNetAccessMap;
+        }
     }
 
     /**
@@ -344,8 +357,19 @@ public class BpfNetMaps {
     @VisibleForTesting
     public static void setLocalNetUidHostAllowlistMapForTest(
             IBpfMap<LocalNetUidHostAllowlistKey, Bool> localNetUidHostAllowlistMap) {
-        synchronized (sLocalNetUidHostAllowlistMapLock) {
+        synchronized (sLocalNetAccessLock) {
             sLocalNetUidHostAllowlistMap = localNetUidHostAllowlistMap;
+        }
+    }
+
+    /**
+     * Set localNetCacheGenerationIdMap for test.
+     */
+    @VisibleForTesting
+    public static void setLocalNetCacheGenerationIdMapForTest(
+            IBpfMap<U32, S64> localNetCacheGenerationIdMap) {
+        synchronized (sLocalNetAccessLock) {
+            sLocalNetCacheGenerationIdMap = localNetCacheGenerationIdMap;
         }
     }
 
@@ -445,6 +469,16 @@ public class BpfNetMaps {
                     LocalNetUidHostAllowlistKey.class, Bool.class);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Cannot open local_net_uid_host_access map", e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private static IBpfMap<U32, S64> getLocalNetCacheGenerationIdMap() {
+        try {
+            return SingleWriterBpfMap.getSingleton(LOCAL_NET_CACHE_GENERATION_ID_MAP_PATH,
+                    U32.class, S64.class);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open local_net_cache_generation_id map", e);
         }
     }
 
@@ -549,13 +583,15 @@ public class BpfNetMaps {
         }
 
         if (isAtLeastB()) {
-            if (sLocalNetAccessMap == null) {
-                sLocalNetAccessMap = getLocalNetAccessMap();
-            }
-            try {
-                sLocalNetAccessMap.clear();
-            } catch (ErrnoException e) {
-                throw new IllegalStateException("Failed to initialize local_net_access map", e);
+            synchronized (sLocalNetAccessLock) {
+                if (sLocalNetAccessMap == null) {
+                    sLocalNetAccessMap = getLocalNetAccessMap();
+                }
+                try {
+                    sLocalNetAccessMap.clear();
+                } catch (ErrnoException e) {
+                    throw new IllegalStateException("Failed to initialize local_net_access map", e);
+                }
             }
 
             if (sLocalNetBlockedUidMap == null) {
@@ -568,7 +604,7 @@ public class BpfNetMaps {
                         e);
             }
 
-            synchronized (sLocalNetUidHostAllowlistMapLock) {
+            synchronized (sLocalNetAccessLock) {
                 if (sLocalNetUidHostAllowlistMap == null) {
                     sLocalNetUidHostAllowlistMap = getLocalNetUidHostAllowlistMap();
                 }
@@ -577,6 +613,27 @@ public class BpfNetMaps {
                 } catch (ErrnoException e) {
                     throw new IllegalStateException(
                             "Failed to initialize local_net_uid_host_allowlist map", e);
+                }
+            }
+
+            synchronized (sLocalNetAccessLock) {
+                // Don't clear the cache generation ID map like we do other maps. We want to keep
+                // the initialization value of 0.
+                if (sLocalNetCacheGenerationIdMap == null) {
+                    sLocalNetCacheGenerationIdMap = getLocalNetCacheGenerationIdMap();
+                }
+                try {
+                    S64 currentGenId = sLocalNetCacheGenerationIdMap.getValue(GENERATION_ID_KEY);
+                    sLnpGenerationID = (currentGenId != null) ? currentGenId.val : 0L;
+                    if (sLnpGenerationID % 2 != 0) {
+                        // The generation ID should always start off even to ensure the cache is in
+                        // a valid state.
+                        sLocalNetCacheGenerationIdMap.updateEntry(GENERATION_ID_KEY,
+                                new S64(++sLnpGenerationID));
+                    }
+                } catch (ErrnoException e) {
+                    throw new IllegalStateException(
+                            "Failed to initialize local_net_cache_generation_id map", e);
                 }
             }
         }
@@ -1384,11 +1441,20 @@ public class BpfNetMaps {
                     chunk[getIndex(uid)] |= (permissionBits & UID_PERMISSION_MASK) << getShift(uid);
                 }
 
-                // TODO(436242702): deleteEntry if chunk is all 0
-                sUidPermissionChunkMap.updateEntry(
-                    new S32(chunkId),
-                    new UidPermissionChunk(chunk)
-                );
+                boolean emptyChunk = true;
+                for (int j = 0; j < CHUNK_INT64_COUNT; j++) if (chunk[j] != 0) {
+                    emptyChunk = false;
+                    break;
+                }
+
+                if (emptyChunk) {
+                    sUidPermissionChunkMap.deleteEntry(new S32(chunkId));
+                } else {
+                    sUidPermissionChunkMap.updateEntry(
+                        new S32(chunkId),
+                        new UidPermissionChunk(chunk)
+                    );
+                }
             } catch (ErrnoException e) {
                 throw new IllegalStateException("Failed to update uid permission chunk map", e);
             }
@@ -1574,7 +1640,11 @@ public class BpfNetMaps {
                 address, protocol, remotePort);
 
         try {
-            sLocalNetAccessMap.updateEntry(localNetAccessKey, new Bool(isAllowed));
+            synchronized (sLocalNetAccessLock) {
+                incrementLnpGenerationId(true);
+                sLocalNetAccessMap.updateEntry(localNetAccessKey, new Bool(isAllowed));
+                incrementLnpGenerationId(false);
+            }
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to add local network access for localNetAccessKey : "
                     + localNetAccessKey + ", isAllowed : " + isAllowed);
@@ -1608,7 +1678,11 @@ public class BpfNetMaps {
                 address, protocol, remotePort);
 
         try {
-            sLocalNetAccessMap.deleteEntry(localNetAccessKey);
+            synchronized (sLocalNetAccessLock) {
+                incrementLnpGenerationId(true);
+                sLocalNetAccessMap.deleteEntry(localNetAccessKey);
+                incrementLnpGenerationId(false);
+            }
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to remove local network access for localNetAccessKey : "
                     + localNetAccessKey);
@@ -1643,8 +1717,11 @@ public class BpfNetMaps {
         final LocalNetAccessKey localNetAccessKey = new LocalNetAccessKey(lpmBitlen, ifIndex,
                 address, protocol, remotePort);
         try {
-            final Bool value = sLocalNetAccessMap.getValue(localNetAccessKey);
-            return value == null ? true : value.val;
+            Bool value;
+            synchronized (sLocalNetAccessLock) {
+                value = sLocalNetAccessMap.getValue(localNetAccessKey);
+            }
+            return value == null || value.val;
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to find local network access configuration for "
                     + "localNetAccessKey : " + localNetAccessKey);
@@ -1740,8 +1817,10 @@ public class BpfNetMaps {
         final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(
                 uid, ifIndex, address);
         try {
-            synchronized (sLocalNetUidHostAllowlistMapLock) {
+            synchronized (sLocalNetAccessLock) {
+                incrementLnpGenerationId(true);
                 sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(true));
+                incrementLnpGenerationId(false);
             }
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to add local network access for key: " + key);
@@ -1755,12 +1834,14 @@ public class BpfNetMaps {
     public void removeLocalNetHostAllowlistForInterface(final int ifIndex) {
         throwIfPre25Q2("removeLocalNetHostAllowlistForUid is not available on pre-B devices");
         try {
-            synchronized (sLocalNetUidHostAllowlistMapLock) {
+            synchronized (sLocalNetAccessLock) {
+                incrementLnpGenerationId(true);
                 sLocalNetUidHostAllowlistMap.forEach((key, value) -> {
                     if (key.ifIndex == ifIndex) {
                         sLocalNetUidHostAllowlistMap.deleteEntry(key);
                     }
                 });
+                incrementLnpGenerationId(false);
             }
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed removing local net allowlist entries for ifIndex " + ifIndex, e);
@@ -2047,6 +2128,17 @@ public class BpfNetMaps {
         }
     }
 
+    @GuardedBy("sLocalNetAccessLock")
+    private void incrementLnpGenerationId(boolean expectEven)
+            throws IllegalStateException, ErrnoException {
+        if (expectEven != ((sLnpGenerationID & 1) == 0)) {
+            throw new IllegalStateException(
+                    "Parity error in the local net cache generation ID. This should never happen.");
+        }
+        sLocalNetCacheGenerationIdMap.updateEntry(GENERATION_ID_KEY,
+                new S64(++sLnpGenerationID));
+    }
+
     @RequiresApi(Build.VERSION_CODES.BAKLAVA)
     private void dumpPermissionPropagationConfig(final IndentingPrintWriter pw) {
         try {
@@ -2144,19 +2236,22 @@ public class BpfNetMaps {
                     (key, value) -> "[" + key.dstAddr + "]: "
                             + value.iif1 + "(" + mDeps.getIfName(value.iif1) + "), "
                             + value.iif2 + "(" + mDeps.getIfName(value.iif2) + ")");
-            if (sLocalNetBlockedUidMap != null) {
-                BpfDump.dumpMap(sLocalNetAccessMap, pw, "sLocalNetAccessMap (default is true meaning global)",
-                        (key, value) -> "" + key + ": " + value.val);
+            synchronized (sLocalNetAccessLock) {
+                if (sLocalNetAccessMap != null) {
+                    BpfDump.dumpMap(sLocalNetAccessMap, pw,
+                            "sLocalNetAccessMap (default is true meaning global)",
+                            (key, value) -> " " + key + ": " + value.val);
+                }
             }
             if (sLocalNetBlockedUidMap != null) {
                 BpfDump.dumpMap(sLocalNetBlockedUidMap, pw, "sLocalNetBlockedUidMap",
-                        (key, value) -> "" + key + ": " + value.val);
+                        (key, value) -> " " + key + ": " + value.val);
             }
-            synchronized (sLocalNetUidHostAllowlistMapLock) {
+            synchronized (sLocalNetAccessLock) {
                 if (sLocalNetUidHostAllowlistMap != null) {
                     BpfDump.dumpMap(sLocalNetUidHostAllowlistMap, pw,
                             "sLocalNetUidHostAllowlistMap",
-                            (key, value) -> "" + key + ": " + value.val);
+                            (key, value) -> " " + key + ": " + value.val);
                 }
             }
             if (sLoopbackAccessMetricsEnabledBpfBoolean != null) {

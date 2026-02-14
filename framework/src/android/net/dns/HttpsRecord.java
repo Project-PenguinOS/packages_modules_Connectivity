@@ -21,6 +21,7 @@ import android.annotation.IntRange;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.DnsResolver;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.net.ParseException;
 import android.net.ssl.EchConfigList;
@@ -58,7 +59,8 @@ public class HttpsRecord {
      *
      * @hide
      */
-    public HttpsRecord(@Nullable Network network, @NonNull DnsHttpsRecord httpsRecord) {
+    public HttpsRecord(@NonNull Network network, @Nullable LinkProperties linkProperties,
+            @NonNull DnsHttpsRecord httpsRecord) {
         Objects.requireNonNull(httpsRecord, "HTTPS DNS record cannot be null");
 
         this.mRecord = httpsRecord;
@@ -66,7 +68,7 @@ public class HttpsRecord {
         List<InetAddress> ipHints = new ArrayList<>();
         ipHints.addAll(httpsRecord.getIpv4Hints());
         ipHints.addAll(httpsRecord.getIpv6Hints());
-        this.mIpHints = DnsUtils.rfc6724Sort(network, ipHints);
+        this.mIpHints = DnsUtils.rfc6724Sort(linkProperties, network, ipHints);
     }
 
     /**

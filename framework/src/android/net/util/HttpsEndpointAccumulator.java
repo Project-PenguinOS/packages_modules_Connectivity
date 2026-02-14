@@ -30,6 +30,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.DnsResolver;
 import android.net.DnsResolver.DnsException;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.net.ParseException;
 import android.net.dns.HttpsEndpoint;
@@ -67,6 +68,7 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
     private static final int DEFAULT_HTTPS_TIMEOUT_MILLIS = 50;
 
     private final Network mNetwork;
+    private final LinkProperties mLinkProperties;
     private final DnsResolver.Callback<HttpsEndpoint> mUserCallback;
     private final int mTargetQueryCount;
     private final boolean mHasIpv4;
@@ -95,10 +97,13 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
         }
     }
 
-    public HttpsEndpointAccumulator(@NonNull Network network,
+    public HttpsEndpointAccumulator(
+            @NonNull Network network,
+            @Nullable LinkProperties linkProperties,
             @NonNull DnsResolver.Callback<HttpsEndpoint> callback, int queryCount,
             int timeoutMillis, boolean hasIpv4, boolean hasIpv6, @NonNull Handler handler) {
         mNetwork = network;
+        mLinkProperties = linkProperties;
         mUserCallback = callback;
         mTargetQueryCount = queryCount;
         mHasIpv4 = hasIpv4;
@@ -159,7 +164,7 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                     }
                     case TYPE_HTTPS -> {
                         HttpsRecord httpsRecord =
-                                new HttpsRecord(mNetwork, (DnsHttpsRecord) record);
+                                new HttpsRecord(mNetwork, mLinkProperties, (DnsHttpsRecord) record);
                         httpsRecords.add(httpsRecord);
 
                         // Add only the relevant IP hints to the list of IP addresses.

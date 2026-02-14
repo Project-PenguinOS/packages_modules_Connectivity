@@ -1707,7 +1707,7 @@ static int doLoad(char** argv, char * const envp[]) {
         REQUIRE(6, 1, 57)
         REQUIRE(6, 6, 0)
         REQUIRE(6, 12, 0)
-        REQUIRE(6, 18, 4)
+        REQUIRE(6, 18, 9)
 
 #undef REQUIRE
 

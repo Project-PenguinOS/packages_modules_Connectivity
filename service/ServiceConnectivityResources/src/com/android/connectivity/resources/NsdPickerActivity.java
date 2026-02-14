@@ -18,8 +18,13 @@ package com.android.connectivity.resources;
 
 import static com.android.connectivity.resources.aidl.NsdPickerConnector.EXTRA_APP_NAME;
 import static com.android.connectivity.resources.aidl.NsdPickerConnector.EXTRA_CONNECTOR;
+import static com.android.connectivity.resources.aidl.NsdPickerConnector.EXTRA_REQUEST;
 
+import android.annotation.SuppressLint;
+import android.annotation.TargetApi;
 import android.content.Intent;
+import android.net.nsd.DiscoveryRequest;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 
@@ -35,6 +40,8 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Queue;
 
+@SuppressLint("UseRequiresApi")
+@TargetApi(Build.VERSION_CODES.TIRAMISU) // NsdManager is only updatable on T+
 public class NsdPickerActivity extends FragmentActivity implements PickerDialogListener {
     private static final String TAG = NsdPickerActivity.class.getSimpleName();
     private static final String FRAGMENT_PICKER_DIALOG = "picker_dialog";
@@ -88,12 +95,16 @@ public class NsdPickerActivity extends FragmentActivity implements PickerDialogL
 
             final NsdPickerConnector connector = NsdPickerConnector.Stub.asInterface(
                     intentBundle.getBinder(EXTRA_CONNECTOR));
-            if (connector == null) {
-                Log.wtf(TAG, "Invalid request intent: missing connector");
+            final String appName = intentBundle.getString(EXTRA_APP_NAME);
+            final DiscoveryRequest request =
+                    intentBundle.getParcelable(EXTRA_REQUEST, DiscoveryRequest.class);
+            if (connector == null || appName == null || request == null) {
+                Log.wtf(TAG, "Invalid request intent: missing connector, appName or request: "
+                        + intentBundle);
                 continue;
             }
 
-            NsdPickerFragment.newInstance(connector, intentBundle.getString(EXTRA_APP_NAME))
+            NsdPickerFragment.newInstance(connector, appName, request)
                     .show(getSupportFragmentManager(), FRAGMENT_PICKER_DIALOG);
             return;
         }

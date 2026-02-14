@@ -17,10 +17,12 @@
 package com.android.connectivity.resources;
 
 import android.annotation.RequiresNoPermission;
+import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.net.nsd.DiscoveryRequest;
 import android.net.nsd.NsdServiceInfo;
 import android.os.Build;
 import android.os.Bundle;
@@ -48,11 +50,13 @@ import com.android.connectivity.resources.aidl.NsdPickerConnector;
 import com.android.connectivity.resources.aidl.NsdServiceReceiver;
 
 import java.lang.ref.WeakReference;
+import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.Set;
 import java.util.TreeSet;
 
-@TargetApi(Build.VERSION_CODES.TIRAMISU)
+@SuppressLint("UseRequiresApi")
+@TargetApi(Build.VERSION_CODES.TIRAMISU) // NsdManager is only updatable on T+
 public class NsdPickerFragment extends DialogFragment {
     // Note the log tag reuses the parent activity tag instead of being specific to this class
     private static final String TAG = NsdPickerActivity.class.getSimpleName();
@@ -87,8 +91,9 @@ public class NsdPickerFragment extends DialogFragment {
 
     @UiThread
     static NsdPickerFragment newInstance(
-            @NonNull NsdPickerConnector connector, @NonNull String appName) {
-        return new NsdPickerFragment(new State(sNextReceiverId++, connector, appName));
+            @NonNull NsdPickerConnector connector, @NonNull String appName,
+            @NonNull DiscoveryRequest request) {
+        return new NsdPickerFragment(new State(sNextReceiverId++, connector, appName, request));
     }
 
     public static class State implements Parcelable {
@@ -97,17 +102,23 @@ public class NsdPickerFragment extends DialogFragment {
         private final NsdPickerConnector mConnector;
         @NonNull
         private final String mAppName;
+        @NonNull
+        private final DiscoveryRequest mRequest;
 
-        public State(int receiverId, @NonNull NsdPickerConnector conn, @NonNull String appName) {
+        public State(int receiverId, @NonNull NsdPickerConnector conn, @NonNull String appName,
+                @NonNull DiscoveryRequest request) {
             mReceiverId = receiverId;
             mConnector = conn;
             mAppName = appName;
+            mRequest = request;
         }
 
         private State(Parcel parcel) {
             mReceiverId = parcel.readInt();
             mConnector = NsdPickerConnector.Stub.asInterface(parcel.readStrongBinder());
             mAppName = parcel.readString();
+            mRequest = parcel.readParcelable(DiscoveryRequest.class.getClassLoader(),
+                    DiscoveryRequest.class);
         }
 
         @Override
@@ -120,6 +131,7 @@ public class NsdPickerFragment extends DialogFragment {
             dest.writeInt(mReceiverId);
             dest.writeStrongInterface(mConnector);
             dest.writeString(mAppName);
+            dest.writeParcelable(mRequest, flags);
         }
 
         public static final Creator<State> CREATOR = new Creator<State>() {
@@ -140,9 +152,12 @@ public class NsdPickerFragment extends DialogFragment {
      */
     private static class ServiceAdapter extends ArrayAdapter<NsdServiceInfo> {
         private final LayoutInflater mInflater = LayoutInflater.from(getContext());
+        @Nullable
+        private final String mDisplayNameAttribute;
 
-        ServiceAdapter(Context context) {
+        ServiceAdapter(Context context, @Nullable String displayNameAttribute) {
             super(context, R.layout.nsd_service_list_item);
+            mDisplayNameAttribute = displayNameAttribute;
         }
 
         @UiThread
@@ -156,9 +171,7 @@ public class NsdPickerFragment extends DialogFragment {
             final TextView titleView = convertView.findViewById(android.R.id.title);
             // If the name is too long the title TextView is configured to handle it with
             // android:ellipsize="marquee".
-            // TODO: also provide APIs to configure how the name is shown (for example using TXT
-            // attributes or extract a portion of the service name).
-            titleView.setText(service.getServiceName());
+            titleView.setText(getServiceDisplayName(service));
 
             convertView.findViewById(android.R.id.summary).setVisibility(View.GONE);
 
@@ -167,6 +180,20 @@ public class NsdPickerFragment extends DialogFragment {
             imageView.setImageResource(R.drawable.ic_wifi);
 
             return convertView;
+        }
+
+        @NonNull
+        private String getServiceDisplayName(@NonNull NsdServiceInfo service) {
+            if (mDisplayNameAttribute == null) {
+                return service.getServiceName();
+            }
+            final byte[] value = service.getAttributes().get(mDisplayNameAttribute);
+            if (value == null || value.length == 0) {
+                return service.getServiceName();
+            }
+            // If the attribute value is not valid UTF-8, replacement characters will be used in the
+            // string.
+            return new String(value, StandardCharsets.UTF_8);
         }
     }
 
@@ -181,7 +208,7 @@ public class NsdPickerFragment extends DialogFragment {
         if (mState == null) {
             throw new IllegalStateException("Missing state");
         }
-        mAdapter = new ServiceAdapter(getContext());
+        mAdapter = new ServiceAdapter(getContext(), mState.mRequest.getDisplayNameAttribute());
         final LayoutInflater inflater = LayoutInflater.from(getContext());
         final View customTitle = inflater.inflate(R.layout.nsd_picker_title, null);
         customTitle.<TextView>findViewById(android.R.id.summary).setText(

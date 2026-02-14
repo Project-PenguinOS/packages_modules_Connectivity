@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.android.server.connectivity;
 
 import static android.net.ConnectivitySettingsManager.GLOBAL_HTTP_PROXY_EXCLUSION_LIST;
@@ -61,17 +60,17 @@ public class ProxyTracker {
     // a hidden platform constant not visible to mainline modules.
     private static final String EXTRA_PROXY_INFO = "android.intent.extra.PROXY_INFO";
 
-    @NonNull
-    private final Context mContext;
+    @NonNull private final Context mContext;
 
-    @NonNull
-    private final Object mProxyLock = new Object();
+    @NonNull private final Object mProxyLock = new Object();
+
     // The global proxy is the proxy that is set device-wide, overriding any network-specific
     // proxy. Note however that proxies are hints ; the system does not enforce their use. Hence
     // this value is only for querying.
     @Nullable
     @GuardedBy("mProxyLock")
     private ProxyInfo mGlobalProxy = null;
+
     // The default proxy is applied to a network if that network does not have its own proxy
     // settings and the global proxy is not set. This member is set through setDefaultProxy, which
     // is called when the default network changes proxies in its LinkProperties, or when
@@ -83,8 +82,7 @@ public class ProxyTracker {
 
     private final Handler mConnectivityServiceHandler;
 
-    @Nullable
-    private final PacProxyManager mPacProxyManager;
+    @Nullable private final PacProxyManager mPacProxyManager;
 
     private class PacProxyInstalledListener implements PacProxyManager.PacProxyInstalledListener {
         private final int mEvent;
@@ -95,14 +93,15 @@ public class ProxyTracker {
 
         public void onPacProxyInstalled(@Nullable Network network, @NonNull ProxyInfo proxy) {
             Log.i(TAG, "PAC proxy installed on network " + network + " : " + proxy);
-            mConnectivityServiceHandler
-                    .sendMessage(mConnectivityServiceHandler
-                    .obtainMessage(mEvent, new Pair<>(network, proxy)));
+            mConnectivityServiceHandler.sendMessage(
+                    mConnectivityServiceHandler.obtainMessage(mEvent, new Pair<>(network, proxy)));
         }
     }
 
-    public ProxyTracker(@NonNull final Context context,
-            @NonNull final Handler connectivityServiceInternalHandler, final int pacChangedEvent) {
+    public ProxyTracker(
+            @NonNull final Context context,
+            @NonNull final Handler connectivityServiceInternalHandler,
+            final int pacChangedEvent) {
         mContext = context;
         mConnectivityServiceHandler = connectivityServiceInternalHandler;
         mPacProxyManager = context.getSystemService(PacProxyManager.class);
@@ -110,7 +109,7 @@ public class ProxyTracker {
         if (mPacProxyManager != null) {
             PacProxyInstalledListener listener = new PacProxyInstalledListener(pacChangedEvent);
             mPacProxyManager.addPacProxyInstalledListener(
-                mConnectivityServiceHandler::post, listener);
+                    mConnectivityServiceHandler::post, listener);
         }
     }
 
@@ -119,7 +118,8 @@ public class ProxyTracker {
     // proxy is null then there is no proxy in place).
     @Nullable
     private static ProxyInfo canonicalizeProxyInfo(@Nullable final ProxyInfo proxy) {
-        if (proxy != null && TextUtils.isEmpty(proxy.getHost())
+        if (proxy != null
+                && TextUtils.isEmpty(proxy.getHost())
                 && Uri.EMPTY.equals(proxy.getPacFileUrl())) {
             return null;
         }
@@ -146,11 +146,12 @@ public class ProxyTracker {
     /**
      * Gets the default system-wide proxy.
      *
-     * This will return the global proxy if set, otherwise the default proxy if in use. Note
-     * that this is not necessarily the proxy that any given process should use, as the right
-     * proxy for a process is the proxy for the network this process will use, which may be
-     * different from this value. This value is simply the default in case there is no proxy set
-     * in the network that will be used by a specific process.
+     * <p>This will return the global proxy if set, otherwise the default proxy if in use. Note that
+     * this is not necessarily the proxy that any given process should use, as the right proxy for a
+     * process is the proxy for the network this process will use, which may be different from this
+     * value. This value is simply the default in case there is no proxy set in the network that
+     * will be used by a specific process.
+     *
      * @return The default system-wide proxy or null if none.
      */
     @Nullable
@@ -175,9 +176,7 @@ public class ProxyTracker {
         }
     }
 
-    /**
-     * Read the global proxy settings and cache them in memory.
-     */
+    /** Read the global proxy settings and cache them in memory. */
     public void loadGlobalProxy() {
         if (loadDeprecatedGlobalHttpProxy()) {
             return;
@@ -192,8 +191,9 @@ public class ProxyTracker {
             if (!TextUtils.isEmpty(pacFileUrl)) {
                 proxyProperties = ProxyInfo.buildPacProxy(Uri.parse(pacFileUrl));
             } else {
-                proxyProperties = ProxyInfo.buildDirectProxy(host, port,
-                        ProxyUtils.exclusionStringAsList(exclList));
+                proxyProperties =
+                        ProxyInfo.buildDirectProxy(
+                                host, port, ProxyUtils.exclusionStringAsList(exclList));
             }
             if (!proxyProperties.isValid()) {
                 if (DBG) Log.d(TAG, "Invalid proxy properties, ignoring: " + proxyProperties);
@@ -218,7 +218,7 @@ public class ProxyTracker {
     public boolean loadDeprecatedGlobalHttpProxy() {
         final String proxy = Settings.Global.getString(mContext.getContentResolver(), HTTP_PROXY);
         if (!TextUtils.isEmpty(proxy)) {
-            String data[] = proxy.split(":");
+            String[] data = proxy.split(":");
             if (data.length == 0) {
                 return false;
             }
@@ -232,8 +232,8 @@ public class ProxyTracker {
                     return false;
                 }
             }
-            final ProxyInfo p = ProxyInfo.buildDirectProxy(proxyHost, proxyPort,
-                    Collections.emptyList());
+            final ProxyInfo p =
+                    ProxyInfo.buildDirectProxy(proxyHost, proxyPort, Collections.emptyList());
             setGlobalProxy(p);
             return true;
         }
@@ -243,13 +243,15 @@ public class ProxyTracker {
     /**
      * Sends the system broadcast informing apps about a new proxy configuration.
      *
-     * Confusingly this method also sets the PAC file URL. TODO : separate this, it has nothing
+     * <p>Confusingly this method also sets the PAC file URL. TODO : separate this, it has nothing
      * to do in a "sendProxyBroadcast" method.
      */
     public void sendProxyBroadcast() {
         final ProxyInfo defaultProxy = getDefaultProxy();
-        final ProxyInfo proxyInfo = null != defaultProxy ?
-                defaultProxy : ProxyInfo.buildDirectProxy("", 0, Collections.emptyList());
+        final ProxyInfo proxyInfo =
+                null != defaultProxy
+                        ? defaultProxy
+                        : ProxyInfo.buildDirectProxy("", 0, Collections.emptyList());
 
         if (mPacProxyManager != null) {
             mPacProxyManager.setCurrentProxyScriptUrl(proxyInfo);
@@ -260,8 +262,9 @@ public class ProxyTracker {
         }
         if (DBG) Log.d(TAG, "sending Proxy Broadcast for " + proxyInfo);
         Intent intent = new Intent(Proxy.PROXY_CHANGE_ACTION);
-        intent.addFlags(Intent.FLAG_RECEIVER_REPLACE_PENDING |
-                Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
+        intent.addFlags(
+                Intent.FLAG_RECEIVER_REPLACE_PENDING
+                        | Intent.FLAG_RECEIVER_REGISTERED_ONLY_BEFORE_BOOT);
         intent.putExtra(EXTRA_PROXY_INFO, proxyInfo);
         final long ident = Binder.clearCallingIdentity();
         try {
@@ -291,8 +294,9 @@ public class ProxyTracker {
             final int port;
             final String exclList;
             final String pacFileUrl;
-            if (proxyInfo != null && (!TextUtils.isEmpty(proxyInfo.getHost()) ||
-                    !Uri.EMPTY.equals(proxyInfo.getPacFileUrl()))) {
+            if (proxyInfo != null
+                    && (!TextUtils.isEmpty(proxyInfo.getHost())
+                            || !Uri.EMPTY.equals(proxyInfo.getPacFileUrl()))) {
                 if (!proxyInfo.isValid()) {
                     if (DBG) Log.d(TAG, "Invalid proxy properties, ignoring: " + proxyInfo);
                     return;
@@ -301,8 +305,10 @@ public class ProxyTracker {
                 host = mGlobalProxy.getHost();
                 port = mGlobalProxy.getPort();
                 exclList = ProxyUtils.exclusionListAsString(mGlobalProxy.getExclusionList());
-                pacFileUrl = Uri.EMPTY.equals(proxyInfo.getPacFileUrl())
-                        ? "" : proxyInfo.getPacFileUrl().toString();
+                pacFileUrl =
+                        Uri.EMPTY.equals(proxyInfo.getPacFileUrl())
+                                ? ""
+                                : proxyInfo.getPacFileUrl().toString();
             } else {
                 host = "";
                 port = 0;
@@ -328,13 +334,15 @@ public class ProxyTracker {
     /**
      * Sets the default proxy for the device.
      *
-     * The default proxy is the proxy used for networks that do not have a specific proxy.
+     * <p>The default proxy is the proxy used for networks that do not have a specific proxy.
+     *
      * @param proxyInfo the proxy spec, or null for no proxy.
      */
     public void setDefaultProxy(@Nullable ProxyInfo proxyInfo) {
         // The code has been accepting empty proxy objects forever, so for backward
         // compatibility it should continue doing so.
-        if (proxyInfo != null && TextUtils.isEmpty(proxyInfo.getHost())
+        if (proxyInfo != null
+                && TextUtils.isEmpty(proxyInfo.getHost())
                 && Uri.EMPTY.equals(proxyInfo.getPacFileUrl())) {
             proxyInfo = null;
         }
@@ -350,7 +358,8 @@ public class ProxyTracker {
             // global (to get the correct local port), and send a broadcast.
             // TODO: Switch PacProxyService to have its own message to send back rather than
             // reusing EVENT_HAS_CHANGED_PROXY and this call to handleApplyDefaultProxy.
-            if ((mGlobalProxy != null) && (proxyInfo != null)
+            if ((mGlobalProxy != null)
+                    && (proxyInfo != null)
                     && (!Uri.EMPTY.equals(proxyInfo.getPacFileUrl()))
                     && proxyInfo.getPacFileUrl().equals(mGlobalProxy.getPacFileUrl())) {
                 mGlobalProxy = proxyInfo;
@@ -371,21 +380,21 @@ public class ProxyTracker {
     /**
      * Adjust the proxy in the link properties if necessary.
      *
-     * It is necessary when the proxy in the passed property is for PAC, and the default proxy
-     * is also for PAC. This is because the original LinkProperties from the network agent don't
-     * include the port for the local proxy as it's not known at creation time, but this class
-     * knows it after the proxy service is started.
+     * <p>It is necessary when the proxy in the passed property is for PAC, and the default proxy is
+     * also for PAC. This is because the original LinkProperties from the network agent don't
+     * include the port for the local proxy as it's not known at creation time, but this class knows
+     * it after the proxy service is started.
      *
-     * This is safe because there can only ever be one proxy service running on the device, so
-     * if the ProxyInfo in the LinkProperties is for PAC, then the port is necessarily the one
+     * <p>This is safe because there can only ever be one proxy service running on the device, so if
+     * the ProxyInfo in the LinkProperties is for PAC, then the port is necessarily the one
      * ProxyTracker knows about.
      *
      * @param lp the LinkProperties to fix up.
      * @param network the network of the local proxy server.
      */
     // TODO: Leave network unused to support local proxy server per network in the future.
-    public void updateDefaultNetworkProxyPortForPAC(@NonNull final LinkProperties lp,
-            @Nullable Network network) {
+    public void updateDefaultNetworkProxyPortForPAC(
+            @NonNull final LinkProperties lp, @Nullable Network network) {
         final ProxyInfo defaultProxy = getDefaultProxy();
         if (isPacProxy(lp.getHttpProxy()) && isPacProxy(defaultProxy)) {
             synchronized (mProxyLock) {
@@ -396,12 +405,17 @@ public class ProxyTracker {
                 // the default proxy (it overrides it, see {@link getDefaultProxy}). The PAC URL
                 // in the global proxy might not be the one in the LP of the default
                 // network, so discount this case.
-                if (null == mGlobalProxy && !lp.getHttpProxy().getPacFileUrl()
-                        .equals(defaultProxy.getPacFileUrl())) {
-                    Log.wtf(TAG, "Unexpected discrepancy between proxy in LP of "
-                            + "default network and default proxy. The former has a PAC URL of "
-                            + lp.getHttpProxy().getPacFileUrl() + " while the latter has "
-                            + defaultProxy.getPacFileUrl());
+                if (null == mGlobalProxy
+                        && !lp.getHttpProxy()
+                                .getPacFileUrl()
+                                .equals(defaultProxy.getPacFileUrl())) {
+                    Log.wtf(
+                            TAG,
+                            "Unexpected discrepancy between proxy in LP of default network and"
+                                    + " default proxy. The former has a PAC URL of "
+                                    + lp.getHttpProxy().getPacFileUrl()
+                                    + " while the latter has "
+                                    + defaultProxy.getPacFileUrl());
                 }
             }
             // If this network has a PAC proxy and proxy tracker already knows about
