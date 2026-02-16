@@ -17,10 +17,12 @@ package android.net.util
 
 import android.net.dns.HttpsEndpoint
 import android.net.dns.HttpsRecord
+import android.net.ConnectivityManager
 import android.net.DnsResolver
 import android.net.DnsResolver.Callback
 import android.net.DnsResolver.DnsException
 import android.net.InetAddresses
+import android.net.LinkProperties
 import android.net.Network
 import android.net.ParseException
 import android.os.Handler
@@ -85,6 +87,8 @@ class HttpsEndpointAccumulatorTest {
   private val mockUserCallback = mock(Callback::class.java) as Callback<HttpsEndpoint>
   private val endpointCaptor = ArgumentCaptor.forClass(HttpsEndpoint::class.java)
   private val exceptionCaptor = ArgumentCaptor.forClass(DnsException::class.java)
+  private val context = InstrumentationRegistry.getInstrumentation().context
+  private val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
 
   private val handlerThread = HandlerThread("HttpsEndpointAccumulatorTest")
   private lateinit var handler: Handler
@@ -283,9 +287,10 @@ class HttpsEndpointAccumulatorTest {
       }
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val linkProperties = connectivityManager.getLinkProperties(network)
 
-    val accumulator = HttpsEndpointAccumulator(network, answerCallback, /* queryCount= */ 1,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ false, handler)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, answerCallback,
+        /* queryCount= */ 1, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ false, handler)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
   }
 
@@ -300,9 +305,10 @@ class HttpsEndpointAccumulatorTest {
       }
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val linkProperties = connectivityManager.getLinkProperties(network)
 
-    val accumulator = HttpsEndpointAccumulator(network, answerCallback, /* queryCount= */ 1,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ false, /* hasIpv6= */ true, handler)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, answerCallback,
+        /* queryCount= */ 1, QUERY_TIMEOUT_MS, /* hasIpv4= */ false, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
   }
 
@@ -350,9 +356,10 @@ class HttpsEndpointAccumulatorTest {
       }
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val linkProperties = connectivityManager.getLinkProperties(network)
 
-    val accumulator = HttpsEndpointAccumulator(network, answerCallback, /* queryCount= */ 1,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ false, handler)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, answerCallback,
+        /* queryCount= */ 1, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ false, handler)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
   }
 
@@ -365,9 +372,10 @@ class HttpsEndpointAccumulatorTest {
       }
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val linkProperties = connectivityManager.getLinkProperties(network)
 
-    val accumulator = HttpsEndpointAccumulator(network, answerCallback, /* queryCount= */ 1,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ false, /* hasIpv6= */ true, handler)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, answerCallback,
+        /* queryCount= */ 1, QUERY_TIMEOUT_MS, /* hasIpv4= */ false, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
   }
 
@@ -380,9 +388,10 @@ class HttpsEndpointAccumulatorTest {
       }
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val linkProperties = connectivityManager.getLinkProperties(network)
 
-    val accumulator = HttpsEndpointAccumulator(network, answerCallback, /* queryCount= */ 2,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, answerCallback,
+        /* queryCount= */ 2, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
   }
@@ -402,9 +411,10 @@ class HttpsEndpointAccumulatorTest {
       }
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val linkProperties = connectivityManager.getLinkProperties(network)
 
-    val accumulator = HttpsEndpointAccumulator(network, answerCallback, /* queryCount= */ 3,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ false, handler)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, answerCallback,
+        /* queryCount= */ 3, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ false, handler)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
   }
@@ -423,9 +433,10 @@ class HttpsEndpointAccumulatorTest {
       }
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val linkProperties = connectivityManager.getLinkProperties(network)
 
-    val accumulator = HttpsEndpointAccumulator(network, answerCallback, /* queryCount= */ 3,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ false, /* hasIpv6= */ true, handler)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, answerCallback,
+        /* queryCount= */ 3, QUERY_TIMEOUT_MS, /* hasIpv4= */ false, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
   }
@@ -444,9 +455,10 @@ class HttpsEndpointAccumulatorTest {
       }
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val linkProperties = connectivityManager.getLinkProperties(network)
 
-    val accumulator = HttpsEndpointAccumulator(network, answerCallback, /* queryCount= */ 3,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, answerCallback,
+        /* queryCount= */ 3, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
@@ -457,8 +469,10 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 2,
-        DnsResolver.HTTPS_QUERY_WAIT_NONE, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 2, DnsResolver.HTTPS_QUERY_WAIT_NONE, /* hasIpv4= */ true,
+        /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
@@ -478,8 +492,9 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 3, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE_DIFF_ADDRESS, /* rcode= */ 0)
@@ -503,8 +518,9 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 3, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE_DIFF_ADDRESS, /* rcode= */ 0)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
@@ -528,8 +544,9 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 3, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
@@ -557,8 +574,9 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 3, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(INVALID_QUESTION_COUNT_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
 
@@ -581,8 +599,9 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator= HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 1,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator= HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 1, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
     accumulator.onAnswer(INVALID_QUESTION_COUNT_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
 
@@ -601,8 +620,10 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
-        DnsResolver.HTTPS_QUERY_WAIT_AUTO, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 3, DnsResolver.HTTPS_QUERY_WAIT_AUTO, /* hasIpv4= */ true,
+        /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     val startTime = SystemClock.uptimeMillis()
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
@@ -627,8 +648,10 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
-        DnsResolver.HTTPS_QUERY_WAIT_AUTO, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 3, DnsResolver.HTTPS_QUERY_WAIT_AUTO, /* hasIpv4= */ true,
+        /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
@@ -655,8 +678,10 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
-        DnsResolver.HTTPS_QUERY_WAIT_NONE, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 3, DnsResolver.HTTPS_QUERY_WAIT_NONE, /* hasIpv4= */ true,
+        /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
@@ -676,9 +701,10 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
-        DnsResolver.HTTPS_QUERY_WAIT_UNTIL_TIMEOUT, /* hasIpv4= */ true, /* hasIpv6= */ true,
-        handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator = HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 3, DnsResolver.HTTPS_QUERY_WAIT_UNTIL_TIMEOUT, /* hasIpv4= */ true,
+        /* hasIpv6= */ true, handler)
     accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
     // We don't expect any messages since we haven't set a timeout
@@ -693,8 +719,9 @@ class HttpsEndpointAccumulatorTest {
     val networkCallback = callbackRule.registerDefaultNetworkCallback()
 
     val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
-    val accumulator= HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 1,
-        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+    val linkProperties = connectivityManager.getLinkProperties(network)
+    val accumulator= HttpsEndpointAccumulator(network, linkProperties, mockUserCallback,
+        /* queryCount= */ 1, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
     accumulator.onError(DnsException(DnsResolver.ERROR_SYSTEM, Exception("System exception")))
     accumulator.onError(DnsException(DnsResolver.ERROR_PARSE, Exception("Parse exception")))
 
@@ -708,12 +735,13 @@ class HttpsEndpointAccumulatorTest {
   }
 
   private fun createErrorAccumulator(network: Network, callback: Callback<HttpsEndpoint>) =
-      HttpsEndpointAccumulator(network, callback, /* queryCount= */ 1, QUERY_TIMEOUT_MS,
-          /* hasIpv4= */ false, /* hasIpv6= */ false, handler)
+      HttpsEndpointAccumulator(network, connectivityManager.getLinkProperties(network), callback,
+          /* queryCount= */ 1, QUERY_TIMEOUT_MS, /* hasIpv4= */ false, /* hasIpv6= */ false,
+          handler)
 
   private fun createOnAnswerAccumulator(network: Network, callback: Callback<HttpsEndpoint>) =
-      HttpsEndpointAccumulator(network, callback, /* queryCount= */ 1, QUERY_TIMEOUT_MS,
-          /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
+      HttpsEndpointAccumulator(network, connectivityManager.getLinkProperties(network), callback,
+          /* queryCount= */ 1, QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true, handler)
 
   companion object {
     private const val NETWORK_TIMEOUT_MS = 10_000L

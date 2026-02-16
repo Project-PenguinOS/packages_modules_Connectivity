@@ -438,6 +438,14 @@ public final class NsdServiceInfo implements Parcelable {
     }
 
     /**
+     * Remove all attributes
+     * @hide
+     */
+    public void clearAttributes() {
+        mTxtRecord.clear();
+    }
+
+    /**
      * Retrieve attributes as a map of String keys to byte[] values. The attributes map is only
      * valid for a resolved service.
      *

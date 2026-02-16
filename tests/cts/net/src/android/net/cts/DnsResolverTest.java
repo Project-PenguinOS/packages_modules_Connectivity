@@ -869,7 +869,7 @@ public class DnsResolverTest {
         Looper handlerLooper = handlerThread.getLooper();
         // Use a separate DnsResolver instance because we are modifying which looper is used, which
         // would affect the other tests.
-        DnsResolver dns = DnsResolver.getInstance(mContext, handlerLooper);
+        DnsResolver dns = new DnsResolver(mContext, handlerLooper);
 
         doTestQueryForHttpsRecord(dns, mExecutorInline);
     }

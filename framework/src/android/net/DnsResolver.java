@@ -166,12 +166,13 @@ public final class DnsResolver {
 
     private static final DnsResolver sInstance = new DnsResolver();
     private final @Nullable Context mContext;
+    private final @Nullable ConnectivityManager mConnectivityManager;
     private final @NonNull Looper mLooper;
 
     /**
      * Get instance for DnsResolver
      *
-     * @deprecated Use {@link #getInstance(Context, Looper)} instead.
+     * @deprecated Use {@link #DnsResolver(Context, Looper)} instead.
      */
     @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
     @Deprecated
@@ -179,31 +180,32 @@ public final class DnsResolver {
         return sInstance;
     }
 
-    /**
-     * Returns a {@link DnsResolver} instance.
-     *
-     * @param context used for internal interactions with other system services.
-     * @param looper {@link Looper} for monitoring incoming replies to DNS queries. If null, then
-     *     uses the value returned by {@link Looper#getMainLooper()}.
-     */
-    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
-    public static @NonNull DnsResolver getInstance(@NonNull Context context,
-            @Nullable Looper looper) {
-        Objects.requireNonNull(context, "Context cannot be null");
-        // TODO: consider caching this using a Map<Pair<Context, Looper>, DnsResolver>
-        return new DnsResolver(context, looper);
-    }
-
     private DnsResolver() {
         // We don't have a context, but still need to initialize the variable as there will be
         // build errors. This is only used in the legacy implementation.
         mContext = null;
+        mConnectivityManager = null;
         mLooper = Looper.getMainLooper();
     }
 
-    private DnsResolver(@NonNull Context context, @Nullable Looper looper) {
+    /**
+     * Creates a {@link DnsResolver} instance.
+     *
+     * @param context used for internal interactions with other system services.
+     * @param looper {@link Looper} for monitoring incoming replies to DNS queries. If null, then
+     *     uses the value returned by {@link Looper#getMainLooper()}.
+     *
+     * <p>The specified {@link Looper} is not used for executing method callbacks, but if a
+     * separate thread is already being used for {@link DnsResolver} interactions, it is sufficient
+     * to use {@link Runnable#run()} as the {@link Executor} for {@link #query} and {@link
+     * #rawQuery}.
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_DNS)
+    public DnsResolver(@NonNull Context context, @Nullable Looper looper) {
+        Objects.requireNonNull(context, "Context cannot be null");
         mContext = context;
         mLooper = looper == null ? Looper.getMainLooper() : looper;
+        mConnectivityManager = context.getSystemService(ConnectivityManager.class);
     }
 
     /**
@@ -638,8 +640,10 @@ public final class DnsResolver {
             allFds.add(v4fd);
         }
 
+        final LinkProperties linkProperties = mConnectivityManager == null ? null
+                : mConnectivityManager.getLinkProperties(queryNetwork);
         final HttpsEndpointAccumulator accumulator =
-                new HttpsEndpointAccumulator(queryNetwork, callback, allFds.size(),
+                new HttpsEndpointAccumulator(queryNetwork, linkProperties, callback, allFds.size(),
                         httpsTimeoutMillis, queryIpv4, queryIpv6, new Handler(mLooper));
 
         synchronized (lock) {
