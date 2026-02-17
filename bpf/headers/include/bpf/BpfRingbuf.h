@@ -24,6 +24,7 @@
 #include <sys/mman.h>
 #include <utils/Log.h>
 
+#include "BpfSyscallWrappers.h"
 #include "bpf/BpfUtils.h"
 
 #include <atomic>
@@ -39,10 +40,12 @@ using android::base::unique_fd;
 class BpfRingbufBase {
  public:
   virtual ~BpfRingbufBase() {
-    if (mConsumerPos) munmap(mConsumerPos, mConsumerSize);
-    if (mProducerPos) munmap(mProducerPos, mProducerSize);
-    mConsumerPos = nullptr;
-    mProducerPos = nullptr;
+    if (mConsumerPtr) munmap(mConsumerPtr, sizeof(*mConsumerPtr));
+    if (mProducerPtr) munmap(mProducerPtr, sizeof(*mProducerPtr));
+    if (mDataPtr) munmap(mDataPtr, dataSize());
+    mConsumerPtr = nullptr;
+    mProducerPtr = nullptr;
+    mDataPtr = nullptr;
   }
 
   bool isEmpty(void);
@@ -50,12 +53,15 @@ class BpfRingbufBase {
   // returns !isEmpty() for convenience
   bool wait(int timeout_ms = -1);
 
+  size_t maxCapacityBytes() const { return maxEntries(); }
+
  protected:
   // Non-initializing constructor, used by Create.
   BpfRingbufBase(size_t value_size) : mValueSize(value_size) {}
 
   // Full construction that aborts on error (use Create/Init to handle errors).
-  BpfRingbufBase(const char* path, size_t value_size) : mValueSize(value_size) {
+  BpfRingbufBase(const char *path, size_t value_size)
+    : mValueSize(value_size) {
     if (auto status = Init(path); !status.ok()) {
       ALOGE("BpfRingbuf init failed: %s", status.error().message().c_str());
       abort();
@@ -66,7 +72,7 @@ class BpfRingbufBase {
   BpfRingbufBase(const BpfRingbufBase&) = delete;
 
   // Initialize the base ringbuffer components. Must be called exactly once.
-  Result<void> Init(const char* path);
+  Result<void> Init(const char *path);
 
   // Consumes all messages from the ring buffer, passing them to the callback.
   Result<int> ConsumeAll(
@@ -74,7 +80,7 @@ class BpfRingbufBase {
 
   // Replicates c-style void* "byte-wise" pointer addition.
   template <typename Ptr>
-  static Ptr pointerAddBytes(void* base, ssize_t offset_bytes) {
+  static Ptr pointerAddBytes(void *base, ssize_t offset_bytes) {
     return reinterpret_cast<Ptr>(reinterpret_cast<char*>(base) + offset_bytes);
   }
 
@@ -87,12 +93,13 @@ class BpfRingbufBase {
 
   const size_t mValueSize;
 
-  size_t mConsumerSize;
-  size_t mProducerSize;
-  unsigned long mPosMask;
+  inline static const size_t mPageSize = isX86() ? 4096 : getpagesize();
+  unsigned long mPosMask = -1uL;  // == max_entries - 1
+  size_t maxEntries() const { return mPosMask + 1; }
+  size_t dataSize() const { return 2 * maxCapacityBytes(); }
   unique_fd mRingFd;
 
-  void* mDataPos = nullptr;
+  void *mDataPtr = nullptr;
   // The kernel uses an "unsigned long" type for both consumer and producer position.
   // Unsigned long is a 4 byte value on a 32-bit kernel, and an 8 byte value on a 64-bit kernel.
   // To support 32-bit kernels, producer pos is capped at 4 bytes (despite it being 8 bytes on
@@ -101,9 +108,9 @@ class BpfRingbufBase {
   // This solution is bitness agnostic. The consumer only increments the 8 byte consumer pos, which,
   // in a little-endian architecture, is safe since the entire page is mapped into memory and a
   // 32-bit kernel will just ignore the high-order bits.
-  std::atomic_uint64_t* mConsumerPos = nullptr;
-  std::atomic_uint32_t* mProducerPos = nullptr;
-  std::atomic_uint32_t* mLength = nullptr;
+  std::atomic_uint64_t *mConsumerPtr = nullptr;
+  std::atomic_uint32_t *mProducerPtr = nullptr;
+  std::atomic_uint32_t *mLength = nullptr;
 
   // In order to guarantee atomic access in a 32 bit userspace environment, atomic_uint64_t is used
   // in addition to std::atomic<T>::is_always_lock_free that guarantees that read / write operations
@@ -137,13 +144,12 @@ class BpfRingbuf : public BpfRingbufBase {
 
   // Creates a ringbuffer wrapper from a pinned path. This initialization will
   // abort on error. To handle errors, initialize with Create instead.
-  BpfRingbuf(const char* path) : BpfRingbufBase(path, sizeof(Value)) {}
+  BpfRingbuf(const char *path) : BpfRingbufBase(path, sizeof(Value)) {}
 
   // Creates a ringbuffer wrapper from a pinned path. There are no guarantees
   // that the ringbuf outputs messaged of type `Value`, only that they are the
   // same size. Size is only checked in ConsumeAll.
-  static Result<std::unique_ptr<BpfRingbuf<Value>>> Create(
-      const char* path);
+  static Result<std::unique_ptr<BpfRingbuf<Value>>> Create(const char *path);
 
   int epoll_ctl_add(int epfd, struct epoll_event *event) {
     return epoll_ctl(epfd, EPOLL_CTL_ADD, mRingFd.get(), event);
@@ -168,11 +174,9 @@ class BpfRingbuf : public BpfRingbufBase {
 };
 
 
-inline Result<void> BpfRingbufBase::Init(const char* path) {
+inline Result<void> BpfRingbufBase::Init(const char *path) {
   mRingFd.reset(mapRetrieveExclusiveRW(path));
-  if (!mRingFd.ok()) {
-    return ErrnoError() << "failed to retrieve ringbuffer at " << path;
-  }
+  if (!mRingFd.ok()) return ErrnoError() << "failed to retrieve ringbuffer at " << path;
 
   int map_type = android::bpf::bpfGetFdMapType(mRingFd);
   if (map_type != BPF_MAP_TYPE_RINGBUF) {
@@ -183,43 +187,38 @@ inline Result<void> BpfRingbufBase::Init(const char* path) {
   }
 
   int max_entries = android::bpf::bpfGetFdMaxEntries(mRingFd);
-  if (max_entries < 0) {
-    return ErrnoError() << "failed to read max_entries from ringbuf";
-  }
+  if (max_entries < 0) return ErrnoError() << "failed to read max_entries from ringbuf";
   if (max_entries == 0) {
     errno = EINVAL;
     return ErrnoError() << "max_entries must be non-zero";
   }
 
   mPosMask = max_entries - 1;
-  mConsumerSize = getpagesize();
-  mProducerSize = getpagesize() + 2 * max_entries;
 
   {
-    void* ptr = mmap(NULL, mConsumerSize, PROT_READ | PROT_WRITE, MAP_SHARED,
-                     mRingFd, 0);
-    if (ptr == MAP_FAILED) {
-      return ErrnoError() << "failed to mmap ringbuf consumer pages";
-    }
-    mConsumerPos = reinterpret_cast<decltype(mConsumerPos)>(ptr);
+    void *ptr = mmap(NULL, sizeof(*mConsumerPtr), PROT_READ | PROT_WRITE, MAP_SHARED, mRingFd, 0);
+    if (ptr == MAP_FAILED) return ErrnoError() << "failed to mmap ringbuf consumer page";
+    mConsumerPtr = reinterpret_cast<decltype(mConsumerPtr)>(ptr);
   }
 
   {
-    void* ptr = mmap(NULL, mProducerSize, PROT_READ, MAP_SHARED, mRingFd,
-                     mConsumerSize);
-    if (ptr == MAP_FAILED) {
-      return ErrnoError() << "failed to mmap ringbuf producer page";
-    }
-    mProducerPos = reinterpret_cast<decltype(mProducerPos)>(ptr);
+    void *ptr = mmap(NULL, sizeof(*mProducerPtr), PROT_READ, MAP_SHARED, mRingFd, mPageSize);
+    if (ptr == MAP_FAILED) return ErrnoError() << "failed to mmap ringbuf producer page";
+    mProducerPtr = reinterpret_cast<decltype(mProducerPtr)>(ptr);
   }
 
-  mDataPos = pointerAddBytes<void*>(mProducerPos, getpagesize());
+  {
+    void *ptr = mmap(NULL, dataSize(), PROT_READ, MAP_SHARED, mRingFd, mPageSize * 2);
+    if (ptr == MAP_FAILED) return ErrnoError() << "failed to mmap ringbuf data pages";
+    mDataPtr = reinterpret_cast<void*>(ptr);
+  }
+
   return {};
 }
 
 inline bool BpfRingbufBase::isEmpty(void) {
-  uint32_t prod_pos = mProducerPos->load(std::memory_order_relaxed);
-  uint64_t cons_pos = mConsumerPos->load(std::memory_order_relaxed);
+  uint32_t prod_pos = mProducerPtr->load(std::memory_order_relaxed);
+  uint64_t cons_pos = mConsumerPtr->load(std::memory_order_relaxed);
   return (cons_pos & 0xFFFFFFFF) == prod_pos;
 }
 
@@ -233,15 +232,14 @@ inline bool BpfRingbufBase::wait(int timeout_ms) {
   return !isEmpty();
 }
 
-inline Result<int> BpfRingbufBase::ConsumeAll(
-    const std::function<void(const void*)>& callback) {
+inline Result<int> BpfRingbufBase::ConsumeAll(const std::function<void(const void*)>& callback) {
   int64_t count = 0;
-  uint32_t prod_pos = mProducerPos->load(std::memory_order_acquire);
-  // Only userspace writes to mConsumerPos, so no need to use std::memory_order_acquire
-  uint64_t cons_pos = mConsumerPos->load(std::memory_order_relaxed);
+  uint32_t prod_pos = mProducerPtr->load(std::memory_order_acquire);
+  // Only userspace writes to mConsumerPtr, so no need to use std::memory_order_acquire
+  uint64_t cons_pos = mConsumerPtr->load(std::memory_order_relaxed);
   while ((cons_pos & 0xFFFFFFFF) != prod_pos) {
     // Find the start of the entry for this read (wrapping is done here).
-    void* start_ptr = pointerAddBytes<void*>(mDataPos, cons_pos & mPosMask);
+    void *start_ptr = pointerAddBytes<void*>(mDataPtr, cons_pos & mPosMask);
 
     // The entry has an 8 byte header containing the sample length.
     // struct bpf_ringbuf_hdr {
@@ -258,7 +256,7 @@ inline Result<int> BpfRingbufBase::ConsumeAll(
 
     if ((length & BPF_RINGBUF_DISCARD_BIT) == 0) {
       if (length != mValueSize) {
-        mConsumerPos->store(cons_pos, std::memory_order_release);
+        mConsumerPtr->store(cons_pos, std::memory_order_release);
         errno = EMSGSIZE;
         return ErrnoError()
                << "BPF ring buffer message has unexpected size (want "
@@ -268,24 +266,22 @@ inline Result<int> BpfRingbufBase::ConsumeAll(
       count++;
     }
 
-    mConsumerPos->store(cons_pos, std::memory_order_release);
+    mConsumerPtr->store(cons_pos, std::memory_order_release);
   }
 
   return count;
 }
 
 template <typename Value>
-inline Result<std::unique_ptr<BpfRingbuf<Value>>>
-BpfRingbuf<Value>::Create(const char* path) {
+inline Result<std::unique_ptr<BpfRingbuf<Value>>> BpfRingbuf<Value>::Create(const char *path) {
   auto rb = std::unique_ptr<BpfRingbuf>(new BpfRingbuf);
   if (auto status = rb->Init(path); !status.ok()) return status.error();
   return rb;
 }
 
 template <typename Value>
-inline Result<int> BpfRingbuf<Value>::ConsumeAll(
-    const MessageCallback& callback) {
-  return BpfRingbufBase::ConsumeAll([&](const void* value) {
+inline Result<int> BpfRingbuf<Value>::ConsumeAll(const MessageCallback& callback) {
+  return BpfRingbufBase::ConsumeAll([&](const void *value) {
     callback(*reinterpret_cast<const Value*>(value));
   });
 }

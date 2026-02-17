@@ -22,7 +22,7 @@
     android:orientation="vertical">
     <TextView
         android:id="@android:id/title"
-        android:text="@string/connect_to_service_title"
+        android:text="@string/choose_device_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:paddingTop="18dp"

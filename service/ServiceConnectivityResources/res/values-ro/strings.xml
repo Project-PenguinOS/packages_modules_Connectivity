@@ -43,7 +43,8 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"un tip de rețea necunoscut"</string>
-    <string name="connect_to_service_title" msgid="2417012530980077322">"Conectează-te la serviciu"</string>
-    <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> dorește să se conecteze la alt dispozitiv dintr-o rețea locală"</string>
+    <string name="choose_device_title" msgid="1326677343980771265">"Alege un dispozitiv de conectat"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> dorește să se conecteze la un dispozitiv din rețeaua locală"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"Nu conecta"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"Se caută servicii"</string>
 </resources>

@@ -1098,33 +1098,47 @@ static int loadCodeSections(ElfObject& elfObj, vector<codeSection>& cs, const st
             reuse = true;
         } else {
             static char log_buf[1 << 20];  // 1 MiB logging buffer
+            log_buf[0] = 0;
 
             union bpf_attr req = {
               .prog_type = cs[i].prog_def->type,
               .insn_cnt = static_cast<__u32>(cs[i].data.size() / sizeof(struct bpf_insn)),
               .insns = ptr_to_u64(cs[i].data.data()),
               .license = ptr_to_u64(license.c_str()),
-              .log_level = 1,
-              .log_size = sizeof(log_buf),
-              .log_buf = ptr_to_u64(log_buf),
               .expected_attach_type = fixup_attach(cs[i].prog_def->type, cs[i].prog_def->attach_type),
             };
             if (isAtLeastKernelVersion(4, 15))
                 strlcpy(req.prog_name, cs[i].prog_def->name(), sizeof(req.prog_name));
-            fd.reset(bpf(BPF_PROG_LOAD, req));
 
-            // Kernel should have NULL terminated the log buffer, but force it anyway for safety
-            log_buf[sizeof(log_buf) - 1] = 0;
+            // use a copy, so that bpf() system call cannot scribble over our req,
+            // which we want to mutate (to enable logging) and reuse on failure
+            const union bpf_attr req_copy = req;
+            fd.reset(bpf(BPF_PROG_LOAD, req_copy));
 
-            // Strip out final newline if present
-            int log_chars = strlen(log_buf);
-            if (log_chars && log_buf[log_chars - 1] == '\n') log_buf[--log_chars] = 0;
+            if (fd.ok()) {
+                // on success, trivial logging
+                ALOGD("BPF_PROG_LOAD call for %s (%s) returned fd: %d", elfObj.path,
+                      cs[i].prog_def->name(), fd.get());
+            } else {
+                // on failure, try again with logging enabled
+                req.log_level = 1;
+                req.log_size = sizeof(log_buf);
+                req.log_buf = ptr_to_u64(log_buf);
+                fd.reset(bpf(BPF_PROG_LOAD, req));
 
-            bool log_oneline = !strchr(log_buf, '\n');
+                // Kernel should have NULL terminated the log buffer, but force it anyway for safety
+                log_buf[sizeof(log_buf) - 1] = 0;
 
-            ALOGD("BPF_PROG_LOAD call for %s (%s) returned '%s' fd: %d (%s)", elfObj.path,
-                  cs[i].prog_def->name(), log_oneline ? log_buf : "{multiline}",
-                  fd.get(), !fd.ok() ? std::strerror(errno) : "ok");
+                // Strip out final newline if present
+                int log_chars = strlen(log_buf);
+                if (log_chars && log_buf[log_chars - 1] == '\n') log_buf[--log_chars] = 0;
+
+                bool log_oneline = !strchr(log_buf, '\n');
+
+                ALOGD("BPF_PROG_LOAD call for %s (%s) returned '%s' fd: %d (%s)", elfObj.path,
+                      cs[i].prog_def->name(), log_oneline ? log_buf : "{multiline}",
+                      fd.get(), !fd.ok() ? std::strerror(errno) : "ok");
+            }
 
             if (!fd.ok()) {
                 // kernel NULL terminates log_buf, so this checks for non-empty string
@@ -1584,10 +1598,10 @@ static int doLoad(char** argv, char * const envp[]) {
     // first in U QPR2 beta~2
     const bool has_platform_netbpfload_rc = exists("/system/etc/init/netbpfload.rc");
 
-    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s) libbpf: v%u.%u uid:%d rc:%d%d user:%d%d%d",
+    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%d rc:%d%d user:%d%d%d",
           argv[0], android_get_device_api_level(), api_level_full,
-          kernelVer, describeArch(), libbpf_major_version(),
-          libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
+          kernelVer, describeArch(), page_size >> 10,
+          libbpf_major_version(), libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
           has_platform_netbpfload_rc, isUser, isUserdebug, isEng);
 
     if (!has_platform_bpfloader_rc && !has_platform_netbpfload_rc) {
@@ -1597,10 +1611,16 @@ static int doLoad(char** argv, char * const envp[]) {
 
     if (has_platform_bpfloader_rc && has_platform_netbpfload_rc) {
         ALOGE("Platform has *both* bpfloader & netbpfload init scripts.");
-        return 2;
+        return 1;
     }
 
     logTetheringApexVersion();
+
+    if (exists("/apex/com.android.resolv/lib") ||
+        exists("/apex/com.android.resolv/lib64")) {
+        ALOGE("Incorrect DNS Resolver APEX found.");
+        return 2;
+    }
 
     // both S and T require kernel 4.9 (and eBpf support)
     // (this also guarantees 'kernelVer' isn't an invalid uninitialized 0)
@@ -1633,6 +1653,12 @@ static int doLoad(char** argv, char * const envp[]) {
     // see also: //system/netd/tests/kernel_test.cpp TestKernel510
     if (isAtLeast25Q4 && !isAtLeastKernelVersion(5, 10)) {
         ALOGE("Android 25Q4 requires kernel 5.10.");
+        return 7;
+    }
+
+    // 26Q4 bumps the kernel requirement up to 5.15
+    if (isAtLeast26Q4 && !isAtLeastKernelVersion(5, 15)) {
+        ALOGE("Android 26Q4 requires kernel 5.15.");
         return 7;
     }
 
@@ -1681,6 +1707,7 @@ static int doLoad(char** argv, char * const envp[]) {
         REQUIRE(6, 1, 57)
         REQUIRE(6, 6, 0)
         REQUIRE(6, 12, 0)
+        REQUIRE(6, 18, 4)
 
 #undef REQUIRE
 
@@ -1765,8 +1792,7 @@ static int doLoad(char** argv, char * const envp[]) {
 
     // Ensure we can determine the Android build type.
     if (!isEng && !isUser && !isUserdebug) {
-        ALOGE("Failed to determine the build type: got %s, want 'eng', 'user', or 'userdebug'",
-              getBuildType().c_str());
+        ALOGE("Failed to determine the build type.");
         return 22;
     }
 

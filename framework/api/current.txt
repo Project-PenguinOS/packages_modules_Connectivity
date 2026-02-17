@@ -176,7 +176,8 @@ package android.net {
   }
 
   public final class DnsResolver {
-    method @NonNull public static android.net.DnsResolver getInstance();
+    method @Deprecated @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") @NonNull public static android.net.DnsResolver getInstance();
+    method @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") @NonNull public static android.net.DnsResolver getInstance(@NonNull android.content.Context, @Nullable android.os.Looper);
     method public void query(@Nullable android.net.Network, @NonNull String, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super java.util.List<java.net.InetAddress>>);
     method public void query(@Nullable android.net.Network, @NonNull String, int, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super java.util.List<java.net.InetAddress>>);
     method @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public void query(@Nullable android.net.Network, @NonNull String, int, @NonNull java.util.concurrent.Executor, int, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<android.net.dns.HttpsEndpoint>);
@@ -576,6 +577,7 @@ package android.net.dns {
     method @NonNull public java.util.List<java.lang.String> getAlpnIds();
     method @FlaggedApi("com.android.org.conscrypt.net.flags.encrypted_client_hello_platform") @Nullable public android.net.ssl.EchConfigList getEchConfigList() throws android.net.ssl.InvalidEchDataException;
     method @NonNull public java.util.List<java.net.InetAddress> getIpAddressHints();
+    method @NonNull public String getOwnerName();
     method public int getPort();
     method @IntRange(from=0, to=65535) public int getPriority();
     method @NonNull public String getTargetName();

@@ -43,7 +43,8 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"தெரியாத நெட்வொர்க் வகை"</string>
-    <string name="connect_to_service_title" msgid="2417012530980077322">"சேவையுடன் இணையுங்கள்"</string>
-    <string name="connect_to_service_summary" msgid="8059566528115046359">"லோக்கல் நெட்வொர்க்கில் உள்ள மற்றொரு சாதனத்துடன் <xliff:g id="APP_NAME">%1$s</xliff:g> இணைக்க விரும்புகிறது"</string>
+    <string name="choose_device_title" msgid="1326677343980771265">"இணைப்பதற்கான சாதனத்தைத் தேர்ந்தெடுங்கள்"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> உங்கள் லோக்கல் நெட்வொர்க்கில் உள்ள ஒரு சாதனத்துடன் இணைக்கப் பார்க்கிறது"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"இணைக்க வேண்டாம்"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"சேவைகளைத் தேடுகிறது"</string>
 </resources>

@@ -302,7 +302,7 @@ public class NetworkStatsManagerTest {
         mManager.queryDetailsForUidTagState(template, startTime, endTime,
                 testUid, testTag, testState, testFlags);
 
-        final int expectedFlags = NetworkStatsManager.sanitizeQueryFlags(testFlags);
+        final int expectedFlags = mManager.sanitizeQueryFlags(testFlags);
         verify(mService, times(5)).openSessionForUsageStats(eq(expectedFlags), anyString());
     }
 
@@ -356,6 +356,16 @@ public class NetworkStatsManagerTest {
 
         // Test that FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN is always added.
         flags = 0;
+        sanitizedFlags = mManager.sanitizeQueryFlags(flags);
+        assertTrue((sanitizedFlags & FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN) != 0);
+
+        // Test that FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN is not added if disabled.
+        mManager.setAugmentWithSubscriptionPlan(false);
+        sanitizedFlags = mManager.sanitizeQueryFlags(flags);
+        assertTrue((sanitizedFlags & FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN) == 0);
+
+        // Test that FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN is added if enabled.
+        mManager.setAugmentWithSubscriptionPlan(true);
         sanitizedFlags = mManager.sanitizeQueryFlags(flags);
         assertTrue((sanitizedFlags & FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN) != 0);
     }

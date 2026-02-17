@@ -25,6 +25,7 @@ final class Config {
     // CT paths
     static final String CT_ROOT_DIRECTORY_PATH = "/data/misc/keychain/ct/";
     static final String URL_PREFIX = "https://www.gstatic.com/android/certificate_transparency/";
+    static final String URL_PUBLIC_KEY = URL_PREFIX + "log_list.pub";
 
     // Phenotype flags
     static final String NAMESPACE_NETWORK_SECURITY = "network_security";
@@ -36,20 +37,16 @@ final class Config {
     static final String CONTENT_DOWNLOAD_ID = "content_download_id";
     static final String METADATA_DOWNLOAD_ID = "metadata_download_id";
     static final String PUBLIC_KEY_DOWNLOAD_ID = "public_key_download_id";
-    static final String LOG_LIST_UPDATE_FAILURE_COUNT = "log_list_update_failure_count";
-
-    // Public Key URLs
-    static final String URL_PUBLIC_KEY = URL_PREFIX + "log_list.pub";
-
-    // Compatibility Version v1
-    static final String COMPATIBILITY_VERSION_V1 = "v1";
-    static final String URL_PREFIX_V1 = URL_PREFIX;
-    static final String URL_LOG_LIST_V1 = URL_PREFIX_V1 + "log_list.json";
-    static final String URL_SIGNATURE_V1 = URL_PREFIX_V1 + "log_list.sig";
 
     // Compatibility Version v2
     static final String COMPATIBILITY_VERSION_V2 = "v2";
     static final String URL_PREFIX_V2 = URL_PREFIX + COMPATIBILITY_VERSION_V2 + "/";
     static final String URL_LOG_LIST_V2 = URL_PREFIX_V2 + "log_list.json";
     static final String URL_SIGNATURE_V2 = URL_PREFIX_V2 + "log_list.sig";
+
+    // Compatibility Version v3
+    static final String COMPATIBILITY_VERSION_V3 = "v3";
+    static final String URL_PREFIX_V3 = URL_PREFIX + COMPATIBILITY_VERSION_V3 + "/";
+    static final String URL_LOG_LIST_V3 = URL_PREFIX_V3 + "log_list.ctfb";
+    static final String URL_SIGNATURE_V3 = URL_PREFIX_V3 + "log_list.sig";
 }

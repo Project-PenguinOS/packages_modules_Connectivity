@@ -43,7 +43,8 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"अज्ञात नेटवर्क प्रकार"</string>
-    <string name="connect_to_service_title" msgid="2417012530980077322">"सेवेशी कनेक्ट करा"</string>
-    <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> ला स्थानिक नेटवर्कवरील दुसऱ्या डिव्हाइसशी कनेक्ट करायचे आहे"</string>
+    <string name="choose_device_title" msgid="1326677343980771265">"कनेक्ट करण्यासाठी डिव्हाइस निवडा"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> ला तुमच्या स्थानिक नेटवर्कवरील डिव्हाइसशी कनेक्ट करायचे आहे"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"कनेक्ट करू नका"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"सेवा स्कॅन करत आहे"</string>
 </resources>

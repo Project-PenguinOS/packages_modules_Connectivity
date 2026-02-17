@@ -19,17 +19,8 @@
 
 package android.net.cts
 
-import android.Manifest.permission
-import android.content.pm.PackageManager.FEATURE_AUTOMOTIVE
-import android.content.pm.PackageManager.FEATURE_LEANBACK
-import android.content.pm.PackageManager.FEATURE_PC
-import android.content.pm.PackageManager.FEATURE_WATCH
-import android.content.pm.PackageManager.FEATURE_WIFI
-import android.net.ConnectivityManager
 import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
-import android.net.apf.ApfCapabilities
+import android.net.TrafficStats
 import android.net.apf.ApfConstants.ETH_ETHERTYPE_OFFSET
 import android.net.apf.ApfConstants.ETH_HEADER_LEN
 import android.net.apf.ApfConstants.ICMP6_CHECKSUM_OFFSET
@@ -52,12 +43,9 @@ import android.net.apf.BaseApfGenerator.Register.R0
 import android.net.apf.BaseApfGenerator.Register.R1
 import android.os.Build
 import android.os.Handler
-import android.os.HandlerThread
-import android.os.PowerManager
-import android.os.SystemProperties
+import android.os.SystemClock
 import android.platform.test.annotations.AppModeFull
 import android.system.Os
-import android.system.OsConstants
 import android.system.OsConstants.AF_INET6
 import android.system.OsConstants.ETH_P_IPV6
 import android.system.OsConstants.ICMP6_ECHO_REPLY
@@ -67,14 +55,9 @@ import android.system.OsConstants.SOCK_DGRAM
 import android.system.OsConstants.SOCK_NONBLOCK
 import android.util.Log
 import androidx.test.filters.RequiresDevice
-import androidx.test.platform.app.InstrumentationRegistry
 import com.android.compatibility.common.util.PropertyUtil.getFirstApiLevel
 import com.android.compatibility.common.util.PropertyUtil.getVsrApiLevel
-import com.android.compatibility.common.util.SystemUtil.runShellCommand
-import com.android.compatibility.common.util.SystemUtil.runShellCommandOrThrow
 import com.android.compatibility.common.util.VsrTest
-import com.android.modules.utils.build.SdkLevel
-import com.android.net.module.util.HexDump
 import com.android.net.module.util.NetworkStackConstants.ETHER_ADDR_LEN
 import com.android.net.module.util.NetworkStackConstants.ETHER_DST_ADDR_OFFSET
 import com.android.net.module.util.NetworkStackConstants.ETHER_HEADER_LEN
@@ -83,20 +66,11 @@ import com.android.net.module.util.NetworkStackConstants.ICMPV6_HEADER_MIN_LEN
 import com.android.net.module.util.NetworkStackConstants.IPV6_ADDR_LEN
 import com.android.net.module.util.PacketReader
 import com.android.testutils.ConnectivityDiagnosticsCollector
-import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.NetworkStackModuleTest
-import com.android.testutils.SkipPresubmit
-import com.android.testutils.TestableNetworkCallback
-import com.android.testutils.TestableNetworkCallback.Event.Available
-import com.android.testutils.TestableNetworkCallback.Event.LinkPropertiesChanged
-import com.android.testutils.pollingCheck
-import com.android.testutils.runAsShell
 import com.android.testutils.waitForIdle
-import com.google.common.truth.Expect
 import com.google.common.truth.Truth.assertThat
-import com.google.common.truth.Truth.assertWithMessage
 import com.google.common.truth.TruthJUnit.assume
 import java.io.FileDescriptor
 import java.net.InetSocketAddress
@@ -107,23 +81,20 @@ import java.util.concurrent.TimeoutException
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
+import kotlin.test.fail
 import org.junit.After
-import org.junit.AfterClass
-import org.junit.Assume.assumeFalse
-import org.junit.Assume.assumeTrue
 import org.junit.Before
-import org.junit.BeforeClass
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-private const val TAG = "ApfIntegrationTest"
 private const val TIMEOUT_MS = 2000L
 private const val RCV_BUFFER_SIZE = 1480
 private const val PING_HEADER_LENGTH = 8
 
-open class FromU<Type>(val value: Type)
+// Sets threshold to 5 Kbps to provide a conservative buffer against the 10 Mbps VSR requirement.
+private const val TRAFFIC_THRESHOLD_KBPS = 5.0
+private const val POLLING_INTERVAL_MS = 2000L
+private const val MAX_POLLING_ATTEMPTS = 15
 
 @AppModeFull(reason = "CHANGE_NETWORK_STATE permission can't be granted to instant apps")
 @RunWith(DevSdkIgnoreRunner::class)
@@ -131,99 +102,10 @@ open class FromU<Type>(val value: Type)
 @NetworkStackModuleTest
 // ByteArray.toHexString is experimental API
 @kotlin.ExperimentalStdlibApi
-class ApfIntegrationTest {
+class ApfIntegrationTest : ApfTestBase() {
     companion object {
+        private val TAG = "ApfIntegrationTest"
         private val PING_DESTINATION = InetSocketAddress("2001:4860:4860::8888", 0)
-
-        private val context = InstrumentationRegistry.getInstrumentation().context
-        private val powerManager = context.getSystemService(PowerManager::class.java)!!
-        private val pm = context.packageManager
-        private val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG)
-        private var isLowPowerStandbyOriginalEnabled: Boolean = false
-        private var originalPolicy: FromU<PowerManager.LowPowerStandbyPolicy?>? = null
-
-        fun turnScreenOff() {
-            if (!wakeLock.isHeld()) wakeLock.acquire()
-            runShellCommandOrThrow("input keyevent KEYCODE_SLEEP")
-            waitForInteractiveState(false)
-        }
-
-        fun turnScreenOn() {
-            if (wakeLock.isHeld()) wakeLock.release()
-            runShellCommandOrThrow("input keyevent KEYCODE_WAKEUP")
-            waitForInteractiveState(true)
-        }
-
-        private fun waitForInteractiveState(interactive: Boolean) {
-            val result = pollingCheck(timeout_ms = 2000) {
-                powerManager.isInteractive()
-            }
-            assertThat(result).isEqualTo(interactive)
-        }
-
-        private fun disableLowPowerStandby() {
-            if (!SdkLevel.isAtLeastU()) {
-                return
-            }
-            runAsShell(permission.DEVICE_POWER) {
-                if (powerManager.isLowPowerStandbySupported) {
-                    isLowPowerStandbyOriginalEnabled = powerManager.isLowPowerStandbyEnabled
-                    originalPolicy = FromU(powerManager.lowPowerStandbyPolicy)
-                    powerManager.isLowPowerStandbyEnabled = false
-                    Log.i(TAG, "Low power standby is supported, disabling it temporary.")
-                }
-            }
-        }
-
-        private fun restoreLowPowerStandby() {
-            if (!SdkLevel.isAtLeastU()) {
-                return
-            }
-            runAsShell(permission.DEVICE_POWER) {
-                if (powerManager.isLowPowerStandbySupported) {
-                    powerManager.isLowPowerStandbyEnabled = isLowPowerStandbyOriginalEnabled
-                    powerManager.lowPowerStandbyPolicy = originalPolicy?.value
-                    Log.i(TAG, "Reset Low power standby to original state.")
-                }
-            }
-        }
-
-        @BeforeClass
-        @JvmStatic
-        @Suppress("ktlint:standard:no-multi-spaces")
-        fun setupOnce() {
-            // TODO: assertions thrown in @BeforeClass / @AfterClass are not well supported in the
-            // test infrastructure. Consider saving exception and throwing it in setUp().
-
-            if (pm.hasSystemFeature(FEATURE_AUTOMOTIVE)) {
-                // Skip on Android Automotive to avoid running unnecessary SLEEP/WAKEUP logic.
-                // Ideally, this would use assumeFalse(isAutomotive) here, but this isn't fully
-                // supported by the test infra (see comment above). Thus, the proper assumption
-                // check is later done in the #setup (@Before).
-                return
-            }
-
-            // TODO(b/450670091): Run APF tests on desktop devices once the feature is ready.
-            if (pm.hasSystemFeature(FEATURE_PC)) {
-                return
-            }
-
-            // APF must run when the screen is off and the device is not interactive.
-            turnScreenOff()
-
-            // Wait for APF to become active.
-            Thread.sleep(1000)
-            // TODO: check that there is no active wifi network. Otherwise, ApfFilter has already been
-            // created.
-            disableLowPowerStandby()
-        }
-
-        @AfterClass
-        @JvmStatic
-        fun tearDownOnce() {
-            turnScreenOn()
-            restoreLowPowerStandby()
-        }
     }
 
     class Icmp6PacketReader(
@@ -310,231 +192,106 @@ class ApfIntegrationTest {
         }
     }
 
-    @get:Rule val ignoreRule = DevSdkIgnoreRule()
-    @get:Rule val expect = Expect.create()
-
-    private val cm by lazy { context.getSystemService(ConnectivityManager::class.java)!! }
-    private lateinit var network: Network
-    private lateinit var ifname: String
-    private lateinit var networkCallback: TestableNetworkCallback
-    private lateinit var caps: ApfCapabilities
-    private val handlerThread = HandlerThread("$TAG handler thread").apply { start() }
-    private val handler = Handler(handlerThread.looper)
     private lateinit var packetReader: Icmp6PacketReader
 
-    fun getApfCapabilities(): ApfCapabilities {
-        val caps = runShellCommand("cmd network_stack apf $ifname capabilities").trim()
-        if (caps.isEmpty()) {
-            return ApfCapabilities(0, 0, 0)
-        }
-        val (version, maxLen, packetFormat) = caps.split(",").map { it.toInt() }
-        return ApfCapabilities(version, maxLen, packetFormat)
-    }
-
-    private fun isTvDeviceSupportFullNetworkingUnder2w(): Boolean {
-        return (pm.hasSystemFeature(FEATURE_LEANBACK) &&
-            pm.hasSystemFeature("com.google.android.tv.full_networking_under_2w"))
-    }
-
     @Before
-    fun setUp() {
-        assume().that(pm.hasSystemFeature(FEATURE_WIFI)).isTrue()
-
-        // Based on GTVS-16, Android Packet Filtering (APF) is OPTIONAL for devices that fully
-        // process all network packets on CPU at all times, even in standby, while meeting
-        // the <= 2W standby power demand requirement.
-        assumeFalse(
-            "Skipping test: TV device process full networking on CPU under 2W",
-            isTvDeviceSupportFullNetworkingUnder2w()
-        )
-
-        // APF GMS-VSR requirements don't apply to automotive devices. There is no power benefit to
-        // running APF on automotive as the device has almost infinite battery power.
-        assumeFalse("Skip test: automotive device", pm.hasSystemFeature(FEATURE_AUTOMOTIVE))
-
-        // TODO(b/450670091): Run APF tests on desktop devices once the feature is ready.
-        assumeFalse("Skip test: desktop device", pm.hasSystemFeature(FEATURE_PC))
-
-        networkCallback = TestableNetworkCallback()
-        cm.requestNetwork(
-                NetworkRequest.Builder()
-                        .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                        .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                        .build(),
-                networkCallback
-        )
-        network = networkCallback.expect<Available>().network
-        networkCallback.eventuallyExpect<LinkPropertiesChanged>(TIMEOUT_MS) {
-            ifname = assertNotNull(it.lp.interfaceName)
-            true
-        }
-        // It's possible the device does not support APF, in which case this command will not be
-        // successful. Ignore the error as testApfCapabilities() already asserts APF support on the
-        // respective VSR releases and all other tests are based on the capabilities indicated.
-        runShellCommand("cmd network_stack apf $ifname pause")
-        caps = getApfCapabilities()
-
+    override fun setUp() {
+        super.setUp()
         packetReader = Icmp6PacketReader(handler, network)
         packetReader.start()
     }
 
     @After
-    fun tearDown() {
+    override fun tearDown() {
         if (::packetReader.isInitialized) {
             packetReader.stop()
         }
-        handlerThread.quitSafely()
-        handlerThread.join()
-
-        if (::ifname.isInitialized) {
-            runShellCommand("cmd network_stack apf $ifname resume")
-        }
-        if (::networkCallback.isInitialized) {
-            cm.unregisterNetworkCallback(networkCallback)
-        }
+        super.tearDown()
     }
 
-    private fun shouldEnforceApfSupport(vsrApiLevel: Int): Boolean {
-        // Note: GMS-VSR requirements related to APFv4/APFv6 are only applicable to handheld
-        // and tablet devices. GTVS requirements related to APFv6 are only applicable to TV devices.
-        // For Wear OS devices, APFv4/APFv6 will not be enforced until Wear OS 7.
-        if (pm.hasSystemFeature(FEATURE_WATCH)) {
-            // Enforce APF on watch post VSR-16.
-            return vsrApiLevel > 202504
-        }
-        return vsrApiLevel >= 34
-    }
-
-    @VsrTest(
-        requirements = ["VSR-5.3.12-001", "VSR-5.3.12-003", "VSR-5.3.12-004", "VSR-5.3.12-009",
-            "VSR-5.3.12-012"]
-    )
-    @Test
-    fun testApfCapabilities() {
-        // If APF is supported, the version must be valid.
-        assertThat(caps.apfVersionSupported).isAnyOf(0, 2, 3, 4, 6000, 6100)
-        // APF became mandatory in Android 14 VSR.
-        val vsrApiLevel = getVsrApiLevel()
-        // If the firmware declares a version greater than or equal to 6000, it must properly
-        // support APFv6+.
-        if (caps.apfVersionSupported < 6000) {
-            assumeTrue(shouldEnforceApfSupport(vsrApiLevel))
-        }
-
-        // DEVICEs launching with Android 14 with CHIPSETs that set ro.board.first_api_level to 34:
-        // - [GMS-VSR-5.3.12-003] MUST return 4 or higher as the APF version number from calls to
-        //   the getApfPacketFilterCapabilities HAL method.
-        // - [GMS-VSR-5.3.12-004] MUST indicate at least 1024 bytes of usable memory from calls to
-        //   the getApfPacketFilterCapabilities HAL method.
-        // TODO: check whether above text should be changed "34 or higher"
-        assertThat(caps.apfVersionSupported).isAtLeast(4)
-        assertThat(caps.maximumApfProgramSize).isAtLeast(1024)
-
-        if (caps.apfVersionSupported > 4) {
-            assertThat(caps.maximumApfProgramSize).isAtLeast(2048)
-            assertThat(caps.apfVersionSupported).isAnyOf(6000, 6100) // v6.000 or v6.100
-        }
-
-        // DEVICEs launching with Android 15 (AOSP experimental) or higher with CHIPSETs that set
-        // ro.board.first_api_level or ro.board.api_level to 202404 or higher:
-        // - [GMS-VSR-5.3.12-009] MUST indicate at least 2048 bytes of usable memory from calls to
-        //   the getApfPacketFilterCapabilities HAL method.
-        if (vsrApiLevel >= 202404) {
-            assertThat(caps.maximumApfProgramSize).isAtLeast(2048)
-        }
-
-        // DEVICEs with CHIPSETs that set ro.board.first_api_level or ro.board.api_level to 202504
-        // or higher:
-        // - [VSR-5.3.12-018] MUST implement version 6 or version 6.1 of the Android Packet
-        //   Filtering (APF) interpreter in the Wi-Fi firmware.
-        // - [VSR-5.3.12-019] MUST provide at least 4000 bytes of APF RAM when version 6 is
-        //   implemented OR 3000 bytes when version 6.1 is implemented.
-        // - Note, the APF RAM requirement for APF version 6.1 will become 4000 bytes in Android 17
-        //   with CHIPSETs that set ro.board.first_api_level or ro.board.api_level to 202604 or
-        //   higher.
-        if (vsrApiLevel >= 202504) {
-            assertThat(caps.apfVersionSupported).isAnyOf(6000, 6100)
-            if (caps.apfVersionSupported == 6000) {
-                assertThat(caps.maximumApfProgramSize).isAtLeast(4000)
-            } else {
-                assertThat(caps.maximumApfProgramSize).isAtLeast(3000)
+    private data class TrafficSnapshot(
+        val rxBytes: Long,
+        val txBytes: Long,
+        val timeMs: Long
+    ) {
+        fun getThroughputKbps(prev: TrafficSnapshot): Double {
+            val totalBytesDiff = (rxBytes - prev.rxBytes) + (txBytes - prev.txBytes)
+            val timeDiffMs = timeMs - prev.timeMs
+            if (timeDiffMs <= 1000) {
+                fail(
+                    "Need to wait least 1 second to avoid hit cache: timeDiffMs=$timeDiffMs."
+                )
             }
+            return (totalBytesDiff * 8.0) / (timeDiffMs / 1000.0) / 1000.0
         }
 
-        // DEVICEs with CHIPSETs that set ro.board.first_api_level or ro.board.api_level to 202604
-        // or higher:
-        // - [GMS-VSR-5.3.12-020] MUST implement version 6.1 of the Android Packet Filtering (APF)
-        //   interpreter in the Wi-Fi firmware.
-        // - [GMS-VSR-5.3.12-021] MUST provide at least 4000 bytes of APF RAM.
-        if (vsrApiLevel >= 202604) {
-            assertThat(caps.apfVersionSupported).isEqualTo(6100)
-            assertThat(caps.maximumApfProgramSize).isAtLeast(4000)
+        fun isUnsupported(): Boolean {
+            return rxBytes == TrafficStats.UNSUPPORTED.toLong() ||
+                    txBytes == TrafficStats.UNSUPPORTED.toLong()
         }
 
-        // ApfFilter does not support anything but ARPHRD_ETHER.
-        assertThat(caps.apfPacketFormat).isEqualTo(OsConstants.ARPHRD_ETHER)
+        override fun toString(): String = "rx=$rxBytes tx=$txBytes"
+
+        companion object {
+            fun capture(ifname: String) = TrafficSnapshot(
+                TrafficStats.getRxBytes(ifname),
+                TrafficStats.getTxBytes(ifname),
+                SystemClock.elapsedRealtime()
+            )
+        }
     }
 
-    // APF is backwards compatible, i.e. a v6 interpreter supports both v2 and v4 functionality.
-    fun assumeApfVersionSupportAtLeast(version: Int) {
-        assume().that(caps.apfVersionSupported).isAtLeast(version)
-    }
+    /**
+     * Wait for network traffic on the test interface to be low enough for APF to be active.
+     * Polls traffic every 2 seconds. Fails if traffic exceeds threshold after all retries.
+     *
+     * Note: This method will wait at least 2 seconds to measure traffic.
+     */
+    fun waitForLowTraffic() {
+        var prev = TrafficSnapshot.capture(ifname)
+        Log.i(TAG, "$ifname initial TrafficStats: $prev")
 
-    fun assumeNotCuttlefish() {
-        assume().that(SystemProperties.get("ro.product.board", "")).isNotEqualTo("cutf")
-    }
-
-    fun installProgram(bytes: ByteArray) {
-        val prog = bytes.toHexString()
-        val result = runShellCommandOrThrow("cmd network_stack apf $ifname install $prog").trim()
-        // runShellCommandOrThrow only throws on S+.
-        assertThat(result).isEqualTo("success")
-    }
-
-    fun readProgram(): ByteArray {
-        val progHexString = runShellCommandOrThrow("cmd network_stack apf $ifname read").trim()
-        // runShellCommandOrThrow only throws on S+.
-        assertThat(progHexString).isNotEmpty()
-        return HexDump.hexStringToByteArray(progHexString)
-    }
-
-    @VsrTest(
-            requirements = ["VSR-5.3.12-007", "VSR-5.3.12-008", "VSR-5.3.12-010", "VSR-5.3.12-011"]
-    )
-    @SkipPresubmit(reason = "This test takes longer than 1 minute, do not run it on presubmit.")
-    // APF integration is mostly broken before V, only run the full read / write test on V+.
-    @IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    // Increase timeout for test to 20 minutes to accommodate device with large APF RAM.
-    @Test(timeout = 20 * 60 * 1000)
-    fun testReadWriteProgram() {
-        assumeApfVersionSupportAtLeast(4)
-
-        val minReadWriteSize = if (getFirstApiLevel() >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            2
-        } else {
-            8
+        if (prev.isUnsupported()) {
+            fail("TrafficStats unsupported for $ifname")
         }
 
-        // The minReadWriteSize is 2 bytes. The first byte always stays PASS.
-        val program = ByteArray(caps.maximumApfProgramSize)
-        for (i in caps.maximumApfProgramSize downTo minReadWriteSize) {
-            // Randomize bytes in range [1, i). And install first [0, i) bytes of program.
-            // Note that only the very first instruction (PASS) is valid APF bytecode.
-            Random.nextBytes(program, 1 /* fromIndex */, i /* toIndex */)
-            installProgram(program.sliceArray(0..<i))
+        for (i in 0 until MAX_POLLING_ATTEMPTS) {
+            Thread.sleep(POLLING_INTERVAL_MS)
 
-            // Compare entire memory region.
-            val readResult = readProgram()
-            val errMsg = """
-                read/write $i byte prog failed.
-                In APFv4, the APF memory region MUST NOT be modified or cleared except by APF
-                instructions executed by the interpreter or by Android OS calls to the HAL. If this
-                requirement cannot be met, the firmware cannot declare that it supports APFv4 and
-                it should declare that it only supports APFv3(if counter is partially supported) or
-                APFv2.
-            """.trimIndent()
-            assertWithMessage(errMsg).that(readResult).isEqualTo(program)
+            val current = TrafficSnapshot.capture(ifname)
+            Log.i(
+                TAG,
+                "$ifname TrafficStats (attempt ${i + 1}/$MAX_POLLING_ATTEMPTS): $current"
+            )
+
+            val throughputKbps = current.getThroughputKbps(prev)
+            val rxDiff = current.rxBytes - prev.rxBytes
+            val txDiff = current.txBytes - prev.txBytes
+
+            Log.i(
+                TAG,
+                "$ifname throughput (${i + 1}/$MAX_POLLING_ATTEMPTS) " +
+                        "after ${POLLING_INTERVAL_MS}ms: " +
+                        "${"%.2f".format(throughputKbps)} Kbps " +
+                        "(rxDiff=$rxDiff txDiff=$txDiff)."
+            )
+
+            if (throughputKbps < TRAFFIC_THRESHOLD_KBPS) {
+                Log.i(
+                    TAG,
+                    "$ifname traffic below threshold ${TRAFFIC_THRESHOLD_KBPS}kbps after " +
+                            "${POLLING_INTERVAL_MS}ms; continuing"
+                )
+                return
+            }
+
+            prev = current
         }
+
+        fail(
+            "Background traffic on $ifname exceeded $TRAFFIC_THRESHOLD_KBPS Kbps after retries. " +
+            "APF requires low traffic. Ensure no background traffic during test."
+        )
     }
 
     private fun installAndVerifyProgram(program: ByteArray) {
@@ -573,6 +330,8 @@ class ApfIntegrationTest {
         }
         assumeApfVersionSupportAtLeast(4)
         assumeNotCuttlefish()
+
+        waitForLowTraffic()
 
         // clear any active APF filter
         clearApfMemory()
@@ -645,6 +404,9 @@ class ApfIntegrationTest {
         // Test v4 memory slots on both v4 and v6 interpreters.
         assumeApfVersionSupportAtLeast(4)
         assumeNotCuttlefish()
+
+        waitForLowTraffic()
+
         clearApfMemory()
         val gen = ApfV4Generator(
                 caps.apfVersionSupported,
@@ -716,6 +478,9 @@ class ApfIntegrationTest {
         }
         assumeApfVersionSupportAtLeast(4)
         assumeNotCuttlefish()
+
+        waitForLowTraffic()
+
         clearApfMemory()
         val gen = ApfV4Generator(
                 caps.apfVersionSupported,
@@ -760,6 +525,9 @@ class ApfIntegrationTest {
     fun testFilterAge16384thsIncreasesBetweenPackets() {
         assumeApfVersionSupportAtLeast(6000)
         assumeNotCuttlefish()
+
+        waitForLowTraffic()
+
         clearApfMemory()
         val gen = ApfV6Generator(
                 caps.apfVersionSupported,
@@ -811,6 +579,9 @@ class ApfIntegrationTest {
     fun testReplyPing() {
         assumeApfVersionSupportAtLeast(6000)
         assumeNotCuttlefish()
+
+        waitForLowTraffic()
+
         installProgram(ByteArray(caps.maximumApfProgramSize) { 0 }) // Clear previous program
         readProgram() // Ensure installation is complete
 

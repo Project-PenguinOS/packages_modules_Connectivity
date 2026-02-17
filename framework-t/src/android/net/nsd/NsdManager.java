@@ -20,9 +20,10 @@ import static android.Manifest.permission.NETWORK_SETTINGS;
 import static android.Manifest.permission.NETWORK_STACK;
 import static android.Manifest.permission.REGISTER_NSD_OFFLOAD_ENGINE;
 import static android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK;
-import static android.net.connectivity.ConnectivityCompatChanges.ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS;
 import static android.net.connectivity.ConnectivityCompatChanges.ENABLE_PLATFORM_MDNS_BACKEND;
 import static android.net.connectivity.ConnectivityCompatChanges.RUN_NATIVE_NSD_ONLY_IF_LEGACY_APPS_T_AND_LATER;
+
+import static com.android.tethering.flags.Flags.FLAG_NSD_SERVICE_PICKER;
 
 import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
@@ -31,6 +32,7 @@ import android.annotation.Nullable;
 import android.annotation.RequiresPermission;
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
+import android.annotation.SuppressLint;
 import android.annotation.SystemApi;
 import android.annotation.SystemService;
 import android.app.compat.CompatChanges;
@@ -40,10 +42,12 @@ import android.net.ConnectivityManager.NetworkCallback;
 import android.net.ConnectivityThread;
 import android.net.Network;
 import android.net.NetworkRequest;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
+import android.os.ResultReceiver;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
@@ -62,6 +66,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.util.ArrayList;
 import java.util.Objects;
 import java.util.concurrent.Executor;
+import java.util.function.IntConsumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -300,20 +305,26 @@ public final class NsdManager {
     /** @hide */
     public static final int REGISTER_SERVICE_CALLBACK_FAILED        = 28;
     /** @hide */
-    public static final int SERVICE_UPDATED                         = 29;
+    public static final int REGISTER_SERVICE_CALLBACK_SUCCEEDED     = 29;
     /** @hide */
-    public static final int SERVICE_UPDATED_LOST                    = 30;
+    public static final int SERVICE_UPDATED                         = 30;
+    /** @hide */
+    public static final int SERVICE_UPDATED_LOST                    = 31;
 
     /** @hide */
-    public static final int UNREGISTER_SERVICE_CALLBACK             = 31;
+    public static final int UNREGISTER_SERVICE_CALLBACK             = 32;
     /** @hide */
-    public static final int UNREGISTER_SERVICE_CALLBACK_SUCCEEDED   = 32;
+    public static final int UNREGISTER_SERVICE_CALLBACK_SUCCEEDED   = 33;
     /** @hide */
-    public static final int REGISTER_OFFLOAD_ENGINE                 = 33;
+    public static final int REGISTER_OFFLOAD_ENGINE                 = 34;
     /** @hide */
-    public static final int UNREGISTER_OFFLOAD_ENGINE               = 34;
+    public static final int UNREGISTER_OFFLOAD_ENGINE               = 35;
     /** @hide */
-    public static final int INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE    = 35;
+    public static final int INJECT_PROXY_OFFLOAD_ENGINE_RESPONSE    = 36;
+    /** @hide */
+    public static final int CHECK_PERMISSION_FOR_SERVICE            = 37;
+    /** @hide */
+    public static final int OFFLOAD_ENGINE_SERVICE_INFO_UPDATE      = 38;
 
     /** Dns based service discovery protocol */
     public static final int PROTOCOL_DNS_SD = 0x0001;
@@ -366,6 +377,7 @@ public final class NsdManager {
         EVENT_NAMES.put(STOP_RESOLUTION_SUCCEEDED, "STOP_RESOLUTION_SUCCEEDED");
         EVENT_NAMES.put(REGISTER_SERVICE_CALLBACK, "REGISTER_SERVICE_CALLBACK");
         EVENT_NAMES.put(REGISTER_SERVICE_CALLBACK_FAILED, "REGISTER_SERVICE_CALLBACK_FAILED");
+        EVENT_NAMES.put(REGISTER_SERVICE_CALLBACK_SUCCEEDED, "REGISTER_SERVICE_CALLBACK_SUCCEEDED");
         EVENT_NAMES.put(SERVICE_UPDATED, "SERVICE_UPDATED");
         EVENT_NAMES.put(UNREGISTER_SERVICE_CALLBACK, "UNREGISTER_SERVICE_CALLBACK");
         EVENT_NAMES.put(UNREGISTER_SERVICE_CALLBACK_SUCCEEDED,
@@ -430,27 +442,39 @@ public final class NsdManager {
     }
 
     /**
-     * Registers an OffloadEngine with NsdManager.
+     * Registers an {@link OffloadEngine} with the NsdManager to handle mDNS offloading.
      *
-     * A caller can register itself as an OffloadEngine if it supports mDns hardware offload.
-     * The caller must implement the {@link OffloadEngine} interface and update hardware offload
-     * state property when the {@link OffloadEngine#onOffloadServiceUpdated} and
-     * {@link OffloadEngine#onOffloadServiceRemoved} callback are called. Multiple engines may be
-     * registered for the same interface, and that the same engine cannot be registered twice.
+     * <p>This method allows components to register as an mDNS offload engine if they can handle
+     * mDNS operations on an interface on behalf of the system, such as filtering, sending or
+     * receiving packets.
      *
-     * @param ifaceName  indicates which network interface the hardware offload runs on
-     * @param offloadType    the type of offload that the offload engine support
-     * @param offloadCapability    the capabilities of the offload engine
-     * @param executor   the executor on which to receive the offload callbacks
-     * @param engine     the OffloadEngine that will receive the offload callbacks
-     * @throws IllegalStateException if the engine is already registered.
+     * <p>The NsdManager will invoke {@link OffloadEngine#onOffloadServiceUpdated} and
+     * {@link OffloadEngine#onOffloadServiceRemoved} on the registered {@code engine}. The engine is
+     * expected to handle these events, for example, by updating hardware offload configurations
+     * or generating appropriate mDNS responses.
+     *
+     * <p>To inject generated mDNS responses back into the NsdManager, the engine should use the
+     * {@link OffloadSession} instance provided via the
+     * {@link OffloadEngine#onOffloadSessionCreated} callback.
+     *
+     * <p>It is possible to register multiple different {@code OffloadEngine} instances for the same
+     * network interface ({@code ifaceName}). However, attempting to register the exact same
+     * {@code engine} instance more than once will result in an exception.
+     *
+     * @param ifaceName The name of the network interface on which the offload engine operates.
+     * @param offloadType The type of mDNS offload supported by the engine.
+     * @param offloadCapability The specific capabilities of the offload engine.
+     * @param executor The Executor on which the {@link OffloadEngine} callbacks will be invoked.
+     * @param engine The {@link OffloadEngine} instance being registered.
+     * @throws IllegalStateException if the provided {@code engine} instance is already registered.
      *
      * @hide
      */
     @FlaggedApi(Flags.FLAG_REGISTER_NSD_OFFLOAD_ENGINE_API)
     @SystemApi
-    @RequiresPermission(anyOf = {NETWORK_SETTINGS, PERMISSION_MAINLINE_NETWORK_STACK,
-            NETWORK_STACK})
+    @RequiresPermission(
+            anyOf = {NETWORK_SETTINGS, PERMISSION_MAINLINE_NETWORK_STACK, NETWORK_STACK}
+    )
     public void registerOffloadEngine(@NonNull String ifaceName,
             @OffloadEngine.OffloadType long offloadType,
             @OffloadEngine.OffloadCapability long offloadCapability, @NonNull Executor executor,
@@ -458,61 +482,26 @@ public final class NsdManager {
         final OffloadEngineProxy cbImpl = createOffloadEngineProxy(ifaceName, executor,
                 engine);
         try {
+            OffloadSession session = createOffloadSession(ifaceName, cbImpl);
+            executor.execute(() -> engine.onOffloadSessionCreated(session));
             mService.registerOffloadEngine(ifaceName, cbImpl, offloadCapability, offloadType);
         } catch (RemoteException e) {
             e.rethrowFromSystemServer();
         }
     }
 
-    /**
-     * Registers a OffloadEngine Session with NsdManager.
-     *
-     * A caller can register itself as an OffloadEngine if it supports generating replies to mDns
-     * queries. The caller must implement the {@link OffloadEngine} interface and generate the mDNS
-     * reply when the {@link OffloadEngine#onOffloadServiceUpdated} and
-     * {@link OffloadEngine#onOffloadServiceRemoved} callback are called. Multiple engines may be
-     * registered for the same interface, and the same engine cannot be registered twice.
-     *
-     * @param ifaceName  indicates which network interface the hardware offload runs on
-     * @param offloadType    the type of offload that the offload engine support
-     * @param offloadCapability    the capabilities of the offload engine
-     * @param executor   the executor on which to receive the offload callbacks
-     * @param engine     the OffloadEngine that will receive the offload callbacks
-     * @throws IllegalStateException if the engine is already registered.
-     *
-     * @hide
-     */
-    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD)
-    @SystemApi
-    @RequiresPermission(
-            anyOf = {NETWORK_SETTINGS, PERMISSION_MAINLINE_NETWORK_STACK,
-                    NETWORK_STACK, REGISTER_NSD_OFFLOAD_ENGINE}
-    )
-    @Nullable
-    public OffloadSession registerOffloadSession(@NonNull String ifaceName,
-            @OffloadEngine.OffloadType long offloadType,
-            @OffloadEngine.OffloadCapability long offloadCapability, @NonNull Executor executor,
-            @NonNull OffloadEngine engine) {
-        final OffloadEngineProxy cbImpl = createOffloadEngineProxy(
-                ifaceName,
-                executor,
-                engine
-        );
-
-        try {
-            mService.registerOffloadEngine(ifaceName, cbImpl, offloadCapability, offloadType);
-        } catch (RemoteException e) {
-            e.rethrowFromSystemServer();
-        }
-
+    private OffloadSession createOffloadSession(String ifaceName, OffloadEngineProxy proxy) {
         return new OffloadSession() {
 
             @Override
             @RequiresPermission(
                     anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
             )
-            public void onServiceFound(@NonNull NsdServiceInfo nsdServiceInfo) {
-                NsdServiceInfo serviceFoundServiceInfo = new NsdServiceInfo(
+            public void notifyServiceFound(@NonNull NsdServiceInfo nsdServiceInfo) {
+                String serviceType = nsdServiceInfo.getServiceType();
+                String updatedServiceType = parseDiscoveryServiceType(serviceType);
+                nsdServiceInfo.setServiceType(updatedServiceType);
+                final NsdServiceInfo serviceFoundServiceInfo = new NsdServiceInfo(
                         nsdServiceInfo.getServiceName(),
                         nsdServiceInfo.getServiceType()
                 );
@@ -524,16 +513,57 @@ public final class NsdManager {
             @RequiresPermission(
                     anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
             )
-            public void onServiceUpdated(@NonNull NsdServiceInfo nsdServiceInfo) {
-                handleOffloadedServiceInfoResponse(nsdServiceInfo, false);
+            public void notifyServiceUpdated(@NonNull NsdServiceInfo nsdServiceInfo) {
+                // As per contract for ServiceInfoCallback#onServiceUpdated,
+                // OffloadSession#notifyServiceUpdated should not contain "." as a suffix.
+                String serviceType = nsdServiceInfo.getServiceType();
+                if (TextUtils.isEmpty(serviceType)
+                        || serviceType.endsWith(".")) {
+                    throw new IllegalArgumentException("Invalid Service type = " + serviceType);
+                }
+                final NsdServiceInfo serviceUpdatedServiceInfo = new NsdServiceInfo(nsdServiceInfo);
+                handleOffloadedServiceInfoResponse(serviceUpdatedServiceInfo, false);
             }
 
             @Override
             @RequiresPermission(
                     anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
             )
-            public void onServiceLost(@NonNull NsdServiceInfo nsdServiceInfo) {
-                handleOffloadedServiceInfoResponse(nsdServiceInfo, true);
+            public void notifyServiceLost(@NonNull NsdServiceInfo nsdServiceInfo) {
+                String serviceType = nsdServiceInfo.getServiceType();
+                String updatedServiceType = parseDiscoveryServiceType(serviceType);
+                nsdServiceInfo.setServiceType(updatedServiceType);
+                final NsdServiceInfo serviceLostServiceInfo = new NsdServiceInfo(nsdServiceInfo);
+                handleOffloadedServiceInfoResponse(serviceLostServiceInfo, true);
+            }
+
+            @Override
+            @RequiresPermission(
+                    anyOf = {NETWORK_SETTINGS, REGISTER_NSD_OFFLOAD_ENGINE}
+            )
+            public void close() {
+                unregisterOffloadEngineInternal(proxy.mEngine);
+            }
+
+            /**
+             * Parses and validates the service type received from discovery.
+             *
+             * <p>As per the contract for {@link DiscoveryListener#onServiceFound} and
+             * {@link DiscoveryListener#onServiceLost}, the service type in
+             * {@link OffloadSession#notifyServiceFound} and
+             * {@link OffloadSession#notifyServiceLost} should contain a "." as a suffix.
+             *
+             * @param serviceType the service type to be parsed and validated
+             * @return the parsed service type with the trailing dot removed
+             * @throws IllegalArgumentException if the {@code serviceType} is empty or does
+             *     not end with a dot as a suffix
+             */
+            private static String parseDiscoveryServiceType(String serviceType) {
+                if (TextUtils.isEmpty(serviceType)
+                        || !serviceType.endsWith(".")) {
+                    throw new IllegalArgumentException("Invalid Service type = " + serviceType);
+                }
+                return serviceType.substring(0, serviceType.length() - 1);
             }
 
             private void handleOffloadedServiceInfoResponse(
@@ -541,14 +571,18 @@ public final class NsdManager {
                     boolean isServiceLost
             ) {
                 try {
-                    if (isOffloadEngineRegistered(engine)) {
+                    if (TextUtils.isEmpty(nsdServiceInfo.getServiceType())) {
+                        throw new IllegalArgumentException("Service type cannot be null.");
+                    }
+                    if (isOffloadEngineRegistered(proxy.mEngine)) {
+                        Log.d(TAG, "ServiceInfo injected is " + nsdServiceInfo);
                         mService.injectOffloadEngineResponse(
                                 nsdServiceInfo,
                                 isServiceLost,
                                 ifaceName
                         );
                     } else {
-                        throw new IllegalStateException("This engine is not registered");
+                        Log.w(TAG, "This engine is not registered, hence ignoring the call");
                     }
                 } catch (RemoteException e) {
                     e.rethrowFromSystemServer();
@@ -586,12 +620,14 @@ public final class NsdManager {
     /**
      * Unregisters an OffloadEngine from NsdService.
      *
-     * A caller can unregister itself as an OffloadEngine when it doesn't want to receive the
+     * <p>A caller can unregister itself as an OffloadEngine when it doesn't want to receive the
      * callback anymore. The OffloadEngine must have been previously registered with the system
      * using the {@link NsdManager#registerOffloadEngine} method.
      *
-     * @param engine OffloadEngine object to be removed from NsdService
-     * @throws IllegalStateException if the engine is not registered.
+     * <p>Starting from the 26Q2 SDK extension if the specified engine is not currently registered,
+     * or if it has already been unregistered, calling this method is a no-op.
+     *
+     * @param engine OffloadEngine object to be removed from NsdService.
      *
      * @hide
      */
@@ -600,13 +636,18 @@ public final class NsdManager {
     @RequiresPermission(anyOf = {NETWORK_SETTINGS, PERMISSION_MAINLINE_NETWORK_STACK,
             NETWORK_STACK})
     public void unregisterOffloadEngine(@NonNull OffloadEngine engine) {
+        unregisterOffloadEngineInternal(engine);
+    }
+
+    private void unregisterOffloadEngineInternal(OffloadEngine engine) {
         Objects.requireNonNull(engine);
         final OffloadEngineProxy cbImpl;
         synchronized (mOffloadEngines) {
             final int index = CollectionUtils.indexOf(mOffloadEngines,
                     impl -> impl.mEngine == engine);
             if (index < 0) {
-                throw new IllegalStateException("This engine is not registered");
+                Log.w(TAG, "This engine is not registered, hence ignoring the call");
+                return;
             }
             cbImpl = mOffloadEngines.remove(index);
         }
@@ -953,13 +994,18 @@ public final class NsdManager {
         }
 
         @Override
+        public void onServiceInfoCallbackRegistered(int listenerKey) {
+            sendNoArg(REGISTER_SERVICE_CALLBACK_SUCCEEDED, listenerKey);
+        }
+
+        @Override
         public void onServiceUpdated(int listenerKey, NsdServiceInfo info) {
             sendInfo(SERVICE_UPDATED, listenerKey, info);
         }
 
         @Override
-        public void onServiceUpdatedLost(int listenerKey) {
-            sendNoArg(SERVICE_UPDATED_LOST, listenerKey);
+        public void onServiceUpdatedLost(int listenerKey, NsdServiceInfo info) {
+            sendInfo(SERVICE_UPDATED_LOST, listenerKey, info);
         }
 
         @Override
@@ -1006,7 +1052,7 @@ public final class NsdManager {
     /**
      * Indicates that the operation failed because the caller did not have the required permissions.
      * This can happen when trying to perform resolution, discovery, or callback registration
-     * without the {@link android.Manifest.permission.ACCESS_LOCAL_NETWORK} permission.
+     * without the {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK} permission.
      *
      * This failure is passed with {@link ResolveListener#onResolveFailed},
      * {@link DiscoveryListener#onStartDiscoveryFailed}, or
@@ -1028,9 +1074,37 @@ public final class NsdManager {
     @IntDef(value = {
             FAILURE_ALREADY_ACTIVE,
             FAILURE_BAD_PARAMETERS,
+            FAILURE_PERMISSION_DENIED
     })
     public @interface ResolutionFailureCode {
     }
+
+    /** @hide */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(value = {
+            SERVICE_PERMISSION_GRANTED,
+            SERVICE_PERMISSION_DENIED,
+    })
+    public @interface PermissionCheckCode {
+    }
+
+    /**
+     * Indicates the caller can register service info callbacks or resolve a service.
+     *
+     * <p>This is a result code for
+     * {@link #checkPermissionForService(String, String, Executor, IntConsumer)}.
+     */
+    @FlaggedApi(android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    public static final int SERVICE_PERMISSION_GRANTED = 1;
+
+    /**
+     * Indicates the caller is not allowed to register service info callbacks or resolve a service.
+     *
+     * <p>This is a result code for
+     * {@link #checkPermissionForService(String, String, Executor, IntConsumer)}.
+     */
+    @FlaggedApi(android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    public static final int SERVICE_PERMISSION_DENIED = 2;
 
     /** Interface for callback invocation for service discovery */
     public interface DiscoveryListener {
@@ -1112,6 +1186,16 @@ public final class NsdManager {
      * {@link NsdManager#unregisterServiceInfoCallback} to stop listening.
      */
     public interface ServiceInfoCallback {
+        /**
+         * Reports that the callback was successfully registered.
+         *
+         * <p>Called on the executor passed to {@link NsdManager#registerServiceInfoCallback}.
+         *
+         * <p>This indicates that onServiceInfoCallbackRegistrationFailed will not be called, and
+         * service update callbacks will be sent.
+         */
+        @FlaggedApi(FLAG_NSD_SERVICE_PICKER)
+        default void onServiceInfoCallbackRegistered() {}
 
         /**
          * Reports that registering the callback failed with an error.
@@ -1130,17 +1214,63 @@ public final class NsdManager {
          * service updates will be notified via this callback until
          * {@link NsdManager#unregisterServiceInfoCallback} is called. This will only be called once
          * the service is found, so may never be called if the service is never present.
+         *
+         * <p>For each service (as identified by {@link NsdServiceInfo#getServiceName()}) and
+         * network (as per {@link NsdServiceInfo#getNetwork()}), this will be called when the
+         * service is first found on the {@link Network}, and then every time {@link NsdServiceInfo}
+         * is updated for that service.
+         *
+         * <p>Note the same service name may be found multiple times on different networks, if
+         * {@link DiscoveryRequest#getNetwork()} (when registered via
+         * {@link #registerServiceInfoCallback(DiscoveryRequest, Executor, ServiceInfoCallback)}) or
+         * {@link NsdServiceInfo#getNetwork()} (when registered via
+         * {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)}) was
+         * not specified. The {@link NsdServiceInfo} contents may differ in that
+         * case; in particular {@link NsdServiceInfo#getHostAddresses()} may depend on the network.
          */
         void onServiceUpdated(@NonNull NsdServiceInfo serviceInfo);
 
         /**
          * Reports when the service that this callback listens to becomes unavailable.
          *
-         * Called on the executor passed to {@link NsdManager#registerServiceInfoCallback}. The
+         * <p>Called on the executor passed to {@link NsdManager#registerServiceInfoCallback}. The
          * service may become available again, in which case {@link #onServiceUpdated} will be
          * called.
+         *
+         * <p>This method is never called if {@link #onServiceLost(NsdServiceInfo)} is implemented.
+         *
+         * <p>When registering through
+         * {@link #registerServiceInfoCallback(DiscoveryRequest, Executor, ServiceInfoCallback)},
+         * {@link #onServiceLost(NsdServiceInfo)} should be used instead, as multiple services
+         * may be found and this method does not indicate which one was lost.
+         *
+         * <p>Additionally, when registering through
+         * {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)}, if
+         * {@link NsdServiceInfo#getNetwork()} is null, the service may be found on multiple
+         * networks, so {@link #onServiceLost(NsdServiceInfo)} should also be preferred as it
+         * allows identifying on which network the service was lost.
          */
         void onServiceLost();
+
+        /**
+         * Reports when the service that this callback listens to becomes unavailable.
+         *
+         * <p>Called on the executor passed to {@link NsdManager#registerServiceInfoCallback}. The
+         * service may become available again, in which case {@link #onServiceUpdated} will be
+         * called.
+         *
+         * <p>This is called every time a service (as per {@link NsdServiceInfo#getServiceName()})
+         * is lost on any {@link Network} (as per {@link NsdServiceInfo#getNetwork()}) on which it
+         * was previously discovered. Therefore, this method may be called multiple times for a
+         * given service name, if multiple {@link #onServiceUpdated(NsdServiceInfo)} callbacks were
+         * received for that service name on different networks.
+         *
+         * @param serviceInfo The service that was lost.
+         */
+        @FlaggedApi(FLAG_NSD_SERVICE_PICKER)
+        default void onServiceLost(@NonNull NsdServiceInfo serviceInfo) {
+            onServiceLost();
+        }
 
         /**
          * Reports that service info updates have stopped.
@@ -1191,13 +1321,29 @@ public final class NsdManager {
             }
             switch (what) {
                 case DISCOVER_SERVICES_STARTED:
+                    // DiscoveryListener and ServiceInfoCallback with DiscoveryRequest use the same
+                    // registration code path as they have the same discovery options.
                     final String s = getNsdServiceInfoType((DiscoveryRequest) obj);
-                    executor.execute(() -> ((DiscoveryListener) listener).onDiscoveryStarted(s));
+                    if (listener instanceof DiscoveryListener) {
+                        executor.execute(() -> ((DiscoveryListener) listener)
+                                .onDiscoveryStarted(s));
+                    } else {
+                        executor.execute(() -> ((ServiceInfoCallback) listener)
+                                .onServiceInfoCallbackRegistered());
+                    }
                     break;
                 case DISCOVER_SERVICES_FAILED:
                     removeListener(key);
-                    executor.execute(() -> ((DiscoveryListener) listener).onStartDiscoveryFailed(
-                            getNsdServiceInfoType(discoveryRequest), errorCode));
+                    // DiscoveryListener and ServiceInfoCallback with DiscoveryRequest use the same
+                    // registration code path as they have the same discovery options.
+                    if (listener instanceof DiscoveryListener) {
+                        executor.execute(() -> ((DiscoveryListener) listener)
+                                .onStartDiscoveryFailed(getNsdServiceInfoType(
+                                        discoveryRequest), errorCode));
+                    } else {
+                        executor.execute(() -> ((ServiceInfoCallback) listener)
+                                .onServiceInfoCallbackRegistrationFailed(errorCode));
+                    }
                     break;
                 case SERVICE_FOUND:
                     executor.execute(() -> ((DiscoveryListener) listener).onServiceFound(
@@ -1216,8 +1362,13 @@ public final class NsdManager {
                     break;
                 case STOP_DISCOVERY_SUCCEEDED:
                     removeListener(key);
-                    executor.execute(() -> ((DiscoveryListener) listener).onDiscoveryStopped(
-                            getNsdServiceInfoType(discoveryRequest)));
+                    if (listener instanceof DiscoveryListener) {
+                        executor.execute(() -> ((DiscoveryListener) listener).onDiscoveryStopped(
+                                getNsdServiceInfoType(discoveryRequest)));
+                    } else {
+                        executor.execute(() -> ((ServiceInfoCallback) listener)
+                                .onServiceInfoCallbackUnregistered());
+                    }
                     break;
                 case REGISTER_SERVICE_FAILED:
                     removeListener(key);
@@ -1265,12 +1416,17 @@ public final class NsdManager {
                     executor.execute(() -> ((ServiceInfoCallback) listener)
                             .onServiceInfoCallbackRegistrationFailed(errorCode));
                     break;
+                case REGISTER_SERVICE_CALLBACK_SUCCEEDED:
+                    executor.execute(() -> ((ServiceInfoCallback) listener)
+                            .onServiceInfoCallbackRegistered());
+                    break;
                 case SERVICE_UPDATED:
                     executor.execute(() -> ((ServiceInfoCallback) listener)
                             .onServiceUpdated((NsdServiceInfo) obj));
                     break;
                 case SERVICE_UPDATED_LOST:
-                    executor.execute(() -> ((ServiceInfoCallback) listener).onServiceLost());
+                    executor.execute(() -> ((ServiceInfoCallback) listener)
+                            .onServiceLost((NsdServiceInfo) obj));
                     break;
                 case UNREGISTER_SERVICE_CALLBACK_SUCCEEDED:
                     removeListener(key);
@@ -1343,8 +1499,7 @@ public final class NsdManager {
         synchronized (mMapLock) {
             int valueIndex = mListenerMap.indexOfValue(listener);
             if (valueIndex == -1) {
-                if (ignoreNotFound && CompatChanges.isChangeEnabled(
-                        ALLOW_UNREGISTER_INACTIVE_NSD_MANAGER_LISTENERS)) {
+                if (ignoreNotFound) {
                     return -1;
                 }
                 throw new IllegalArgumentException("listener not registered");
@@ -1520,9 +1675,8 @@ public final class NsdManager {
      * there is no entirely reliable way to know when a listener may be re-used, and a new
      * listener should be created for each service registration request.
      *
-     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
-     * running on devices with T SDK extension < 21, this will throw with
-     * {@link IllegalArgumentException}.
+     * <p>If the listener is not already registered, for apps running on devices with T SDK
+     * extension < 22, this will throw with {@link IllegalArgumentException}.
      */
     public void unregisterService(RegistrationListener listener) {
         int id = getListenerKey(listener, /* ignoreNotFound= */true);
@@ -1711,9 +1865,8 @@ public final class NsdManager {
      * <p> Upon failure to stop service discovery, application is notified through
      * {@link DiscoveryListener#onStopDiscoveryFailed}.
      *
-     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
-     * running on devices with T SDK extension < 21, this will throw with
-     * {@link IllegalArgumentException}.
+     * <p>If the listener is not already registered, for apps running on devices with T SDK
+     * extension < 22, this will throw with {@link IllegalArgumentException}.
      *
      * @param listener This should be the listener object that was passed to {@link #discoverServices}.
      * It identifies the discovery that should be stopped and notifies of a successful or
@@ -1795,9 +1948,8 @@ public final class NsdManager {
      * requester stops resolution repeatedly, the application is notified
      * {@link ResolveListener#onStopResolutionFailed} with {@link #FAILURE_OPERATION_NOT_RUNNING}
      *
-     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
-     * running on devices with T SDK extension < 21, this will throw with
-     * {@link IllegalArgumentException}.
+     * <p>If the listener is not already registered, for apps running on devices with T SDK
+     * extension < 22, this will throw with {@link IllegalArgumentException}.
      *
      * @param listener This should be a listener object that was passed to {@link #resolveService}.
      *                 It identifies the resolution that should be stopped and notifies of a
@@ -1822,9 +1974,9 @@ public final class NsdManager {
      *
      * This is different from {@link #resolveService} which provides one shot service information.
      *
-     * <p> An application can listen to a service once a time. It needs to cancel the registration
-     * before registering other callbacks. Upon failure to register a callback for example if
-     * it's a duplicated registration, the application is notified through
+     * <p>This API listens to updates for one service at a time. Applications need to cancel the
+     * registration before registering the same callback instance again. Upon failure to register a
+     * callback for example if it's a duplicated registration, the application is notified through
      * {@link ServiceInfoCallback#onServiceInfoCallbackRegistrationFailed} with
      * {@link #FAILURE_BAD_PARAMETERS}.
      *
@@ -1845,15 +1997,51 @@ public final class NsdManager {
     }
 
     /**
+     * Register a callback to discover and track updates of services.
+     *
+     * <p>This method combines
+     * {@link #discoverServices(DiscoveryRequest, Executor, DiscoveryListener)} and
+     * {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)} by
+     * finding services as per the provided {@link DiscoveryRequest}, and continuously monitoring
+     * availability and properties of the discovered services.
+     *
+     * <p>This API may cause more network traffic than using
+     * {@link #discoverServices(DiscoveryRequest, Executor, DiscoveryListener)} and only calling
+     * {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)} for
+     * select services, because it automatically queries all service information for all discovered
+     * services. However most mDNS advertisers reply with their full service information in one
+     * discovery reply, in which case there is no additional traffic, and this API saves the cost of
+     * registering multiple listeners for discovering and resolving services.
+     *
+     * <p>Applications need to cancel the registration before registering the same callback instance
+     * again. Upon failure to register a callback, the application is notified through
+     * {@link ServiceInfoCallback#onServiceInfoCallbackRegistrationFailed}.
+     *
+     * @param discoveryRequest the {@link DiscoveryRequest} object which specifies the discovery
+     *                         parameters such as service type, subtype and network
+     * @param executor Executor to run listener callbacks with
+     * @param listener The listener to be notified of found, updated or lost services.
+     */
+    @FlaggedApi(FLAG_NSD_SERVICE_PICKER)
+    public void registerServiceInfoCallback(@NonNull DiscoveryRequest discoveryRequest,
+            @NonNull Executor executor, @NonNull ServiceInfoCallback listener) {
+        int key = putListener(listener, executor, discoveryRequest);
+        try {
+            mService.registerServiceInfoCallbackWithRequest(key, discoveryRequest);
+        } catch (RemoteException e) {
+            e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
      * Unregister a callback registered with {@link #registerServiceInfoCallback}.
      *
      * A successful unregistration is notified with a call to
      * {@link ServiceInfoCallback#onServiceInfoCallbackUnregistered}. The same callback can only be
      * reused after this is called.
      *
-     * <p>If the listener is not already registered, for apps targeting API 36 and earlier or
-     * running on devices with T SDK extension < 21, this will throw with
-     * {@link IllegalArgumentException}.
+     * <p>If the listener is not already registered, for apps running on devices with T SDK
+     * extension < 22, this will throw with {@link IllegalArgumentException}.
      *
      * @param listener This should be a listener object that was passed to
      *                 {@link #registerServiceInfoCallback}. It identifies the registration that
@@ -1865,6 +2053,52 @@ public final class NsdManager {
         if (id == -1) return;
         try {
             mService.unregisterServiceInfoCallback(id);
+        } catch (RemoteException e) {
+            e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Check whether the caller can register service info callbacks or resolve a service.
+     *
+     * <p>Starting from target SDK {@link android.os.Build.VERSION_CODES#CINNAMON_BUN}, unless apps
+     * have the {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK} permission, they can only
+     * register service info callbacks or resolve services that were selected in a UI picker, as
+     * per {@link DiscoveryRequest#FLAG_SHOW_PICKER}.
+     *
+     * <p>The system will remember whether a user has selected a service in the past, but access
+     * may be revoked for storage reasons or by the user. This method allows checking whether
+     * access to the service was granted in the picker and not revoked.
+     *
+     * <p>The {@code resultReceiver} will be called using the provided {@link Executor} with either
+     * {@link #SERVICE_PERMISSION_GRANTED} or {@link #SERVICE_PERMISSION_DENIED}.
+     *
+     * @param serviceName Instance name of the service
+     * @param serviceType Type of the service, e.g. _ipp._tcp
+     * @param executor The {@link Executor} on which to invoke the receiver.
+     * @param resultReceiver The {@link IntConsumer} to receive the permission check result code;
+     *                       will be either {@link #SERVICE_PERMISSION_GRANTED} or
+     *                       {@link #SERVICE_PERMISSION_DENIED}.
+     */
+    @FlaggedApi(android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    // The RequiresPermission linter flags any API method that mentions android.Manifest.permission
+    // in its javadoc but doesn't have a @RequiresPermission annotation. This is expected here as
+    // this method does not require any permission to be called.
+    @SuppressLint("RequiresPermission")
+    public void checkPermissionForService(@NonNull String serviceName, @NonNull String serviceType,
+            @NonNull Executor executor, @NonNull IntConsumer resultReceiver) {
+        Objects.requireNonNull(serviceName);
+        Objects.requireNonNull(serviceType);
+        Objects.requireNonNull(executor);
+        Objects.requireNonNull(resultReceiver);
+        try {
+            mService.checkPermissionForService(serviceName, serviceType,
+                    new ResultReceiver(/* handler= */null) {
+                        @Override
+                        protected void onReceiveResult(int resultCode, Bundle resultData) {
+                            executor.execute(() -> resultReceiver.accept(resultCode));
+                        }
+                    });
         } catch (RemoteException e) {
             e.rethrowFromSystemServer();
         }

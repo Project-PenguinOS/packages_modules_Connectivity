@@ -19,9 +19,9 @@ package com.android.server;
 import static android.net.BpfNetMapsConstants.ALLOW_CHAINS;
 import static android.net.BpfNetMapsConstants.BACKGROUND_MATCH;
 import static android.net.BpfNetMapsConstants.CURRENT_STATS_MAP_CONFIGURATION_KEY;
-import static android.net.BpfNetMapsConstants.DATA_SAVER_ENABLED_KEY;
 import static android.net.BpfNetMapsConstants.DATA_SAVER_DISABLED;
 import static android.net.BpfNetMapsConstants.DATA_SAVER_ENABLED;
+import static android.net.BpfNetMapsConstants.DATA_SAVER_ENABLED_KEY;
 import static android.net.BpfNetMapsConstants.DENY_CHAINS;
 import static android.net.BpfNetMapsConstants.DOZABLE_MATCH;
 import static android.net.BpfNetMapsConstants.HAPPY_BOX_MATCH;
@@ -64,25 +64,27 @@ import static android.net.INetd.PERMISSION_INTERNET;
 import static android.net.INetd.PERMISSION_NONE;
 import static android.net.INetd.PERMISSION_UNINSTALLED;
 import static android.net.INetd.PERMISSION_UPDATE_DEVICE_STATS;
+import static android.net.InetAddresses.parseNumericAddress;
 import static android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED;
 import static android.system.OsConstants.EINVAL;
 import static android.system.OsConstants.EPERM;
 
-import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UNINSTALLED;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_INVALID_NET_PERM_SENT_TO_NETD;
+import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_ACCESS_LOCAL_NETWORK;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_INTERNET;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UNINSTALLED;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
-import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
+import static com.android.tethering.flags.Flags.FLAG_LOOPBACK_ACCESS_METRICS;
 import static com.android.tethering.flags.Flags.FLAG_PERMISSION_MAP_UID_MIGRATION;
 
 import static org.junit.Assert.assertEquals;
@@ -106,7 +108,6 @@ import android.app.StatsManager;
 import android.content.Context;
 import android.net.BpfNetMapsUtils;
 import android.net.INetd;
-import android.net.InetAddresses;
 import android.net.UidOwnerValue;
 import android.os.Build;
 import android.os.Process;
@@ -132,6 +133,7 @@ import com.android.net.module.util.bpf.CookieTagMapValue;
 import com.android.net.module.util.bpf.IngressDiscardKey;
 import com.android.net.module.util.bpf.IngressDiscardValue;
 import com.android.net.module.util.bpf.LocalNetAccessKey;
+import com.android.net.module.util.bpf.LocalNetUidHostAllowlistKey;
 import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 import com.android.testutils.DevSdkIgnoreRule;
@@ -199,9 +201,9 @@ public final class BpfNetMapsTest {
     private static final int NO_IIF = 0;
     private static final int NULL_IIF = 0;
     private static final Inet4Address TEST_V4_ADDRESS =
-            (Inet4Address) InetAddresses.parseNumericAddress("192.0.2.1");
+            (Inet4Address) parseNumericAddress("192.0.2.1");
     private static final Inet6Address TEST_V6_ADDRESS =
-            (Inet6Address) InetAddresses.parseNumericAddress("2001:db8::1");
+            (Inet6Address) parseNumericAddress("2001:db8::1");
     private static final String CHAINNAME = "fw_dozable";
 
     private static final long STATS_SELECT_MAP_A = 0;
@@ -228,6 +230,8 @@ public final class BpfNetMapsTest {
             new TestBpfMap<>(U32.class, Bool.class);
     private final IBpfMap<LocalNetAccessKey, Bool> mLocalNetAccessMap =
             new TestBpfMap<>(LocalNetAccessKey.class, Bool.class);
+    private final IBpfMap<LocalNetUidHostAllowlistKey, Bool> mLocalNetUidHostAllowlistMap =
+            new TestBpfMap<>(LocalNetUidHostAllowlistKey.class, Bool.class);
     private final IBpfMap<S64, CookieTagMapValue> mCookieTagMap =
             spy(new TestBpfMap<>(S64.class, CookieTagMapValue.class));
     private final IBpfMap<S32, U8> mDataSaverEnabledMap = new TestBpfMap<>(S32.class, U8.class);
@@ -240,6 +244,8 @@ public final class BpfNetMapsTest {
     private final BpfBoolean mPermissionPropagationEnabledBpfBoolean =
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
     private final BpfBoolean mL4sEnabledMap =
+            new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
+    private final BpfBoolean mLoopbackAccessMetricsEnabledBpfBoolean =
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
 
     @Before
@@ -254,6 +260,8 @@ public final class BpfNetMapsTest {
         doAnswer(invocation -> mFeatureFlags.getOrDefault(
                         FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, true))
                 .when(mDeps).isAccessLocalNetworkPermissionEnabled();
+        doAnswer(invocation -> mFeatureFlags.getOrDefault(FLAG_LOOPBACK_ACCESS_METRICS, false))
+                .when(mDeps).isLoopbackAccessMetricsEnabled();
         BpfNetMaps.setConfigurationMapForTest(mConfigurationMap);
         mConfigurationMap.updateEntry(UID_RULES_CONFIGURATION_KEY, new U32(0));
         mConfigurationMap.updateEntry(
@@ -262,6 +270,7 @@ public final class BpfNetMapsTest {
         BpfNetMaps.setUidPermissionMapForTest(mUidPermissionMap);
         BpfNetMaps.setLocalNetAccessMapForTest(mLocalNetAccessMap);
         BpfNetMaps.setLocalNetBlockedUidMapForTest(mLocalNetBlockedUidMap);
+        BpfNetMaps.setLocalNetUidHostAllowlistMapForTest(mLocalNetUidHostAllowlistMap);
         BpfNetMaps.setCookieTagMapForTest(mCookieTagMap);
         BpfNetMaps.setDataSaverEnabledMapForTest(mDataSaverEnabledMap);
         BpfNetMaps.setL4sEnabledMapForTest(mL4sEnabledMap);
@@ -271,6 +280,8 @@ public final class BpfNetMapsTest {
         BpfNetMaps.setPermissionPropagationEnabledBpfBooleanForTest(
                 mPermissionPropagationEnabledBpfBoolean);
         BpfNetMaps.setUidPermissionChunkMapForTest(mUidPermissionChunkMap);
+        BpfNetMaps.setLoopbackAccessMetricsEnabledBpfBooleanForTest(
+                mLoopbackAccessMetricsEnabledBpfBoolean);
         BpfNetMaps.setInitializedForTest(false);
         mBpfNetMaps = new BpfNetMaps(mContext, mNetd, mDeps, mInterfaceTracker);
     }
@@ -547,6 +558,38 @@ public final class BpfNetMapsTest {
 
         mBpfNetMaps.removeUidFromLocalNetBlockMap(uid1);
         assertNull(mLocalNetBlockedUidMap.getValue(new U32(uid1)));
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testAddLocalNetUidHostAccessAfterV() throws Exception {
+        assertTrue(mLocalNetUidHostAllowlistMap.isEmpty()); // Necessary ?
+        mBpfNetMaps.addLocalNetUidHostAccess(TEST_UID, TEST_IF_INDEX,
+                parseNumericAddress("196.0.2.123"));
+
+        final Bool value = mLocalNetUidHostAllowlistMap.getValue(
+                new LocalNetUidHostAllowlistKey(TEST_UID, TEST_IF_INDEX,
+                        parseNumericAddress("196.0.2.123")));
+        assertNotNull(value);
+        assertTrue(value.val);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testRemoveLocalNetHostAllowlistForInterfaceAfterV() throws Exception {
+        assertTrue(mLocalNetUidHostAllowlistMap.isEmpty()); // Necessary ?
+        mBpfNetMaps.addLocalNetUidHostAccess(TEST_UID_1, TEST_IF_INDEX,
+                parseNumericAddress("196.0.2.123"));
+        mBpfNetMaps.addLocalNetUidHostAccess(TEST_UID_2, TEST_IF_INDEX,
+                parseNumericAddress("196.0.2.124"));
+        mBpfNetMaps.addLocalNetUidHostAccess(TEST_UID_2, TEST_IF_INDEX + 1,
+                parseNumericAddress("196.0.2.125"));
+        mBpfNetMaps.removeLocalNetHostAllowlistForInterface(TEST_IF_INDEX);
+
+        final LocalNetUidHostAllowlistKey expectedKey = new LocalNetUidHostAllowlistKey(
+                TEST_UID_2, TEST_IF_INDEX + 1, parseNumericAddress("196.0.2.125"));
+        assertEquals(expectedKey, mLocalNetUidHostAllowlistMap.getFirstKey());
+        assertNull(mLocalNetUidHostAllowlistMap.getNextKey(expectedKey));
     }
 
     @Test
@@ -1749,6 +1792,34 @@ public final class BpfNetMapsTest {
                 DATA_SAVER_ENABLED,
                 false /* expectRestricted */
         );
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_LOOPBACK_ACCESS_METRICS, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testLoopbackAccessMetricsDisabled() throws Exception {
+        assertFalse(mLoopbackAccessMetricsEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_LOOPBACK_ACCESS_METRICS, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testLoopbackAccessMetricsEnabled() throws Exception {
+        assertTrue(mLoopbackAccessMetricsEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_LOOPBACK_ACCESS_METRICS, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpLoopbackAccessMetricsDisabled() throws Exception {
+        assertDumpContains(getDump(), "sLoopbackAccessMetricsEnabledBpfBoolean: false");
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_LOOPBACK_ACCESS_METRICS, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpLoopbackAccessMetricsEnabled() throws Exception {
+        assertDumpContains(getDump(), "sLoopbackAccessMetricsEnabledBpfBoolean: true");
     }
 
     @Test

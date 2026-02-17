@@ -1,5 +1,5 @@
 {
-  "tethering-mainline-presubmit": [
+  "captiveportal-networkstack-resolve-tethering-mainline-presubmit": [
     {
       "name": "NetworkSecurityUnitTests"
     }

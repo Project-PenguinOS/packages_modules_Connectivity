@@ -27,25 +27,35 @@ import android.annotation.SystemApi;
  */
 @FlaggedApi(com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD)
 @SystemApi
-public interface OffloadSession {
+public interface OffloadSession extends AutoCloseable {
     /**
      * Notifies to the NsdManager that the service is found.
      *
      * @param nsdServiceInfo The NsdServiceInfo response received from the offloaded device.
      */
-    void onServiceFound(@NonNull NsdServiceInfo nsdServiceInfo);
+    void notifyServiceFound(@NonNull NsdServiceInfo nsdServiceInfo);
 
     /**
      * Notifies to the NsdManager that the service is updated.
      *
      * @param nsdServiceInfo The NsdServiceInfo response received from the offloaded device.
      */
-    void onServiceUpdated(@NonNull NsdServiceInfo nsdServiceInfo);
+    void notifyServiceUpdated(@NonNull NsdServiceInfo nsdServiceInfo);
 
     /**
      * Notifies to the NsdManager that the service is lost.
      *
      * @param nsdServiceInfo The NsdServiceInfo response received from the offloaded device
      */
-    void onServiceLost(@NonNull NsdServiceInfo nsdServiceInfo);
+    void notifyServiceLost(@NonNull NsdServiceInfo nsdServiceInfo);
+
+    /**
+     * Closes this offload session and releases any associated resources like OffloadEngine.
+     * <p>
+     * <b>Warning:</b> This method is idempotent. Subsequent invocations of this method on the same
+     * instance is a no-op.
+     *
+     */
+    @Override
+    void close();
 }

@@ -75,6 +75,15 @@ int AConnectivityNative_unblockAllPortsForBind() __INTRODUCED_IN(34);
 int AConnectivityNative_getPortsBlockedForBind(in_port_t* _Nonnull ports, size_t* _Nonnull count)
     __INTRODUCED_IN(34);
 
+/**
+ * Returns the recorded blocked reason for the socket and clears it.
+ *
+ * @param fd Socket file descriptor.
+ * @return A value from {@link NetworkBlockedReason} on success, or a negative POSIX error
+ *         code if an error occurs.
+ */
+int32_t AConnectivityNative_getNetworkBlockedReason(int fd) __INTRODUCED_IN(37);
+
 __END_DECLS
 
 

@@ -1,3 +1,4 @@
 /bin/for-system 1029 1000 0750
 /bin/for-system/clatd 1029 1029 06755
 /bin/netbpfload 0 0 0750
+/bin/socketbroker 0 0 750

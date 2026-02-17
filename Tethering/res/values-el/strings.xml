@@ -16,11 +16,11 @@
 
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
-    <string name="tethered_notification_title" msgid="5350162111436634622">"Ενεργή σύνδεση ή ενεργό σημείο πρόσβασης Wi-Fi"</string>
+    <string name="tethered_notification_title" msgid="5350162111436634622">"Ενεργός διαμοιρασμός ή ενεργό σημείο πρόσβασης Wi-Fi"</string>
     <string name="tethered_notification_message" msgid="2338023450330652098">"Πατήστε για ρύθμιση."</string>
-    <string name="disable_tether_notification_title" msgid="3183576627492925522">"Η σύνδεση είναι απενεργοποιημένη"</string>
+    <string name="disable_tether_notification_title" msgid="3183576627492925522">"Ο διαμοιρασμός είναι απενεργοποιημένος"</string>
     <string name="disable_tether_notification_message" msgid="6655882039707534929">"Επικοινωνήστε με τον διαχειριστή για λεπτομέρειες"</string>
-    <string name="notification_channel_tethering_status" msgid="7030733422705019001">"Κατάσταση σημείου πρόσβασης Wi-Fi και σύνδεσης"</string>
+    <string name="notification_channel_tethering_status" msgid="7030733422705019001">"Κατάσταση σημείου πρόσβασης Wi-Fi και διαμοιρασμού"</string>
     <string name="no_upstream_notification_title" msgid="2052743091868702475"></string>
     <string name="no_upstream_notification_message" msgid="6932020551635470134"></string>
     <string name="no_upstream_notification_disable_button" msgid="8836277213343697023"></string>

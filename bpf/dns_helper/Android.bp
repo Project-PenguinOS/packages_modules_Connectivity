@@ -19,14 +19,7 @@ package {
 }
 
 cc_library {
-    name: "libcom.android.tethering.dns_helper",
-    version_script: "libcom.android.tethering.dns_helper.map.txt",
-    stubs: {
-        versions: [
-            "1",
-        ],
-        symbol_file: "libcom.android.tethering.dns_helper.map.txt",
-    },
+    name: "libdns_helper",
     defaults: ["netd_defaults"],
     header_libs: [
         "bpf_connectivity_headers",
@@ -43,10 +36,6 @@ cc_library {
         "libbase",
     ],
     export_include_dirs: ["include"],
-    header_abi_checker: {
-        enabled: true,
-        symbol_file: "libcom.android.tethering.dns_helper.map.txt",
-    },
     sanitize: {
         cfi: true,
     },
@@ -69,7 +58,7 @@ cc_test {
         "DnsBpfHelperTest.cpp",
     ],
     static_libs: [
-        "libcom.android.tethering.dns_helper",
+        "libdns_helper",
     ],
     shared_libs: [
         "libbase",

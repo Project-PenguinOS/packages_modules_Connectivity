@@ -94,6 +94,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -1453,7 +1454,7 @@ public class ConnectivityManager {
      * terminate with an error). Additionally, the designated apps should be
      * blocked from using any non-enterprise network even if they specify it
      * explicitly, unless they hold specific privilege overriding this (see
-     * {@link android.Manifest.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS}).
+     * {@link android.Manifest.permission#CONNECTIVITY_USE_RESTRICTED_NETWORKS}).
      * @hide
      */
     @SystemApi(client = MODULE_LIBRARIES)
@@ -1592,7 +1593,7 @@ public class ConnectivityManager {
      * If set to {@code true}, informs the system that the UIDs in the specified ranges must not
      * have any connectivity except if a VPN is connected and applies to the UIDs, or if the UIDs
      * otherwise have permission to bypass the VPN (e.g., because they have the
-     * {@link android.Manifest.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS} permission, or when
+     * {@link android.Manifest.permission#CONNECTIVITY_USE_RESTRICTED_NETWORKS} permission, or when
      * using a socket protected by a method such as {@link VpnService#protect(DatagramSocket)}. If
      * set to {@code false}, a previously-added restriction is removed.
      * <p>
@@ -3139,7 +3140,7 @@ public class ConnectivityManager {
      * return false rather than throw an exception.</p>
      *
      * <p>If the device has a hotspot provisioning app, the caller is required to hold the
-     * {@link android.Manifest.permission.TETHER_PRIVILEGED} permission.</p>
+     * {@link android.Manifest.permission#TETHER_PRIVILEGED} permission.</p>
      *
      * <p>Otherwise, this method requires the caller to hold the ability to modify system
      * settings as determined by {@link android.provider.Settings.System#canWrite}.</p>
@@ -3199,9 +3200,9 @@ public class ConnectivityManager {
      * schedules tether provisioning re-checks if appropriate.
      *
      * @param type The type of tethering to start. Must be one of
-     *         {@link ConnectivityManager.TETHERING_WIFI},
-     *         {@link ConnectivityManager.TETHERING_USB}, or
-     *         {@link ConnectivityManager.TETHERING_BLUETOOTH}.
+     *         {@link ConnectivityManager#TETHERING_WIFI},
+     *         {@link ConnectivityManager#TETHERING_USB}, or
+     *         {@link ConnectivityManager#TETHERING_BLUETOOTH}.
      * @param showProvisioningUi a boolean indicating to show the provisioning app UI if there
      *         is one. This should be true the first time this function is called and also any time
      *         the user can see this UI. It gives users information from their carrier about the
@@ -3254,9 +3255,9 @@ public class ConnectivityManager {
      * applicable.
      *
      * @param type The type of tethering to stop. Must be one of
-     *         {@link ConnectivityManager.TETHERING_WIFI},
-     *         {@link ConnectivityManager.TETHERING_USB}, or
-     *         {@link ConnectivityManager.TETHERING_BLUETOOTH}.
+     *         {@link ConnectivityManager#TETHERING_WIFI},
+     *         {@link ConnectivityManager#TETHERING_USB}, or
+     *         {@link ConnectivityManager#TETHERING_BLUETOOTH}.
      *
      * @deprecated Use {@link TetheringManager#stopTethering} instead.
      * @hide
@@ -6940,6 +6941,37 @@ public class ConnectivityManager {
     public void onOttCallStateChanged(int uid, boolean isAdded) {
         try {
             mService.onOttCallStateChanged(uid, isAdded);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Add entries to the UID/interface/addresses BPF map allowlist for local network access.
+     *
+     * @param uid The UID that should be allowed
+     * @param ifIndex The interface on which communication should be allowed
+     * @param addresses The destination addresses that should be allowed
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void allowLocalNetAccess(int uid, int ifIndex, List<InetAddress> addresses) {
+        if (addresses.isEmpty()) {
+            return;
+        }
+        final ArrayList<String> addrStrings = new ArrayList<>(addresses.size());
+        for (InetAddress addr : addresses) {
+            try {
+                // Address scope, lifetime etc. do not matter as they are unused in the BPF map.
+                // Ensure they are stripped out so getHostAddress does not include the scope.
+                addrStrings.add(InetAddress.getByAddress(addr.getAddress()).getHostAddress());
+            } catch (UnknownHostException e) {
+                // This should never happen since the bytes come from an InetAddress
+                Log.e(TAG, "Invalid address bytes", e);
+            }
+        }
+        try {
+            mService.allowLocalNetAccess(uid, ifIndex, addrStrings);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

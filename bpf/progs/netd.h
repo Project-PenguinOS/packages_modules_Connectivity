@@ -96,8 +96,10 @@ typedef struct {
     // support `bpf_get_socket_uid`
     uint32_t gid;
     uint32_t uid;
+    // A bitmask of enum values in DropReasonType.
+    uint64_t dropReasons;
 } SkStorageValue;
-STRUCT_SIZE(SkStorageValue, 8 + 4 + 4);
+STRUCT_SIZE(SkStorageValue, 8 + 4 + 4 + 8);
 
 enum LoopbackAccessResult : uint32_t {
   LOOPBACK_ACCESS_ALLOWED = 0,
@@ -176,6 +178,8 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define DATA_SAVER_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_data_saver_enabled_map"
 #define LOCAL_NET_ACCESS_MAP_PATH BPF_NETD_PATH "map_netd_local_net_access_map"
 #define LOCAL_NET_BLOCKED_UID_MAP_PATH BPF_NETD_PATH "map_netd_local_net_blocked_uid_map"
+#define LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH                                  \
+    BPF_NETD_PATH "map_netd_local_net_uid_host_allowlist_map"
 #define UID_MIGRATION_ENABLED_MAP_PATH                                         \
     BPF_NETD_PATH "map_netd_uid_migration_enabled_map"
 #define PERMISSION_PROPAGATION_ENABLED_MAP_PATH                                                 \
@@ -183,6 +187,8 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define LOCAL_NET_NOTE_OP_RINGBUF_PATH BPF_NETD_PATH "map_netd_local_net_note_op_ringbuf"
 #define LOCAL_NET_NOTE_OP_CACHE_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_cache_map"
 #define LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH BPF_NETD_PATH "map_netd_local_net_note_op_enabled_map"
+#define LOCAL_NET_CACHE_GENERATION_ID_MAP_PATH                                 \
+    BPF_NETD_PATH "map_netd_local_net_cache_generation_id_map"
 #define LOOPBACK_ACCESS_RINGBUF_NETD_PATH BPF_NETD_PATH "map_netd_loopback_access_ringbuf"
 #define LOOPBACK_ACCESS_CACHE_MAP_NETD_PATH BPF_NETD_PATH "map_netd_loopback_access_cache_map"
 #define LOOPBACK_ACCESS_METRICS_ENABLED_MAP_NETD_PATH                                         \
@@ -278,6 +284,16 @@ typedef struct {
   __be16 remote_port;
 } LocalNetAccessKey;
 STRUCT_SIZE(LocalNetAccessKey, 4 + 4 + 16 + 2 + 2);  // 28
+
+typedef struct {
+    // Longest prefix match length in bits (value from 0 to 192).
+    uint32_t lpm_bitlen;
+    uint32_t uid;
+    uint32_t if_index;
+    // IPv4 uses IPv4-mapped IPv6 address format.
+    struct in6_addr remote_ip6;
+} LocalNetUidHostAllowlistKey;
+STRUCT_SIZE(LocalNetUidHostAllowlistKey, 4 + 4 + 4 + 16);  // 28
 
 // LINT.IfChange(uid_permission_chunk_type)
 // Each UID costs 3 bits (3 permissions ACCESS_LOCAL_NETWORK / INTERNET /

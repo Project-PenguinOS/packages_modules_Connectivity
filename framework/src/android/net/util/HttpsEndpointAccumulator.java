@@ -36,6 +36,7 @@ import android.net.dns.HttpsEndpoint;
 import android.net.dns.HttpsRecord;
 import android.util.Log;
 
+import com.android.internal.annotations.GuardedBy;
 import com.android.net.module.util.DnsHttpsRecord;
 import com.android.net.module.util.DnsPacket;
 import com.android.net.module.util.DnsPacket.DnsRecord;
@@ -51,6 +52,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Accumulates the results of concurrent A/AAAA/HTTPS DNS queries.
@@ -65,11 +67,26 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
     private final int mHttpsTimeoutMillis;
     private final boolean mHasIpv4;
     private final boolean mHasIpv6;
-    private final Set<Integer> mReceivedAnswerTypes = new HashSet<>();
 
-    private LinkedHashSet<InetAddress> mAddresses = new LinkedHashSet<>();
-    private List<HttpsRecord> mHttpsRecords = new ArrayList<>();
-    private DnsException mDnsException;
+    @GuardedBy("mResult")
+    private final HttpsEndpointAccumulatorResult mResult;
+    private final AtomicBoolean mCallbackInvoked = new AtomicBoolean(false);
+
+    /**
+     * Nested class to group the results of the DNS queries that must be kept in sync.
+     */
+    private static class HttpsEndpointAccumulatorResult {
+        final Set<Integer> mReceivedAnswersToQueryTypes;
+        final Set<InetAddress> mAddresses;
+        final List<HttpsRecord> mHttpsRecords;
+        DnsException mDnsException;
+
+        private HttpsEndpointAccumulatorResult() {
+            mReceivedAnswersToQueryTypes = new HashSet<>();
+            mAddresses = new LinkedHashSet<>();
+            mHttpsRecords = new ArrayList<>();
+        }
+    }
 
     public HttpsEndpointAccumulator(@NonNull Network network,
             @NonNull DnsResolver.Callback<HttpsEndpoint> callback, int queryCount,
@@ -80,108 +97,167 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
         mHttpsTimeoutMillis = timeoutMillis;
         mHasIpv4 = hasIpv4;
         mHasIpv6 = hasIpv6;
+        mResult = new HttpsEndpointAccumulatorResult();
     }
 
     @Override
     public void onAnswer(@NonNull byte[] answer, int rcode) {
         Objects.requireNonNull(answer, "Raw byte response for query cannot be null");
 
+        if (mCallbackInvoked.get()) {
+            // Callback has already been invoked, skip parsing this response.
+            return;
+        }
+
         DnsPacket dnsPacket = new DnsPacket(answer);
         final List<DnsRecord> questionRecords = dnsPacket.getRecords(QDSECTION);
         final int questionCount = questionRecords.size();
         if (questionCount != 1) {
-            reportError(
-                    ERROR_PARSE, new ParseException("Unexpected question count: " + questionCount));
+            synchronized (mResult) {
+                mResult.mDnsException = new DnsException(ERROR_PARSE,
+                        new ParseException("Unexpected question count: " + questionCount));
+            }
             return;
         }
 
         final int queryType = questionRecords.get(0).nsType;
 
         if (queryType != TYPE_A && queryType != TYPE_AAAA && queryType != TYPE_HTTPS) {
-            reportError(ERROR_PARSE, new ParseException("Unsupported query type: " + queryType));
+            // Don't try to parse any other types of records (e.g. CNAME), but don't mark this as an
+            // error since as long as we get an answer for the types we're looking for, we're fine.
             return;
         }
 
         final List<DnsRecord> answerRecords = dnsPacket.getRecords(ANSECTION);
-        // Handle the NODATA scenario and still record it as a received answer type, so we don't
-        // wait indefinitely for a record that will never come.
-        if (answerRecords.isEmpty()) {
-            mReceivedAnswerTypes.add(queryType);
-        }
+        Set<InetAddress> addresses = new LinkedHashSet<>();
+        List<HttpsRecord> httpsRecords = new ArrayList<>();
+        DnsException exception = null;
 
+        // In the NODATA scenario, answerRecords will be empty and this whole loop will be skipped.
         for (DnsRecord record : answerRecords) {
             int answerType = record.nsType;
-
-            if (queryType != answerType) {
-                // Ignore any answers where the query type doesn't match the answer type.
-                continue;
-            }
 
             try {
                 switch (answerType) {
                     case TYPE_A, TYPE_AAAA -> {
-                        mAddresses.add(InetAddress.getByAddress(record.getRR()));
-                        mReceivedAnswerTypes.add(answerType);
+                        addresses.add(InetAddress.getByAddress(record.getRR()));
                     }
                     case TYPE_HTTPS -> {
                         HttpsRecord httpsRecord =
                                 new HttpsRecord(mNetwork, (DnsHttpsRecord) record);
-                        mHttpsRecords.add(httpsRecord);
+                        httpsRecords.add(httpsRecord);
 
                         // Add only the relevant IP hints to the list of IP addresses.
-                        if (mHasIpv4) mAddresses.addAll(httpsRecord.getIpv4Hints());
-                        if (mHasIpv6) mAddresses.addAll(httpsRecord.getIpv6Hints());
-
-                        mReceivedAnswerTypes.add(answerType);
+                        if (mHasIpv4) addresses.addAll(httpsRecord.getIpv4Hints());
+                        if (mHasIpv6) addresses.addAll(httpsRecord.getIpv6Hints());
                     }
                     default -> {
-                        // This shouldn't happen, since we already checked that the answer type is
-                        // in the supported set.
-                        reportError(ERROR_PARSE,
+                        exception = new DnsException(ERROR_PARSE,
                                 new ParseException("Unexpected answer type: " + answerType));
                     }
                 }
             } catch (DnsPacket.ParseException e) {
-                reportError(ERROR_PARSE, new ParseException(e.reason, e.getCause()));
+                exception = new DnsException(ERROR_PARSE, new ParseException(e.reason, e));
             } catch (ClassCastException e) {
-                reportError(ERROR_PARSE, e);
+                exception = new DnsException(ERROR_PARSE, e);
             } catch (UnknownHostException e) {
-                reportError(ERROR_SYSTEM, e);
+                exception = new DnsException(ERROR_SYSTEM, e);
             }
         }
 
-        if (!mHttpsRecords.isEmpty() && !mAddresses.isEmpty()) {
-            // Return early if we got the HTTPS record first, and it contained IP hints.
-            reportAnswer(rcode);
-        } else if (mTargetQueryCount == mReceivedAnswerTypes.size()) {
-            // Return if we have gotten all the records we expected.
-            reportAnswer(rcode);
+        synchronized (mResult) {
+            mResult.mAddresses.addAll(addresses);
+            mResult.mHttpsRecords.addAll(httpsRecords);
+            // Add the query type even in the case of NODATA or mismatched query/response type,
+            // since this indicates we received an answer for the type of record we were querying.
+            mResult.mReceivedAnswersToQueryTypes.add(queryType);
+            if (exception != null) {
+                mResult.mDnsException = exception;
+            }
+
+            if (!mResult.mHttpsRecords.isEmpty() && hasEnoughAddressInfo()) {
+                // Disregard any exceptions and return if we got valid HTTPS and IP data.
+                reportAnswer(rcode);
+            } else if (mTargetQueryCount == mResult.mReceivedAnswersToQueryTypes.size()) {
+                // Return if we have gotten all the records as we expected.
+                tryReportResult(rcode);
+            }
         }
         // TODO(b/448882639): handle filtering out HTTPS records with specified mandatory values
         // that are absent
         // TODO(b/448882639): handle timeout logic for HTTPS record
         // TODO(b/448882639): handle if the HTTPS record name does not match the A/AAAA ones
         // TODO(b/448882639): handle parsing the CNAME chain for the A/AAAA records
-        // TODO(b/448882639): ensure that reportError or reportAnswer is called exactly once
     }
 
     @Override
     public void onError(@NonNull DnsException error) {
-        mDnsException = error;
-        mUserCallback.onError(mDnsException);
+        synchronized (mResult) {
+            mResult.mDnsException = error;
+            // Doesn't matter what rcode we pass here, since we're reporting an error
+            tryReportResult(/* rcode= */ 0);
+        }
     }
 
+    /**
+     * Reports the DNS query successful results as an {@link HttpsEndpoint} to the user callback.
+     *
+     * <p>If the user callback has already been invoked (regardless of success or failure), this
+     * method does nothing.
+     */
+    @GuardedBy("mResult")
     private void reportAnswer(int rcode) {
-        Collections.sort(mHttpsRecords, Comparator.comparing(HttpsRecord::getPriority));
-        mUserCallback.onAnswer(
-                new HttpsEndpoint(
-                        mNetwork,
-                        mHttpsRecords,
-                        new ArrayList<>(mAddresses)), rcode);
+        if (mCallbackInvoked.compareAndSet(false, true)) {
+            // Synchronize on the result object here as onError could also call this method.
+            Collections.sort(mResult.mHttpsRecords,
+                    Comparator.comparing(HttpsRecord::getPriority));
+            mUserCallback.onAnswer(
+                    new HttpsEndpoint(
+                            mNetwork,
+                            mResult.mHttpsRecords,
+                            new ArrayList<>(mResult.mAddresses)), rcode);
+        }
     }
 
-    private void reportError(int errorType, @NonNull Throwable cause) {
-        mDnsException = new DnsException(errorType, cause);
-        mUserCallback.onError(mDnsException);
+    /**
+     * Reports the DNS query results to the user callback, both success and failure.
+     *
+     * <p>If the user callback has already been invoked (regardless of success or failure), this
+     * method does nothing.
+     */
+    @GuardedBy("mResult")
+    private void tryReportResult(int rcode) {
+        if (mResult.mDnsException != null && mCallbackInvoked.compareAndSet(false, true)) {
+            mUserCallback.onError(mResult.mDnsException);
+            return;
+        }
+
+        reportAnswer(rcode);
+    }
+
+    /**
+     * Returns true if we've received enough address information to return the results we have.
+     *
+     * <p>This is the case if we have received at least one HTTPS record with the IP hints relevant
+     * to network, or if we have received the A or AAAA records relevant to the network.
+     */
+    @GuardedBy("mResult")
+    private boolean hasEnoughAddressInfo() {
+        for (HttpsRecord record: mResult.mHttpsRecords) {
+            boolean missingIpv4Hint = mHasIpv4 && record.getIpv4Hints().isEmpty();
+            boolean missingIpv6Hint = mHasIpv6 && record.getIpv6Hints().isEmpty();
+            if (!missingIpv4Hint && !missingIpv6Hint) {
+                // If we have at least one HTTPS record with the relevant IP hints, don't bother
+                // checking the other HTTPS records.
+                return true;
+            }
+        }
+
+        boolean hasIpv6IfNeeded = !mHasIpv6 ||
+                mResult.mReceivedAnswersToQueryTypes.contains(TYPE_AAAA);
+        boolean hasIpv4IfNeeded = !mHasIpv4 ||
+                mResult.mReceivedAnswersToQueryTypes.contains(TYPE_A);
+
+        return hasIpv6IfNeeded && hasIpv4IfNeeded;
     }
 }

@@ -114,8 +114,8 @@ public class CertificateTransparencyDownloaderTest {
         mCompatVersion =
                 new CompatibilityVersion(
                         /* compatVersion= */ "v666",
-                        Config.URL_SIGNATURE_V1,
-                        Config.URL_LOG_LIST_V1);
+                        Config.URL_SIGNATURE_V2,
+                        Config.URL_LOG_LIST_V2);
         mCertificateTransparencyDownloader =
                 new CertificateTransparencyDownloader(
                         mContext,
@@ -652,7 +652,7 @@ public class CertificateTransparencyDownloaderTest {
                         mCompatVersion.getVersionDir(),
                         CompatibilityVersion.LOGS_DIR_PREFIX + version);
         assertThat(logsDir.exists()).isTrue();
-        File logsFile = new File(logsDir, CompatibilityVersion.LOGS_LIST_FILE_NAME);
+        File logsFile = new File(logsDir, mCompatVersion.getLogsFile().getName());
         assertThat(logsFile.exists()).isTrue();
     }
 

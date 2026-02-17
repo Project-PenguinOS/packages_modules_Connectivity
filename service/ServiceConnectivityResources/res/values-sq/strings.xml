@@ -43,7 +43,8 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"një lloj rrjeti i panjohur"</string>
-    <string name="connect_to_service_title" msgid="2417012530980077322">"Lidh me shërbimin"</string>
-    <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> kërkon të lidhet me një pajisje tjetër në një rrjet lokal"</string>
+    <string name="choose_device_title" msgid="1326677343980771265">"Zgjidh një pajisje për ta lidhur"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> dëshiron të lidhet me një pajisje në rrjetin tënd lokal"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"Mos u lidh"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"Po skanon për shërbime"</string>
 </resources>

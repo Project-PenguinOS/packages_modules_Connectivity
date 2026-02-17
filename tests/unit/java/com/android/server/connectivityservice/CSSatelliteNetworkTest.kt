@@ -18,6 +18,7 @@ package com.android.server
 
 import android.Manifest.permission.NETWORK_SETTINGS
 import android.annotation.SuppressLint
+import android.net.ConnectivitySettingsManager
 import android.net.INetd
 import android.net.NativeNetworkConfig
 import android.net.NativeNetworkType
@@ -317,6 +318,87 @@ class CSSatelliteNetworkTest : CSTest() {
         allNetworksCb.expect<Lost>(satelliteNetwork2)
         defaultCb.expect<Lost>(satelliteNetwork2)
         otherUidCb.assertNoCallback()
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    fun testSystemUidSatelliteOptInWithMobileDataPreferred() {
+        val handler = Handler(Looper.getMainLooper())
+        val myUid = Process.myUid()
+        val systemUid = Process.SYSTEM_UID
+        val defaultCb = TestableNetworkCallback().also { cm.registerDefaultNetworkCallback(it) }
+        val systemUidCb = TestableNetworkCallback().also {
+            runAsShell(NETWORK_SETTINGS) {
+                cm.registerDefaultNetworkCallbackForUid(systemUid, it, handler)
+            }
+        }
+
+        // Opt-in the system uid to the satellite fallback
+        updateAppOptInDefaultNetworkPolicies(
+                listOf(AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN, setOf(systemUid)))
+        )
+
+        val satelliteAgent = createSatelliteAgent(
+                "satellite0",
+                restricted = false,
+                keepConnected = false
+        ).apply { connect() }
+        val satelliteNetwork = satelliteAgent.network
+
+        // The default network for the system uid is the satellite network
+        defaultCb.assertNoCallback()
+        systemUidCb.expectAvailableCallbacks(satelliteNetwork, validated = false)
+
+        satelliteAgent.disconnect()
+        systemUidCb.expect<Lost>(satelliteNetwork)
+
+        val wifiAgent = Agent(
+                lp = defaultLp().apply { interfaceName = "wlan0" },
+                nc = ncForTransport(TRANSPORT_WIFI)
+        ).apply { connect() }
+        val wifiNetwork = wifiAgent.network
+
+        defaultCb.expectAvailableCallbacks(wifiNetwork, validated = false)
+        systemUidCb.expectAvailableCallbacks(wifiNetwork, validated = false)
+
+        // Enable the mobile data preferred feature for myUid
+        ConnectivitySettingsManager.setMobileDataPreferredUids(context, setOf(myUid))
+
+        val cellAgent = Agent(
+                lp = defaultLp().apply { interfaceName = "rmnet0" },
+                nc = ncForTransport(TRANSPORT_CELLULAR)
+        ).apply { connect() }
+        val cellNetwork = cellAgent.network
+
+        // The default network for myUid is the mobile network
+        defaultCb.expectAvailableCallbacks(cellNetwork, validated = false)
+        systemUidCb.assertNoCallback()
+
+        // Disable the mobile data preferred feature for myUid
+        ConnectivitySettingsManager.setMobileDataPreferredUids(context, setOf())
+        defaultCb.expectAvailableCallbacks(wifiNetwork, validated = false)
+
+        cellAgent.disconnect()
+        wifiAgent.disconnect()
+        defaultCb.expect<Lost>(wifiNetwork)
+        systemUidCb.expect<Lost>(wifiNetwork)
+
+        val satelliteAgent2 = createSatelliteAgent(
+                "satellite0",
+                restricted = false,
+                keepConnected = false
+        )
+        satelliteAgent2.connect()
+        val satelliteNetwork2 = satelliteAgent2.network
+
+        systemUidCb.expectAvailableCallbacks(satelliteNetwork2, validated = false)
+
+        // Remove the system uid from the satellite Opt-in
+        updateAppOptInDefaultNetworkPolicies(emptyList())
+
+        systemUidCb.expect<Lost>(satelliteNetwork2)
+
+        systemUidCb.assertNoCallback()
+        defaultCb.assertNoCallback()
     }
 
     @Test
@@ -742,10 +824,9 @@ class CSSatelliteNetworkTest : CSTest() {
         // The app's default network should switch to Wi-Fi.
         defaultCb.expectAvailableCallbacks(wifiNetwork , validated = false)
 
-       // BUG: UFC network should be released here.
-        // allNetworksCb.eventuallyExpect<Losing> { it.network == ufcCellNetwork }
-        // allNetworksCb.eventuallyExpect<Lost> { it.network == ufcCellNetwork }
-        allNetworksCb.assertNoCallback(timeoutMs = 500) { it is Lost }
+       // UFC network is released.
+        allNetworksCb.eventuallyExpect<Losing> { it.network == ufcCellNetwork }
+        allNetworksCb.eventuallyExpect<Lost> { it.network == ufcCellNetwork }
 
         // Now Cleanup
         updateAppOptInDefaultNetworkPolicies(emptyList())

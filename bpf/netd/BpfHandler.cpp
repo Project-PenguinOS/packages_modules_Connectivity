@@ -29,6 +29,7 @@
 
 #include "BpfSyscallWrappers.h"
 #include "bpf/BpfUtils.h"
+#include "internal_net_api.h"
 
 namespace android {
 namespace net {
@@ -41,6 +42,7 @@ using bpf::isAtLeastT;
 using bpf::isAtLeastU;
 using bpf::isAtLeastV;
 using bpf::isAtLeast25Q2;
+using bpf::isUser;
 using bpf::queryProgram;
 using bpf::retrieveProgram;
 using netdutils::Status;
@@ -74,6 +76,30 @@ static Status checkProgramAccessible(const char* programPath) {
         return statusFromErrno(errno, fmt::format("Failed to get program from {}", programPath));
     }
     return netdutils::status::ok;
+}
+
+static void getsockoptTest() {
+    // getsockopt bpf hook is not called if the device is running in compat mode.
+    if (bpf::isKernel64Bit() != bpf::isUserspace64bit() && !isAtLeastKernelVersion(6, 13)) return;
+
+    // SO_ANDROID_DROP_REASON option is only supported on 5.10+.
+    if (!isAtLeastKernelVersion(5, 10)) return;
+
+    base::unique_fd sock(socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0));
+    if (!sock.ok()) abort();
+
+    uint64_t reason = 0xDEADC0DEDEADBEEFuLL; // should be overwritten by getsockopt()
+    socklen_t len = sizeof(reason);
+    if (getsockopt(sock, SOL_SOCKET, SO_ANDROID_DROP_REASON, &reason, &len) != 0) abort();
+    if (reason != DROP_REASON_NONE) abort();
+
+    // This option expects an 8 byte buffer. Passing a smaller buffer (7 bytes)
+    // should trigger a size check failure in the eBPF program (netd.c).
+    len = sizeof(reason) - 1;
+    int expected = isAtLeastKernelVersion(6, 1) ? EINVAL : EPERM;
+    errno = 0;
+    if (getsockopt(sock, SOL_SOCKET, SO_ANDROID_DROP_REASON, &reason, &len) == 0) abort();
+    if (errno != expected) abort();
 }
 
 static Status initPrograms(const char* cg2_path) {
@@ -155,6 +181,7 @@ static Status initPrograms(const char* cg2_path) {
                                         cg_fd, BPF_CGROUP_GETSOCKOPT));
             RETURN_IF_NOT_OK(attachProgramToCgroup(CGROUP_SETSOCKOPT_PROG_PATH,
                                         cg_fd, BPF_CGROUP_SETSOCKOPT));
+            getsockoptTest();
         }
     }
 
@@ -320,9 +347,7 @@ static void mapLockTest(void) {
 
 Status BpfHandler::initMaps() {
     // bpfLock() requires bpfGetFdMapId which is only available on 4.14+ kernels.
-    if (isAtLeastKernelVersion(4, 14)) {
-        mapLockTest();
-    }
+    if (bpf::lockingEnabled && isAtLeastKernelVersion(4, 14)) mapLockTest();
 
     RETURN_IF_NOT_OK(mStatsMapA.init(STATS_MAP_A_PATH));
     RETURN_IF_NOT_OK(mStatsMapB.init(STATS_MAP_B_PATH));

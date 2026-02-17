@@ -18,6 +18,7 @@ package com.android.networkstack.tethering.metrics;
 
 import static android.app.usage.NetworkStats.Bucket.STATE_ALL;
 import static android.app.usage.NetworkStats.Bucket.TAG_NONE;
+import static android.app.usage.NetworkStatsManager.FLAG_POLL_ON_OPEN;
 import static android.net.NetworkCapabilities.TRANSPORT_BLUETOOTH;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_ETHERNET;
@@ -77,6 +78,7 @@ import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.HandlerUtils;
 import com.android.networkstack.tethering.UpstreamNetworkState;
+import com.android.tethering.flags.Flags;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -157,6 +159,13 @@ public class TetheringMetrics {
             // NetworkTemplate#Builder API was introduced in Android T.
             return SdkLevel.isAtLeastT() && DeviceConfigUtils.isTetheringFeatureNotChickenedOut(
                     context, TETHER_UPSTREAM_DATA_USAGE_METRICS);
+        }
+
+        /**
+         * Indicates whether netstats per-query flags is enabled.
+         */
+        public boolean isNetstatsPerQueryFlagsEnabled() {
+            return SdkLevel.isAtLeastT() && Flags.netstatsPerQueryFlags();
         }
 
         /**
@@ -489,9 +498,17 @@ public class TetheringMetrics {
      */
     @NonNull
     private DataUsage getCurrentDataUsageForUpstreamType(@NonNull UpstreamType type) {
-        final NetworkStats stats = mNetworkStatsManager.queryDetailsForUidTagState(
-                buildNetworkTemplateForUpstreamType(type), Long.MIN_VALUE, Long.MAX_VALUE,
-                UID_TETHERING, TAG_NONE, STATE_ALL);
+        final NetworkTemplate template = buildNetworkTemplateForUpstreamType(type);
+        final NetworkStats stats;
+        if (mDependencies.isNetstatsPerQueryFlagsEnabled()) {
+            stats = mNetworkStatsManager.queryDetailsForUidTagState(
+                    template, Long.MIN_VALUE, Long.MAX_VALUE, UID_TETHERING,
+                    TAG_NONE, STATE_ALL, FLAG_POLL_ON_OPEN);
+        } else {
+            stats = mNetworkStatsManager.queryDetailsForUidTagState(
+                    template, Long.MIN_VALUE, Long.MAX_VALUE, UID_TETHERING,
+                    TAG_NONE, STATE_ALL);
+        }
 
         final NetworkStats.Bucket bucket = new NetworkStats.Bucket();
         Long totalTxBytes = 0L;

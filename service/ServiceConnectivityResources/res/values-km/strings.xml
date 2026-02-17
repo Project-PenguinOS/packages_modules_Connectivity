@@ -43,7 +43,8 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"ប្រភេទបណ្តាញដែលមិនស្គាល់"</string>
-    <string name="connect_to_service_title" msgid="2417012530980077322">"ភ្ជាប់ទៅសេវាកម្ម"</string>
-    <string name="connect_to_service_summary" msgid="8059566528115046359">"<xliff:g id="APP_NAME">%1$s</xliff:g> ចង់ភ្ជាប់ទៅឧបករណ៍ផ្សេងទៀតនៅលើបណ្ដាញមូលដ្ឋាន"</string>
+    <string name="choose_device_title" msgid="1326677343980771265">"ជ្រើសរើសឧបករណ៍ដែលត្រូវភ្ជាប់"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"<xliff:g id="APP_NAME">%1$s</xliff:g> ចង់ភ្ជាប់ទៅឧបករណ៍នៅលើបណ្ដាញមូលដ្ឋានរបស់អ្នក"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"កុំភ្ជាប់"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"កំពុងស្កេនរកសេវាកម្ម"</string>
 </resources>

@@ -164,6 +164,9 @@ import static com.android.net.module.util.PermissionUtils.enforceNetworkStackPer
 import static com.android.net.module.util.PermissionUtils.hasAnyPermissionOf;
 import static com.android.net.module.util.netlink.RtNetlinkQdiscMessage.CLSACT;
 import static com.android.server.ConnectivityStatsLog.CONNECTIVITY_STATE_SAMPLE;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_REQUESTROUTETOHOST_FAIL;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_REQUESTROUTETOHOST_OK;
 import static com.android.server.ConnectivityStatsLog.DEFAULT_NETWORK_REMATCH__REMATCH_REASON__RMR_NETWORK_DISCONNECTED;
 import static com.android.server.NetIdManager.MAX_NET_ID;
 import static com.android.server.NetIdManager.MIN_NET_ID;
@@ -398,6 +401,7 @@ import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabiliti
 import com.android.server.connectivity.AutodestructReference;
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker;
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker.AutomaticOnOffKeepalive;
+import com.android.server.connectivity.BpfEventPoller;
 import com.android.server.connectivity.BroadcastReceiveHelper;
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator;
 import com.android.server.connectivity.ClatCoordinator;
@@ -1577,6 +1581,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
     public static class Dependencies {
         public int getCallingUid() {
             return Binder.getCallingUid();
+        }
+
+        public int getCallingPid() {
+            return Binder.getCallingPid();
         }
 
         public boolean isAtLeastS() {
@@ -3685,6 +3693,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 netId = nai.network.getNetId();
             }
             boolean ok = addLegacyRouteToHost(lp, addr, netId, uid);
+            final int eventType = ok
+                    ? CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_REQUESTROUTETOHOST_OK
+                    : CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_REQUESTROUTETOHOST_FAIL;
+            ConnectivityStatsLog.write_non_chained(CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED,
+                    uid, null, eventType, 1);
             if (DBG) {
                 log("requestRouteToHostAddress " + addr + nai.toShortString() + " ok=" + ok);
             }
@@ -4213,8 +4226,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
     private boolean hasCreateAppSpecificNetworkPermission() {
         // The CREATE_APP_SPECIFIC_NETWORK permission was introduced in 25Q4.
         // It must not be granted on earlier platform versions, even if an app declares it.
-        return mDeps.isAtLeast25Q4() && hasAnyPermissionOf(mContext,
+        if (mDeps.isAtLeast25Q4()) {
+            return hasAnyPermissionOf(mContext,
                 android.Manifest.permission.CREATE_APP_SPECIFIC_NETWORK);
+        }
+        if (mDeps.isAtLeastB()) {
+            return hasConnectivityRestrictedNetworksPermission(Binder.getCallingUid(), false);
+        }
+        return false;
     }
 
     private boolean hasNetworkFactoryPermission() {
@@ -4589,6 +4608,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 CONNECTIVITY_STATE_SAMPLE, this::sampleConnectivityStateToStatsEvent);
         if (mSatisfiedByLocalNetworkMetrics != null) {
             mSatisfiedByLocalNetworkMetrics.start();
+        }
+
+        if (mBpfNetMaps.isLoopbackAccessMetricsEnabled()) {
+            BpfEventPoller.nativeInitLoopbackEventConsumer();
         }
 
         // Clear all clsact stubs on all interfaces.
@@ -6293,7 +6316,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         // Removes the interfaces associated with the network being destroyed from the tracker.
         for (String interfaceName : nai.linkProperties.getAllInterfaceNames()) {
-            mInterfaceTracker.removeInterface(interfaceName);
+            final int ifIndex = mInterfaceTracker.removeInterface(interfaceName);
+            if (ifIndex != 0 && mDeps.isAtLeastB()) {
+                mBpfNetMaps.removeLocalNetHostAllowlistForInterface(ifIndex);
+            }
         }
         nai.setDestroyed();
         nai.onNetworkDestroyed();
@@ -6467,14 +6493,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 continue;
             }
 
-            if (isNetworkPotentialSatisfier(nai, nri)) {
+            if (isNetworkPotentialBest(nai, nri)) {
                 return false;
             }
         }
         return true;
     }
 
-    private boolean isNetworkPotentialSatisfier(
+    private boolean isNetworkPotentialBest(
             @NonNull final NetworkAgentInfo candidate, @NonNull final NetworkRequestInfo nri) {
         // While destroyed network sometimes satisfy requests (including occasionally newly
         // satisfying requests), *potential* satisfiers are networks that might beat a current
@@ -6494,6 +6520,16 @@ public class ConnectivityService extends IConnectivityManager.Stub
             // if they are not currently active (e.g., they might currently be satisfied by another
             // network with a higher score than this one).
             if (!req.isRequest() && nri.getActiveRequest() == req) {
+                return false;
+            }
+            // If the network does not satisfy the active request, then it can never become the
+            // satisfier for this multilayer request.
+            // - The network cannot have satisfied an earlier request in the list, because
+            //   otherwise that request would be the active request: the first request in
+            //   a multilayer request to be satisfied is always the active request.
+            // - Even if the network satisfies later requests in the list, they cannot become the
+            //   active request, and therefore, cannot cause this network to be kept up.
+            if (!candidate.satisfies(req) && nri.getActiveRequest() == req) {
                 return false;
             }
 
@@ -10156,7 +10192,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
         } else {
             throw new SecurityException("Requires one of the following permissions: "
                     + "NETWORK_FACTORY, MAINLINE_NETWORK_STACK"
-                    + (mDeps.isAtLeast25Q4() ? ", CREATE_APP_SPECIFIC_NETWORK" : ""));
+                    + (mDeps.isAtLeast25Q4()
+                            ? ", CREATE_APP_SPECIFIC_NETWORK"
+                            : (mDeps.isAtLeastB()
+                                    ? ", CONNECTIVITY_USE_RESTRICTED_NETWORKS"
+                                    : "")));
         }
         final boolean hasLocalCap =
                 networkCapabilities.hasCapability(NET_CAPABILITY_LOCAL_NETWORK);
@@ -10165,18 +10205,20 @@ public class ConnectivityService extends IConnectivityManager.Stub
             throw new IllegalArgumentException("Local agents are not supported in this version");
         }
         final boolean hasLocalNetworkConfig = null != localNetworkConfig;
-        if (hasLocalCap != hasLocalNetworkConfig) {
-            throw new IllegalArgumentException(null != localNetworkConfig
-                    ? "Only local network agents can have a LocalNetworkConfig"
-                    : "Local network agents must have a LocalNetworkConfig"
-            );
+        if (hasLocalNetworkConfig && !hasLocalCap) {
+            throw new IllegalArgumentException(
+                    "Only local network agents can have a LocalNetworkConfig");
         }
+        final boolean needsDefaultLnc = hasLocalCap && !hasLocalNetworkConfig;
+        final LocalNetworkConfig lnc = needsDefaultLnc
+                ? new LocalNetworkConfig.Builder().build()
+                : localNetworkConfig;
 
         final int uid = mDeps.getCallingUid();
         final long token = Binder.clearCallingIdentity();
         try {
             return registerNetworkAgentInternal(na, networkInfo, linkProperties,
-                    networkCapabilities, initialScore, networkAgentConfig, localNetworkConfig,
+                    networkCapabilities, initialScore, networkAgentConfig, lnc,
                     providerId, uid, isAppSpecificNetwork);
         } finally {
             Binder.restoreCallingIdentity(token);
@@ -10741,9 +10783,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 wakeupModifyInterface(iface, nai, false);
                 mRoutingCoordinatorService.removeInterfaceFromNetwork(netId, iface);
                 maybeModifyQdiscClsact(iface, nai, false /* add */);
-                mInterfaceTracker.removeInterface(iface);
             } catch (Exception e) {
                 loge("Exception removing interface: " + e);
+            }
+            final int ifIndex = mInterfaceTracker.removeInterface(iface);
+            // Local protection maps are B+ (developer opt-in on B).
+            if (ifIndex != 0 && mDeps.isAtLeastB()) {
+                mBpfNetMaps.removeLocalNetHostAllowlistForInterface(ifIndex);
             }
         }
     }
@@ -10846,10 +10892,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // Get the on-link prefixes for all addresses on the link.
         final Set<IpPrefix> prefixes = new ArraySet<>();
         for (LinkAddress linkAddress : lp.getLinkAddresses()) {
-            IpPrefix prefix = getLocalNetworkPrefixForAddress(linkAddress.getAddress(),
+            final IpPrefix onlinkPrefix = new IpPrefix(linkAddress.getAddress(),
                     linkAddress.getPrefixLength());
-            if (prefix != null) {
-                prefixes.add(prefix);
+            if (isPrefixLocal(onlinkPrefix)) {
+                prefixes.add(onlinkPrefix);
             }
         }
 
@@ -10869,6 +10915,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
         });
 
         return effectivePrefixes;
+    }
+
+    private static boolean hasGatewayedRoute(Collection<RouteInfo> routes) {
+        for (RouteInfo route : routes) {
+            if (route.hasGateway()) return true;
+        }
+        return false;
     }
 
     /**
@@ -10899,6 +10952,17 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         final List<RouteInfo> routes = lp.getRoutes();
+
+        // On point-to-point links such as cellular and VPNs, assume that nothing is local except
+        // the subnets corresponding to local IP addresses. NetworkAgents don't specify whether
+        // their network is point-to-point, and the IFF_POINTOPOINT flag is likely unreliable, so
+        // use a simple heuristic: if there are no gatewayed routes, then the network is
+        // point-to-point. This seems better than excluding specific network types such as VPNs and
+        // cellular. Don't look at clat, which is always gatewayed.
+        if (!hasGatewayedRoute(routes)) return new ArrayList<>();
+
+        // TODO: Add all directly-connected routes.
+
         final List<IpPrefix> localPrefixes = new ArrayList<>();
 
         // Rule 1: Check for a ULA route with a nexthop that is not a default router.
@@ -10934,31 +10998,19 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     /**
-     * Gets the local network prefix, if any, corresponding to the specified prefix.
-     * @param prefix address used for filtering
-     * @param prefixLength prefix length of address
-     * @return IpPrefix that is local address.
+     * @return whether a prefix is local for the purposes of Local Network Protection.
      */
-    // TODO: just return a boolean that specifies whether the prefix is local.
-    @Nullable
-    public static IpPrefix getLocalNetworkPrefixForAddress(InetAddress prefix,
-            int prefixLength) {
-        if (prefix instanceof Inet6Address) {
-            // For IPv6, if the prefix length is greater than zero then they are part of local
-            // network
-            if (prefixLength != 0) {
-                return new IpPrefix(prefix, prefixLength);
-            }
-        } else {
-            // For IPv4, if the linkAddress is part of IpPrefix adding prefix to result.
-            for (IpPrefix ipv4LocalPrefix : IPV4_LOCAL_PREFIXES) {
-                if (ipv4LocalPrefix.containsPrefix(new IpPrefix(prefix, prefixLength))) {
-                    // TODO: return prefix instead.
-                    return ipv4LocalPrefix;
-                }
+    private static boolean isPrefixLocal(IpPrefix prefix) {
+        if (prefix.getAddress() instanceof Inet6Address) {
+            return prefix.getPrefixLength() != 0;
+        }
+
+        for (IpPrefix ipv4LocalPrefix : IPV4_LOCAL_PREFIXES) {
+            if (ipv4LocalPrefix.containsPrefix(prefix)) {
+                return true;
             }
         }
-        return null;
+        return false;
     }
 
     /**
@@ -11061,6 +11113,46 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
     }
 
+    @Override
+    public void allowLocalNetAccess(int uid, int ifIndex, List<String> addresses) {
+        // This is only for usage within system_server
+        if (mDeps.getCallingPid() != Process.myPid()) {
+            throw new SecurityException("Not allowed to call allowLocalNetAccess");
+        }
+        if (!mDeps.isAtLeastB()) {
+            throw new UnsupportedOperationException("allowLocalNetAccess is only available on B+");
+        }
+
+        // Optimistically add entries in the allowlist map synchronously (not on the handler thread)
+        // so callers can rely on the allowlist being in place when this returns.
+        // This means entries might be added for interfaces that are not tracked (either because
+        // they never had a Network, such as Wi-Fi P2P interfaces, or they were destroyed already),
+        // so a cleanup is done on the handler thread after that.
+        // It is OK if there are entries in the map referencing a removed or untracked interface for
+        // a short while, as local network is not blocked on such interfaces so it does not matter
+        // if they have entries in the allowlist.
+        // If an entry is added before ConnectivityService hears about an interface, it may be
+        // cleared before a Network is created; ConnectivityService would not be able to handle such
+        // a request anyway, so for networks tracked by ConnectivityService, callers are expected to
+        // only add entries after a Network is created.
+        for (String addrStr : addresses) {
+            final InetAddress addr;
+            try {
+                addr = InetAddresses.parseNumericAddress(addrStr);
+            } catch (IllegalArgumentException e) {
+                loge("Invalid address: " + addrStr);
+                continue;
+            }
+            mBpfNetMaps.addLocalNetUidHostAccess(uid, ifIndex, addr);
+        }
+        mHandler.post(() -> {
+            if (!mInterfaceTracker.hasInterface(ifIndex)) {
+                Log.d(TAG, "Clearing local net access for untracked interface: " + ifIndex);
+                mBpfNetMaps.removeLocalNetHostAllowlistForInterface(ifIndex);
+            }
+        });
+    }
+
     /**
      * Have netd update routes from oldLp to newLp.
      * @return true if routes changed between oldLp and newLp
@@ -11159,9 +11251,18 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // LOCAL_NETWORK routing table, which has no corresponding local table for
         // local routes to be added to.
         if (netId == LOCAL_NET_ID) return false;
+
+        // TODO: this code assumes that local routes can *only* be directly-connected routes created
+        // by IP addresses being assigned on the interface. This is not the case - for example:
+        // - A ULA routed to a Thread network is a local route.
+        // - On a home network that is assigned a 2001:db8:aaaa::/56, if the router announces an RIO
+        //   for the whole /56 and also announces a PIO for, e.g.,  2001:db8:aaaa:1::/64, then
+        //   getEffectiveLocalPrefixes will include 2001:db8:aaaa::/56 in the list of prefixes, but
+        //   isLocalRoute will return false.
+        // Not clear how to fix tis. This code could call getEffectiveLocalPrefixes, which is more
+        // sophisticated, but that method is not cheap.
         IpPrefix routeDestination = new IpPrefix(route.destination);
-        return getLocalNetworkPrefixForAddress(routeDestination.getAddress(),
-                routeDestination.getPrefixLength()) != null;
+        return isPrefixLocal(routeDestination);
     }
 
     private void updateVpnFiltering(@NonNull LinkProperties newLp, @Nullable LinkProperties oldLp,
@@ -15790,6 +15891,12 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // same nri in the map's values for each of its NetworkRequest objects.
         final ArraySet<NetworkRequestInfo> nris = new ArraySet<>(mNetworkRequests.values());
         for (final NetworkRequestInfo nri : nris) {
+            // This method finds app requests that track the default network in order to update them
+            // and send callbacks for the correct default networks.
+            // The default network requests themselves should not be updated by this logic.
+            if (mDefaultNetworkRequests.contains(nri)) {
+                continue;
+            }
             // Include this nri if it is currently being tracked.
             if (isPerAppTrackedNri(nri)) {
                 defaultCallbackRequests.add(nri);

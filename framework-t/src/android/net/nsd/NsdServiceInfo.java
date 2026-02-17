@@ -21,7 +21,7 @@ import static com.android.net.module.util.HexDump.toHexString;
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
-import android.compat.annotation.UnsupportedAppUsage;
+import android.annotation.SystemApi;
 import android.net.Network;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -211,21 +211,27 @@ public final class NsdServiceInfo implements Parcelable {
         return mHostname;
     }
 
-    // TODO: if setHostname is made public, AdvertisingRequest#FLAG_SKIP_PROBING javadoc must be
-    // updated to mention that hostnames must also be known unique to use that flag.
-    // Set a custom hostname for this service instance for registration.
-    // A hostname must be in ".local." domain. The ".local." must be omitted when calling this
-    // For example, you should call setHostname("MyHost") to use the hostname "MyHost.local.".
-    // If a hostname is set with this method, the addresses set with {@link #setHostAddresses}
-    // will be registered with the hostname. If the hostname is null (which is the default for a
-    // new {@link NsdServiceInfo}), a random hostname is used and the addresses of this device will
-    // be registered.
     /**
-     * Sets the hostname.
+     * Sets the host name of the service.
      *
+     * <p>When used for service advertising (via {@link NsdManager#registerService}), setting
+     * a custom host name is only supported for privileged callers having
+     * {@code NETWORK_SETTINGS} permission. For unprivileged applications, any host name
+     * set via this method will be ignored during the registration process.
+     * A hostname must be in ".local." domain. The ".local." must be omitted when calling this
+     * For example, you should call setHostname("MyHost") to use the hostname "MyHost.local.".
+     * If a hostname is set with this method, the addresses set with {@link #setHostAddresses}
+     * will be registered with the hostname. If the hostname is null (which is the default for a
+     * new {@link NsdServiceInfo}), a random hostname is used and the addresses of this device will
+     * be registered.
+     *
+     * @param hostname the host name to be associated with this service.
      * @see #getHostname() for the usage.
+     *
+     * @hide
      */
     @FlaggedApi(com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD)
+    @SystemApi
     public void setHostname(@Nullable String hostname) {
         mHostname = hostname;
     }
@@ -349,9 +355,26 @@ public final class NsdServiceInfo implements Parcelable {
         }
     }
 
-    /** @hide */
-    @UnsupportedAppUsage
-    public void setAttribute(String key, byte[] value) {
+    /**
+     * Add a service attribute as a key/value pair using raw bytes.
+     *
+     * <p> Service attributes are included as DNS-SD TXT record pairs.
+     *
+     * <p> This method preserves the provided bytes exactly, ensuring that data is
+     * maintained even if the bytes do not represent a valid UTF-8 string.
+     *
+     * <p> The key must be US-ASCII printable characters, excluding the '=' character. The
+     * total length of key + value must be less than 255 bytes.
+     *
+     * <p> Keys should be short, ideally no more than 9 characters, and unique per instance of
+     * {@link NsdServiceInfo}. Calling {@link #setAttribute} twice with the same key will
+     * overwrite the previous value.
+     *
+     * @param key the key of the attribute
+     * @param value the raw bytes of the attribute value, or null for an attribute with no value
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD)
+    public void setAttribute(@NonNull String key, @Nullable byte[] value) {
         if (TextUtils.isEmpty(key)) {
             throw new IllegalArgumentException("Key cannot be empty");
         }

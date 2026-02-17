@@ -58,6 +58,7 @@ public class MdnsSearchOptions implements Parcelable {
                             source.createStringArrayList(),
                             source.readInt(),
                             source.readInt() == 1,
+                            source.readInt() == 1,
                             source.readParcelable(null),
                             source.readInt(),
                             source.readString(),
@@ -78,6 +79,7 @@ public class MdnsSearchOptions implements Parcelable {
     private final boolean onlyUseIpv6OnIpv6OnlyNetworks;
     private final int numOfQueriesBeforeBackoff;
     private final boolean removeExpiredService;
+    private final boolean mResolveAllServices;
     // The target network for searching. Null network means search on all possible interfaces.
     @Nullable private final Network mNetwork;
     // If the target interface does not have a Network, set to the interface index, otherwise unset.
@@ -88,6 +90,7 @@ public class MdnsSearchOptions implements Parcelable {
             List<String> subtypes,
             int queryMode,
             boolean removeExpiredService,
+            boolean resolveAllServices,
             @Nullable Network network,
             int interfaceIndex,
             @Nullable String resolveInstanceName,
@@ -101,6 +104,7 @@ public class MdnsSearchOptions implements Parcelable {
         this.onlyUseIpv6OnIpv6OnlyNetworks = onlyUseIpv6OnIpv6OnlyNetworks;
         this.numOfQueriesBeforeBackoff = numOfQueriesBeforeBackoff;
         this.removeExpiredService = removeExpiredService;
+        mResolveAllServices = resolveAllServices;
         mNetwork = network;
         mInterfaceIndex = interfaceIndex;
         this.resolveInstanceName = resolveInstanceName;
@@ -152,6 +156,11 @@ public class MdnsSearchOptions implements Parcelable {
         return removeExpiredService;
     }
 
+    /** Returns {@code true} if all found services should be resolved. */
+    public boolean resolveAllServices() {
+        return mResolveAllServices;
+    }
+
     /**
      * Returns the network which the mdns query should target.
      *
@@ -193,6 +202,7 @@ public class MdnsSearchOptions implements Parcelable {
         out.writeStringList(subtypes);
         out.writeInt(queryMode);
         out.writeInt(removeExpiredService ? 1 : 0);
+        out.writeInt(mResolveAllServices ? 1 : 0);
         out.writeParcelable(mNetwork, 0);
         out.writeInt(mInterfaceIndex);
         out.writeString(resolveInstanceName);
@@ -207,6 +217,7 @@ public class MdnsSearchOptions implements Parcelable {
         private boolean onlyUseIpv6OnIpv6OnlyNetworks = false;
         private int numOfQueriesBeforeBackoff = 3;
         private boolean removeExpiredService;
+        private boolean mResolveAllServices;
         private Network mNetwork;
         private int mInterfaceIndex;
         private String resolveInstanceName;
@@ -276,6 +287,14 @@ public class MdnsSearchOptions implements Parcelable {
         }
 
         /**
+         * Sets whether TXT/SRV/address records should be queried for all discovered services.
+         */
+        public Builder setResolveAllServices(boolean resolveAllServices) {
+            this.mResolveAllServices = resolveAllServices;
+            return this;
+        }
+
+        /**
          * Sets if the mdns query should target on specific network.
          *
          * @param network the mdns query will target on given network.
@@ -313,6 +332,7 @@ public class MdnsSearchOptions implements Parcelable {
                     new ArrayList<>(subtypes),
                     queryMode,
                     removeExpiredService,
+                    mResolveAllServices,
                     mNetwork,
                     mInterfaceIndex,
                     resolveInstanceName,

@@ -131,6 +131,8 @@ static struct bpf_sock *(*bpf_sk_lookup_udp)(
     __u64 flags) = (void *)BPF_FUNC_sk_lookup_udp;
 static int (*bpf_sk_release)(void *sock) = (void *)BPF_FUNC_sk_release;
 
+static int (*bpf_set_retval)(int retval) = (void *)BPF_FUNC_set_retval;
+
 // Android only supports little endian architectures
 #define htons(x) (__builtin_constant_p(x) ? ___constant_swab16(x) : __builtin_bswap16(x))
 #define htonl(x) (__builtin_constant_p(x) ? ___constant_swab32(x) : __builtin_bswap32(x))
@@ -182,6 +184,10 @@ struct rawip_bool { bool rawip; };
 struct updatetime_bool { bool updatetime; };
 #define NO_UPDATETIME ((struct updatetime_bool){ .updatetime = false })
 #define UPDATETIME ((struct updatetime_bool){ .updatetime = true })
+
+struct undo_bool { bool undo; };
+#define ACCOUNT ((struct undo_bool){ .undo = false })
+#define UNDO ((struct undo_bool){ .undo = true })
 
 // Return value for xt_bpf (netfilter match extension) programs
 static const int XTBPF_NOMATCH = 0;

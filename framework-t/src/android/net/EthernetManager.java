@@ -591,7 +591,7 @@ public class EthernetManager {
      *                 interface name. On error, {@link OutcomeReceiver#onError} is called with more
      *                 information about the error.
      * @throws SecurityException if the process doesn't hold
-     *                          {@link android.Manifest.permission.MANAGE_ETHERNET_NETWORKS}.
+     *                          {@link android.Manifest.permission#MANAGE_ETHERNET_NETWORKS}.
      * @throws UnsupportedOperationException if the {@link NetworkCapabilities} are updated on a
      *                                       non-automotive device or this function is called on an
      *                                       unsupported interface.
@@ -632,7 +632,7 @@ public class EthernetManager {
      *                 interface name. On error, {@link OutcomeReceiver#onError} is called with more
      *                 information about the error.
      * @throws SecurityException if the process doesn't hold
-     *                          {@link android.Manifest.permission.MANAGE_ETHERNET_NETWORKS}.
+     *                          {@link android.Manifest.permission#MANAGE_ETHERNET_NETWORKS}.
      * @hide
      */
     @SystemApi
@@ -668,7 +668,7 @@ public class EthernetManager {
      *                 interface name. On error, {@link OutcomeReceiver#onError} is called with more
      *                 information about the error.
      * @throws SecurityException if the process doesn't hold
-     *                          {@link android.Manifest.permission.MANAGE_ETHERNET_NETWORKS}.
+     *                          {@link android.Manifest.permission#MANAGE_ETHERNET_NETWORKS}.
      * @hide
      */
     @SystemApi

@@ -50,13 +50,15 @@ public class CompatibilityVersionTest {
             InstrumentationRegistry.getInstrumentation().getContext().getFilesDir();
 
     private CompatibilityVersion mCompatVersion;
+    private String mLogListFileName;
 
     @Before
     public void setUp() {
         CompatibilityVersion.setRootDirectoryForTesting(mTestDir);
         mCompatVersion =
                 new CompatibilityVersion(
-                        TEST_VERSION, Config.URL_SIGNATURE_V1, Config.URL_LOG_LIST_V1);
+                        TEST_VERSION, Config.URL_SIGNATURE_V2, Config.URL_LOG_LIST_V2);
+        mLogListFileName = mCompatVersion.getLogsFile().getName();
     }
 
     @After
@@ -132,7 +134,7 @@ public class CompatibilityVersionTest {
                                         new File(
                                                 mCompatVersion.getVersionDir(),
                                                 CompatibilityVersion.LOGS_DIR_PREFIX + version),
-                                        CompatibilityVersion.LOGS_LIST_FILE_NAME)
+                                        mLogListFileName)
                                 .getCanonicalPath());
         assertThat(logListFile.getAbsolutePath())
                 .isEqualTo(
@@ -141,7 +143,7 @@ public class CompatibilityVersionTest {
                                         new File(
                                                 mCompatVersion.getVersionDir(),
                                                 CompatibilityVersion.CURRENT_LOGS_DIR_SYMLINK_NAME),
-                                        CompatibilityVersion.LOGS_LIST_FILE_NAME)
+                                        mLogListFileName)
                                 .getAbsolutePath());
     }
 
@@ -176,7 +178,7 @@ public class CompatibilityVersionTest {
                         mCompatVersion.getVersionDir(),
                         CompatibilityVersion.LOGS_DIR_PREFIX + existingVersion);
         assertThat(existingLogDir.mkdirs()).isTrue();
-        File logsListFile = new File(existingLogDir, CompatibilityVersion.LOGS_LIST_FILE_NAME);
+        File logsListFile = new File(existingLogDir, mLogListFileName);
         assertThat(logsListFile.createNewFile()).isTrue();
 
         JSONObject newLogList = makeLogList(existingVersion, "i_am_the_real_content");

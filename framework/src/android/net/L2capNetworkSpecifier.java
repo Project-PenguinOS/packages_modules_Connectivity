@@ -51,7 +51,7 @@ import java.util.Objects;
  * can connect.
  * An L2CAP server network is backed by a {@link android.bluetooth.BluetoothServerSocket} which can,
  * in theory, accept many connections. However, before SDK version {@link
- * Build.VERSION_CODES.VANILLA_ICE_CREAM} Bluetooth APIs do not expose the channel ID, so these
+ * Build.VERSION_CODES#VANILLA_ICE_CREAM} Bluetooth APIs do not expose the channel ID, so these
  * connections are indistinguishable. In practice, this means that the network matching semantics in
  * ConnectivityService will tear down all but the first connection.
  *

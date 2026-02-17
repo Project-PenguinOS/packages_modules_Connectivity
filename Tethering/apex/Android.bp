@@ -70,8 +70,7 @@ apex {
                 "libandroid_net_connectivity_com_android_net_module_util_jni_CommonConnectivityJni",
             ],
             native_shared_libs: [
-                "libcom.android.tethering.dns_helper",
-                "libcom.android.tethering.connectivity_native",
+                "libnetd_resolv",
                 "libnetd_updatable",
             ],
         },
@@ -80,6 +79,9 @@ apex {
                 "libframework-connectivity-jni",
                 "libframework-connectivity-tiramisu-jni",
             ],
+            native_shared_libs: [
+                "libcom.android.tethering.connectivity_native",
+            ],
         },
     },
     binaries: [
@@ -87,6 +89,7 @@ apex {
         "ethtool",
         "netbpfload",
         "ot-daemon",
+        "socketbroker",
     ],
     canned_fs_config: "canned_fs_config",
     bpfs: [
@@ -153,6 +156,9 @@ bootclasspath_fragment {
         "framework-tethering",
     ],
     apex_available: ["com.android.tethering"],
+    dex_preopt: {
+        profile: "packages/modules/Connectivity/Tethering/apex/boot-image-profile.txt",
+    },
 
     // The bootclasspath_fragments that provide APIs on which this depends.
     fragments: [

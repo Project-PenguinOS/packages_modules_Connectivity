@@ -190,6 +190,7 @@ public class NetworkStatsManager {
     public static final int NETWORK_TYPE_5G_NSA = -2;
 
     private int mFlags;
+    private boolean mAugmentWithSubscriptionPlan = true;
 
     /** @hide */
     @VisibleForTesting
@@ -210,11 +211,14 @@ public class NetworkStatsManager {
      * be omitted in case of rate limiting.
      *
      * @param pollOnOpen true if poll is needed.
+     * @deprecated Use APIs with per-query flag instead.
      * @hide
      */
     // The system will ignore any non-default values for non-privileged
     // processes, so processes that don't hold the appropriate permissions
     // can make no use of this API.
+    @Deprecated
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
     @SystemApi(client = MODULE_LIBRARIES)
     @RequiresPermission(anyOf = {
             NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK,
@@ -232,8 +236,11 @@ public class NetworkStatsManager {
     /**
      * Set poll force flag to indicate that calling any subsequent query method will force a stats
      * poll.
+     * @deprecated Use APIs with per-query flag instead.
      * @hide
      */
+    @Deprecated
+    @FlaggedApi(Flags.FLAG_NETSTATS_PER_QUERY_FLAGS)
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.R, trackingBug = 170729553)
     @SystemApi(client = MODULE_LIBRARIES)
     public void setPollForce(boolean pollForce) {
@@ -249,6 +256,7 @@ public class NetworkStatsManager {
     /** @hide */
     // TODO: Remove this method as the feature cannot be disabled in any case.
     public void setAugmentWithSubscriptionPlan(boolean augmentWithSubscriptionPlan) {
+        mAugmentWithSubscriptionPlan = augmentWithSubscriptionPlan;
         if (augmentWithSubscriptionPlan) {
             mFlags |= FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN;
         } else {
@@ -899,11 +907,13 @@ public class NetworkStatsManager {
      * @hide
      */
     @VisibleForTesting
-    public static int sanitizeQueryFlags(@NetworkStatsQueryFlags int flags) {
+    public int sanitizeQueryFlags(@NetworkStatsQueryFlags int flags) {
         if ((flags & ~MASK_REQUESTABLE_FLAGS) != 0) {
             throw new IllegalArgumentException("Invalid flags specified: " + flags);
         }
-        return flags | FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN;
+        return mAugmentWithSubscriptionPlan
+                ? (flags | FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN)
+                : flags;
     }
 
     /**

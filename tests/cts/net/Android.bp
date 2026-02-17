@@ -62,6 +62,7 @@ java_defaults {
     jarjar_rules: "jarjar-rules-shared.txt",
     static_libs: [
         "android.permission.flags-aconfig-java-export",
+        "android.provider.flags-aconfig-java",
         "com.android.tethering.flags-aconfig-java",
         "ApfGeneratorLib",
         "bouncycastle-unbundled",
@@ -114,6 +115,9 @@ android_test {
     test_suites: [
         "automotive-general-tests",
         "cts",
+        // See test/dts/README.md for triage instructions for bugs from the dts suite.
+        // Bugs should not be filed on the core networking team.
+        "dts",
         "mts-tethering",
         "mcts-tethering",
         "general-tests",
@@ -229,7 +233,6 @@ android_test_helper_app {
     // Tag this module as a cts test artifact
     test_suites: [
         "automotive-general-tests",
-        "cts",
         "general-tests",
     ],
     sdk_version: "test_current",

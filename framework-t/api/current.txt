@@ -229,21 +229,34 @@ package android.net.nsd {
 
   @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public final class DiscoveryRequest implements android.os.Parcelable {
     method public int describeContents();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public java.util.Map<java.lang.String,android.os.PatternMatcher> getAttributeFilters();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @Nullable public String getDisplayNameAttribute();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public long getFlags();
     method @Nullable public android.net.Network getNetwork();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @Nullable public android.os.PatternMatcher getServiceNameFilter();
     method @NonNull public String getServiceType();
     method @Nullable public String getSubtype();
     method public void writeToParcel(@NonNull android.os.Parcel, int);
     field @NonNull public static final android.os.Parcelable.Creator<android.net.nsd.DiscoveryRequest> CREATOR;
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_NO_PICKER = 1L; // 0x1L
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_SHOW_PICKER = 2L; // 0x2L
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_USER_APPROVED_ONLY = 4L; // 0x4L
   }
 
   public static final class DiscoveryRequest.Builder {
     ctor public DiscoveryRequest.Builder(@NonNull String);
     method @NonNull public android.net.nsd.DiscoveryRequest build();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setAttributeFilters(@Nullable java.util.Map<java.lang.String,android.os.PatternMatcher>);
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setDisplayNameAttribute(@Nullable String);
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setFlags(long);
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setFlags(long, long);
     method @NonNull public android.net.nsd.DiscoveryRequest.Builder setNetwork(@Nullable android.net.Network);
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setServiceNameFilter(@Nullable android.os.PatternMatcher);
     method @NonNull public android.net.nsd.DiscoveryRequest.Builder setSubtype(@Nullable String);
   }
 
   public final class NsdManager {
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public void checkPermissionForService(@NonNull String, @NonNull String, @NonNull java.util.concurrent.Executor, @NonNull java.util.function.IntConsumer);
     method public void discoverServices(String, int, android.net.nsd.NsdManager.DiscoveryListener);
     method public void discoverServices(@NonNull String, int, @Nullable android.net.Network, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.DiscoveryListener);
     method @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public void discoverServices(@NonNull android.net.nsd.DiscoveryRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.DiscoveryListener);
@@ -252,6 +265,7 @@ package android.net.nsd {
     method public void registerService(@NonNull android.net.nsd.NsdServiceInfo, int, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.RegistrationListener);
     method @FlaggedApi("com.android.net.flags.mdns_advertising_improvement") public void registerService(@NonNull android.net.nsd.AdvertisingRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.RegistrationListener);
     method public void registerServiceInfoCallback(@NonNull android.net.nsd.NsdServiceInfo, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ServiceInfoCallback);
+    method @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public void registerServiceInfoCallback(@NonNull android.net.nsd.DiscoveryRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ServiceInfoCallback);
     method @Deprecated public void resolveService(android.net.nsd.NsdServiceInfo, android.net.nsd.NsdManager.ResolveListener);
     method @Deprecated public void resolveService(@NonNull android.net.nsd.NsdServiceInfo, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ResolveListener);
     method public void stopServiceDiscovery(android.net.nsd.NsdManager.DiscoveryListener);
@@ -269,6 +283,8 @@ package android.net.nsd {
     field public static final int NSD_STATE_DISABLED = 1; // 0x1
     field public static final int NSD_STATE_ENABLED = 2; // 0x2
     field public static final int PROTOCOL_DNS_SD = 1; // 0x1
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final int SERVICE_PERMISSION_DENIED = 2; // 0x2
+    field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final int SERVICE_PERMISSION_GRANTED = 1; // 0x1
   }
 
   public static interface NsdManager.DiscoveryListener {
@@ -295,9 +311,11 @@ package android.net.nsd {
   }
 
   public static interface NsdManager.ServiceInfoCallback {
+    method @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public default void onServiceInfoCallbackRegistered();
     method public void onServiceInfoCallbackRegistrationFailed(int);
     method public void onServiceInfoCallbackUnregistered();
     method public void onServiceLost();
+    method @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public default void onServiceLost(@NonNull android.net.nsd.NsdServiceInfo);
     method public void onServiceUpdated(@NonNull android.net.nsd.NsdServiceInfo);
   }
 
@@ -314,10 +332,10 @@ package android.net.nsd {
     method public String getServiceType();
     method @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") @NonNull public java.util.Set<java.lang.String> getSubtypes();
     method public void removeAttribute(String);
+    method @FlaggedApi("com.android.tethering.flags.nsd_mdns_scan_offload") public void setAttribute(@NonNull String, @Nullable byte[]);
     method public void setAttribute(String, String);
     method @Deprecated public void setHost(java.net.InetAddress);
     method public void setHostAddresses(@NonNull java.util.List<java.net.InetAddress>);
-    method @FlaggedApi("com.android.tethering.flags.nsd_mdns_scan_offload") public void setHostname(@Nullable String);
     method public void setNetwork(@Nullable android.net.Network);
     method public void setPort(int);
     method public void setServiceName(String);

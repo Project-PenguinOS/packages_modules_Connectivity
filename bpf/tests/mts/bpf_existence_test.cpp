@@ -168,6 +168,8 @@ static const set<string> MAINLINE_FOR_25Q2_PLUS = {
     NETD "map_netd_local_net_blocked_uid_map",
     NETD "map_netd_local_net_note_op_cache_map",
     NETD "map_netd_local_net_note_op_enabled_map",
+    NETD "map_netd_local_net_uid_host_allowlist_map",
+    NETD "map_netd_local_net_cache_generation_id_map",
 };
 
 // Provided by *current* mainline module for 25Q2+ devices with 5.10+ kernels
@@ -222,11 +224,7 @@ TEST_F(BpfExistenceTest, TestPrograms) {
 
     // S requires Linux Kernel 4.9+ and thus requires eBPF support.
     ASSERT_TRUE(isAtLeastKernelVersion(4, 9));
-
-    // on S without a new enough DnsResolver apex, NetBpfLoad doesn't get triggered,
-    // and thus no mainline programs get loaded.
-    bool mainlineBpfCapableResolve = !access("/apex/com.android.resolv/NetBpfLoad-S.flag", F_OK);
-    DO_EXPECT(mainlineBpfCapableResolve || isAtLeastT, MAINLINE_FOR_S_PLUS);
+    DO_EXPECT(true, MAINLINE_FOR_S_PLUS);
 
     // Nothing added or removed in Sv2.
 

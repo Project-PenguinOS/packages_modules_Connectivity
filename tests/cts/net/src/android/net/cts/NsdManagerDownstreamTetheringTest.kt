@@ -56,26 +56,27 @@ class NsdManagerDownstreamTetheringTest : EthernetTetheringTestBase() {
 
     private var tetheringEventCallback: MyTetheringEventCallback? = null
 
-    private val downstreamIface = run {
-        val iface = AutoCloseableTestNetworkInterface.createTap(context)
-        EthernetTestInterface(context, iface)
-    }
+    private lateinit var downstreamIface: EthernetTestInterface
 
     @get:Rule
-    val testResourcesRule = AutoCloseTestResourcesRule().apply {
-        add(downstreamIface)
-    }
+    val testResourcesRule = AutoCloseTestResourcesRule()
 
     @Before
     override fun setUp() {
         super.setUp()
+
+        val iface = AutoCloseableTestNetworkInterface.createTap(context)
+        downstreamIface = EthernetTestInterface(context, iface)
+        testResourcesRule.add(downstreamIface)
     }
 
     @After
     override fun tearDown() {
         // TODO: fix the test so the explicit close() can be removed.
         // Note that EthernetTestInterface.close() is idempotent,
-        downstreamIface.close()
+        if (::downstreamIface.isInitialized) {
+            downstreamIface.close()
+        }
 
         maybeUnregisterTetheringEventCallback(tetheringEventCallback)
         super.tearDown()

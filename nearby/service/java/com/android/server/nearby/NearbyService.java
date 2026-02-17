@@ -256,7 +256,10 @@ public class NearbyService extends INearbyManager.Stub {
             if (mBluetoothAdapter != null) {
                 return;
             }
-            BluetoothManager manager = mContext.getSystemService(BluetoothManager.class);
+
+            Context attributionContext = mContext.createAttributionContext(TAG);
+
+            BluetoothManager manager = attributionContext.getSystemService(BluetoothManager.class);
             if (manager == null) {
                 return;
             }

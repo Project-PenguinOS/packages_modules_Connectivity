@@ -28,12 +28,14 @@ import static android.net.BpfNetMapsConstants.INGRESS_DISCARD_MAP_PATH;
 import static android.net.BpfNetMapsConstants.L4S_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
+import static android.net.BpfNetMapsConstants.LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
+import static android.net.BpfNetMapsConstants.LOOPBACK_ACCESS_METRICS_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.PERMISSION_PROPAGATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_MIGRATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_OWNER_MAP_PATH;
-import static android.net.BpfNetMapsConstants.UID_PERMISSION_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_PERMISSION_CHUNK_MAP_PATH;
+import static android.net.BpfNetMapsConstants.UID_PERMISSION_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_RULES_CONFIGURATION_KEY;
 import static android.net.BpfNetMapsUtils.getMatchByFirewallChain;
 import static android.net.BpfNetMapsUtils.isFirewallAllowList;
@@ -49,23 +51,23 @@ import static android.system.OsConstants.ENOENT;
 import static android.system.OsConstants.EOPNOTSUPP;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
-import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
-import static com.android.net.module.util.bpf.UidPermissionChunk.getIndex;
-import static com.android.net.module.util.bpf.UidPermissionChunk.getShift;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_INT64_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_UID_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_COUNT;
-import static com.android.net.module.util.bpf.UidPermissionChunk.UID_PERMISSION_MASK;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
+import static com.android.net.module.util.bpf.UidPermissionChunk.UID_PERMISSION_MASK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getIndex;
+import static com.android.net.module.util.bpf.UidPermissionChunk.getShift;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_NONE;
-import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UNINSTALLED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_INVALID_NET_PERM_SENT_TO_NETD;
 import static com.android.server.ConnectivityStatsLog.NETWORK_BPF_MAP_INFO;
@@ -99,6 +101,7 @@ import android.util.StatsEvent;
 
 import androidx.annotation.RequiresApi;
 
+import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.BackgroundThread;
 import com.android.modules.utils.build.SdkLevel;
@@ -120,6 +123,7 @@ import com.android.net.module.util.bpf.CookieTagMapValue;
 import com.android.net.module.util.bpf.IngressDiscardKey;
 import com.android.net.module.util.bpf.IngressDiscardValue;
 import com.android.net.module.util.bpf.LocalNetAccessKey;
+import com.android.net.module.util.bpf.LocalNetUidHostAllowlistKey;
 import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 
@@ -127,12 +131,12 @@ import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Arrays;
-import java.util.function.BiFunction;
-import java.util.function.Predicate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.function.BiFunction;
+import java.util.function.Predicate;
 
 /**
  * BpfNetMaps is responsible for providing traffic controller relevant functionality.
@@ -182,7 +186,12 @@ public class BpfNetMaps {
 
     private static IBpfMap<LocalNetAccessKey, Bool> sLocalNetAccessMap = null;
     private static IBpfMap<U32, Bool> sLocalNetBlockedUidMap = null;
+    private static final Object sLocalNetUidHostAllowlistMapLock = new Object();
+    // The allowlist map is accessed on different threads in ConnectivityService#allowLocalNetAccess
+    @GuardedBy("sLocalNetUidHostAllowlistMapLock")
+    private static IBpfMap<LocalNetUidHostAllowlistKey, Bool> sLocalNetUidHostAllowlistMap = null;
     private static BpfBoolean sL4sEnabledMap = null;
+    private static BpfBoolean sLoopbackAccessMetricsEnabledBpfBoolean = null;
 
     private static final List<Pair<Integer, String>> PERMISSION_LIST = Arrays.asList(
             Pair.create(TRAFFIC_PERMISSION_INTERNET, "PERMISSION_INTERNET"),
@@ -191,6 +200,7 @@ public class BpfNetMaps {
     );
     private final InterfaceTracker mInterfaceTracker;
     private static boolean sPermissionMapUidMigrationEnabled = false;
+    private static boolean sLoopbackAccessMetricsEnabled = false;
 
     /**
      * Get the cached com.android.tethering.flags.Flags#permissionMapUidMigration() so the flag
@@ -198,6 +208,14 @@ public class BpfNetMaps {
      */
     public boolean isUidMigrationEnabled() {
         return sPermissionMapUidMigrationEnabled;
+    }
+
+    /**
+     * Get the cached com.android.tethering.flags.Flags#loopbackAccessMetrics() so the flag
+     * value is process stable.
+     */
+    public boolean isLoopbackAccessMetricsEnabled() {
+        return sLoopbackAccessMetricsEnabled;
     }
 
     /**
@@ -267,6 +285,15 @@ public class BpfNetMaps {
     }
 
     /**
+     * Set loopbackAccessMetricsEnabledBpfBoolean for test.
+     */
+    @VisibleForTesting
+    public static void setLoopbackAccessMetricsEnabledBpfBooleanForTest(
+            BpfBoolean loopbackAccessMetricsEnabledBpfBoolean) {
+        sLoopbackAccessMetricsEnabledBpfBoolean = loopbackAccessMetricsEnabledBpfBoolean;
+    }
+
+    /**
      * Set permissionPropagationEnabledBpfBoolean for test.
      */
     @VisibleForTesting
@@ -309,6 +336,17 @@ public class BpfNetMaps {
     public static void setL4sEnabledMapForTest(
             BpfBoolean l4sEnabledMap) {
         sL4sEnabledMap = l4sEnabledMap;
+    }
+
+    /**
+     * Set localNetUidHostAllowlistMap for test.
+     */
+    @VisibleForTesting
+    public static void setLocalNetUidHostAllowlistMapForTest(
+            IBpfMap<LocalNetUidHostAllowlistKey, Bool> localNetUidHostAllowlistMap) {
+        synchronized (sLocalNetUidHostAllowlistMapLock) {
+            sLocalNetUidHostAllowlistMap = localNetUidHostAllowlistMap;
+        }
     }
 
     /**
@@ -400,12 +438,31 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private static IBpfMap<LocalNetUidHostAllowlistKey, Bool> getLocalNetUidHostAllowlistMap() {
+        try {
+            return SingleWriterBpfMap.getSingleton(LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH,
+                    LocalNetUidHostAllowlistKey.class, Bool.class);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open local_net_uid_host_access map", e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private static BpfBoolean getUidMigrationEnabledBpfBoolean() {
         try {
             return new BpfBoolean(UID_MIGRATION_ENABLED_MAP_PATH, true);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Cannot open uid migration enabled map", e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private static BpfBoolean getLoopbackAccessMetricsEnabledBpfBoolean() {
+        try {
+            return new BpfBoolean(LOOPBACK_ACCESS_METRICS_ENABLED_MAP_PATH, true);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open loopback access metrics enabled map", e);
         }
     }
 
@@ -510,6 +567,18 @@ public class BpfNetMaps {
                 throw new IllegalStateException("Failed to initialize local_net_blocked_uid map",
                         e);
             }
+
+            synchronized (sLocalNetUidHostAllowlistMapLock) {
+                if (sLocalNetUidHostAllowlistMap == null) {
+                    sLocalNetUidHostAllowlistMap = getLocalNetUidHostAllowlistMap();
+                }
+                try {
+                    sLocalNetUidHostAllowlistMap.clear();
+                } catch (ErrnoException e) {
+                    throw new IllegalStateException(
+                            "Failed to initialize local_net_uid_host_allowlist map", e);
+                }
+            }
         }
 
         if (SdkUtil.isAtLeast26Q2()) {
@@ -560,6 +629,19 @@ public class BpfNetMaps {
         } catch (ErrnoException e) {
             throw new IllegalStateException("Cannot clear uid permission chunk map", e);
         }
+
+        if (SdkUtil.isAtLeast25Q4()) {
+            if (sLoopbackAccessMetricsEnabledBpfBoolean == null) {
+                sLoopbackAccessMetricsEnabledBpfBoolean =
+                        getLoopbackAccessMetricsEnabledBpfBoolean();
+            }
+            try {
+                sLoopbackAccessMetricsEnabledBpfBoolean.set(sLoopbackAccessMetricsEnabled);
+            } catch (ErrnoException e) {
+                throw new IllegalStateException("Failed to set loopback access metrics enabled map",
+                        e);
+            }
+        }
     }
 
     /**
@@ -570,6 +652,8 @@ public class BpfNetMaps {
             final Dependencies deps) {
         if (sInitialized) return;
         sPermissionMapUidMigrationEnabled = deps.isPermissionMapUidMigrationEnabled();
+        sLoopbackAccessMetricsEnabled = deps.isLoopbackAccessMetricsEnabled();
+
         if (SdkLevel.isAtLeastT()) {
             initBpfMaps(deps);
         }
@@ -626,6 +710,18 @@ public class BpfNetMaps {
          */
         public boolean isPermissionMapUidMigrationEnabled() {
             return com.android.tethering.flags.Flags.permissionMapUidMigration();
+        }
+
+        /**
+         * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than loopback access
+         * metrics enabling. Wrapper around loopbackAccessMetrics() so that it can be mocked
+         * in unit test.
+         *
+         * @see com.android.tethering.flags.Flags#loopbackAccessMetrics()
+         */
+        public boolean isLoopbackAccessMetricsEnabled() {
+            return SdkUtil.isAtLeast25Q4()
+                    && com.android.tethering.flags.Flags.loopbackAccessMetrics();
         }
 
         /**
@@ -1635,6 +1731,43 @@ public class BpfNetMaps {
     }
 
     /**
+     * Add an entry to map_netd_local_net_uid_host_allowlist_map.
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void addLocalNetUidHostAccess(final int uid, final int ifIndex,
+            @NonNull final InetAddress address) {
+        throwIfPre25Q2("addLocalNetUidHostAccess is not available on pre-B devices");
+        final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(
+                uid, ifIndex, address);
+        try {
+            synchronized (sLocalNetUidHostAllowlistMapLock) {
+                sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(true));
+            }
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to add local network access for key: " + key);
+        }
+    }
+
+    /**
+     * Remove all entries from map_netd_local_net_uid_host_allowlist_map that match the ifIndex.
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void removeLocalNetHostAllowlistForInterface(final int ifIndex) {
+        throwIfPre25Q2("removeLocalNetHostAllowlistForUid is not available on pre-B devices");
+        try {
+            synchronized (sLocalNetUidHostAllowlistMapLock) {
+                sLocalNetUidHostAllowlistMap.forEach((key, value) -> {
+                    if (key.ifIndex == ifIndex) {
+                        sLocalNetUidHostAllowlistMap.deleteEntry(key);
+                    }
+                });
+            }
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed removing local net allowlist entries for ifIndex " + ifIndex, e);
+        }
+    }
+
+    /**
      * Get granted permissions for specified uid. If uid is not in the map, this method returns
      * {@link android.net.INetd.PERMISSION_INTERNET} since this is a default permission.
      * See {@link #setNetPermForUids}
@@ -1935,6 +2068,16 @@ public class BpfNetMaps {
     }
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private void dumpLoopbackAccessMetricsConfig(final IndentingPrintWriter pw) {
+        try {
+            final boolean enabled = sLoopbackAccessMetricsEnabledBpfBoolean.get();
+            pw.println("sLoopbackAccessMetricsEnabledBpfBoolean: " + enabled);
+        } catch (ErrnoException e) {
+            pw.println("Failed to read loopback access metrics enabled map: " + e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private void dumpUidPermissionChunkMap(final IndentingPrintWriter pw) {
         pw.println("sUidPermissionChunkMap:" );
         pw.increaseIndent();
@@ -2008,6 +2151,16 @@ public class BpfNetMaps {
             if (sLocalNetBlockedUidMap != null) {
                 BpfDump.dumpMap(sLocalNetBlockedUidMap, pw, "sLocalNetBlockedUidMap",
                         (key, value) -> "" + key + ": " + value.val);
+            }
+            synchronized (sLocalNetUidHostAllowlistMapLock) {
+                if (sLocalNetUidHostAllowlistMap != null) {
+                    BpfDump.dumpMap(sLocalNetUidHostAllowlistMap, pw,
+                            "sLocalNetUidHostAllowlistMap",
+                            (key, value) -> "" + key + ": " + value.val);
+                }
+            }
+            if (sLoopbackAccessMetricsEnabledBpfBoolean != null) {
+                dumpLoopbackAccessMetricsConfig(pw);
             }
             dumpDataSaverConfig(pw);
             dumpUidMigrationConfig(pw);

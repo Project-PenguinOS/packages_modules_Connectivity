@@ -31,17 +31,20 @@ import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.ArraySet;
 import android.util.SparseArray;
+import android.util.SparseLongArray;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.HandlerUtils;
 import com.android.net.module.util.SharedLog;
+import com.android.server.ConnectivityStatsLog;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -100,13 +103,19 @@ public class AppOptInDefaultNetworkController {
      * A cache of UIDs for applications that are currently in an active Over-the-Top (OTT) call
      * and require a high-priority network slice.
      *
-     * <p>This set is dynamically populated by the {@code onOttCallStateChanged} method, which
+     * <p>This map is dynamically populated by the {@code onOttCallStateChanged} method, which
      * receives events when a call starts or ends. It serves as a primary input into the
      * arbitration logic within this controller to determine which UIDs should receive a
      * network request with a premium slicing preference.
      *
+     * <ul>
+     *   <li>Key: Integer representing the UID of the application.</li>
+     *   <li>Value: Long representing the value of {@link android.os.SystemClock#elapsedRealtime()}
+     *       when the OTT call started.</li>
+     * </ul>
      */
-    private final Set<Integer> mOttSlicingUids = new ArraySet<>();
+    private final SparseLongArray mOttUidToStartTime = new SparseLongArray();
+    private static final long INVALID_START_TIME = -1L;
 
     /**
      *  Monitor {@link android.app.role.OnRoleHoldersChangedListener#onRoleHoldersChanged(String,
@@ -162,6 +171,24 @@ public class AppOptInDefaultNetworkController {
         public boolean supportConstrainedDataSatelliteOptIn(Context context) {
             return DeviceConfigUtils.isTetheringFeatureNotChickenedOut(context,
                     CONSTRAINED_DATA_SATELLITE_OPTIN);
+        }
+
+        /**
+         * Returns the current elapsed real time in milliseconds.
+         */
+        public long elapsedRealtime() {
+            return SystemClock.elapsedRealtime();
+        }
+
+        /** Logs the duration of an OTT session. */
+        public void logOttSessionDuration(int uid, long duration) {
+            ConnectivityStatsLog.write_non_chained(
+                    ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_DURATION_EVENT_OCCURRED,
+                    uid,
+                    null,
+                    ConnectivityStatsLog
+                            .CORE_NETWORKING_CRITICAL_DURATION_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_DURATION_EVENT_TYPE_OTT_SESSION_DURATION_MS,
+                    duration);
         }
     }
 
@@ -269,7 +296,7 @@ public class AppOptInDefaultNetworkController {
         }
         mLog.i("SmsRoleUids:" + mergedSatelliteRoleSmsUids
                 + " Opt-InUids:" + mSatelliteDataOptInUids
-                + " ott-uids:" + mOttSlicingUids);
+                + " ott-uids:" + mOttUidToStartTime);
 
         // Group UIDs by their unique combination of policies using a bitmask.
         // SparseArray is efficient for integer keys. ArraySet for the UID values.
@@ -277,12 +304,14 @@ public class AppOptInDefaultNetworkController {
         final ArraySet<Integer> allUids = new ArraySet<>();
         allUids.addAll(mergedSatelliteRoleSmsUids);
         allUids.addAll(mSatelliteDataOptInUids);
-        allUids.addAll(mOttSlicingUids);
+        for (int i = 0; i < mOttUidToStartTime.size(); i++) {
+            allUids.add(mOttUidToStartTime.keyAt(i));
+        }
 
         for (int uid : allUids) {
             final boolean hasSmsRole = mergedSatelliteRoleSmsUids.contains(uid);
             final boolean hasOptedIn = mSatelliteDataOptInUids.contains(uid);
-            final boolean hasOtt = mOttSlicingUids.contains(uid);
+            final boolean hasOtt = mOttUidToStartTime.indexOfKey(uid) >= 0;
 
             int policyFlags = POLICY_NONE;
             if (hasSmsRole) policyFlags |= POLICY_SATELLITE_ROLE_SMS;
@@ -539,8 +568,8 @@ public class AppOptInDefaultNetworkController {
     /**
      * Entry point for OTT call state changes, forwarded from ConnectivityService.
      *
-     * <p>This method updates the internal {@code mOttSlicingUids} set. A change to this set
-     * results in a call to {@link #reportUidDefaultNetworkPolicies()}, which causes the
+     * <p>This method updates the internal {@code mOttUidToStartTime} map. A change to
+     * map results in a call to {@link #reportUidDefaultNetworkPolicies()}, which causes the
      * controller to re-arbitrate all network policies and send an updated
      * {@code List<AppOptInDefaultNetworkInfo>} to ConnectivityService.
      *
@@ -553,9 +582,14 @@ public class AppOptInDefaultNetworkController {
 
         // TODO (b/448567932) : Adding Metrics for unexpected onCall events
         if (isAdded) {
-            mOttSlicingUids.add(uid);
+            mOttUidToStartTime.put(uid, mDeps.elapsedRealtime());
         } else {
-            mOttSlicingUids.remove(uid);
+            final long startTime = mOttUidToStartTime.get(uid, INVALID_START_TIME);
+            if (startTime != INVALID_START_TIME) {
+                final long duration = mDeps.elapsedRealtime() - startTime;
+                mDeps.logOttSessionDuration(uid,duration);
+                mOttUidToStartTime.delete(uid);
+            }
         }
         reportAppOptInDefaultNetworkPolicies();
     }
@@ -580,7 +614,11 @@ public class AppOptInDefaultNetworkController {
         pw.print(mSatelliteDataOptInUids);
         pw.println();
         pw.print("OttSlicingUids: ");
-        pw.print(mOttSlicingUids);
+        final ArraySet<Integer> ottUids = new ArraySet<>();
+        for (int i = 0; i < mOttUidToStartTime.size(); i++) {
+            ottUids.add(mOttUidToStartTime.keyAt(i));
+        }
+        pw.print(ottUids);
         pw.println();
         pw.println("Log:");
         mLog.reverseDump(pw);

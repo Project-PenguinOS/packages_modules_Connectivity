@@ -70,7 +70,7 @@ class DnsHttpsPacketTest {
         assertEquals(1, records.size)
         with(records[0]) {
             assertEquals(1, priority)
-            assertEquals(".", targetName)
+            assertEquals("", targetName)
         }
     }
 

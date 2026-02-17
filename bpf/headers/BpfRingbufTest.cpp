@@ -116,17 +116,25 @@ TEST_F(BpfRingbufTest, FillAndWrap) {
   auto result = BpfRingbuf<uint64_t>::Create(mRingbufPath.c_str());
   ASSERT_RESULT_OK(result);
 
-  // 4kb buffer with 16 byte payloads (8 byte data, 8 byte header) should fill
-  // after 255 iterations. Exceed that so that some events are dropped.
-  constexpr int iterations = 300;
+  // The buffer with 16 byte payloads (8 byte data, 8 byte header) should
+  // fill after (capacity) iterations. Exceed that so that some events are
+  // dropped.
+  const int capacityBytes = result.value()->maxCapacityBytes();
+  ASSERT_GT(capacityBytes, 0);
+  const int capacity = capacityBytes / 16;
+  const int excessCount = 50;
+  const int margin = 5;
+  const int lowerBound = capacity - margin;
+  const int upperBound = capacity + margin;
+  const int iterations = capacity + excessCount;
   for (int i = 0; i < iterations; i++) {
     RunProgram();
   }
 
   // Some events were dropped, but consume all that succeeded.
   EXPECT_THAT(result.value()->ConsumeAll(callback),
-              HasValue(AllOf(Gt(250), Lt(260))));
-  EXPECT_THAT(run_count, AllOf(Gt(250), Lt(260)));
+              HasValue(AllOf(Gt(lowerBound), Lt(upperBound))));
+  EXPECT_THAT(run_count, AllOf(Gt(lowerBound), Lt(upperBound)));
 
   // After consuming everything, we should be able to use the ring buffer again.
   run_count = 0;

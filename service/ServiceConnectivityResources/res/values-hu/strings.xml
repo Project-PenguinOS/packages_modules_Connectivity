@@ -43,7 +43,8 @@
     <item msgid="5734728378097476003">"VPN"</item>
   </string-array>
     <string name="network_switch_type_name_unknown" msgid="5116448402191972082">"ismeretlen hálózati típus"</string>
-    <string name="connect_to_service_title" msgid="2417012530980077322">"Csatlakozás a szolgáltatáshoz"</string>
-    <string name="connect_to_service_summary" msgid="8059566528115046359">"A(z) <xliff:g id="APP_NAME">%1$s</xliff:g> egy helyi hálózaton lévő másik eszközhöz szeretne csatlakozni"</string>
+    <string name="choose_device_title" msgid="1326677343980771265">"Válassza ki a csatlakoztatni kívánt eszközt"</string>
+    <string name="choose_device_summary" msgid="1896271770783251097">"A(z) <xliff:g id="APP_NAME">%1$s</xliff:g> csatlakozni szeretne a helyi hálózaton lévő egyik eszközhöz"</string>
+    <string name="choose_device_cancel" msgid="6916104929345443557">"Ne csatlakozzon"</string>
     <string name="scanning_for_services_progress_description" msgid="2231669717305529286">"Szolgáltatások keresése…"</string>
 </resources>

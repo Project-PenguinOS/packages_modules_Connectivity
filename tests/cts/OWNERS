@@ -4,4 +4,4 @@ set noparent
 file:platform/packages/modules/Connectivity:main:/OWNERS_core_networking_xts
 
 # IPsec
-per-file **IpSec* = benedictwong@google.com, nharold@google.com
+per-file **IpSec* = nharold@google.com

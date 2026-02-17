@@ -70,7 +70,7 @@ public final class TetheringInterface implements Parcelable {
     /**
      * Get the SoftApConfiguration provided for this interface, if any. This will only be populated
      * for apps with the same uid that specified the configuration, or apps with permission
-     * {@link android.Manifest.permission.NETWORK_SETTINGS}.
+     * {@link android.Manifest.permission#NETWORK_SETTINGS}.
      */
     @FlaggedApi(Flags.FLAG_TETHERING_WITH_SOFT_AP_CONFIG)
     @RequiresPermission(value = android.Manifest.permission.NETWORK_SETTINGS, conditional = true)

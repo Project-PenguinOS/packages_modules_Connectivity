@@ -49,11 +49,10 @@ public class SocketKey {
     private final long mCreationCapabilitiesBits;
     private final int mHashCode;
 
-    SocketKey(int interfaceIndex, @NonNull String interfaceName) {
+    public SocketKey(int interfaceIndex, @NonNull String interfaceName) {
         this(null /* network */, interfaceIndex, interfaceName, EMPTY_NETWORK_CAPABILITIES);
     }
 
-    @VisibleForTesting
     public SocketKey(@Nullable Network network, int interfaceIndex, @NonNull String interfaceName,
             long creationCapabilitiesBits) {
         mNetwork = network;

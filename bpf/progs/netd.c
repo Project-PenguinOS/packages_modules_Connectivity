@@ -20,6 +20,7 @@
 #define DEFAULT_BPF_PIN_SUBDIR "netd_shared"
 
 #include "bpf_net_helpers.h"
+#include "internal_net_api.h"
 #include "netd.h"
 
 // This is defined for cgroup bpf filter only.
@@ -39,6 +40,9 @@ static const int DROP_UNLESS_DNS = 2;  // internal to our program
 
 #define TCP_FLAG8_OFF (TCP_FLAG32_OFF + 1)
 #define TCP_FLAG8_SYN 0x02
+
+#define EINVAL  22
+#define EUNATCH 49
 
 // For maps netd does not need to access
 #define DEFINE_BPF_MAP_NO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
@@ -110,6 +114,15 @@ DEFINE_BPF_MAP_EXT(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000,
                    AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
                    BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
 
+// This trie holds exceptions to blocked access listed in local_net_access_map.
+// Although it is a trie, it is only used as a map (all entries use the maximum
+// prefix length). A trie is used because map keys are preallocated, which would
+// be wasteful as the keys are much larger than the values.
+DEFINE_BPF_MAP_EXT(local_net_uid_host_allowlist_map, LPM_TRIE,
+                   LocalNetUidHostAllowlistKey, bool, 1000, AID_ROOT,
+                   AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
+                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+
 DEFINE_BPF_MAP_RO_NETD(uid_migration_enabled_map, ARRAY, uint32_t, bool, 1)
 
 DEFINE_BPF_MAP_NO_NETD(permission_propagation_enabled_map, ARRAY, uint32_t,
@@ -124,6 +137,15 @@ DEFINE_BPF_MAP_EXT(local_net_note_op_cache_map, LRU_HASH, uint32_t, uint32_t, 10
 DEFINE_BPF_MAP_EXT(local_net_note_op_enabled_map, ARRAY, uint32_t, bool, 1,
                    AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
                    BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+
+// A single-element array holding the current generation ID of the local network
+// cache map. Updated by the system. Even IDs represent a stable cache state.
+// Odd IDs represent an unstable state, during which the cache should not be
+// used.
+DEFINE_BPF_MAP_EXT(local_net_cache_generation_id_map, ARRAY, uint32_t, uint64_t,
+                   1, AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared",
+                   DEFAULT_BPF_PIN_SUBDIR, BPFLOADER_MAINLINE_25Q2_VERSION,
+                   BPFLOADER_MAX_VER, 0)
 
 // A ring buffer on which loopback access events are pushed.
 DEFINE_BPF_RINGBUF_EXT(loopback_access_ringbuf, LoopbackAccessEvent, 16 * 512,
@@ -206,7 +228,8 @@ DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, boo
     static __always_inline inline void update_##the_stats_map(const struct __sk_buff* const skb, \
                                                               const TypeOfKey* const key,        \
                                                               const struct egress_bool egress,   \
-                                                     __unused const struct kver_uint kver) {     \
+                                                     __unused const struct kver_uint kver,       \
+                                                              const struct undo_bool undo) {     \
         StatsValue* value = bpf_##the_stats_map##_lookup_elem(key);                              \
         if (!value) {                                                                            \
             StatsValue newValue = {};                                                            \
@@ -230,6 +253,10 @@ DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, boo
                 const uint64_t payload = bytes - overhead;                                       \
                 packets = is5_4 ? gso_segs : (payload + mss - 1) / mss;                          \
                 bytes = overhead * packets + payload;                                            \
+            }                                                                                    \
+            if (undo.undo) {                                                                     \
+                packets = -packets;                                                              \
+                bytes = -bytes;                                                                  \
             }                                                                                    \
             if (egress.egress) {                                                                 \
                 __sync_fetch_and_add(&value->txPackets, packets);                                \
@@ -273,9 +300,13 @@ static __always_inline inline int bpf_skb_load_bytes_net(const struct __sk_buff*
         : bpf_skb_load_bytes(skb, L3_off, to, len);
 }
 
-// False iff arguments are found with longest prefix match lookup and disallowed.
-static inline __always_inline bool is_local_net_access_allowed(const uint32_t if_index,
-        const struct in6_addr* remote_ip6, const uint16_t protocol, const __be16 remote_port) {
+// False iff arguments are found with longest prefix match lookup and
+// disallowed, and the allowlist does not contain an exception for the uid/host
+// on the interface.
+static inline __always_inline bool
+is_local_net_access_allowed(const uint32_t uid, const uint32_t if_index,
+                            const struct in6_addr *remote_ip6,
+                            const uint16_t protocol, const __be16 remote_port) {
     LocalNetAccessKey query_key = {
         .lpm_bitlen = 8 * (sizeof(if_index) + sizeof(*remote_ip6) + sizeof(protocol)
             + sizeof(remote_port)),
@@ -285,11 +316,24 @@ static inline __always_inline bool is_local_net_access_allowed(const uint32_t if
         .remote_port = remote_port
     };
     bool* v = bpf_local_net_access_map_lookup_elem(&query_key);
-    return v ? *v : true;
+    if (!v || *v) {
+        return true;
+    }
+    LocalNetUidHostAllowlistKey allowlist_query_key = {
+        .lpm_bitlen =
+            8 * (sizeof(uid) + sizeof(if_index) + sizeof(*remote_ip6)),
+        .uid = uid,
+        .if_index = if_index,
+        .remote_ip6 = *remote_ip6,
+    };
+    v = bpf_local_net_uid_host_allowlist_map_lookup_elem(&allowlist_query_key);
+    return v && *v;
 }
 
-static __always_inline inline bool is_restricted_local_network(struct __sk_buff *skb,
-                                   const struct egress_bool egress, const struct kver_uint kver) {
+static __always_inline inline bool
+is_restricted_local_network(struct __sk_buff *skb, const uint32_t uid,
+                            const struct egress_bool egress,
+                            const struct kver_uint kver) {
     struct in6_addr remote_ip6;
     uint8_t ip_proto;
     uint8_t L4_off;
@@ -323,7 +367,8 @@ static __always_inline inline bool is_restricted_local_network(struct __sk_buff 
         break;
     }
 
-    return !is_local_net_access_allowed(skb->ifindex, &remote_ip6, ip_proto, remote_port);
+    return !is_local_net_access_allowed(uid, skb->ifindex, &remote_ip6,
+                                        ip_proto, remote_port);
 }
 
 static __always_inline inline uint8_t
@@ -373,7 +418,7 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
     }
     bool isRestricted;
     if (reportLocalAccess) {
-        isRestricted = is_restricted_local_network(skb, egress, kver);
+        isRestricted = is_restricted_local_network(skb, uid, egress, kver);
         // Currently, generate events for all local network access, regardless of the UID's
         // permission status.
         // This is to identify all UIDs that are accessing the local network.
@@ -397,7 +442,7 @@ static __always_inline inline bool should_block_local_network_packets(struct __s
     }
 
     if (!reportLocalAccess) {
-        isRestricted = is_restricted_local_network(skb, egress, kver);
+        isRestricted = is_restricted_local_network(skb, uid, egress, kver);
     }
     return isRestricted;
 }
@@ -472,6 +517,7 @@ log_loopback_access(struct __sk_buff *const skb,
     } else {
         return;
     }
+    if (!local_sk) return;
 
     SkStorageValue *v = bpf_sk_storage_get(local_sk, 0, 0);
     const uint32_t receiver_uid = v ? v->uid : 0;
@@ -762,11 +808,12 @@ static __always_inline inline void update_stats_with_config(const uint32_t selec
                                                             const struct __sk_buff* const skb,
                                                             const StatsKey* const key,
                                                             const struct egress_bool egress,
-                                                            const struct kver_uint kver) {
+                                                            const struct kver_uint kver,
+                                                            const struct undo_bool undo) {
     if (selectedMap == SELECT_MAP_A) {
-        update_stats_map_A(skb, key, egress, kver);
+        update_stats_map_A(skb, key, egress, kver, undo);
     } else {
-        update_stats_map_B(skb, key, egress, kver);
+        update_stats_map_B(skb, key, egress, kver, undo);
     }
 }
 
@@ -832,11 +879,22 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q2) && (match != DROP)) {
         // TODO(b/467964186): use the parsed skb
-        if (should_block_local_network_packets(skb, statsUid, egress, kver)) match = DROP;
+        if (should_block_local_network_packets(skb, statsUid, egress, kver)) {
+            if (KVER_IS_AT_LEAST(kver, 5, 10, 0) && skb->sk && egress.egress) {
+                SkStorageValue *v = bpf_sk_storage_get(skb->sk, 0, 0);
+                if (v) v->dropReasons |= DROP_REASON_LNP;
+            }
+            match = DROP;
+        }
     }
 
     // If an outbound packet is going to be dropped, we do not count that traffic.
-    if (egress.egress && (match == DROP)) return DROP;
+    if (egress.egress && (match == DROP)) {
+        // TODO(maze): enable interface stats undo
+        // uint32_t key = skb->ifindex;
+        // update_iface_stats_map(skb, &key, EGRESS, KVER_4_9, UNDO);
+        return DROP;
+    }
 
     StatsKey key = {.uid = statsUid, .tag = tag, .counterSet = 0, .ifaceIndex = skb->ifindex};
 
@@ -850,8 +908,8 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     // TODO(b/467964186): use the parsed skb
     do_packet_tracing(skb, egress, statsUid, tag, kver);
-    update_stats_with_config(*selectedMap, skb, &key, egress, kver);
-    update_app_uid_stats_map(skb, &statsUid, egress, kver);
+    update_stats_with_config(*selectedMap, skb, &key, egress, kver, ACCOUNT);
+    update_app_uid_stats_map(skb, &statsUid, egress, kver, ACCOUNT);
 
     // We've already handled DROP_UNLESS_DNS up above, thus when we reach here the only
     // possible values of match are DROP(0) or PASS(1), however we need to use
@@ -866,28 +924,35 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
 // Supported kernel + platform/os version combinations:
 //
-//      | 4.9 | 4.14 | 4.19 | 5.4 | 5.10 | 5.15 | 6.1 | 6.6 | 6.12 |
+//      | 4.9 | 4.14 | 4.19 | 5.4 | 5.10 | 5.15 | 6.1 | 6.6 | 6.12 | 6.18 |
+// 26Q4 |     |      |      |     |      |  x   |  x  |  x  |  x   |  x   |
+// 26Q2 |     |      |      |     |  x   |  x   |  x  |  x  |  x   |  x   |
+// 25Q4 |     |      |      |     |  x   |  x   |  x  |  x  |  x   |
 // 25Q2 |     |      |      |  x  |  x   |  x   |  x  |  x  |  x   |
 //    V |     |      |  x   |  x  |  x   |  x   |  x  |  x  |      | (netbpfload)
 //    U |     |  x   |  x   |  x  |  x   |  x   |  x  |     |      |
 //    T |  x  |  x   |  x   |  x  |  x   |  x   |     |     |      | (magic netbpfload)
 //    S |  x  |  x   |  x   |  x  |  x   |      |     |     |      | (dns netbpfload for offload)
-//    R |  x  |  x   |  x   |  x  |      |      |     |     |      | (no mainline ebpf)
-//
-// Not relevant for eBPF, but R can also run on 4.4
 
 // ----- ingress/stats -----
 
-// Android 25Q2+ 5.10+ (localnet protection + tracing)
+// Android 25Q4+ (full featured)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 25q4, 5_10, INF,
+                            BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER)
+(struct __sk_buff* skb) {
+    return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_25Q4);
+}
+
+// Android 25Q2/25Q3 5.10+ (localnet protection + tracing)
 DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_25q2, 5_10, INF,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
+                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_25Q2);
 }
 
-// Android 25Q2+ 5.4 (localnet protection)
+// Android 25Q2/25Q3 5.4 (localnet protection)
 DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_4_25q2, 5_4, 5_10,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
+                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_4, SDK_LEVEL_25Q2);
 }
@@ -919,16 +984,23 @@ DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_9, 4_9, 4_19)
 
 // ----- egress/stats -----
 
-// Android 25Q2+ 5.10+ (localnet protection + tracing)
+// Android 25Q4+ (full featured)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 25q4, 5_10, INF,
+                            BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER)
+(struct __sk_buff* skb) {
+    return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_25Q4);
+}
+
+// Android 25Q2/25Q3 5.10+ (localnet protection + tracing)
 DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_25q2, 5_10, INF,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
+                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_25Q2);
 }
 
-// Android 25Q2+ 5.4 (localnet protection)
+// Android 25Q2/25Q3 5.4 (localnet protection)
 DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_4_25q2, 5_4, 5_10,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER)
+                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_4, SDK_LEVEL_25Q2);
 }
@@ -975,7 +1047,7 @@ DEFINE_XTBPF_PROG(skfilter, egress_xtbpf, )
     }
 
     uint32_t key = skb->ifindex;
-    update_iface_stats_map(skb, &key, EGRESS, KVER_4_9);
+    update_iface_stats_map(skb, &key, EGRESS, KVER_4_9, ACCOUNT);
     return XTBPF_MATCH;
 }
 
@@ -988,7 +1060,7 @@ DEFINE_XTBPF_PROG(skfilter, ingress_xtbpf, )
     // Keep that in mind when moving this out of iptables xt_bpf and into tc ingress (or xdp).
 
     uint32_t key = skb->ifindex;
-    update_iface_stats_map(skb, &key, INGRESS, KVER_4_9);
+    update_iface_stats_map(skb, &key, INGRESS, KVER_4_9, ACCOUNT);
     return XTBPF_MATCH;
 }
 
@@ -997,7 +1069,7 @@ DEFINE_SYS_BPF_PROG(schedact, ingress_account, )
     if (is_received_skb(skb)) {
         // Account for ingress traffic before tc drops it.
         uint32_t key = skb->ifindex;
-        update_iface_stats_map(skb, &key, INGRESS, KVER_4_9);
+        update_iface_stats_map(skb, &key, INGRESS, KVER_4_9, ACCOUNT);
     }
     return TC_ACT_UNSPEC;
 }
@@ -1202,12 +1274,49 @@ DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, , 4_19)
 
 // --- GETSOCKOPT HOOK ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, , 5_4)
-(struct bpf_sockopt *ctx) {
+static inline __always_inline int inet_getsockopt(struct bpf_sockopt *ctx,
+                                                  const struct kver_uint kver) {
+    if (KVER_IS_AT_LEAST(kver, 5, 10, 0) && ctx->level == SOL_SOCKET &&
+        ctx->optname == SO_ANDROID_DROP_REASON) {
+        uint8_t *optval_end = ctx->optval_end;
+        uint8_t *optval = ctx->optval;
+        if (optval + sizeof(uint64_t) > optval_end) {
+            if (KVER_IS_AT_LEAST(kver, 6, 1, 0)) bpf_set_retval(-EINVAL);
+            return BPF_DISALLOW;
+        }
+
+        SkStorageValue *v = bpf_sk_storage_get(ctx->sk, 0, 0);
+        if (!v) {
+            if (KVER_IS_AT_LEAST(kver, 6, 1, 0)) bpf_set_retval(-EUNATCH);
+            return BPF_DISALLOW;
+        }
+
+        *(uint64_t *)optval = v->dropReasons;
+        v->dropReasons = DROP_REASON_NONE;
+        WRITE_ONCE(ctx->retval, 0);
+        WRITE_ONCE(ctx->optlen, sizeof(uint64_t));
+        return BPF_ALLOW;
+    }
+
     // Tell kernel to return 'original' kernel reply (instead of the bpf modified buffer)
     // This is important if the answer is larger than PAGE_SIZE (max size this bpf hook can provide)
     ctx->optlen = 0;
     return BPF_ALLOW;
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, 6_1, 6_1)
+(struct bpf_sockopt *ctx) {
+    return inet_getsockopt(ctx, KVER_6_1);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(getsockopt, prog, 5_10, 5_10, 6_1)
+(struct bpf_sockopt *ctx) {
+    return inet_getsockopt(ctx, KVER_5_10);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(getsockopt, prog, 5_4, 5_4, 5_10)
+(struct bpf_sockopt *ctx) {
+    return inet_getsockopt(ctx, KVER_5_4);
 }
 
 // --- SETSOCKOPT HOOK ---

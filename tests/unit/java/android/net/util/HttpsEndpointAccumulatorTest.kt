@@ -54,6 +54,17 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
+import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.eq
+import org.mockito.Captor
+import org.mockito.Mock
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
+
 /**
  * Tests for [HttpsEndpointAccumulator], including [HttpsRecord] construction.
  *
@@ -68,6 +79,12 @@ class HttpsEndpointAccumulatorTest {
       DeviceFlagsValueProvider.createCheckFlagsRule()
 
   @get:Rule val callbackRule: AutoReleaseNetworkCallbackRule = AutoReleaseNetworkCallbackRule()
+
+  // Requires casting because Callback is a generic type and cannot be mocked with type directly.
+  @SuppressWarnings("unchecked")
+  private val mockUserCallback = mock(Callback::class.java) as Callback<HttpsEndpoint>
+  private val endpointCaptor = ArgumentCaptor.forClass(HttpsEndpoint::class.java)
+  private val exceptionCaptor = ArgumentCaptor.forClass(DnsException::class.java)
 
   @Test
   fun testOnAnswer_whenSvcbQueryType_returnsEmptyResponse() {
@@ -104,6 +121,19 @@ class HttpsEndpointAccumulatorTest {
   }
 
   @Test
+  fun testOnAnswer_whenNoDataReturned_returnsEmptyResponse() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+    val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
+        assertTrue(response.httpsRecords.isEmpty())
+    }
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+
+    val accumulator = createOnAnswerAccumulator(network, answerCallback)
+    accumulator.onAnswer(NODATA_HTTPS_RESPONSE, /* rcode= */ 0)
+  }
+
+  @Test
   fun testOnAnswer_whenSingleHttpsRecord_success() {
     // Instead of reading the Conscrypt platform flag, check for the SDK version because of trunk
     // stable flag weirdness.
@@ -114,7 +144,7 @@ class HttpsEndpointAccumulatorTest {
         assertEquals(response.httpsRecords.size, 1)
         with(response.httpsRecords.first()) {
           assertEquals(1, priority)
-          assertEquals(DEFAULT_TARGET_NAME, targetName)
+          assertEquals("", targetName)
           assertContentEquals(TEST_IP_HINTS, ipAddressHints)
           assertContentEquals(TEST_ECH_CONFIG_LIST, echConfigList?.toBytes())
         }
@@ -165,7 +195,23 @@ class HttpsEndpointAccumulatorTest {
     val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
         assertEquals(response.httpsRecords.size, 1)
         with(response.httpsRecords.first()) {
-          assertEquals(DEFAULT_TARGET_NAME, targetName)
+          assertEquals("", targetName)
+        }
+      }
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+
+    val accumulator = createOnAnswerAccumulator(network, answerCallback)
+    accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
+  }
+
+  @Test
+  fun testGetOwnerName_returnsCorrectValue() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+    val answerCallback = createExpectAnswerCallback { response: HttpsEndpoint ->
+        assertEquals(response.httpsRecords.size, 1)
+        with(response.httpsRecords.first()) {
+          assertEquals("cloudflare-ech.com", ownerName)
         }
       }
 
@@ -387,13 +433,175 @@ class HttpsEndpointAccumulatorTest {
     accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
   }
 
+  @Test
+  fun testOnAnswer_whenIpResponsesFirst_expectedResponseCount_onAnswerInvokedWithoutHttpsRecord() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 2,
+        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true)
+    accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
+
+    verify(mockUserCallback, never()).onError(any())
+    verify(mockUserCallback, times(1)).onAnswer(endpointCaptor.capture(), anyInt())
+    with(endpointCaptor.value) {
+      assertContentEquals(TEST_IP_HINTS, ipAddresses)
+      // Verify that we haven't recorded the HTTPS record since we reached the expected number of
+      // responses before the HTTPS response.
+      assertTrue(httpsRecords.isEmpty())
+    }
+  }
+
+  @Test
+  fun testOnAnswer_whenHttpsResponseFirst_onAnswerInvokedEarlyWithHttpsRecordOnly() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
+        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true)
+    accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE_DIFF_ADDRESS, /* rcode= */ 0)
+
+    verify(mockUserCallback, never()).onError(any())
+    verify(mockUserCallback, times(1)).onAnswer(endpointCaptor.capture(), anyInt())
+    with(endpointCaptor.value) {
+      // Verify that we haven't recorded the extra IP addresses from the AAAA record since we
+      // received the HTTPS response first and returned early.
+      assertContentEquals(TEST_IP_HINTS, ipAddresses)
+      assertEquals(httpsRecords.size, 1)
+      with(httpsRecords.first()) {
+        assertEquals(1, priority)
+        assertContentEquals(TEST_IP_HINTS, ipAddressHints)
+      }
+    }
+  }
+
+  @Test
+  fun testOnAnswer_whenSameNumberResponsesAsExpected_onAnswerInvokedOnceWithAllRecords() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
+        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true)
+    accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE_DIFF_ADDRESS, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
+
+    verify(mockUserCallback, never()).onError(any())
+    verify(mockUserCallback, times(1)).onAnswer(endpointCaptor.capture(), anyInt())
+    with(endpointCaptor.value) {
+      // Verify that we recorded the extra IP addresses from the AAAA record since we didn't
+      // receive the HTTPS response first and return early.
+      assertContentEquals(TEST_IP_HINTS_WITH_EXTRA_IPV6, ipAddresses)
+      assertEquals(httpsRecords.size, 1)
+      with(httpsRecords.first()) {
+        assertEquals(1, priority)
+        assertContentEquals(TEST_IP_HINTS, ipAddressHints)
+      }
+    }
+  }
+
+  @Test
+  fun testOnAnswer_whenMoreResponsesThanExpected_onAnswerInvokedOnceWithFirstExpectedRecords() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
+        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true)
+    accumulator.onAnswer(VALID_A_RECORD_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
+    // These responses should be ignored, and the callback should only be invoked once without them.
+    accumulator.onAnswer(VALID_MULTIPLE_HTTPS_RECORDS_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE_DIFF_ADDRESS, /* rcode= */ 0)
+
+    verify(mockUserCallback, never()).onError(any())
+    verify(mockUserCallback, times(1)).onAnswer(endpointCaptor.capture(), anyInt())
+    with(endpointCaptor.value) {
+      // Verify that we haven't recorded the extra IP addresses from the second AAAA record response
+      assertContentEquals(TEST_IP_HINTS, ipAddresses)
+      // Verify that we haven't recorded the extra HTTPS records that were returned in the last
+      // response.
+      assertEquals(httpsRecords.size, 1)
+      with(httpsRecords.first()) {
+        assertEquals(1, priority)
+        assertContentEquals(TEST_IP_HINTS, ipAddressHints)
+      }
+    }
+  }
+
+  @Test
+  fun testOnAnswer_whenNormalHttpsResponseAndParseError_onAnswerInvokedOnceWithHttpsRecord() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val accumulator = HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 3,
+        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true)
+    accumulator.onAnswer(INVALID_QUESTION_COUNT_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_SINGLE_HTTPS_RECORD_RESPONSE, /* rcode= */ 0)
+
+    verify(mockUserCallback, never()).onError(any())
+    // Because we received a successful HTTPS response, we expect onAnswer to be invoked due to the
+    // early return, despite the expected query count not being reached and receiving a parse error.
+    verify(mockUserCallback, times(1)).onAnswer(endpointCaptor.capture(), anyInt())
+    with(endpointCaptor.value) {
+      assertContentEquals(TEST_IP_HINTS, ipAddresses)
+      assertEquals(httpsRecords.size, 1)
+      with(httpsRecords.first()) {
+        assertEquals(1, priority)
+        assertContentEquals(TEST_IP_HINTS, ipAddressHints)
+      }
+    }
+  }
+
+  @Test
+  fun testOnAnswer_whenNormalIpResponseAndParseError_onErrorInvokedOnce() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val accumulator= HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 1,
+        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true)
+    accumulator.onAnswer(INVALID_QUESTION_COUNT_RESPONSE, /* rcode= */ 0)
+    accumulator.onAnswer(VALID_AAAA_RECORD_RESPONSE, /* rcode= */ 0)
+
+    verify(mockUserCallback, never()).onAnswer(any(), anyInt())
+    verify(mockUserCallback, times(1)).onError(exceptionCaptor.capture())
+    // Check that the error is returned, and not a successful answer since we didn't reach the
+    // expected number of responses before the parse error.
+    with(exceptionCaptor.value) {
+      assertEquals(code, DnsResolver.ERROR_PARSE)
+      assertEquals(cause?.message, "Unexpected question count: 2")
+    }
+  }
+
+  @Test
+  fun testOnError_whenMultipleOnErrors_onErrorInvokedOnceWithFirstError() {
+    val networkCallback = callbackRule.registerDefaultNetworkCallback()
+
+    val network = networkCallback.eventuallyExpect<Event.Available>(NETWORK_TIMEOUT_MS).network
+    val accumulator= HttpsEndpointAccumulator(network, mockUserCallback, /* queryCount= */ 1,
+        QUERY_TIMEOUT_MS, /* hasIpv4= */ true, /* hasIpv6= */ true)
+    accumulator.onError(DnsException(DnsResolver.ERROR_SYSTEM, Exception("System exception")))
+    accumulator.onError(DnsException(DnsResolver.ERROR_PARSE, Exception("Parse exception")))
+
+    verify(mockUserCallback, never()).onAnswer(any(), anyInt())
+    verify(mockUserCallback, times(1)).onError(exceptionCaptor.capture())
+    // Check that the first error is returned, and not the latest one.
+    with(exceptionCaptor.value) {
+      assertEquals(code, DnsResolver.ERROR_SYSTEM)
+      assertEquals(cause?.message, "System exception")
+    }
+  }
+
   // TODO(b/448882639): add test to check for HTTPS record timeout
 
   companion object {
     private const val NETWORK_TIMEOUT_MS = 10_000L
     private const val QUERY_TIMEOUT_MS = 1000
 
-    private const val DEFAULT_TARGET_NAME = "."
     private const val DEFAULT_PORT = 443
 
     val TEST_IP_HINTS_IPV4_ONLY = listOf(
@@ -405,6 +613,9 @@ class HttpsEndpointAccumulatorTest {
         InetAddresses.parseNumericAddress("2606:4700::6812:b76"))
 
     val TEST_IP_HINTS = TEST_IP_HINTS_IPV4_ONLY + TEST_IP_HINTS_IPV6_ONLY
+    val TEST_IP_HINTS_WITH_EXTRA_IPV6 = TEST_IP_HINTS_IPV4_ONLY + listOf(
+        InetAddresses.parseNumericAddress("2606:4700::6812:c76"),
+        InetAddresses.parseNumericAddress("2606:4700::6812:d76")) + TEST_IP_HINTS_IPV6_ONLY
 
     // This is the exact A rawQuery response for cloudflare-ech.com.
     val VALID_A_RECORD_RESPONSE = HexDump.hexStringToByteArray(
@@ -419,6 +630,15 @@ class HttpsEndpointAccumulatorTest {
       |9ec3818000010002000000000e636c6f7564666c6172652d65636803636f6d00001c
       |0001c00c001c00010000012c001026064700000000000000000068120a76c00c001c
       |00010000012c001026064700000000000000000068120b76
+      """.trimMargin().replace("\n", ""))
+
+    // This is a modified AAAA rawQuery response for cloudflare-ech.com to have different addresses
+    // than what's in the HTTPS record.
+    val VALID_AAAA_RECORD_RESPONSE_DIFF_ADDRESS = HexDump.hexStringToByteArray(
+      """
+      |9ec3818000010002000000000e636c6f7564666c6172652d65636803636f6d00001c
+      |0001c00c001c00010000012c001026064700000000000000000068120c76c00c001c
+      |00010000012c001026064700000000000000000068120d76
       """.trimMargin().replace("\n", ""))
 
     // This is the exact HTTPS rawQuery response for cloudflare-ech.com.
@@ -472,6 +692,23 @@ class HttpsEndpointAccumulatorTest {
     |c72ba65d889ca06e8a4282a286710a0004000100010012636c6f7564666c6172652d65
     |63682e636f6d00000006002026064700000000000000000068120a7626064700000000
     |000000000068120b76
+    """.trimMargin().replace("\n", ""))
+
+    // This is a modified rawQuery cloudflare-ech.com response to have a question count of 2.
+    val INVALID_QUESTION_COUNT_RESPONSE = HexDump.hexStringToByteArray(
+    """
+    |da68818000020001000000000e636c6f7564666c6172652d65636803636f6d00004100
+    |01c00c004100010000012c0088000100000100060268330268320004000868120a7668
+    |120b76000500470045fe0d0041860020002058a2172489f01dcd0ff39adf7a40f2e791
+    |c72ba65d889ca06e8a4282a286710a0004000100010012636c6f7564666c6172652d65
+    |63682e636f6d00000006002026064700000000000000000068120a7626064700000000
+    |000000000068120b76
+    """.trimMargin().replace("\n", ""))
+
+    // When the response contains no answer RRs (NODATA).
+    val NODATA_HTTPS_RESPONSE = HexDump.hexStringToByteArray(
+    """
+    |da68818000010000000000000e636c6f7564666c6172652d65636803636f6d0000410001
     """.trimMargin().replace("\n", ""))
 
     val TEST_ECH_CONFIG_LIST = HexDump.hexStringToByteArray(

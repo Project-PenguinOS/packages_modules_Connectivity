@@ -1069,16 +1069,6 @@ public class EthernetTetheringTest extends EthernetTetheringTestBase {
         assertEquals(0, statsValue.txErrors);
     }
 
-    // on S/Sv2 without a new enough DnsResolver apex, NetBpfLoad does not
-    // get triggered, and thus no mainline programs get loaded.
-    private boolean isNetBpfLoadEnabled() {
-        if (SdkLevel.isAtLeastT()) return true;
-        if (!SdkLevel.isAtLeastS()) return false;
-
-        File f = new File("/apex/com.android.resolv/NetBpfLoad-S.flag");
-        return f.isFile();
-    }
-
     /**
      * BPF offload IPv4 UDP tethering test. Verify that UDP tethered packets are offloaded by BPF.
      * Minimum test requirement:
@@ -1093,7 +1083,6 @@ public class EthernetTetheringTest extends EthernetTetheringTestBase {
     public void testTetherBpfOffloadUdpV4() throws Exception {
         assumeTrue("Tethering config disabled BPF offload", isTetherConfigBpfOffloadEnabled());
         assumeKernelSupportBpfOffloadUdpV4();
-        assumeTrue("Mainline NetBpfLoad not available", isNetBpfLoadEnabled());
 
         runUdp4Test();
     }

@@ -688,7 +688,7 @@ public class TetheringManager {
      *
      * @deprecated Legacy tethering API. Callers should instead use
      *             {@link #startTethering(int, Executor, StartTetheringCallback)}.
-     *             On SDK versions after {@link Build.VERSION_CODES.VANILLA_ICE_CREAM}, this will
+     *             On SDK versions after {@link Build.VERSION_CODES#VANILLA_ICE_CREAM}, this will
      *             throw an UnsupportedOperationException.
      *
      * @param iface the interface name to tether.
@@ -726,7 +726,7 @@ public class TetheringManager {
      *
      * @deprecated Legacy tethering API. Callers should instead use
      *             {@link #stopTethering(int)}.
-     *             On SDK versions after {@link Build.VERSION_CODES.VANILLA_ICE_CREAM}, this will
+     *             On SDK versions after {@link Build.VERSION_CODES#VANILLA_ICE_CREAM}, this will
      *             throw an UnsupportedOperationException.
      *
      * @hide

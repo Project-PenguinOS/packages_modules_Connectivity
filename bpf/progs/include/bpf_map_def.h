@@ -212,6 +212,10 @@ _Static_assert(_Alignof(struct bpf_prog_def) == 4, "_Alignof struct bpf_prog_def
 #define BPFLOADER_MAINLINE_25Q2_VERSION   3600 // Android 25Q2 (36.0)
 #define BPFLOADER_MAINLINE_25Q4_VERSION   3610 // Android 25Q4 (36.1)
 #define BPFLOADER_MAINLINE_26Q2_VERSION   3700 // Android 26Q2 (37.0)
+#define BPFLOADER_MAINLINE_26Q3_VERSION   3702 // Android 26Q3 (37.0+)
+#define BPFLOADER_MAINLINE_26Q4_VERSION   3710 // Android 26Q4 (37.1)
+#define BPFLOADER_MAINLINE_27Q1_VERSION   3712 // Android 27Q1 (37.1+)
+#define BPFLOADER_MAINLINE_27Q2_VERSION   3800 // Android 27Q2 (38.0)
 
 #ifdef __cplusplus
 // map_test_kernel_stats_map key definition.
