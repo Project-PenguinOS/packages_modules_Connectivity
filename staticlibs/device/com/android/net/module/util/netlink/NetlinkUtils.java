@@ -46,6 +46,8 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.android.net.module.util.ModuleFlagProvider;
+
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.InterruptedIOException;
@@ -103,7 +105,9 @@ public class NetlinkUtils {
      * @return the IO timeout value in milliseconds.
      */
     public static long getIoTimeoutMs() {
-        // TODO: Adding a flag to change the timeout value to zero.
+        if (ModuleFlagProvider.isFeatureFlagEnabled(ModuleFlagProvider.FLAG_NETLINK_NO_TIMEOUTS)) {
+            return 0L;
+        }
         return IO_TIMEOUT_MS;
     }
 

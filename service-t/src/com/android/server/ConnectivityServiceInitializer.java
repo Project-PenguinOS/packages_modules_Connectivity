@@ -24,7 +24,9 @@ import android.util.Log;
 
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.DeviceConfigUtils;
+import com.android.net.module.util.ModuleFlagProvider;
 import com.android.networkstack.apishim.ConstantsShim;
+import com.android.server.connectivity.ConnectivityModuleFlagProvider;
 import com.android.server.connectivity.ConnectivityNativeService;
 import com.android.server.nearby.NearbyService;
 import com.android.server.net.ct.CertificateTransparencyService;
@@ -54,6 +56,7 @@ public final class ConnectivityServiceInitializer extends SystemService {
 
     public ConnectivityServiceInitializer(Context context) {
         super(context);
+        ModuleFlagProvider.setFlagProvider(new ConnectivityModuleFlagProvider());
         // Load JNI libraries used by ConnectivityService and its dependencies
         System.loadLibrary("service-connectivity");
         mEthernetServiceImpl = createEthernetService(context);

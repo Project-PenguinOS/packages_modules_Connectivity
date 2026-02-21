@@ -21,7 +21,7 @@ package {
 
 java_library {
     name: "ThreadNetworkTestUtils",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     static_libs: [
         "compatibility-device-util-axt",
         "net-tests-utils",

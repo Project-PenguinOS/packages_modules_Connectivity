@@ -3424,6 +3424,54 @@ public class NsdServiceTest {
         assertEquals("lo", interfaceNameCaptor.getValue());
     }
 
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public void testNotifyServiceLost_WithAndWithoutDot_InvokesDiscoveryManager()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        final String interfaceName = "lo";
+        final CompletableFuture<OffloadSession> sessionFuture = new CompletableFuture<>();
+        final OffloadEngine offloadEngine = new OffloadEngine() {
+            @Override
+            public void onOffloadServiceUpdated(@NonNull OffloadServiceInfo info) {}
+            @Override
+            public void onOffloadServiceRemoved(@NonNull OffloadServiceInfo info) {}
+            @Override
+            public void onOffloadSessionCreated(@NonNull OffloadSession offloadSession) {
+                sessionFuture.complete(offloadSession);
+            }
+        };
+
+        registerOffloadEngine(interfaceName, offloadEngine, OFFLOAD_TYPE_QUERY);
+        final OffloadSession offloadSession = sessionFuture.get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+
+        // Case 1: Service type ends with a dot (covers DiscoveryListener#onServiceFound/Lost)
+        final NsdServiceInfo infoWithDot = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE + ".");
+        offloadSession.notifyServiceLost(infoWithDot);
+
+        // Case 2: Service type does not end with a dot (covers ServiceInfoCallback#onServiceLost)
+        final NsdServiceInfo infoWithoutDot = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        offloadSession.notifyServiceLost(infoWithoutDot);
+
+        // Verify handleProxyOffloadEngineResponse is called for both cases
+        final ArgumentCaptor<NsdServiceInfo> infoCaptor =
+                ArgumentCaptor.forClass(NsdServiceInfo.class);
+        verify(mDiscoveryManager, timeout(TIMEOUT_MS).times(2))
+                .handleProxyOffloadEngineResponse(
+                        infoCaptor.capture(),
+                        eq(true) /* isServiceLost */,
+                        eq(interfaceName));
+
+        final List<NsdServiceInfo> capturedInfos = infoCaptor.getAllValues();
+        assertEquals(2, capturedInfos.size());
+
+        for (NsdServiceInfo capturedInfo : capturedInfos) {
+            final String type = capturedInfo.getServiceType();
+            assertFalse("Service type should not have a trailing dot: " + type,
+                    type.endsWith("."));
+            assertEquals(SERVICE_TYPE, type);
+        }
+    }
+
     private void verifyOffloadServiceUpdatedAndRemoved(String interfaceName,
             OffloadServiceInfo info, OffloadCallback cb, OffloadEngine offloadEngine) {
         // onOffloadStartOrUpdate callback triggered. The OffloadServiceInfo update should be sent

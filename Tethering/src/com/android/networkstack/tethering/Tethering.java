@@ -615,8 +615,7 @@ public class Tethering {
         if (type == TETHERING_BLUETOOTH && SdkLevel.isAtLeastT()) return;
 
         // Cannot happen: on S+, tetherableWigigRegexps is always empty.
-        if (type == TETHERING_WIGIG
-                && (SdkLevel.isAtLeastS() || !hasSystemFeature(PackageManager.FEATURE_WIFI))) {
+        if (type == TETHERING_WIGIG) {
             return;
         }
 

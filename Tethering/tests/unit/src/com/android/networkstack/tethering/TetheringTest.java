@@ -74,7 +74,6 @@ import static android.net.wifi.WifiManager.WIFI_AP_STATE_FAILED;
 import static android.system.OsConstants.RT_SCOPE_UNIVERSE;
 import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
-import static com.android.modules.utils.build.SdkLevel.isAtLeastS;
 import static com.android.modules.utils.build.SdkLevel.isAtLeastT;
 import static com.android.modules.utils.build.SdkLevel.isAtLeastV;
 import static com.android.net.module.util.ConnectivityCommonFlags.USE_ROUTE_PARCEL_IPCS;
@@ -991,16 +990,8 @@ public class TetheringTest {
     }
 
     private void verifyDefaultNetworkRequestFiled() {
-        if (isAtLeastS()) {
-            verify(mCm, times(1)).registerSystemDefaultNetworkCallback(
-                    any(NetworkCallback.class), any(Handler.class));
-        } else {
-            ArgumentCaptor<NetworkRequest> reqCaptor = ArgumentCaptor.forClass(
-                    NetworkRequest.class);
-            verify(mCm, times(1)).requestNetwork(reqCaptor.capture(),
-                    any(NetworkCallback.class), any(Handler.class));
-            assertTrue(TestConnectivityManager.looksLikeDefaultRequest(reqCaptor.getValue()));
-        }
+        verify(mCm, times(1)).registerSystemDefaultNetworkCallback(
+                any(NetworkCallback.class), any(Handler.class));
 
         // Ignore calls to {@link ConnectivityManager#getallNetworks}.
         verify(mCm, atLeast(0)).getAllNetworks();

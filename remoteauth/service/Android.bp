@@ -49,10 +49,7 @@ java_library {
         "uwb_androidx_backend",
     ],
     sdk_version: "system_server_current",
-    // This is included in service-connectivity which is 30+
-    // TODO (b/293613362): allow APEXes to have service jars with higher min_sdk than the APEX
-    // (service-connectivity is only used on 31+) and use 31 here
-    min_sdk_version: "30",
+    min_sdk_version: "31",
 
     dex_preopt: {
         enabled: false,
@@ -64,13 +61,4 @@ java_library {
     apex_available: [
         "com.android.tethering",
     ],
-}
-
-genrule {
-    name: "statslog-remoteauth-java-gen",
-    tools: ["stats-log-api-gen"],
-    cmd: "$(location stats-log-api-gen) --java $(out) --module remoteauth " +
-        " --javaPackage com.android.server.remoteauth.proto --javaClass RemoteAuthStatsLog" +
-        " --minApiLevel 33",
-    out: ["com/android/server/remoteauth/proto/RemoteAuthStatsLog.java"],
 }

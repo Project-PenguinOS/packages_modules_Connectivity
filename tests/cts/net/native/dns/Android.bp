@@ -42,8 +42,7 @@ cc_defaults {
         "libbase",
         "libnetdutils",
     ],
-    // To be compatible with R devices, the min_sdk_version must be 30.
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     host_required: ["net-tests-utils-host-common"],
     host_common_data: [":net-tests-utils-host-common"],
 }

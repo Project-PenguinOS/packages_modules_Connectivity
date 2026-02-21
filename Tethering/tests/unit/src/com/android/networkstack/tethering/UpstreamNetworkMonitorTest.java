@@ -24,7 +24,6 @@ import static android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 
-import static com.android.modules.utils.build.SdkLevel.isAtLeastS;
 import static com.android.networkstack.tethering.UpstreamNetworkMonitor.TYPE_NONE;
 
 import static org.junit.Assert.assertEquals;
@@ -167,16 +166,7 @@ public class UpstreamNetworkMonitorTest {
         final ArgumentCaptor<NetworkRequest> requestCaptor =
                 ArgumentCaptor.forClass(NetworkRequest.class);
 
-        if (isAtLeastS()) {
-            verify(mCM).registerSystemDefaultNetworkCallback(any(), any());
-        } else {
-            verify(mCM).requestNetwork(
-                    requestCaptor.capture(), any(NetworkCallback.class), any(Handler.class));
-            // For R- devices, Tethering will invoke this function in 2 cases, one is to
-            // request mobile network, the other is to track system default network. Verify
-            // the request is the one tracks default network.
-            assertTrue(TestConnectivityManager.looksLikeDefaultRequest(requestCaptor.getValue()));
-        }
+        verify(mCM).registerSystemDefaultNetworkCallback(any(), any());
 
         mUNM.startObserveUpstreamNetworks();
         verify(mCM, times(1)).registerNetworkCallback(

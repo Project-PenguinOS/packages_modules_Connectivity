@@ -37,7 +37,7 @@ java_library {
     sdk_version: "system_server_current",
 
     // TODO(b/210962470): Bump this to B
-    min_sdk_version: "30",
+    min_sdk_version: "31",
 
     srcs: [
         ":service-vcn-sources",
