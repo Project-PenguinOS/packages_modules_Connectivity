@@ -45,10 +45,13 @@ static const int DROP_UNLESS_DNS = 2;  // internal to our program
 #define EUNATCH 49
 
 // For maps netd does not need to access
-#define DEFINE_BPF_MAP_NO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
+#define DEFINE_BPF_MAP_NO_NETD_API(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries, minApi) \
     DEFINE_BPF_MAP_EXT(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries,         \
                        AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR, \
-                       BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, 0)
+                       BPFLOADER_MAINLINE_ ## minApi ## _VERSION, BPFLOADER_MAX_VER, 0)
+
+#define DEFINE_BPF_MAP_NO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
+    DEFINE_BPF_MAP_NO_NETD_API(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries, T)
 
 // For maps netd only needs read only access to
 #define DEFINE_BPF_MAP_RO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries)  \
@@ -105,55 +108,40 @@ DEFINE_BPF_RINGBUF_EXT(packet_trace_ringbuf, PacketTrace, 32 * 1024,
 
 DEFINE_BPF_MAP_RO_NETD(data_saver_enabled_map, ARRAY, uint32_t, bool, 1)
 
-DEFINE_BPF_MAP_EXT(local_net_access_map, LPM_TRIE, LocalNetAccessKey, bool, 1000,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_access_map, LPM_TRIE, LocalNetAccessKey, bool, 1000, 25Q2)
 
 // not preallocated
-DEFINE_BPF_MAP_EXT(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000, 25Q2)
 
 // This trie holds exceptions to blocked access listed in local_net_access_map.
 // Although it is a trie, it is only used as a map (all entries use the maximum
 // prefix length). A trie is used because map keys are preallocated, which would
 // be wasteful as the keys are much larger than the values.
-DEFINE_BPF_MAP_EXT(local_net_uid_host_allowlist_map, LPM_TRIE,
-                   LocalNetUidHostAllowlistKey, bool, 1000, AID_ROOT,
-                   AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_uid_host_allowlist_map, LPM_TRIE,
+                           LocalNetUidHostAllowlistKey, bool, 1000, 25Q2)
 
 DEFINE_BPF_MAP_RO_NETD(uid_migration_enabled_map, ARRAY, uint32_t, bool, 1)
 
-DEFINE_BPF_MAP_NO_NETD(permission_propagation_enabled_map, ARRAY, uint32_t,
-                       bool, 1)
+DEFINE_BPF_MAP_NO_NETD(permission_propagation_enabled_map, ARRAY, uint32_t, bool, 1)
 // A ring buffer on which note op event of local network access is pushed.
 DEFINE_BPF_RINGBUF_EXT(local_net_note_op_ringbuf, LocalNetNoteOp, 8 * 512,
                        AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
                        BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER);
-DEFINE_BPF_MAP_EXT(local_net_note_op_cache_map, LRU_HASH, uint32_t, uint32_t, 100,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
-DEFINE_BPF_MAP_EXT(local_net_note_op_enabled_map, ARRAY, uint32_t, bool, 1,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_note_op_cache_map, LRU_HASH, uint32_t, uint32_t, 100, 25Q2)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_note_op_enabled_map, ARRAY, uint32_t, bool, 1, 25Q2)
 
 // A single-element array holding the current generation ID of the local network
 // cache map. Updated by the system. Even IDs represent a stable cache state.
 // Odd IDs represent an unstable state, during which the cache should not be
 // used.
-DEFINE_BPF_MAP_EXT(local_net_cache_generation_id_map, ARRAY, uint32_t, uint64_t,
-                   1, AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared",
-                   DEFAULT_BPF_PIN_SUBDIR, BPFLOADER_MAINLINE_25Q2_VERSION,
-                   BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_cache_generation_id_map, ARRAY, uint32_t, uint64_t, 1, 25Q2)
 
 // A ring buffer on which loopback access events are pushed.
 DEFINE_BPF_RINGBUF_EXT(loopback_access_ringbuf, LoopbackAccessEvent, 16 * 512,
                        AID_ROOT, AID_SYSTEM, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
                        BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER);
-DEFINE_BPF_MAP_EXT(loopback_access_cache_map, LRU_HASH, LoopbackAccessEvent, uint64_t, 100,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(loopback_access_cache_map, LRU_HASH, LoopbackAccessEvent, uint64_t, 100,
+                           25Q4)
 DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, bool, 1)
 
 // iptables xt_bpf programs need to be usable by both netd and netutils_wrappers

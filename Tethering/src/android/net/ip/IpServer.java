@@ -856,10 +856,8 @@ public class IpServer extends SyncStateMachine {
             return false;
         }
 
-        if (SdkLevel.isAtLeastS()) {
-            // DAD Proxy starts forwarding packets after IPv6 upstream is present.
-            mDadProxy = mDeps.getDadProxy(getHandler(), mInterfaceParams);
-        }
+        // DAD Proxy starts forwarding packets after IPv6 upstream is present.
+        mDadProxy = mDeps.getDadProxy(getHandler(), mInterfaceParams);
 
         return true;
     }

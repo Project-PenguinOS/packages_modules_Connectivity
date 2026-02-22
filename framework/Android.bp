@@ -58,7 +58,7 @@ java_defaults {
     name: "framework-connectivity-defaults",
     defaults: ["framework-module-defaults"],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     srcs: [
         ":framework-connectivity-sources",
         ":net-utils-framework-common-srcs",
@@ -169,7 +169,7 @@ java_library {
     name: "framework-connectivity-post-jarjar",
     defaults: ["framework-module-defaults"],
     installable: false,
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     static_libs: [
         "framework-connectivity-pre-jarjar",
     ],
@@ -184,7 +184,7 @@ java_library {
     name: "framework-connectivity-pre-jarjar",
     defaults: ["framework-module-defaults"],
     installable: false,
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     static_libs: [
         "framework-connectivity-pre-jarjar-without-cronet",
         "httpengine",
@@ -285,7 +285,7 @@ platform_compat_config {
 
 cc_library_shared {
     name: "libframework-connectivity-jni",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     cflags: [
         "-Wall",
         "-Werror",
@@ -331,7 +331,7 @@ java_library {
     srcs: [":framework-connectivity-protos"],
     installable: false,
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     apex_available: [
         "com.android.tethering",
     ],

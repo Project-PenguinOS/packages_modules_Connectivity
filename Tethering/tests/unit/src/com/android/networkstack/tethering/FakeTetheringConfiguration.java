@@ -42,11 +42,6 @@ public class FakeTetheringConfiguration extends TetheringConfiguration {
                     boolean defaultValue) {
                 return defaultValue;
             }
-
-            @Override
-            boolean isTetherForceUpstreamAutomaticFeatureEnabled() {
-                return false;
-            }
         });
     }
 

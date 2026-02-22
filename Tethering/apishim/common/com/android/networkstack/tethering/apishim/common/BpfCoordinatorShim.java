@@ -33,18 +33,10 @@ import com.android.networkstack.tethering.BpfCoordinator.Ipv6UpstreamRule;
  * Bpf coordinator class for API shims.
  */
 public abstract class BpfCoordinatorShim {
-    /**
-     * Get BpfCoordinatorShim object by OS build version.
-     */
     @NonNull
     public static BpfCoordinatorShim getBpfCoordinatorShim(@NonNull final Dependencies deps) {
-        if (deps.isAtLeastS()) {
-            return new com.android.networkstack.tethering.apishim.api31.BpfCoordinatorShimImpl(
-                    deps);
-        } else {
-            return new com.android.networkstack.tethering.apishim.api30.BpfCoordinatorShimImpl(
-                    deps);
-        }
+        return new com.android.networkstack.tethering.apishim.api31.BpfCoordinatorShimImpl(
+                deps);
     }
 
     /**

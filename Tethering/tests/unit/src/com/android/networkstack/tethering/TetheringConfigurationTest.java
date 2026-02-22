@@ -177,12 +177,6 @@ public class TetheringConfigurationTest {
             return isMockFlagEnabled(name, defaultValue);
         }
 
-        @Override
-        boolean isTetherForceUpstreamAutomaticFeatureEnabled() {
-            return isMockFlagEnabled(TETHER_FORCE_UPSTREAM_AUTOMATIC_VERSION,
-                    false /* defaultEnabled */);
-        }
-
         private boolean isMockFlagEnabled(@NonNull String name, boolean defaultEnabled) {
             final Boolean flag = mMockFlags.getOrDefault(name, defaultEnabled);
             // Value in the map can also be null

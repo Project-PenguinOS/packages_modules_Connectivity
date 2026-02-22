@@ -21,8 +21,6 @@ import static android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_LOCAL_NETWORK;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 
-import static com.android.networkstack.apishim.common.ShimUtils.isAtLeastS;
-
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 
@@ -210,11 +208,8 @@ public class TestConnectivityManager extends ConnectivityManager {
 
     @Override
     public void requestNetwork(NetworkRequest req, NetworkCallback cb, Handler h) {
-        // For R- devices, Tethering will invoke this function in 2 cases, one is to request mobile
-        // network, the other is to track system default network.
         if (looksLikeDefaultRequest(req)) {
-            assertFalse(isAtLeastS());
-            addTrackDefaultCallback(cb, h);
+            assertFalse(true);  // cannot be hit on S+
         } else {
             assertFalse(mAllCallbacks.containsKey(cb));
             mAllCallbacks.put(cb, h);

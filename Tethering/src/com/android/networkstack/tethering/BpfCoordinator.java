@@ -388,15 +388,6 @@ public class BpfCoordinator {
             return SystemClock.elapsedRealtimeNanos();
         }
 
-        /**
-         * Check OS Build at least S.
-         *
-         * TODO: move to BpfCoordinatorShim once the test doesn't need the mocked OS build for
-         * testing different code flows concurrently.
-         */
-        public boolean isAtLeastS() {
-            return SdkLevel.isAtLeastS();
-        }
 
         /**
          * Gets the MTU of the given interface.
@@ -413,7 +404,6 @@ public class BpfCoordinator {
 
         /** Get downstream4 BPF map. */
         @Nullable public IBpfMap<Tether4Key, Tether4Value> getBpfDownstream4Map() {
-            if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_DOWNSTREAM4_MAP_PATH,
                     Tether4Key.class, Tether4Value.class);
@@ -425,7 +415,6 @@ public class BpfCoordinator {
 
         /** Get upstream4 BPF map. */
         @Nullable public IBpfMap<Tether4Key, Tether4Value> getBpfUpstream4Map() {
-            if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_UPSTREAM4_MAP_PATH,
                     Tether4Key.class, Tether4Value.class);
@@ -437,7 +426,6 @@ public class BpfCoordinator {
 
         /** Get downstream6 BPF map. */
         @Nullable public IBpfMap<TetherDownstream6Key, Tether6Value> getBpfDownstream6Map() {
-            if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_DOWNSTREAM6_FS_PATH,
                     TetherDownstream6Key.class, Tether6Value.class);
@@ -449,7 +437,6 @@ public class BpfCoordinator {
 
         /** Get upstream6 BPF map. */
         @Nullable public IBpfMap<TetherUpstream6Key, Tether6Value> getBpfUpstream6Map() {
-            if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_UPSTREAM6_FS_PATH,
                         TetherUpstream6Key.class, Tether6Value.class);
@@ -461,7 +448,6 @@ public class BpfCoordinator {
 
         /** Get stats BPF map. */
         @Nullable public IBpfMap<S32, TetherStatsValue> getBpfStatsMap() {
-            if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_STATS_MAP_PATH,
                     S32.class, TetherStatsValue.class);
@@ -473,7 +459,6 @@ public class BpfCoordinator {
 
         /** Get limit BPF map. */
         @Nullable public IBpfMap<S32, S64> getBpfLimitMap() {
-            if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_LIMIT_MAP_PATH,
                     S32.class, S64.class);
@@ -485,7 +470,6 @@ public class BpfCoordinator {
 
         /** Get dev BPF map. */
         @Nullable public IBpfMap<S32, S32> getBpfDevMap() {
-            if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_DEV_MAP_PATH,
                     S32.class, S32.class);
@@ -497,7 +481,6 @@ public class BpfCoordinator {
 
         /** Get error BPF map. */
         @Nullable public IBpfMap<S32, S32> getBpfErrorMap() {
-            if (!isAtLeastS()) return null;
             try {
                 return new BpfMap<>(TETHER_ERROR_MAP_PATH,
                     BpfMap.BPF_F_RDONLY, S32.class, S32.class);
@@ -590,8 +573,8 @@ public class BpfCoordinator {
         }
 
         // BPF IPv4 forwarding only supports on S+.
-        mSupportActiveSessionsMetrics = mDeps.isAtLeastS()
-                && mDeps.isFeatureEnabled(mDeps.getContext(), TETHER_ACTIVE_SESSIONS_METRICS);
+        mSupportActiveSessionsMetrics = mDeps.isFeatureEnabled(mDeps.getContext(),
+                TETHER_ACTIVE_SESSIONS_METRICS);
 
         collectAndSendKernelStatsMetrics();
     }
@@ -685,7 +668,6 @@ public class BpfCoordinator {
      */
     private void startConntrackMonitoring() {
         // TODO: Wrap conntrackMonitor starting function into mBpfCoordinatorShim.
-        if (!mDeps.isAtLeastS()) return;
 
         mConntrackMonitor.start();
         mLog.i("Conntrack monitoring started.");
@@ -696,7 +678,6 @@ public class BpfCoordinator {
      */
     private void stopConntrackMonitoring() {
         // TODO: Wrap conntrackMonitor stopping function into mBpfCoordinatorShim.
-        if (!mDeps.isAtLeastS()) return;
 
         mConntrackMonitor.stop();
         mLog.i("Conntrack monitoring stopped.");

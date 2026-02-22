@@ -53,7 +53,7 @@ java_library {
         // "src_devicecommon/**/*.kt",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     target_sdk_version: "30",
     apex_available: [
         "//apex_available:anyapex",
@@ -94,7 +94,7 @@ java_library {
         "framework/com/android/net/module/util/HexDump.java",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     target_sdk_version: "30",
     visibility: [
         "//packages/modules/Connectivity/tests:__subpackages__",
@@ -134,7 +134,7 @@ java_library {
         "device/com/android/net/module/util/TcUtils.java",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     visibility: [
         "//packages/modules/Connectivity:__subpackages__",
         "//packages/modules/NetworkStack:__subpackages__",
@@ -161,7 +161,7 @@ java_library {
         "device/com/android/net/module/util/Struct.java",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     visibility: [
         "//packages/modules/Connectivity:__subpackages__",
         "//packages/modules/NetworkStack:__subpackages__",
@@ -194,7 +194,7 @@ java_library {
         "device/com/android/net/module/util/structs/*.java",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     visibility: [
         "//packages/modules/Connectivity:__subpackages__",
         "//packages/modules/NetworkStack:__subpackages__",
@@ -221,9 +221,10 @@ java_library {
     name: "net-utils-device-common-netlink",
     srcs: [
         "device/com/android/net/module/util/netlink/**/*.java",
+        "device/com/android/net/module/util/ModuleFlagProvider.java",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     visibility: [
         "//packages/modules/Connectivity:__subpackages__",
         "//packages/modules/NetworkStack:__subpackages__",
@@ -259,7 +260,7 @@ java_library {
         "device/com/android/net/module/util/ip/*.java",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     visibility: [
         "//packages/modules/Connectivity:__subpackages__",
         "//packages/modules/NetworkStack:__subpackages__",
@@ -293,7 +294,7 @@ java_library {
         ":net-utils-framework-common-srcs",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     libs: [
         "androidx.annotation_annotation",
         "framework-annotations-lib",
@@ -344,7 +345,7 @@ java_library {
         "device/android/net/NetworkFactoryShim.java",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     libs: [
         "framework-annotations-lib",
         "framework-connectivity.stubs.module_lib",
@@ -377,7 +378,7 @@ java_library {
         "device/com/android/net/module/util/async/*.java",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     visibility: [
         "//packages/modules/Connectivity:__subpackages__",
     ],
@@ -402,7 +403,7 @@ java_library {
         "device/com/android/net/module/util/wear/*.java",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     visibility: [
         "//packages/modules/Connectivity:__subpackages__",
     ],
@@ -464,7 +465,7 @@ java_library {
         ":net-utils-framework-connectivity-srcs",
     ],
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     apex_available: [
         "com.android.tethering",
         "//apex_available:platform",
@@ -490,7 +491,7 @@ java_library {
 java_defaults {
     name: "net-utils-non-bootclasspath-defaults",
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     libs: [
         "androidx.annotation_annotation",
         "framework-annotations-lib",
@@ -578,7 +579,7 @@ aidl_interface {
     backend: {
         java: {
             enabled: true,
-            min_sdk_version: "30",
+            min_sdk_version: "31",
             apex_available: [
                 "com.android.tethering",
                 "com.android.wifi",
@@ -726,7 +727,7 @@ java_library {
 java_library {
     name: "net-utils-framework-wifi",
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     srcs: [":net-utils-framework-wifi-common-srcs"],
     libs: [
         "framework-annotations-lib",
@@ -749,7 +750,7 @@ genrule {
 java_library {
     name: "net-utils-service-vcn",
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     srcs: [
         "device/com/android/net/module/util/HandlerUtils.java",
     ],
@@ -774,7 +775,7 @@ java_library {
 java_library {
     name: "net-utils-framework-vcn",
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     srcs: [
         "framework/com/android/net/module/util/HexDump.java",
     ],

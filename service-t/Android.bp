@@ -44,8 +44,8 @@ filegroup {
 java_library {
     name: "service-connectivity-tiramisu-pre-jarjar",
     sdk_version: "system_server_current",
-    // TODO(b/210962470): Bump this to at least S, and then T.
-    min_sdk_version: "30",
+    // TODO(b/210962470): Bump this to T.
+    min_sdk_version: "31",
     srcs: [
         ":service-connectivity-tiramisu-sources",
     ],

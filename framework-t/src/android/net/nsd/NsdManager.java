@@ -546,24 +546,32 @@ public final class NsdManager {
             }
 
             /**
-             * Parses and validates the service type received from discovery.
+             * Parses and normalizes the service type received from discovery or service info
+             * callbacks.
              *
-             * <p>As per the contract for {@link DiscoveryListener#onServiceFound} and
-             * {@link DiscoveryListener#onServiceLost}, the service type in
+             * <p>This method handles service types for {@link DiscoveryListener#onServiceFound},
+             * {@link DiscoveryListener#onServiceLost}, and
+             * {@link ServiceInfoCallback#onServiceLost}.
+             *
+             * <p>As per their respective contracts, the service type in
              * {@link OffloadSession#notifyServiceFound} and
-             * {@link OffloadSession#notifyServiceLost} should contain a "." as a suffix.
+             * {@link OffloadSession#notifyServiceLost}
+             * contains a "." as a suffix for {@link DiscoveryListener} callbacks, but does not
+             * for {@link ServiceInfoCallback#onServiceLost}. This method returns the parsed
+             * service type with the trailing dot removed if present.
              *
-             * @param serviceType the service type to be parsed and validated
+             * @param serviceType the service type to be parsed and normalized
              * @return the parsed service type with the trailing dot removed
-             * @throws IllegalArgumentException if the {@code serviceType} is empty or does
-             *     not end with a dot as a suffix
+             * @throws IllegalArgumentException if the {@code serviceType} is empty
              */
             private static String parseDiscoveryServiceType(String serviceType) {
-                if (TextUtils.isEmpty(serviceType)
-                        || !serviceType.endsWith(".")) {
-                    throw new IllegalArgumentException("Invalid Service type = " + serviceType);
+                if (TextUtils.isEmpty(serviceType)) {
+                    throw new IllegalArgumentException("Service type cannot be null or empty.");
                 }
-                return serviceType.substring(0, serviceType.length() - 1);
+                if (serviceType.endsWith(".")) {
+                    return serviceType.substring(0, serviceType.length() - 1);
+                }
+                return serviceType;
             }
 
             private void handleOffloadedServiceInfoResponse(

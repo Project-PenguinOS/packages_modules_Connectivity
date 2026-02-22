@@ -98,3 +98,10 @@ flag {
     bug: "453906718"
     is_exported: true
 }
+
+flag {
+    name: "netlink_no_timeout"
+    namespace: "com_android_tethering"
+    description: "Disable timeout for netlink API calls."
+    bug: "455999579"
+}

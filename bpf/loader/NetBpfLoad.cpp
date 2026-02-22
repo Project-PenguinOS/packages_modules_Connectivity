@@ -102,11 +102,11 @@ static_assert(useLibBpf == com::android::tethering::readonly::flags::use_libbpf(
 // will return FutureApiLevel which results in
 // __ANDROID_API__ == __ANDROID_MIN_SDK_VERSION__ == 10000
 //
-// Normally __ANDROID_API__ is 'min_sdk_version = 30' from Android.bp
+// Normally __ANDROID_API__ is 'min_sdk_version = 31' from Android.bp
 #if defined(__riscv)
 static_assert(__ANDROID_API__ == 10000, "TODO: add proper mainline riscv support");
 #else
-static_assert(__ANDROID_API__ == 30, "NetBpfLoad must be compiled for 30/R");
+static_assert(__ANDROID_API__ == 31, "NetBpfLoad must be compiled for 31/S");
 #endif
 
 #ifndef __ANDROID_APEX__
