@@ -110,7 +110,7 @@ public class IPv6TetheringCoordinatorTest {
         final IpServer firstServer = mock(IpServer.class);
         mNotifyList.add(firstServer);
         mIPv6TetheringCoordinator.addActiveDownstream(firstServer, STATE_TETHERED);
-        verify(firstServer).sendMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
+        verify(firstServer).processMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
         verifyNoMoreInteractions(firstServer);
 
         // 2. Add second IpServer and it would not have ipv6 tethering.
@@ -122,14 +122,14 @@ public class IPv6TetheringCoordinatorTest {
 
         // 3. No upstream.
         mIPv6TetheringCoordinator.updateUpstreamNetworkState(null);
-        verify(secondServer).sendMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
+        verify(secondServer).processMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
         reset(firstServer, secondServer);
 
         // 4. Update ipv6 mobile upstream.
         final UpstreamNetworkState mobileUpstream = createDualStackUpstream(TRANSPORT_CELLULAR);
         final ArgumentCaptor<LinkProperties> lp = ArgumentCaptor.forClass(LinkProperties.class);
         mIPv6TetheringCoordinator.updateUpstreamNetworkState(mobileUpstream);
-        verify(firstServer).sendMessage(eq(IpServer.CMD_IPV6_TETHER_UPDATE), eq(-1), eq(0),
+        verify(firstServer).processMessage(eq(IpServer.CMD_IPV6_TETHER_UPDATE), eq(-1), eq(0),
                 lp.capture());
         final LinkProperties v6OnlyLink = lp.getValue();
         assertOnlyOneV6AddressAndNoV4(v6OnlyLink);
@@ -140,8 +140,8 @@ public class IPv6TetheringCoordinatorTest {
         // 5. Remove first IpServer.
         mNotifyList.remove(firstServer);
         mIPv6TetheringCoordinator.removeActiveDownstream(firstServer);
-        verify(firstServer).sendMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
-        verify(secondServer).sendMessage(eq(IpServer.CMD_IPV6_TETHER_UPDATE), eq(-1), eq(0),
+        verify(firstServer).processMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
+        verify(secondServer).processMessage(eq(IpServer.CMD_IPV6_TETHER_UPDATE), eq(-1), eq(0),
                 lp.capture());
         final LinkProperties localOnlyLink = lp.getValue();
         assertNotNull(localOnlyLink);
@@ -152,6 +152,6 @@ public class IPv6TetheringCoordinatorTest {
         mNotifyList.remove(secondServer);
         mIPv6TetheringCoordinator.removeActiveDownstream(secondServer);
         verifyNoMoreInteractions(firstServer);
-        verify(secondServer).sendMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
+        verify(secondServer).processMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
     }
 }

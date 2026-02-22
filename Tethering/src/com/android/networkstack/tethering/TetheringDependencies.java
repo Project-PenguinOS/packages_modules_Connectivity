@@ -19,9 +19,7 @@ package com.android.networkstack.tethering;
 import android.annotation.Nullable;
 import android.app.usage.NetworkStatsManager;
 import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothPan;
 import android.content.Context;
-import android.net.ConnectivityManager;
 import android.net.INetd;
 import android.net.connectivity.ConnectivityInternalApiUtil;
 import android.net.ip.IpServer;
@@ -38,10 +36,7 @@ import androidx.annotation.RequiresApi;
 
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.RoutingCoordinatorManager;
-import com.android.net.module.util.RoutingCoordinatorService;
 import com.android.net.module.util.SharedLog;
-import com.android.networkstack.apishim.BluetoothPanShimImpl;
-import com.android.networkstack.apishim.common.BluetoothPanShim;
 import com.android.networkstack.tethering.metrics.TetheringMetrics;
 import com.android.networkstack.tethering.wear.WearableConnectionManager;
 
@@ -168,15 +163,6 @@ public abstract class TetheringDependencies {
      */
     public boolean isTetheringDenied() {
         return TextUtils.equals(SystemProperties.get("ro.tether.denied"), "true");
-    }
-
-    /**
-     * Make BluetoothPanShim object to enable/disable bluetooth tethering.
-     *
-     * TODO: use BluetoothPan directly when mainline module is built with API 32.
-     */
-    public BluetoothPanShim makeBluetoothPanShim(BluetoothPan pan) {
-        return BluetoothPanShimImpl.newInstance(pan);
     }
 
     /**

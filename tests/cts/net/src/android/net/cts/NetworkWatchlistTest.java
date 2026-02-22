@@ -62,15 +62,12 @@ public class NetworkWatchlistTest {
             "B5FC4636994180D54E1E912F78178AB1D8BD2BE71D90CA9F5BBC3284E4D04ED4";
 
     private ConnectivityManager mConnectivityManager;
-    private boolean mHasFeature;
 
     @Before
     public void setUp() throws Exception {
-        mHasFeature = isAtLeastP();
         mConnectivityManager =
                 (ConnectivityManager) InstrumentationRegistry.getContext().getSystemService(
                         Context.CONNECTIVITY_SERVICE);
-        assumeTrue(mHasFeature);
         // Set empty watchlist test config before testing
         setWatchlistConfig(TEST_EMPTY_WATCHLIST_XML);
         // Verify test watchlist config is not set before testing
@@ -81,20 +78,12 @@ public class NetworkWatchlistTest {
 
     @After
     public void tearDown() throws Exception {
-        if (mHasFeature) {
-            // Set empty watchlist test config after testing
-            setWatchlistConfig(TEST_EMPTY_WATCHLIST_XML);
-        }
+        // Set empty watchlist test config after testing
+        setWatchlistConfig(TEST_EMPTY_WATCHLIST_XML);
     }
 
     private void cleanup() throws IOException {
         runCommand("rm " + TMP_CONFIG_PATH);
-    }
-
-    private boolean isAtLeastP() throws Exception {
-        // TODO: replace with ApiLevelUtil.isAtLeast(Build.VERSION_CODES.P) when the P API level
-        // constant is defined.
-        return ApiLevelUtil.getCodename().compareToIgnoreCase("P") >= 0;
     }
 
     /**

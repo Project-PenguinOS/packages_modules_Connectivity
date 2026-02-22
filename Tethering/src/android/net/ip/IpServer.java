@@ -96,7 +96,6 @@ import com.android.net.module.util.RoutingCoordinatorManager;
 import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.SharedLog;
 import com.android.net.module.util.SyncStateMachine;
-import com.android.net.module.util.SyncStateMachine.StateInfo;
 import com.android.net.module.util.ip.InterfaceController;
 import com.android.net.module.util.netlink.NetlinkUtils;
 import com.android.networkstack.tethering.BpfCoordinator;
@@ -389,7 +388,7 @@ public class IpServer extends SyncStateMachine {
         mIpv4PrefixRequest = new IIpv4PrefixRequest.Stub() {
             @Override
             public void onIpv4PrefixConflict(IpPrefix ipPrefix) throws RemoteException {
-                sendMessage(CMD_NOTIFY_PREFIX_CONFLICT);
+                processMessage(CMD_NOTIFY_PREFIX_CONFLICT);
             }
         };
         mCallback = callback;
@@ -510,12 +509,12 @@ public class IpServer extends SyncStateMachine {
      * Enable this IpServer. IpServer state machine will be tethered or localHotspot state based on
      * the connectivity scope of the TetheringRequest. */
     public void enable(@NonNull final TetheringRequest request) {
-        sendMessage(CMD_TETHER_REQUESTED, 0, 0, request);
+        processMessage(CMD_TETHER_REQUESTED, 0, 0, request);
     }
 
     /** Stop this IpServer. After this is called this IpServer should not be used any more. */
     public void stop() {
-        sendMessage(CMD_INTERFACE_DOWN);
+        processMessage(CMD_INTERFACE_DOWN);
     }
 
     /**
@@ -523,28 +522,14 @@ public class IpServer extends SyncStateMachine {
      * next tethering request.
      */
     public void unwanted() {
-        sendMessage(CMD_TETHER_UNREQUESTED);
+        processMessage(CMD_TETHER_UNREQUESTED);
     }
 
-    /** Send message to state machine. */
-    public void sendMessage(int what) {
-        processMessage(what, 0, 0, null);
-    }
-
-    /** Send message to state machine. */
-    public void sendMessage(int what, Object obj) {
+    /** Process message in sync state machine. */
+    public void processMessage(int what, Object obj) {
         processMessage(what, 0, 0, obj);
     }
 
-    /** Send message to state machine. */
-    public void sendMessage(int what, int arg1) {
-        processMessage(what, arg1, 0, null);
-    }
-
-    /** Send message to state machine. */
-    public void sendMessage(int what, int arg1, int arg2, Object obj) {
-        processMessage(what, arg1, arg2, obj);
-    }
 
     /** Internals. */
 
@@ -626,7 +611,7 @@ public class IpServer extends SyncStateMachine {
 
         private void handleError() {
             mLastError = TETHER_ERROR_DHCPSERVER_ERROR;
-            sendMessage(CMD_SERVICE_FAILED_TO_START, TETHER_ERROR_DHCPSERVER_ERROR);
+            processMessage(CMD_SERVICE_FAILED_TO_START, TETHER_ERROR_DHCPSERVER_ERROR, 0, null);
         }
     }
 
@@ -666,7 +651,7 @@ public class IpServer extends SyncStateMachine {
         @Override
         public void onNewPrefixRequest(@NonNull final IpPrefix currentPrefix) {
             Objects.requireNonNull(currentPrefix);
-            sendMessage(CMD_NEW_PREFIX_REQUEST, currentPrefix);
+            processMessage(CMD_NEW_PREFIX_REQUEST, currentPrefix);
         }
 
         @Override

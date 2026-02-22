@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2021 The Android Open Source Project
+ * Copyright (C) 2026 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,14 @@
  * limitations under the License.
  */
 
-package android.net
+package com.android.server.connectivity.proxy;
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.junit.runner.RunWith
-import kotlin.test.Test
-import kotlin.test.assertEquals
-
-@RunWith(AndroidJUnit4::class)
-class InvalidPacketExceptionTest {
-    @Test
-    fun testConstructor() {
-        assertEquals(123, InvalidPacketException(123).error)
-        assertEquals(0, InvalidPacketException(0).error)
-        assertEquals(-123, InvalidPacketException(-123).error)
-    }
+/**
+ * This class is used to notify listeners when the PAC script is downloaded and ready to be used for
+ * a certain entity.
+ *
+ * @hide
+ */
+public class MultiPacProxyInstalledListener {
+    private static final String TAG = "MultiPacProxyInstalledListener";
 }

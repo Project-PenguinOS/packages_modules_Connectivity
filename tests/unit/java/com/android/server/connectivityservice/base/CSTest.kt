@@ -132,7 +132,6 @@ internal val LOCAL_IPV4_ADDRESS = InetAddresses.parseNumericAddress("192.0.2.1")
 open class FromS<Type>(val value: Type)
 
 internal const val VERSION_UNMOCKED = -1
-internal const val VERSION_R = 1
 internal const val VERSION_S = 2
 internal const val VERSION_T = 3
 internal const val VERSION_U = 4
@@ -168,15 +167,6 @@ open class CSTest {
 
     companion object {
         val CSTestExecutor = Executors.newSingleThreadExecutor()
-    }
-
-    init {
-        if (!SdkLevel.isAtLeastS()) {
-            throw UnsupportedApiLevelException(
-                "CSTest subclasses must be annotated to only " +
-                    "run on S+, e.g. @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.R)"
-            )
-        }
     }
 
     val instrumentationContext =

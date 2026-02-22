@@ -34,27 +34,27 @@ import android.net.NetworkSpecifier;
 import android.net.TelephonyNetworkSpecifier;
 import android.net.TransportInfo;
 import android.net.wifi.WifiInfo;
+import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Process;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+import android.telephony.TelephonyManager.CarrierPrivilegesCallback;
 import android.util.Log;
 import android.util.SparseArray;
+
+import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.modules.utils.HandlerExecutor;
 import com.android.modules.utils.build.SdkLevel;
-import com.android.networkstack.apishim.TelephonyManagerShimImpl;
-import com.android.networkstack.apishim.common.TelephonyManagerShim;
-import com.android.networkstack.apishim.common.TelephonyManagerShim.CarrierPrivilegesListenerShim;
-import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executor;
+import java.util.Set;
 import java.util.function.BiConsumer;
 
 /**
@@ -63,13 +63,13 @@ import java.util.function.BiConsumer;
  * carrier privileged app that provides the carrier config
  * @hide
  */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 public class CarrierPrivilegeAuthenticator {
     private static final String TAG = CarrierPrivilegeAuthenticator.class.getSimpleName();
     private static final boolean DBG = true;
 
     // The context is for the current user (system server)
     private final Context mContext;
-    private final TelephonyManagerShim mTelephonyManagerShim;
     private final TelephonyManager mTelephonyManager;
     @GuardedBy("mLock")
     private final SparseArray<CarrierServiceUidWithSubId> mCarrierServiceUidWithSubId =
@@ -87,13 +87,11 @@ public class CarrierPrivilegeAuthenticator {
     public CarrierPrivilegeAuthenticator(@NonNull final Context c,
             @NonNull final Dependencies deps,
             @NonNull final TelephonyManager t,
-            @NonNull final TelephonyManagerShim telephonyManagerShim,
             final boolean requestRestrictedWifiEnabled,
             @NonNull BiConsumer<Integer, Integer> listener,
             @NonNull final Handler connectivityServiceHandler) {
         mContext = c;
         mTelephonyManager = t;
-        mTelephonyManagerShim = telephonyManagerShim;
         mRequestRestrictedWifiEnabled = requestRestrictedWifiEnabled;
         mListener = listener;
         if (mRequestRestrictedWifiEnabled) {
@@ -141,7 +139,7 @@ public class CarrierPrivilegeAuthenticator {
             @NonNull final TelephonyManager t, final boolean requestRestrictedWifiEnabled,
             @NonNull BiConsumer<Integer, Integer> listener,
             @NonNull final Handler connectivityServiceHandler) {
-        this(c, new Dependencies(), t, TelephonyManagerShimImpl.newInstance(t),
+        this(c, new Dependencies(), t,
                 requestRestrictedWifiEnabled, listener, connectivityServiceHandler);
     }
 
@@ -189,11 +187,19 @@ public class CarrierPrivilegeAuthenticator {
             return mUid * 31 + mSubId;
         }
     }
-    private class PrivilegeListener implements CarrierPrivilegesListenerShim {
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private class PrivilegeListener implements CarrierPrivilegesCallback {
         public final int mLogicalSlot;
 
         PrivilegeListener(final int logicalSlot) {
             mLogicalSlot = logicalSlot;
+        }
+
+        @Override
+        public void onCarrierPrivilegesChanged(@NonNull Set<String> privilegedPackageNames,
+                @NonNull Set<Integer> privilegedUids) {
+            // No-op
         }
 
         @Override
@@ -222,7 +228,8 @@ public class CarrierPrivilegeAuthenticator {
         try {
             for (int i = 0; i < modemCount; i++) {
                 PrivilegeListener carrierPrivilegesListener = new PrivilegeListener(i);
-                addCarrierPrivilegesListener(executor, carrierPrivilegesListener);
+                mTelephonyManager.registerCarrierPrivilegesCallback(i, executor,
+                        carrierPrivilegesListener);
                 mCarrierPrivilegesChangedListeners.add(carrierPrivilegesListener);
             }
         } catch (IllegalArgumentException e) {
@@ -233,7 +240,7 @@ public class CarrierPrivilegeAuthenticator {
     @GuardedBy("mLock")
     private void unregisterCarrierPrivilegesListeners() {
         for (PrivilegeListener carrierPrivilegesListener : mCarrierPrivilegesChangedListeners) {
-            removeCarrierPrivilegesListener(carrierPrivilegesListener);
+            mTelephonyManager.unregisterCarrierPrivilegesCallback(carrierPrivilegesListener);
             CarrierServiceUidWithSubId oldPair =
                     mCarrierServiceUidWithSubId.get(carrierPrivilegesListener.mLogicalSlot);
             mCarrierServiceUidWithSubId.remove(carrierPrivilegesListener.mLogicalSlot);
@@ -247,14 +254,7 @@ public class CarrierPrivilegeAuthenticator {
     }
 
     private String getCarrierServicePackageNameForLogicalSlot(int logicalSlotIndex) {
-        try {
-            return mTelephonyManagerShim.getCarrierServicePackageNameForLogicalSlot(
-                    logicalSlotIndex);
-        } catch (UnsupportedApiLevelException unsupportedApiLevelException) {
-            // Should not happen since CarrierPrivilegeAuthenticator is only used on T+
-            Log.e(TAG, "getCarrierServicePackageNameForLogicalSlot API is not available");
-        }
-        return null;
+        return mTelephonyManager.getCarrierServicePackageNameForLogicalSlot(logicalSlotIndex);
     }
 
     /**
@@ -387,27 +387,6 @@ public class CarrierPrivilegeAuthenticator {
             return ((WifiInfo) info).getSubscriptionId();
         }
         return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
-    }
-
-    // Helper methods to avoid having to deal with UnsupportedApiLevelException.
-    private void addCarrierPrivilegesListener(@NonNull final Executor executor,
-            @NonNull final PrivilegeListener listener) {
-        try {
-            mTelephonyManagerShim.addCarrierPrivilegesListener(listener.mLogicalSlot, executor,
-                    listener);
-        } catch (UnsupportedApiLevelException unsupportedApiLevelException) {
-            // Should not happen since CarrierPrivilegeAuthenticator is only used on T+
-            Log.e(TAG, "addCarrierPrivilegesListener API is not available");
-        }
-    }
-
-    private void removeCarrierPrivilegesListener(PrivilegeListener listener) {
-        try {
-            mTelephonyManagerShim.removeCarrierPrivilegesListener(listener);
-        } catch (UnsupportedApiLevelException unsupportedApiLevelException) {
-            // Should not happen since CarrierPrivilegeAuthenticator is only used on T+
-            Log.e(TAG, "removeCarrierPrivilegesListener API is not available");
-        }
     }
 
     public void dump(IndentingPrintWriter pw) {

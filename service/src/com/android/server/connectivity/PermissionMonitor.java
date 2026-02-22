@@ -91,8 +91,6 @@ import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.SharedLog;
-import com.android.networkstack.apishim.ProcessShimImpl;
-import com.android.networkstack.apishim.common.ProcessShim;
 import com.android.server.BpfNetMaps;
 import com.android.server.ConnectivityStatsLog;
 import com.android.server.LocalManagerRegistry;
@@ -127,7 +125,6 @@ public class PermissionMonitor {
     private final BpfNetMaps mBpfNetMaps;
     private final HandlerThread mThread;
 
-    private static final ProcessShim sProcessShim = ProcessShimImpl.newInstance();
 
     @GuardedBy("this")
     private final Set<UserHandle> mUsers = new HashSet<>();
@@ -440,7 +437,7 @@ public class PermissionMonitor {
                                         uidsPermissionBits.valueAt(i));
                                 allUidsPermissionBits.put(uid, chunkPermissions);
                                 if (hasSdkSandbox(uid)) {
-                                    allUidsPermissionBits.put(sProcessShim.toSdkSandboxUid(uid),
+                                    allUidsPermissionBits.put(Process.toSdkSandboxUid(uid),
                                             chunkPermissions);
                                 }
                             }
@@ -462,7 +459,7 @@ public class PermissionMonitor {
                     (Integer appId) -> {
                         mBpfNetMaps.removePermissionsForAppId(appId);
                         if (hasSdkSandbox(appId)) {
-                            int sdkSandboxAppId = sProcessShim.toSdkSandboxUid(appId);
+                            int sdkSandboxAppId = Process.toSdkSandboxUid(appId);
                             mBpfNetMaps.removePermissionsForAppId(sdkSandboxAppId);
                         }
                     },
@@ -502,7 +499,7 @@ public class PermissionMonitor {
         }
         if (hasSdkSandbox(uid)){
             // SDKs in the SDK RT cannot hold runtime permissions
-            final int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+            final int sdkSandboxUid = Process.toSdkSandboxUid(uid);
             mBpfNetMaps.addUidToLocalNetBlockMap(sdkSandboxUid);
         }
     }
@@ -559,7 +556,7 @@ public class PermissionMonitor {
             if (isHigherNetworkPermission(permission, uidsPerm.get(uid, PERMISSION_NONE))) {
                 uidsPerm.put(uid, permission);
                 if (hasSdkSandbox(uid)) {
-                    int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                    int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                     uidsPerm.put(sdkSandboxUid, permission);
                 }
             }
@@ -585,7 +582,7 @@ public class PermissionMonitor {
             trafficPerm.put(id, permission);
             // TODO(454320180): add sdkSandboxUids before calling BpfNetMaps
             if (hasSdkSandbox(id)) {
-                trafficPerm.put(sProcessShim.toSdkSandboxUid(id), permission);
+                trafficPerm.put(Process.toSdkSandboxUid(id), permission);
             }
         }
         return trafficPerm;
@@ -633,7 +630,7 @@ public class PermissionMonitor {
             final int permission = trafficPerm.get(id) | TRAFFIC_PERMISSION_INTERNET;
             trafficPerm.put(id, permission);
             if (hasSdkSandbox(id)) {
-                trafficPerm.put(sProcessShim.toSdkSandboxUid(id), permission);
+                trafficPerm.put(Process.toSdkSandboxUid(id), permission);
             }
         }
         for (final int uid : mSystemConfigManager.getSystemPermissionUids(UPDATE_DEVICE_STATS)) {
@@ -641,7 +638,7 @@ public class PermissionMonitor {
             final int permission = trafficPerm.get(id) | TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
             trafficPerm.put(id, permission);
             if (hasSdkSandbox(id)) {
-                trafficPerm.put(sProcessShim.toSdkSandboxUid(id), permission);
+                trafficPerm.put(Process.toSdkSandboxUid(id), permission);
             }
         }
         return trafficPerm;
@@ -924,7 +921,7 @@ public class PermissionMonitor {
                         && !mBpfNetMaps.isPermissionPropagationEnabled()) {
                     mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
                     if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
-                            sProcessShim.toSdkSandboxUid(uid));
+                            Process.toSdkSandboxUid(uid));
                 }
                 removedUids.put(uid, allUids.valueAt(i));
             }
@@ -1186,7 +1183,7 @@ public class PermissionMonitor {
             apps.put(uid, permission);
 
             if (hasSdkSandbox(uid)) {
-                int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                 mUidToNetworkPerm.put(sdkSandboxUid, permission);
                 apps.put(sdkSandboxUid, permission);
             }
@@ -1257,7 +1254,7 @@ public class PermissionMonitor {
         if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
             mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
             if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
-                    sProcessShim.toSdkSandboxUid(uid));
+                    Process.toSdkSandboxUid(uid));
         }
 
         // If the newly-removed package falls within some VPN's uid range, update Netd with it.
@@ -1283,7 +1280,7 @@ public class PermissionMonitor {
             final SparseIntArray apps = new SparseIntArray();
             int sdkSandboxUid = -1;
             if (hasSdkSandbox(uid)) {
-                sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                sdkSandboxUid = Process.toSdkSandboxUid(uid);
             }
             if (permission == PERMISSION_NONE) {
                 mUidToNetworkPerm.delete(uid);
@@ -1532,7 +1529,7 @@ public class PermissionMonitor {
         final SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(uid, permissions);
         if (hasSdkSandbox(uid)) {
-            int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+            int sdkSandboxUid = Process.toSdkSandboxUid(uid);
             permissionsUids.put(sdkSandboxUid, permissions);
         }
         sendUidsTrafficPermission(permissionsUids);
@@ -1549,7 +1546,7 @@ public class PermissionMonitor {
         SparseIntArray netdPermissionsAppIds = new SparseIntArray();
         netdPermissionsAppIds.put(appId, permissions);
         if (hasSdkSandbox(appId)) {
-            int sdkSandboxAppId = sProcessShim.toSdkSandboxUid(appId);
+            int sdkSandboxAppId = Process.toSdkSandboxUid(appId);
             netdPermissionsAppIds.put(sdkSandboxAppId, permissions);
         }
         sendAppIdsTrafficPermission(netdPermissionsAppIds);
@@ -1656,7 +1653,7 @@ public class PermissionMonitor {
                 removedUids.put(uid, PERMISSION_NETWORK);
                 mUidToNetworkPerm.delete(uid);
                 if (hasSdkSandbox(uid)) {
-                    int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                    int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                     removedUids.put(sdkSandboxUid, PERMISSION_NETWORK);
                     mUidToNetworkPerm.delete(sdkSandboxUid);
                 }
@@ -1664,7 +1661,7 @@ public class PermissionMonitor {
                 updatedUids.put(uid, permission);
                 mUidToNetworkPerm.put(uid, permission);
                 if (hasSdkSandbox(uid)) {
-                    int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                    int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                     updatedUids.put(sdkSandboxUid, permission);
                     mUidToNetworkPerm.put(sdkSandboxUid, permission);
                 }

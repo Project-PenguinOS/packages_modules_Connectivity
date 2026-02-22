@@ -363,9 +363,7 @@ class NetworkAgentTest {
         addCapability(NET_CAPABILITY_NOT_SUSPENDED)
         addCapability(NET_CAPABILITY_NOT_ROAMING)
         if (!transports.contains(TRANSPORT_VPN)) addCapability(NET_CAPABILITY_NOT_VPN)
-        if (SdkLevel.isAtLeastS()) {
-            addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
-        }
+        addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
         if (null != specifier) {
             setNetworkSpecifier(CompatUtil.makeEthernetNetworkSpecifier(specifier))
         }
@@ -941,9 +939,7 @@ class NetworkAgentTest {
             addTransportType(TRANSPORT_VPN)
             removeCapability(NET_CAPABILITY_NOT_VPN)
             setTransportInfo(VpnTransportInfo(VpnManager.TYPE_VPN_SERVICE, mySessionId))
-            if (SdkLevel.isAtLeastS()) {
-                addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
-            }
+            addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
         }
         val defaultNetwork = mCM.activeNetwork
         assertNotNull(defaultNetwork)

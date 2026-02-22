@@ -34,9 +34,8 @@ import static android.net.NetworkCapabilities.TRANSPORT_VPN;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 
 import static com.android.testutils.ParcelUtils.assertParcelingIsLossless;
-import static com.google.common.truth.Truth.assertThat;
 
-import static junit.framework.Assert.fail;
+import static com.google.common.truth.Truth.assertThat;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -64,9 +63,6 @@ import androidx.test.runner.AndroidJUnit4;
 
 import com.android.modules.utils.build.SdkLevel;
 import com.android.networkstack.apishim.ConstantsShim;
-import com.android.networkstack.apishim.NetworkRequestShimImpl;
-import com.android.networkstack.apishim.common.NetworkRequestShim;
-import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
 import com.android.testutils.ConnectivityModuleTest;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreAfter;
@@ -285,11 +281,9 @@ public class NetworkRequestTest {
         assertTrue(requestCellularInternet.canBeSatisfiedBy(capCellularVpnMmsInternet));
     }
 
-    private void setUids(NetworkRequest.Builder builder, Set<Range<Integer>> ranges)
-            throws UnsupportedApiLevelException {
+    private void setUids(NetworkRequest.Builder builder, Set<Range<Integer>> ranges) {
         if (SdkLevel.isAtLeastS()) {
-            final NetworkRequestShim networkRequestShim = NetworkRequestShimImpl.newInstance();
-            networkRequestShim.setUids(builder, ranges);
+            builder.setUids(ranges);
         }
     }
 
@@ -312,11 +306,7 @@ public class NetworkRequestTest {
         // request contains the current UID both on S and before S.
         final Set<Range<Integer>> ranges = new ArraySet<>();
         ranges.add(new Range<Integer>(uid, uid));
-        try {
-            setUids(nrBuilder, ranges);
-        } catch (UnsupportedApiLevelException e) {
-            // Not supported before API31.
-        }
+        setUids(nrBuilder, ranges);
         final NetworkRequest requestCombination = nrBuilder.build();
 
         final NetworkCapabilities capCell = new NetworkCapabilities.Builder()
@@ -368,17 +358,16 @@ public class NetworkRequestTest {
     @Test
     public void testSetIncludeOtherUidNetworks() throws Exception {
         assumeTrue(TestUtils.shouldTestSApis());
-        final NetworkRequestShim shim = NetworkRequestShimImpl.newInstance();
 
         final NetworkRequest.Builder builder = new NetworkRequest.Builder();
         // NetworkRequests have NET_CAPABILITY_NOT_VCN_MANAGED by default.
         builder.removeCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED);
-        shim.setIncludeOtherUidNetworks(builder, false);
+        builder.setIncludeOtherUidNetworks(false);
         final NetworkRequest request = builder.build();
 
         final NetworkRequest.Builder otherUidsBuilder = new NetworkRequest.Builder();
         otherUidsBuilder.removeCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED);
-        shim.setIncludeOtherUidNetworks(otherUidsBuilder, true);
+        otherUidsBuilder.setIncludeOtherUidNetworks(true);
         final NetworkRequest otherUidsRequest = otherUidsBuilder.build();
 
         assertNotEquals(Process.SYSTEM_UID, Process.myUid());
@@ -497,13 +486,8 @@ public class NetworkRequestTest {
     }
 
     private void verifyEqualRequestBuilt(NetworkRequest orig) {
-        try {
-            final NetworkRequestShim shim = NetworkRequestShimImpl.newInstance();
-            final NetworkRequest copy = shim.newBuilder(orig).build();
-            assertEquals(orig, copy);
-        } catch (UnsupportedApiLevelException e) {
-            fail("NetworkRequestShim.newBuilder should be supported in this SDK version");
-        }
+        final NetworkRequest copy = new NetworkRequest.Builder(orig).build();
+        assertEquals(orig, copy);
     }
 
     @Test @IgnoreUpTo(Build.VERSION_CODES.R)

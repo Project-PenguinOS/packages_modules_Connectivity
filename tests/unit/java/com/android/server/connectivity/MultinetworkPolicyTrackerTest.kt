@@ -114,9 +114,8 @@ class MultinetworkPolicyTrackerTest(private val supportCarrierConfigManager: Boo
         // new one per subId. See [CSTest#createContextAsUser] above for a model.
         doReturn(it).`when`(it).createForSubscriptionId(anyInt())
     }
-    private val subscriptionManager = mock(SubscriptionManager::class.java).also {
-        doReturn(null).`when`(it).getActiveSubscriptionInfo(anyInt())
-    }
+    private val subscriptionManager = mock(SubscriptionManager::class.java)
+
     private val packageManager = mock(PackageManager::class.java).also {
         doReturn(true).`when`(it)
             .hasSystemFeature(PackageManager.FEATURE_TELEPHONY_SUBSCRIPTION)
@@ -161,12 +160,6 @@ class MultinetworkPolicyTrackerTest(private val supportCarrierConfigManager: Boo
 
     private fun runOnActiveDataSubscriptionIdChanged() {
         val testSubId = 1000
-        val subscriptionInfo = SubscriptionInfo(testSubId, ""/* iccId */, 1/* iccId */,
-            "TMO"/* displayName */, "TMO"/* carrierName */, 1/* nameSource */, 1/* iconTint */,
-            "123"/* number */, 1/* roaming */, null/* icon */, "310"/* mcc */, "210"/* mnc */,
-            ""/* countryIso */, false/* isEmbedded */, null/* nativeAccessRules */,
-            "1"/* cardString */)
-        doReturn(subscriptionInfo).`when`(subscriptionManager).getActiveSubscriptionInfo(testSubId)
 
         // Modify avoidBadWifi and meteredMultipathPreference settings value and local variables in
         // MultinetworkPolicyTracker should be also updated after subId changed.

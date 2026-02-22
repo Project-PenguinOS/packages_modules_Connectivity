@@ -16,11 +16,8 @@
 
 package android.net
 
-import android.os.Build
 import androidx.test.filters.SmallTest
-import com.android.modules.utils.build.SdkLevel
 import com.android.testutils.DevSdkIgnoreRule
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.assertParcelingIsLossless
 import kotlin.test.assertEquals
@@ -45,38 +42,28 @@ class CaptivePortalDataTest {
             .setBytesRemaining(456L)
             .setExpiryTime(789L)
             .setCaptive(true)
-            .apply {
-                if (SdkLevel.isAtLeastS()) {
-                    setVenueFriendlyName("venue friendly name")
-                }
-            }
+            .setVenueFriendlyName("venue friendly name")
             .build()
 
     private val dataFromPasspoint = CaptivePortalData.Builder()
             .setCaptive(true)
-            .apply {
-                if (SdkLevel.isAtLeastS()) {
-                    setVenueFriendlyName("venue friendly name")
-                    setUserPortalUrl(
-                        Uri.parse("https://tc.example.com/passpoint"),
-                            CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_PASSPOINT
-                    )
-                    setVenueInfoUrl(
-                        Uri.parse("https://venue.example.com/passpoint"),
-                            CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_PASSPOINT
-                    )
-                }
-            }
+            .setVenueFriendlyName("venue friendly name")
+            .setUserPortalUrl(
+                Uri.parse("https://tc.example.com/passpoint"),
+                    CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_PASSPOINT
+            )
+            .setVenueInfoUrl(
+                Uri.parse("https://venue.example.com/passpoint"),
+                    CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_PASSPOINT
+            )
             .build()
 
     private val optInData = CaptivePortalData.Builder().apply {
         setCaptive(true)
-        if (SdkLevel.isAtLeastS()) {
-            setUserPortalUrl(
-                Uri.parse("https://tc.example.passpoint"),
-                CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_CAPPORT_WITH_CUSTOM_TABS_OPTIN
-            )
-        }
+        setUserPortalUrl(
+            Uri.parse("https://tc.example.passpoint"),
+            CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_CAPPORT_WITH_CUSTOM_TABS_OPTIN
+        )
     }.build()
 
     private fun makeBuilder() = CaptivePortalData.Builder(data)
@@ -85,7 +72,7 @@ class CaptivePortalDataTest {
     fun testParcelUnparcel() {
         assertParcelingIsLossless(data)
         assertParcelingIsLossless(dataFromPasspoint)
-        if (SdkLevel.isAtLeastS()) assertParcelingIsLossless(optInData)
+        assertParcelingIsLossless(optInData)
 
         assertParcelingIsLossless(makeBuilder().setUserPortalUrl(null).build())
         assertParcelingIsLossless(makeBuilder().setVenueInfoUrl(null).build())
@@ -105,42 +92,40 @@ class CaptivePortalDataTest {
         assertNotEqualsAfterChange { it.setExpiryTime(12L) }
         assertNotEqualsAfterChange { it.setCaptive(false) }
 
-        if (SdkLevel.isAtLeastS()) {
-            assertNotEqualsAfterChange { it.setVenueFriendlyName("another friendly name") }
-            assertNotEqualsAfterChange { it.setVenueFriendlyName(null) }
+        assertNotEqualsAfterChange { it.setVenueFriendlyName("another friendly name") }
+        assertNotEqualsAfterChange { it.setVenueFriendlyName(null) }
 
-            assertEquals(dataFromPasspoint, CaptivePortalData.Builder(dataFromPasspoint).build())
-            assertNotEqualsAfterChange { it.setUserPortalUrl(
-                    Uri.parse("https://tc.example.com/passpoint")
-            ) }
-            assertNotEqualsAfterChange { it.setUserPortalUrl(
-                    Uri.parse("https://tc.example.com/passpoint"),
-                    CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_OTHER
-            ) }
-            assertNotEqualsAfterChange { it.setUserPortalUrl(
-                    Uri.parse("https://tc.example.com/other"),
-                    CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_PASSPOINT
-            ) }
-            assertNotEqualsAfterChange { it.setUserPortalUrl(
+        assertEquals(dataFromPasspoint, CaptivePortalData.Builder(dataFromPasspoint).build())
+        assertNotEqualsAfterChange { it.setUserPortalUrl(
+                Uri.parse("https://tc.example.com/passpoint")
+        ) }
+        assertNotEqualsAfterChange { it.setUserPortalUrl(
                 Uri.parse("https://tc.example.com/passpoint"),
                 CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_OTHER
-            ) }
-            assertNotEqualsAfterChange { it.setUserPortalUrl(
-                Uri.parse("https://tc.example.com/passpoint"),
-                CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_CAPPORT_WITH_CUSTOM_TABS_OPTIN
-            ) }
-            assertNotEqualsAfterChange { it.setVenueInfoUrl(
-                    Uri.parse("https://venue.example.com/passpoint")
-            ) }
-            assertNotEqualsAfterChange { it.setVenueInfoUrl(
-                    Uri.parse("https://venue.example.com/other"),
-                    CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_PASSPOINT
-            ) }
-            assertNotEqualsAfterChange { it.setVenueInfoUrl(
-                    Uri.parse("https://venue.example.com/passpoint"),
-                    CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_OTHER
-            ) }
-        }
+        ) }
+        assertNotEqualsAfterChange { it.setUserPortalUrl(
+                Uri.parse("https://tc.example.com/other"),
+                CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_PASSPOINT
+        ) }
+        assertNotEqualsAfterChange { it.setUserPortalUrl(
+            Uri.parse("https://tc.example.com/passpoint"),
+            CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_OTHER
+        ) }
+        assertNotEqualsAfterChange { it.setUserPortalUrl(
+            Uri.parse("https://tc.example.com/passpoint"),
+            CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_CAPPORT_WITH_CUSTOM_TABS_OPTIN
+        ) }
+        assertNotEqualsAfterChange { it.setVenueInfoUrl(
+                Uri.parse("https://venue.example.com/passpoint")
+        ) }
+        assertNotEqualsAfterChange { it.setVenueInfoUrl(
+                Uri.parse("https://venue.example.com/other"),
+                CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_PASSPOINT
+        ) }
+        assertNotEqualsAfterChange { it.setVenueInfoUrl(
+                Uri.parse("https://venue.example.com/passpoint"),
+                CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_OTHER
+        ) }
     }
 
     @Test
@@ -183,12 +168,12 @@ class CaptivePortalDataTest {
         assertFalse(makeBuilder().setCaptive(false).build().isCaptive)
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     fun testVenueFriendlyName() {
         assertEquals("venue friendly name", data.venueFriendlyName)
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     fun testGetVenueInfoUrlSource() {
         assertEquals(
             CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_OTHER,
@@ -200,7 +185,7 @@ class CaptivePortalDataTest {
         )
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     fun testGetUserPortalUrlSource() {
         assertEquals(
             CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_OTHER,
@@ -210,12 +195,10 @@ class CaptivePortalDataTest {
             CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_PASSPOINT,
                 dataFromPasspoint.userPortalUrlSource
         )
-        if (SdkLevel.isAtLeastS()) {
-            assertEquals(
-                CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_CAPPORT_WITH_CUSTOM_TABS_OPTIN,
-                optInData.userPortalUrlSource
-            )
-        }
+        assertEquals(
+            CaptivePortalData.CAPTIVE_PORTAL_DATA_SOURCE_CAPPORT_WITH_CUSTOM_TABS_OPTIN,
+            optInData.userPortalUrlSource
+        )
     }
 
     private fun CaptivePortalData.mutate(mutator: (CaptivePortalData.Builder) -> Unit) =

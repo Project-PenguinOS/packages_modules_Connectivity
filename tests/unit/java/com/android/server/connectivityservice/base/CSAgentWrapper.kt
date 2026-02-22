@@ -118,33 +118,17 @@ class CSAgentWrapper(
 
     override val network: Network get() = agent.network!!
 
-    inner class TestAgent : NetworkAgent {
-        constructor(
-            context: Context,
-            looper: Looper,
-            tag: String,
-            nc: NetworkCapabilities,
-            lp: LinkProperties,
-            lnc: LocalNetworkConfig?,
-            score: NetworkScore,
-            nac: NetworkAgentConfig,
-            provider: NetworkProvider?
-        ) :
-                super(context, looper, tag, nc, lp, lnc, score, nac, provider) {
-        }
-
-        constructor(
-            context: Context,
-            looper: Looper,
-            tag: String,
-            nc: NetworkCapabilities,
-            lp: LinkProperties,
-            score: Int,
-            nac: NetworkAgentConfig,
-            provider: NetworkProvider?
-        ) :
-                super(context, looper, tag, nc, lp, score, nac, provider) {
-        }
+    inner class TestAgent(
+        context: Context,
+        looper: Looper,
+        tag: String,
+        nc: NetworkCapabilities,
+        lp: LinkProperties,
+        lnc: LocalNetworkConfig?,
+        score: NetworkScore,
+        nac: NetworkAgentConfig,
+        provider: NetworkProvider?
+    ) : NetworkAgent(context, looper, tag, nc, lp, lnc, score, nac, provider) {
 
         override fun onBandwidthUpdateRequested() {
             history.add(OnBandwidthUpdateRequested)
@@ -229,14 +213,9 @@ class CSAgentWrapper(
         )
 
         // Create the actual agent. NetworkAgent is abstract, so make an anonymous subclass.
-        agent = if (deps.isAtLeastS()) {
-            TestAgent(
-                context, csHandlerThread.looper, TAG, nc, lp, lnc?.value,
-                score.value, nac, provider)
-        } else {
-            TestAgent(
-                context, csHandlerThread.looper, TAG, nc, lp, score = 50, nac, provider)
-        }
+        agent = TestAgent(
+            context, csHandlerThread.looper, TAG, nc, lp, lnc?.value,
+            score.value, nac, provider)
         agent.register()
         assertEquals(agent.network!!.netId, nmNetworkCaptor.value.netId)
         nmCallbacks = nmCbCaptor.value

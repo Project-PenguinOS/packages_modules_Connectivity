@@ -21,7 +21,6 @@ import android.Manifest.permission.WRITE_DEVICE_CONFIG
 import android.Manifest.permission.WRITE_ALLOWLISTED_DEVICE_CONFIG
 import android.provider.DeviceConfig
 import android.util.Log
-import com.android.modules.utils.build.SdkLevel
 import com.android.testutils.FunctionalUtils.ThrowingRunnable
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
@@ -37,18 +36,8 @@ private const val TIMEOUT_MS = 20_000L
 /**
  * A [TestRule] that helps set [DeviceConfig] for tests and clean up the test configuration
  * automatically on teardown.
- *
- * The rule can also optionally retry tests when they fail following an external change of
- * DeviceConfig before S; this typically happens because device config flags are synced while the
- * test is running, and DisableConfigSyncTargetPreparer is only usable starting from S.
- *
- * @param retryCountBeforeSIfConfigChanged if > 0, when the test fails before S, check if
- *        the configs that were set through this rule were changed, and retry the test
- *        up to the specified number of times if yes.
  */
-class DeviceConfigRule @JvmOverloads constructor(
-    val retryCountBeforeSIfConfigChanged: Int = 0
-) : TestRule {
+class DeviceConfigRule : TestRule {
     // Maps (namespace, key) -> value
     private val originalConfig = mutableMapOf<Pair<String, String>, String?>()
     private val usedConfig = mutableMapOf<Pair<String, String>, String?>()
@@ -67,45 +56,28 @@ class DeviceConfigRule @JvmOverloads constructor(
         private val description: Description
     ) : Statement() {
         override fun evaluate() {
-            var retryCount = if (SdkLevel.isAtLeastS()) 1 else retryCountBeforeSIfConfigChanged + 1
-            while (retryCount > 0) {
-                retryCount--
-                tryTest {
-                    base.evaluate()
-                    // Can't use break/return out of a loop here because this is a tryTest lambda,
-                    // so set retryCount to exit instead
-                    retryCount = 0
-                }.catch<Throwable> { e -> // junit AssertionFailedError does not extend Exception
-                    if (retryCount == 0) throw e
-                    usedConfig.forEach { (key, value) ->
-                        val currentValue = runAsShell(READ_DEVICE_CONFIG) {
-                            DeviceConfig.getProperty(key.first, key.second)
-                        }
-                        if (currentValue != value) {
-                            Log.w(TAG, "Test failed with unexpected device config change, retrying")
-                            return@catch
-                        }
+            tryTest {
+                base.evaluate()
+            }.catch<Throwable> { e -> // junit AssertionFailedError does not extend Exception
+                throw e
+            } cleanupStep {
+                runAsShell(WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG) {
+                    originalConfig.forEach { (key, value) ->
+                        Log.i(TAG, "Resetting config \"${key.second}\" to \"$value\"")
+                        DeviceConfig.setProperty(
+                                key.first, key.second, value, false /* makeDefault */)
                     }
-                    throw e
-                } cleanupStep {
-                    runAsShell(WRITE_DEVICE_CONFIG, WRITE_ALLOWLISTED_DEVICE_CONFIG) {
-                        originalConfig.forEach { (key, value) ->
-                            Log.i(TAG, "Resetting config \"${key.second}\" to \"$value\"")
-                            DeviceConfig.setProperty(
-                                    key.first, key.second, value, false /* makeDefault */)
-                        }
-                    }
-                } cleanupStep {
-                    originalConfig.clear()
-                    usedConfig.clear()
-                } cleanup {
-                    // Fold all cleanup actions into cleanup steps of an empty tryTest, so they are
-                    // all run even if exceptions are thrown, and exceptions are reported properly.
-                    currentTestCleanupActions.fold(tryTest { }) {
-                        tryBlock, action -> tryBlock.cleanupStep { action.run() }
-                    }.cleanup {
-                        currentTestCleanupActions.clear()
-                    }
+                }
+            } cleanupStep {
+                originalConfig.clear()
+                usedConfig.clear()
+            } cleanup {
+                // Fold all cleanup actions into cleanup steps of an empty tryTest, so they are
+                // all run even if exceptions are thrown, and exceptions are reported properly.
+                currentTestCleanupActions.fold(tryTest { }) {
+                    tryBlock, action -> tryBlock.cleanupStep { action.run() }
+                }.cleanup {
+                    currentTestCleanupActions.clear()
                 }
             }
         }

@@ -1045,7 +1045,7 @@ public class IpServerTest {
      * @param obj     An additional object to pass.
      */
     private void dispatchCommand(int command, int arg1, int arg2, Object obj) {
-        mIpServer.sendMessage(command, arg1, arg2, obj);
+        mIpServer.processMessage(command, arg1, arg2, obj);
         mLooper.dispatchAll();
     }
 
@@ -1055,7 +1055,7 @@ public class IpServerTest {
      * @param command One of the IpServer.CMD_* constants.
      */
     private void dispatchCommand(int command) {
-        mIpServer.sendMessage(command);
+        mIpServer.processMessage(command);
         mLooper.dispatchAll();
     }
 
@@ -1069,13 +1069,13 @@ public class IpServerTest {
     private void dispatchTetherConnectionChanged(String upstreamIface, LinkProperties v6lp,
             int ttlAdjustment) {
         dispatchTetherConnectionChanged(upstreamIface);
-        mIpServer.sendMessage(IpServer.CMD_IPV6_TETHER_UPDATE, ttlAdjustment, 0, v6lp);
+        mIpServer.processMessage(IpServer.CMD_IPV6_TETHER_UPDATE, ttlAdjustment, 0, v6lp);
         mLooper.dispatchAll();
     }
 
     private void dispatchTetherConnectionChanged(String upstreamIface) {
         final InterfaceSet ifs = (upstreamIface != null) ? new InterfaceSet(upstreamIface) : null;
-        mIpServer.sendMessage(IpServer.CMD_TETHER_CONNECTION_CHANGED, ifs);
+        mIpServer.processMessage(IpServer.CMD_TETHER_CONNECTION_CHANGED, ifs);
         mLooper.dispatchAll();
     }
 

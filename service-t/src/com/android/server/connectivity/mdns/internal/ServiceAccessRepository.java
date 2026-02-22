@@ -49,6 +49,7 @@ public class ServiceAccessRepository {
      */
     public void addAllowedService(int uid, @NonNull String serviceName,
             @NonNull String serviceType) {
+        // TODO: make the allowlist also package name-specific
         Objects.requireNonNull(serviceName);
         Objects.requireNonNull(serviceType);
         final Service service = new Service(serviceName, serviceType);
@@ -108,13 +109,13 @@ public class ServiceAccessRepository {
         }
     }
 
-    private static class Service {
+    public static class Service {
         @NonNull
-        private final String mName;
+        final String mName;
         @NonNull
-        private final String mType;
+        final String mType;
 
-        private Service(@NonNull String name, @NonNull String type) {
+        Service(@NonNull String name, @NonNull String type) {
             this.mName = DnsUtils.toDnsUpperCase(name);
             this.mType = DnsUtils.toDnsUpperCase(type);
         }

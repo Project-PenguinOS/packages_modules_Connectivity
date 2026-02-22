@@ -19,10 +19,8 @@
 package com.android.testutils
 
 import android.app.UiAutomation
-import android.os.Build
 import android.os.ParcelFileDescriptor.AutoCloseInputStream
 import android.os.ParcelFileDescriptor.AutoCloseOutputStream
-import androidx.annotation.RequiresApi
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.InputStream
 
@@ -39,7 +37,6 @@ import java.io.InputStream
  *                        when this function returns.
  * @return Result of [outputProcessor].
  */
-@RequiresApi(Build.VERSION_CODES.S) // executeShellCommandRw is 31+
 fun <T> runCommandInShell(
     cmd: String,
     shell: String = "sh",
@@ -58,7 +55,6 @@ fun <T> runCommandInShell(
  *
  * Overload of [runCommandInShell] that reads and returns stdout as String.
  */
-@RequiresApi(Build.VERSION_CODES.S)
 fun runCommandInShell(
     cmd: String,
     shell: String = "sh",
@@ -72,7 +68,6 @@ fun runCommandInShell(
  * This is generally only usable on devices on which [DeviceInfoUtils.isDebuggable] is true.
  * @see runCommandInShell
  */
-@RequiresApi(Build.VERSION_CODES.S)
 fun runCommandInRootShell(
     cmd: String
 ) = runCommandInShell(cmd, shell = "su root sh")

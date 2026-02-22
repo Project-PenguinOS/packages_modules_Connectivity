@@ -27,9 +27,6 @@ import android.net.LinkProperties
 import android.net.TestNetworkInterface
 import android.net.TestNetworkManager
 import android.os.Binder
-import android.os.Build
-import androidx.annotation.RequiresApi
-import com.android.modules.utils.build.SdkLevel.isAtLeastS
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertTrue
@@ -75,7 +72,6 @@ fun initTestNetwork(
  * This is only usable starting from R as [TestNetworkManager] has no support for specifying
  * LinkProperties on Q.
  */
-@RequiresApi(Build.VERSION_CODES.R)
 fun initTestNetwork(
     context: Context,
     lp: LinkProperties,
@@ -91,8 +87,7 @@ private fun initTestNetwork(
     setupTimeoutMs: Long = 10_000L
 ): TestNetworkTracker {
     val tnm = context.getSystemService(TestNetworkManager::class.java)!!
-    val iface = if (isAtLeastS()) tnm.createTunInterface(linkAddrs)
-    else tnm.createTunInterface(linkAddrs.toTypedArray())
+    val iface = tnm.createTunInterface(linkAddrs)
     val lpWithIface = if (lp == null) null else LinkProperties(lp).apply {
         interfaceName = iface.interfaceName
     }

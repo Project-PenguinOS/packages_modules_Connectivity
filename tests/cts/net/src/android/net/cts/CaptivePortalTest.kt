@@ -102,7 +102,7 @@ class CaptivePortalTest {
     private val server = TestHttpServer("localhost")
 
     @get:Rule(order = 1)
-    val deviceConfigRule = DeviceConfigRule(retryCountBeforeSIfConfigChanged = 5)
+    val deviceConfigRule = DeviceConfigRule()
 
     @get:Rule(order = 2)
     val networkCallbackRule = AutoReleaseNetworkCallbackRule()

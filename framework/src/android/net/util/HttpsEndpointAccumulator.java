@@ -35,6 +35,7 @@ import android.net.Network;
 import android.net.ParseException;
 import android.net.dns.HttpsEndpoint;
 import android.net.dns.HttpsRecord;
+import android.os.CancellationSignal;
 import android.os.Handler;
 import android.util.Log;
 
@@ -80,6 +81,9 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
     @GuardedBy("mResult")
     private final HttpsEndpointAccumulatorResult mResult;
     private final AtomicBoolean mCallbackInvoked = new AtomicBoolean(false);
+    private final Object mTimeoutCancellationToken = new Object();
+    private final CancellationSignal mUserCancellationSignal;
+    private final CancellationSignal mPendingQueryCancellationSignal;
 
     /**
      * Nested class to group the results of the DNS queries that must be kept in sync.
@@ -101,7 +105,9 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
             @NonNull Network network,
             @Nullable LinkProperties linkProperties,
             @NonNull DnsResolver.Callback<HttpsEndpoint> callback, int queryCount,
-            int timeoutMillis, boolean hasIpv4, boolean hasIpv6, @NonNull Handler handler) {
+            int timeoutMillis, boolean hasIpv4, boolean hasIpv6, @NonNull Handler handler,
+            @Nullable CancellationSignal userCancellationSignal,
+            @NonNull CancellationSignal pendingQueryCancellationSignal) {
         mNetwork = network;
         mLinkProperties = linkProperties;
         mUserCallback = callback;
@@ -118,16 +124,17 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
             default -> timeoutMillis;
         };
         mHttpsTimeoutHandler = handler;
+        mUserCancellationSignal = userCancellationSignal;
+        mPendingQueryCancellationSignal = pendingQueryCancellationSignal;
     }
 
     @Override
     public void onAnswer(@NonNull byte[] answer, int rcode) {
         Objects.requireNonNull(answer, "Raw byte response for query cannot be null");
 
-        if (mCallbackInvoked.get()) {
-            // Callback has already been invoked, skip parsing this response.
-            return;
-        }
+        // Callback has already been invoked, skip parsing this response.
+        if (mCallbackInvoked.get()) return;
+        if (mUserCancellationSignal != null && mUserCancellationSignal.isCanceled()) return;
 
         DnsPacket dnsPacket = new DnsPacket(answer);
         final List<DnsRecord> questionRecords = dnsPacket.getRecords(QDSECTION);
@@ -235,7 +242,7 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                     timeoutException = mResult.mDnsException;
                 }
                 reportResult(timeoutEndpoint, timeoutException, rcode);
-            }, mHttpsTimeoutMillis);
+            }, mTimeoutCancellationToken, mHttpsTimeoutMillis);
         }
         // TODO(b/448882639): handle filtering out HTTPS records with specified mandatory values
         // that are absent
@@ -247,6 +254,7 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
     public void onError(@NonNull DnsException error) {
         // Callback has already been invoked, skip.
         if (mCallbackInvoked.get()) return;
+        if (mUserCancellationSignal != null && mUserCancellationSignal.isCanceled()) return;
 
         DnsException exception = null;
         synchronized (mResult) {
@@ -293,6 +301,10 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
         } else {
             mUserCallback.onAnswer(endpoint, rcode);
         }
+
+        // Cancel any pending queries or timeout callbacks.
+        mPendingQueryCancellationSignal.cancel();
+        mHttpsTimeoutHandler.removeCallbacksAndMessages(mTimeoutCancellationToken);
     }
 
     /**
