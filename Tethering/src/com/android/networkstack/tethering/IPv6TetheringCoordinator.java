@@ -162,7 +162,7 @@ public class IPv6TetheringCoordinator {
     private void updateIPv6TetheringInterfaces() {
         for (IpServer ipServer : mNotifyList) {
             final LinkProperties lp = getInterfaceIPv6LinkProperties(ipServer);
-            ipServer.sendMessage(IpServer.CMD_IPV6_TETHER_UPDATE, getTtlAdjustment(), 0, lp);
+            ipServer.processMessage(IpServer.CMD_IPV6_TETHER_UPDATE, getTtlAdjustment(), 0, lp);
             break;
         }
     }
@@ -324,6 +324,6 @@ public class IPv6TetheringCoordinator {
     }
 
     private static void stopIPv6TetheringOn(IpServer ipServer) {
-        ipServer.sendMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
+        ipServer.processMessage(IpServer.CMD_IPV6_TETHER_UPDATE, 0, 0, null);
     }
 }

@@ -322,17 +322,6 @@
 
     <issue
         id="NewApi"
-        message="Call requires API level 37 (current min is 34): `newInstance`"
-        errorLine1="                            opts = BroadcastOptionsShimImpl.newInstance("
-        errorLine2="                                                            ~~~~~~~~~~~">
-        <location
-            file="packages/modules/Connectivity/service-t/src/com/android/server/net/NetworkStatsService.java"
-            line="612"
-            column="61"/>
-    </issue>
-
-    <issue
-        id="NewApi"
         message="Field requires API level 37 (current min is 35): `REGISTER_NSD_OFFLOAD_ENGINE`"
         errorLine1="                permissionsList.add(REGISTER_NSD_OFFLOAD_ENGINE);"
         errorLine2="                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~">

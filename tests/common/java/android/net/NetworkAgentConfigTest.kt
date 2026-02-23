@@ -18,7 +18,6 @@ package android.net
 
 import androidx.test.filters.SmallTest
 import androidx.test.runner.AndroidJUnit4
-import com.android.modules.utils.build.SdkLevel.isAtLeastS
 import com.android.modules.utils.build.SdkLevel.isAtLeastT
 import com.android.testutils.ConnectivityModuleTest
 import com.android.testutils.assertParcelingIsLossless
@@ -40,9 +39,7 @@ class NetworkAgentConfigTest {
             setSubscriberId("MySubId")
             setPartialConnectivityAcceptable(false)
             setUnvalidatedConnectivityAcceptable(true)
-            if (isAtLeastS()) {
-                setBypassableVpn(true)
-            }
+            setBypassableVpn(true)
             if (isAtLeastT()) {
                 setLocalRoutesExcludedForVpn(true)
                 setVpnRequiresValidation(true)
@@ -61,12 +58,10 @@ class NetworkAgentConfigTest {
             setPartialConnectivityAcceptable(false)
             setUnvalidatedConnectivityAcceptable(true)
             setLegacyTypeName("TEST_NETWORK")
-            if (isAtLeastS()) {
-                setLegacyExtraInfo(testExtraInfo)
-                setNat64DetectionEnabled(false)
-                setProvisioningNotificationEnabled(false)
-                setBypassableVpn(true)
-            }
+            setLegacyExtraInfo(testExtraInfo)
+            setNat64DetectionEnabled(false)
+            setProvisioningNotificationEnabled(false)
+            setBypassableVpn(true)
             if (isAtLeastT()) {
                 setLocalRoutesExcludedForVpn(true)
                 setVpnRequiresValidation(true)
@@ -83,14 +78,9 @@ class NetworkAgentConfigTest {
             assertTrue(config.areLocalRoutesExcludedForVpn())
             assertTrue(config.isVpnValidationRequired())
         }
-        if (isAtLeastS()) {
-            assertEquals(testExtraInfo, config.getLegacyExtraInfo())
-            assertFalse(config.isNat64DetectionEnabled())
-            assertFalse(config.isProvisioningNotificationEnabled())
-            assertTrue(config.isBypassableVpn())
-        } else {
-            assertTrue(config.isNat64DetectionEnabled())
-            assertTrue(config.isProvisioningNotificationEnabled())
-        }
+        assertEquals(testExtraInfo, config.getLegacyExtraInfo())
+        assertFalse(config.isNat64DetectionEnabled())
+        assertFalse(config.isProvisioningNotificationEnabled())
+        assertTrue(config.isBypassableVpn())
     }
 }

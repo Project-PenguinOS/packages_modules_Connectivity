@@ -398,23 +398,56 @@ public class NsdService extends INsdManager.Stub {
     }
 
     private class DiscoveryListener extends MdnsListener {
+        private final boolean mIsCompleteServiceInfoNeeded;
 
         DiscoveryListener(int clientRequestId, int transactionId,
-                @NonNull String listenServiceType) {
+                @NonNull String listenServiceType, DiscoveryRequest discoveryRequest) {
             super(clientRequestId, transactionId, listenServiceType);
+            mIsCompleteServiceInfoNeeded = isCompleteServiceInfoRequired(discoveryRequest);
         }
 
         @Override
         public void onServiceNameDiscovered(@NonNull MdnsServiceInfo serviceInfo,
                 boolean isServiceFromCache) {
+            if (mIsCompleteServiceInfoNeeded) {
+                return;
+            }
             mHandler.sendMessage(MDNS_DISCOVERY_MANAGER_EVENT, mTransactionId,
                     NsdManager.SERVICE_FOUND,
                     new MdnsEvent(mClientRequestId, serviceInfo, isServiceFromCache));
         }
 
         @Override
+        public void onServiceFound(@androidx.annotation.NonNull MdnsServiceInfo serviceInfo,
+                boolean isServiceFromCache) {
+            if (!mIsCompleteServiceInfoNeeded) {
+                return;
+            }
+            mHandler.sendMessage(MDNS_DISCOVERY_MANAGER_EVENT, mTransactionId,
+                    NsdManager.SERVICE_FOUND,
+                    new MdnsEvent(mClientRequestId, serviceInfo, isServiceFromCache));
+        }
+
+        // TODO: consider sending service found callbacks if a service is updated and starts
+        //  matching DiscoveryRequest filters (onServiceUpdated is called).
+
+        @Override
         public void onServiceNameRemoved(@NonNull MdnsServiceInfo serviceInfo,
                 int serviceRemovedReason) {
+            if (mIsCompleteServiceInfoNeeded) {
+                return;
+            }
+            mHandler.sendMessage(MDNS_DISCOVERY_MANAGER_EVENT, mTransactionId,
+                    NsdManager.SERVICE_LOST,
+                    new MdnsEvent(mClientRequestId, serviceInfo, serviceRemovedReason));
+        }
+
+        @Override
+        public void onServiceRemoved(@androidx.annotation.NonNull MdnsServiceInfo serviceInfo,
+                int serviceRemovedReason) {
+            if (!mIsCompleteServiceInfoNeeded) {
+                return;
+            }
             mHandler.sendMessage(MDNS_DISCOVERY_MANAGER_EVENT, mTransactionId,
                     NsdManager.SERVICE_LOST,
                     new MdnsEvent(mClientRequestId, serviceInfo, serviceRemovedReason));
@@ -857,7 +890,11 @@ public class NsdService extends INsdManager.Stub {
                 return true;
             }
         }
-        // TODO: check for other properties here
+        for (Map.Entry<String, PatternMatcher> entry : request.getAttributeFilters().entrySet()) {
+            if (!service.attributeMatches(entry.getKey(), entry.getValue())) {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -1415,12 +1452,13 @@ public class NsdService extends INsdManager.Stub {
                 clientInfo.log("Register a ServiceInfoListener " + transactionId
                         + " for service type:" + listenServiceType);
             } else {
-                listener = new DiscoveryListener(clientRequestId, transactionId, listenServiceType);
+                listener = new DiscoveryListener(clientRequestId, transactionId, listenServiceType,
+                        discoveryRequest);
                 clientInfo.log("Register a DiscoveryListener " + transactionId
                         + " for service type:" + listenServiceType);
             }
             final boolean resolveAll = isServiceInfoCallback
-                    || (usePicker && isCompleteServiceInfoRequired(discoveryRequest));
+                    || isCompleteServiceInfoRequired(discoveryRequest);
             final MdnsSearchOptions.Builder optionsBuilder =
                     MdnsSearchOptions.newBuilder()
                             .setNetwork(discoveryRequest.getNetwork())

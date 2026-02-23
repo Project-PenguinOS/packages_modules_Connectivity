@@ -48,11 +48,9 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.telephony.TelephonyManager;
+import android.telephony.TelephonyManager.CarrierPrivilegesCallback;
 
 import com.android.net.module.util.CollectionUtils;
-import com.android.networkstack.apishim.TelephonyManagerShimImpl;
-import com.android.networkstack.apishim.common.TelephonyManagerShim.CarrierPrivilegesListenerShim;
-import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator.Dependencies;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
@@ -91,7 +89,6 @@ public class CarrierPrivilegeAuthenticatorTest {
 
     @NonNull private final Context mContext;
     @NonNull private final TelephonyManager mTelephonyManager;
-    @NonNull private final TelephonyManagerShimImpl mTelephonyManagerShim;
     @NonNull private final PackageManager mPackageManager;
     @NonNull private TestCarrierPrivilegeAuthenticator mCarrierPrivilegeAuthenticator;
     @NonNull private final BiConsumer<Integer, Integer> mListener;
@@ -108,7 +105,7 @@ public class CarrierPrivilegeAuthenticatorTest {
                 @NonNull final Dependencies deps,
                 @NonNull final TelephonyManager t,
                 @NonNull final Handler handler) {
-            super(c, deps, t, mTelephonyManagerShim, true /* requestRestrictedWifiEnabled */,
+            super(c, deps, t, true /* requestRestrictedWifiEnabled */,
                     mListener, handler);
         }
         @Override
@@ -134,7 +131,6 @@ public class CarrierPrivilegeAuthenticatorTest {
     public CarrierPrivilegeAuthenticatorTest(final boolean useCallbacks) throws Exception {
         mContext = mock(Context.class);
         mTelephonyManager = mock(TelephonyManager.class);
-        mTelephonyManagerShim = mock(TelephonyManagerShimImpl.class);
         mPackageManager = mock(PackageManager.class);
         mListener = mock(BiConsumer.class);
         mHandlerThread = new HandlerThread(CarrierPrivilegeAuthenticatorTest.class.getSimpleName());
@@ -142,7 +138,7 @@ public class CarrierPrivilegeAuthenticatorTest {
         final Dependencies deps = mock(Dependencies.class);
         doReturn(mHandlerThread).when(deps).makeHandlerThread();
         doReturn(SUBSCRIPTION_COUNT).when(mTelephonyManager).getActiveModemCount();
-        doReturn(mTestPkg).when(mTelephonyManagerShim)
+        doReturn(mTestPkg).when(mTelephonyManager)
                 .getCarrierServicePackageNameForLogicalSlot(anyInt());
         doReturn(mPackageManager).when(mContext).getPackageManager();
         final ApplicationInfo applicationInfo = new ApplicationInfo();
@@ -164,18 +160,15 @@ public class CarrierPrivilegeAuthenticatorTest {
         mMultiSimBroadcastReceiver = receiverCaptor.getValue();
     }
 
-    private Map<Integer, CarrierPrivilegesListenerShim> getCarrierPrivilegesListeners() {
+    private Map<Integer, CarrierPrivilegesCallback> getCarrierPrivilegesListeners() {
         final ArgumentCaptor<Integer> slotCaptor = ArgumentCaptor.forClass(Integer.class);
-        final ArgumentCaptor<CarrierPrivilegesListenerShim> listenerCaptor =
-                ArgumentCaptor.forClass(CarrierPrivilegesListenerShim.class);
-        try {
-            verify(mTelephonyManagerShim, atLeastOnce()).addCarrierPrivilegesListener(
-                    slotCaptor.capture(), any(), listenerCaptor.capture());
-        } catch (UnsupportedApiLevelException e) {
-        }
-        final Map<Integer, CarrierPrivilegesListenerShim> result =
+        final ArgumentCaptor<CarrierPrivilegesCallback> listenerCaptor =
+                ArgumentCaptor.forClass(CarrierPrivilegesCallback.class);
+        verify(mTelephonyManager, atLeastOnce()).registerCarrierPrivilegesCallback(
+                slotCaptor.capture(), any(), listenerCaptor.capture());
+        final Map<Integer, CarrierPrivilegesCallback> result =
                 CollectionUtils.assoc(slotCaptor.getAllValues(), listenerCaptor.getAllValues());
-        clearInvocations(mTelephonyManagerShim);
+        clearInvocations(mTelephonyManager);
         return result;
     }
 
@@ -185,7 +178,7 @@ public class CarrierPrivilegeAuthenticatorTest {
     @Test
     public void testConstructor() throws Exception {
         // Two listeners originally registered, one for slot 0 and one for slot 1
-        final Map<Integer, CarrierPrivilegesListenerShim> initialListeners =
+        final Map<Integer, CarrierPrivilegesCallback> initialListeners =
                 getCarrierPrivilegesListeners();
         assertNotNull(initialListeners.get(0));
         assertNotNull(initialListeners.get(1));
@@ -208,7 +201,7 @@ public class CarrierPrivilegeAuthenticatorTest {
     @Test
     public void testMultiSimConfigChanged() throws Exception {
         // Two listeners originally registered, one for slot 0 and one for slot 1
-        final Map<Integer, CarrierPrivilegesListenerShim> initialListeners =
+        final Map<Integer, CarrierPrivilegesCallback> initialListeners =
                 getCarrierPrivilegesListeners();
         assertNotNull(initialListeners.get(0));
         assertNotNull(initialListeners.get(1));
@@ -221,12 +214,12 @@ public class CarrierPrivilegeAuthenticatorTest {
                     buildTestMultiSimConfigBroadcastIntent());
         });
         // Check all listeners have been removed
-        for (CarrierPrivilegesListenerShim listener : initialListeners.values()) {
-            verify(mTelephonyManagerShim).removeCarrierPrivilegesListener(eq(listener));
+        for (CarrierPrivilegesCallback listener : initialListeners.values()) {
+            verify(mTelephonyManager).unregisterCarrierPrivilegesCallback(eq(listener));
         }
 
         // Expect a new CarrierPrivilegesListener to have been registered for slot 0, and none other
-        final Map<Integer, CarrierPrivilegesListenerShim> newListeners =
+        final Map<Integer, CarrierPrivilegesCallback> newListeners =
                 getCarrierPrivilegesListeners();
         assertNotNull(newListeners.get(0));
         assertEquals(1, newListeners.size());
@@ -250,7 +243,7 @@ public class CarrierPrivilegeAuthenticatorTest {
     @Test
     @IgnoreUpTo(Build.VERSION_CODES.TIRAMISU)
     public void testCarrierPrivilegesLostDueToCarrierServiceUpdate() throws Exception {
-        final CarrierPrivilegesListenerShim l = getCarrierPrivilegesListeners().get(0);
+        final CarrierPrivilegesCallback l = getCarrierPrivilegesListeners().get(0);
 
         visibleOnHandlerThread(mCsHandler, () -> {
             l.onCarrierServiceChanged(null, mCarrierConfigPkgUid);
@@ -270,7 +263,7 @@ public class CarrierPrivilegeAuthenticatorTest {
 
     @Test
     public void testOnCarrierPrivilegesChanged() throws Exception {
-        final CarrierPrivilegesListenerShim listener = getCarrierPrivilegesListeners().get(0);
+        final CarrierPrivilegesCallback listener = getCarrierPrivilegesListeners().get(0);
 
         final TelephonyNetworkSpecifier specifier =
                 new TelephonyNetworkSpecifier(TEST_SUBSCRIPTION_ID);
@@ -283,7 +276,7 @@ public class CarrierPrivilegeAuthenticatorTest {
         applicationInfo.uid = mCarrierConfigPkgUid + 1;
         doReturn(applicationInfo).when(mPackageManager).getApplicationInfo(eq(mTestPkg), anyInt());
         visibleOnHandlerThread(mCsHandler, () -> {
-            listener.onCarrierPrivilegesChanged(Collections.emptyList(), new int[]{});
+            listener.onCarrierPrivilegesChanged(Collections.emptySet(), Collections.emptySet());
             listener.onCarrierServiceChanged(null, applicationInfo.uid);
         });
 
@@ -295,7 +288,7 @@ public class CarrierPrivilegeAuthenticatorTest {
 
     @Test
     public void testDefaultSubscription() throws Exception {
-        final CarrierPrivilegesListenerShim listener = getCarrierPrivilegesListeners().get(0);
+        final CarrierPrivilegesCallback listener = getCarrierPrivilegesListeners().get(0);
         visibleOnHandlerThread(mCsHandler, () -> {
             listener.onCarrierServiceChanged(null, mCarrierConfigPkgUid);
         });
@@ -322,7 +315,7 @@ public class CarrierPrivilegeAuthenticatorTest {
     @Test
     @IgnoreUpTo(Build.VERSION_CODES.TIRAMISU)
     public void testNetworkCapabilitiesContainOneSubId() throws Exception {
-        final CarrierPrivilegesListenerShim listener = getCarrierPrivilegesListeners().get(0);
+        final CarrierPrivilegesCallback listener = getCarrierPrivilegesListeners().get(0);
         visibleOnHandlerThread(mCsHandler, () -> {
             listener.onCarrierServiceChanged(null, mCarrierConfigPkgUid);
         });
@@ -338,7 +331,7 @@ public class CarrierPrivilegeAuthenticatorTest {
     @Test
     @IgnoreUpTo(Build.VERSION_CODES.TIRAMISU)
     public void testNetworkCapabilitiesContainTwoSubIds() throws Exception {
-        final CarrierPrivilegesListenerShim listener = getCarrierPrivilegesListeners().get(0);
+        final CarrierPrivilegesCallback listener = getCarrierPrivilegesListeners().get(0);
         visibleOnHandlerThread(mCsHandler, () -> {
             listener.onCarrierServiceChanged(null, mCarrierConfigPkgUid);
         });

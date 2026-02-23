@@ -109,10 +109,8 @@ class ConnectivityMultiDevicesSnippet : Snippet {
     @Rpc(description = "Return whether the Sdk level is at least V.")
     fun isAtLeastV() = SdkLevel.isAtLeastV()
 
-    @Rpc(description = "Check whether the device is at least B.")
-    fun isAtLeastB(): Boolean {
-        return SDK_INT >= 36 || (SDK_INT == 35 && isAtLeastPreReleaseCodename("Baklava"))
-    }
+    @Rpc(description = "Check whether the device SDK is at least B.")
+    fun isAtLeastB() = SdkLevel.isAtLeastB()
 
     @Rpc(description = "Return the API level that the VSR requirement must be fulfilled.")
     fun getVsrApiLevel() = PropertyUtil.getVsrApiLevel()

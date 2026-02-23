@@ -22,21 +22,15 @@ import android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VCN_MANAGED
 import android.net.NetworkCapabilities.NET_CAPABILITY_TRUSTED
 import android.net.NetworkCapabilities.TRANSPORT_TEST
 import android.net.NetworkProviderTest.TestNetworkCallback.Event.OnUnavailable
-import android.net.NetworkProviderTest.TestNetworkProvider.Event.OnNetworkRequestWithdrawn
-import android.net.NetworkProviderTest.TestNetworkProvider.Event.OnNetworkRequested
-import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.util.Log
 import androidx.test.InstrumentationRegistry
-import com.android.modules.utils.build.SdkLevel.isAtLeastS
 import com.android.net.module.util.ArrayTrackRecord
 import com.android.testutils.CompatUtil
 import com.android.testutils.ConnectivityModuleTest
 import com.android.testutils.DevSdkIgnoreRule
-import com.android.testutils.DevSdkIgnoreRule.IgnoreAfter
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.TestableNetworkOfferCallback
 import java.util.UUID
@@ -98,12 +92,12 @@ class NetworkProviderTest {
 
         override fun onNetworkRequested(request: NetworkRequest, score: Int, id: Int) {
             Log.d(TAG, "onNetworkRequested $request, $score, $id")
-            seenEvents.add(OnNetworkRequested(request, score, id))
+            seenEvents.add(Event.OnNetworkRequested(request, score, id))
         }
 
         override fun onNetworkRequestWithdrawn(request: NetworkRequest) {
             Log.d(TAG, "onNetworkRequestWithdrawn $request")
-            seenEvents.add(OnNetworkRequestWithdrawn(request))
+            seenEvents.add(Event.OnNetworkRequestWithdrawn(request))
         }
 
         inline fun <reified T : Event> eventuallyExpectCallbackThat(
@@ -128,74 +122,6 @@ class NetworkProviderTest {
             assertNotEquals(it.getProviderId(), NetworkProvider.ID_NONE)
         }
 
-    // In S+ framework, do not run this test, since the provider will no longer receive
-    // onNetworkRequested for every request. Instead, provider needs to
-    // call {@code registerNetworkOffer} with the description of networks they
-    // might have ability to setup, and expects {@link NetworkOfferCallback#onNetworkNeeded}.
-    @IgnoreAfter(Build.VERSION_CODES.R)
-    @Test
-    fun testOnNetworkRequested() {
-        val provider = createAndRegisterNetworkProvider()
-
-        val specifier = CompatUtil.makeTestNetworkSpecifier(
-                UUID.randomUUID().toString())
-        // Test network is not allowed to be trusted.
-        val nr: NetworkRequest = NetworkRequest.Builder()
-                .addTransportType(TRANSPORT_TEST)
-                .removeCapability(NET_CAPABILITY_TRUSTED)
-                .setNetworkSpecifier(specifier)
-                .build()
-        val cb = ConnectivityManager.NetworkCallback()
-        mCm.requestNetwork(nr, cb)
-        provider.eventuallyExpectCallbackThat<OnNetworkRequested>() { callback ->
-            callback.request.getNetworkSpecifier() == specifier &&
-            callback.request.hasTransport(TRANSPORT_TEST)
-        }
-
-        val initialScore = 40
-        val updatedScore = 60
-        val nc = NetworkCapabilities().apply {
-                addTransportType(NetworkCapabilities.TRANSPORT_TEST)
-                removeCapability(NetworkCapabilities.NET_CAPABILITY_TRUSTED)
-                removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED)
-                addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING)
-                addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
-                setNetworkSpecifier(specifier)
-        }
-        val lp = LinkProperties()
-        val config = NetworkAgentConfig.Builder().build()
-        val agent = object : NetworkAgent(context, mHandlerThread.looper, "TestAgent", nc, lp,
-                initialScore, config, provider) {}
-        agent.register()
-        agent.markConnected()
-
-        provider.eventuallyExpectCallbackThat<OnNetworkRequested>() { callback ->
-            callback.request.getNetworkSpecifier() == specifier &&
-            callback.score == initialScore &&
-            callback.id == agent.providerId
-        }
-
-        agent.sendNetworkScore(updatedScore)
-        provider.eventuallyExpectCallbackThat<OnNetworkRequested>() { callback ->
-            callback.request.getNetworkSpecifier() == specifier &&
-            callback.score == updatedScore &&
-            callback.id == agent.providerId
-        }
-
-        mCm.unregisterNetworkCallback(cb)
-        provider.eventuallyExpectCallbackThat<OnNetworkRequestWithdrawn>() { callback ->
-            callback.request.getNetworkSpecifier() == specifier &&
-            callback.request.hasTransport(TRANSPORT_TEST)
-        }
-        mCm.unregisterNetworkProvider(provider)
-        // Provider id should be ID_NONE after unregister network provider
-        assertEquals(provider.getProviderId(), NetworkProvider.ID_NONE)
-        // unregisterNetworkProvider should not crash even if it's called on an
-        // already unregistered provider.
-        mCm.unregisterNetworkProvider(provider)
-    }
-
     // Mainline module can't use internal HandlerExecutor, so add an identical executor here.
     // TODO: Refactor with the one in MultiNetworkPolicyTracker.
     private class HandlerExecutor(private val handler: Handler) : Executor {
@@ -206,7 +132,6 @@ class NetworkProviderTest {
         }
     }
 
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     @Test
     fun testRegisterNetworkOffer() {
         val provider = createAndRegisterNetworkProvider()
@@ -376,9 +301,7 @@ class NetworkProviderTest {
         doReturn(mCm).`when`(mockContext).getSystemService(Context.CONNECTIVITY_SERVICE)
         val provider = createNetworkProvider(mockContext)
         // ConnectivityManager not required at creation time after R
-        if (isAtLeastS()) {
-            verifyNoMoreInteractions(mockContext)
-        }
+        verifyNoMoreInteractions(mockContext)
 
         mCm.registerNetworkProvider(provider)
 

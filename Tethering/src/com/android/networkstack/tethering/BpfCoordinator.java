@@ -52,6 +52,7 @@ import android.net.netstats.provider.NetworkStatsProvider;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.system.ErrnoException;
+import android.system.Os;
 import android.system.OsConstants;
 import android.text.TextUtils;
 import android.util.ArrayMap;
@@ -87,10 +88,10 @@ import com.android.net.module.util.ip.IpNeighborMonitor.NeighborEventConsumer;
 import com.android.net.module.util.netlink.ConntrackMessage;
 import com.android.net.module.util.netlink.NetlinkConstants;
 import com.android.net.module.util.netlink.NetlinkUtils;
-import com.android.networkstack.tethering.apishim.common.BpfCoordinatorShim;
 import com.android.networkstack.tethering.util.TetheringUtils.ForwardedStats;
 import com.android.server.ConnectivityStatsLog;
 
+import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
@@ -205,13 +206,68 @@ public class BpfCoordinator {
     @Nullable
     private final BpfTetherStatsProvider mStatsProvider;
     @NonNull
-    private final BpfCoordinatorShim mBpfCoordinatorShim;
-    @NonNull
     private final BpfConntrackEventConsumer mBpfConntrackEventConsumer;
     @NonNull
     private final IpNeighborMonitor mIpNeighborMonitor;
     @NonNull
     private final BpfNeighborEventConsumer mBpfNeighborEventConsumer;
+
+    // BPF map for downstream IPv4 forwarding.
+    @Nullable
+    private final IBpfMap<Tether4Key, Tether4Value> mBpfDownstream4Map;
+
+    // BPF map for upstream IPv4 forwarding.
+    @Nullable
+    private final IBpfMap<Tether4Key, Tether4Value> mBpfUpstream4Map;
+
+    // BPF map for downstream IPv6 forwarding.
+    @Nullable
+    private final IBpfMap<TetherDownstream6Key, Tether6Value> mBpfDownstream6Map;
+
+    // BPF map for upstream IPv6 forwarding.
+    @Nullable
+    private final IBpfMap<TetherUpstream6Key, Tether6Value> mBpfUpstream6Map;
+
+    // BPF map of tethering statistics of the upstream interface since tethering startup.
+    @Nullable
+    private final IBpfMap<S32, TetherStatsValue> mBpfStatsMap;
+
+    // BPF map of per-interface quota for tethering offload.
+    @Nullable
+    private final IBpfMap<S32, S64> mBpfLimitMap;
+
+    // BPF map of interface index mapping for XDP.
+    @Nullable
+    private final IBpfMap<S32, S32> mBpfDevMap;
+
+    // Tracking IPv4 rule count while any rule is using the given upstream interfaces. Used for
+    // reducing the BPF map iteration query. The count is increased or decreased when the rule is
+    // added or removed successfully on mBpfDownstream4Map. Counting the rules on downstream4 map
+    // is because tetherOffloadRuleRemove can't get upstream interface index from upstream key,
+    // unless pass upstream value which is not required for deleting map entry. The upstream
+    // interface index is the same in Upstream4Value.oif and Downstream4Key.iif. For now, it is
+    // okay to count on Downstream4Key. See BpfConntrackEventConsumer#accept.
+    // Note that except the constructor, any calls to mBpfDownstream4Map.clear() need to clear
+    // this counter as well.
+    // TODO: Count the rule on upstream if multi-upstream is supported and the
+    // packet needs to be sent and responded on different upstream interfaces.
+    // TODO: Add IPv6 rule count.
+    private final SparseArray<Integer> mRule4CountOnUpstream = new SparseArray<>();
+
+    /**
+     * Tracks the current number of tethering connections and the maximum
+     * observed since the last metrics collection. Used to provide insights
+     * into the distribution of active tethering sessions for metrics reporting.
+     *
+     * These variables are accessed on the handler thread, which includes:
+     *  1. ConntrackEvents signaling the addition or removal of an IPv4 rule.
+     *  2. ConntrackEvents indicating the removal of a tethering client,
+     *     triggering the removal of associated rules.
+     *  3. Removal of the last IpServer, which resets counters to handle
+     *     potential synchronization issues.
+     */
+    private int mLastMaxConnectionCount = 0;
+    private int mCurrentConnectionCount = 0;
 
     // True if BPF offload is supported, false otherwise. The BPF offload could be disabled by
     // a runtime resource overlay package or device configuration. This flag is only initialized
@@ -507,8 +563,8 @@ public class BpfCoordinator {
                     lastMaxSessionCount);
         }
 
-        /** Send a BpfCoordinatorShimInitError event. */
-        public void sendBpfCoordinatorShimInitError() {
+        /** Send a BpfCoordinatorInitError event. */
+        public void sendBpfCoordinatorInitError() {
             ConnectivityStatsLog.write(ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED,
                     ConnectivityStatsLog.CORE_NETWORKING_TERRIBLE_ERROR_OCCURRED__ERROR_TYPE__TYPE_BPF_COORDINATOR_SHIM_INIT_ERROR);
         }
@@ -566,10 +622,55 @@ public class BpfCoordinator {
         }
         mStatsProvider = provider;
 
-        mBpfCoordinatorShim = BpfCoordinatorShim.getBpfCoordinatorShim(deps);
-        if (!mBpfCoordinatorShim.isInitialized()) {
-            mLog.e("Bpf shim not initialized");
-            mDeps.sendBpfCoordinatorShimInitError();
+        mBpfDownstream4Map = deps.getBpfDownstream4Map();
+        mBpfUpstream4Map = deps.getBpfUpstream4Map();
+        mBpfDownstream6Map = deps.getBpfDownstream6Map();
+        mBpfUpstream6Map = deps.getBpfUpstream6Map();
+        mBpfStatsMap = deps.getBpfStatsMap();
+        mBpfLimitMap = deps.getBpfLimitMap();
+        mBpfDevMap = deps.getBpfDevMap();
+
+        // Clear the stubs of the maps for handling the system service crash if any.
+        // Doesn't throw the exception and clear the stubs as many as possible.
+        try {
+            if (mBpfDownstream4Map != null) mBpfDownstream4Map.clear();
+        } catch (ErrnoException e) {
+            mLog.e("Could not clear mBpfDownstream4Map: " + e);
+        }
+        try {
+            if (mBpfUpstream4Map != null) mBpfUpstream4Map.clear();
+        } catch (ErrnoException e) {
+            mLog.e("Could not clear mBpfUpstream4Map: " + e);
+        }
+        try {
+            if (mBpfDownstream6Map != null) mBpfDownstream6Map.clear();
+        } catch (ErrnoException e) {
+            mLog.e("Could not clear mBpfDownstream6Map: " + e);
+        }
+        try {
+            if (mBpfUpstream6Map != null) mBpfUpstream6Map.clear();
+        } catch (ErrnoException e) {
+            mLog.e("Could not clear mBpfUpstream6Map: " + e);
+        }
+        try {
+            if (mBpfStatsMap != null) mBpfStatsMap.clear();
+        } catch (ErrnoException e) {
+            mLog.e("Could not clear mBpfStatsMap: " + e);
+        }
+        try {
+            if (mBpfLimitMap != null) mBpfLimitMap.clear();
+        } catch (ErrnoException e) {
+            mLog.e("Could not clear mBpfLimitMap: " + e);
+        }
+        try {
+            if (mBpfDevMap != null) mBpfDevMap.clear();
+        } catch (ErrnoException e) {
+            mLog.e("Could not clear mBpfDevMap: " + e);
+        }
+
+        if (!isInitialized()) {
+            mLog.e("Bpf maps not initialized");
+            mDeps.sendBpfCoordinatorInitError();
         }
 
         // BPF IPv4 forwarding only supports on S+.
@@ -618,7 +719,7 @@ public class BpfCoordinator {
             // Avoid sending metrics when tethering is about to close.
             // This leads to a missing final sample before disconnect
             // but avoids possibly duplicating the last metric in the upload.
-            mBpfCoordinatorShim.clearConnectionCounters();
+            clearConnectionCounters();
         }
         // Stop scheduled polling stats and poll the latest stats from BPF maps.
         if (mHandler.hasCallbacks(mScheduledPollingStats)) {
@@ -642,7 +743,445 @@ public class BpfCoordinator {
     // calls to public methods. If isUsingBpf were public, the test would need to
     // verify all calls to it, which would clutter the test.
     private boolean isUsingBpf() {
-        return mIsBpfEnabled && mBpfCoordinatorShim.isInitialized();
+        return mIsBpfEnabled && isInitialized();
+    }
+
+    /**
+     * Return true if this class has been initialized, otherwise return false.
+     */
+    private boolean isInitialized() {
+        return mBpfDownstream4Map != null && mBpfUpstream4Map != null && mBpfDownstream6Map != null
+                && mBpfUpstream6Map != null && mBpfStatsMap != null && mBpfLimitMap != null
+                && mBpfDevMap != null;
+    }
+
+    /**
+     * Adds a tethering offload upstream rule to BPF map, or updates it if it already exists.
+     *
+     * An existing rule will be updated if the input interface, destination MAC and source prefix
+     * match. Otherwise, a new rule will be created. Note that this can be only called on handler
+     * thread.
+     *
+     * @param rule The rule to add or update.
+     * @return true if operation succeeded or was a no-op, false otherwise.
+     */
+    private boolean tetherOffloadAddIpv6UpstreamRule(@NonNull final Ipv6UpstreamRule rule) {
+        // RFC7421_PREFIX_LENGTH = 64 which is the most commonly used IPv6 subnet prefix length.
+        if (rule.sourcePrefix.getPrefixLength() != NetworkStackConstants.RFC7421_PREFIX_LENGTH) {
+            return false;
+        }
+
+        final TetherUpstream6Key key = rule.makeTetherUpstream6Key();
+        final Tether6Value value = rule.makeTether6Value();
+
+        try {
+            mBpfUpstream6Map.insertEntry(key, value);
+        } catch (ErrnoException | IllegalStateException e) {
+            mLog.e("Could not insert upstream IPv6 entry: " + e);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Deletes a tethering offload upstream rule from the BPF map.
+     *
+     * An existing rule will be deleted if the input interface, destination MAC and source prefix
+     * match. It is not an error if there is no matching rule to delete.
+     *
+     * @param rule The rule to delete.
+     * @return true if operation succeeded or was a no-op, false otherwise.
+     */
+    private boolean tetherOffloadRemoveIpv6UpstreamRule(@NonNull final Ipv6UpstreamRule rule) {
+        // RFC7421_PREFIX_LENGTH = 64 which is the most commonly used IPv6 subnet prefix length.
+        if (rule.sourcePrefix.getPrefixLength() != NetworkStackConstants.RFC7421_PREFIX_LENGTH) {
+            return false;
+        }
+
+        try {
+            mBpfUpstream6Map.deleteEntry(rule.makeTetherUpstream6Key());
+        } catch (ErrnoException e) {
+            mLog.e("Could not delete upstream IPv6 entry: " + e);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Adds a tethering offload downstream rule to BPF map, or updates it if it already exists.
+     *
+     * Currently, only downstream /128 IPv6 entries are supported. An existing rule will be updated
+     * if the input interface and destination prefix match. Otherwise, a new rule will be created.
+     * Note that this can be only called on handler thread.
+     *
+     * @param rule The rule to add or update.
+     * @return true if operation succeeded or was a no-op, false otherwise.
+     */
+    private boolean tetherOffloadAddIpv6DownstreamRule(@NonNull final Ipv6DownstreamRule rule) {
+        final TetherDownstream6Key key = rule.makeTetherDownstream6Key();
+        final Tether6Value value = rule.makeTether6Value();
+
+        try {
+            mBpfDownstream6Map.updateEntry(key, value);
+        } catch (ErrnoException e) {
+            mLog.e("Could not update entry: ", e);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Deletes a tethering offload downstream rule from the BPF map.
+     *
+     * Currently, only downstream /128 IPv6 entries are supported. An existing rule will be deleted
+     * if the destination IP address and the source interface match. It is not an error if there is
+     * no matching rule to delete.
+     *
+     * @param rule The rule to delete.
+     * @return true if operation succeeded or was a no-op, false otherwise.
+     */
+    private boolean tetherOffloadRemoveIpv6DownstreamRule(@NonNull final Ipv6DownstreamRule rule) {
+        try {
+            mBpfDownstream6Map.deleteEntry(rule.makeTetherDownstream6Key());
+        } catch (ErrnoException e) {
+            // Silent if the rule did not exist.
+            if (e.errno != OsConstants.ENOENT) {
+                mLog.e("Could not update entry: ", e);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Return BPF tethering offload statistics.
+     *
+     * @return an array of TetherStatsValue's, where each entry contains the upstream interface
+     *         index and its tethering statistics since tethering was first started.
+     *         There will only ever be one entry for a given interface index.
+     */
+    @Nullable
+    private SparseArray<TetherStatsValue> tetherOffloadGetStats() {
+        final SparseArray<TetherStatsValue> tetherStatsList = new SparseArray<TetherStatsValue>();
+        try {
+            // The reported tether stats are total data usage for all currently-active upstream
+            // interfaces since tethering start.
+            mBpfStatsMap.forEach((key, value) -> tetherStatsList.put((int) key.val, value));
+        } catch (ErrnoException e) {
+            mLog.e("Fail to fetch tethering stats from BPF map: ", e);
+            return null;
+        }
+        return tetherStatsList;
+    }
+
+    /**
+     * Set a per-interface quota for tethering offload.
+     *
+     * @param ifIndex Index of upstream interface
+     * @param quotaBytes The quota defined as the number of bytes, starting from zero and counting
+     *       from *now*. A value of QUOTA_UNLIMITED (-1) indicates there is no limit.
+     */
+    @Nullable
+    private boolean tetherOffloadSetInterfaceQuota(int ifIndex, long quotaBytes) {
+        // The common case is an update, where the stats already exist,
+        // hence we read first, even though writing with BPF_NOEXIST
+        // first would make the code simpler.
+        long rxBytes, txBytes;
+        TetherStatsValue statsValue = null;
+
+        try {
+            statsValue = mBpfStatsMap.getValue(new S32(ifIndex));
+        } catch (ErrnoException e) {
+            // The BpfMap#getValue doesn't throw an errno ENOENT exception. Catch other error
+            // while trying to get stats entry.
+            mLog.e("Could not get stats entry of interface index " + ifIndex + ": ", e);
+            return false;
+        }
+
+        if (statsValue != null) {
+            // Ok, there was a stats entry.
+            rxBytes = statsValue.rxBytes;
+            txBytes = statsValue.txBytes;
+        } else {
+            // No stats entry - create one with zeroes.
+            try {
+                // This function is the *only* thing that can create entries.
+                // BpfMap#insertEntry use BPF_NOEXIST to create the entry. The entry is created
+                // if and only if it doesn't exist.
+                mBpfStatsMap.insertEntry(new S32(ifIndex), new TetherStatsValue(
+                        0 /* rxPackets */, 0 /* rxBytes */, 0 /* rxErrors */, 0 /* txPackets */,
+                        0 /* txBytes */, 0 /* txErrors */));
+            } catch (ErrnoException | IllegalArgumentException e) {
+                mLog.e("Could not create stats entry: ", e);
+                return false;
+            }
+            rxBytes = 0;
+            txBytes = 0;
+        }
+
+        // rxBytes + txBytes won't overflow even at 5gbps for ~936 years.
+        long newLimit = rxBytes + txBytes + quotaBytes;
+
+        // if adding limit (e.g., if limit is QUOTA_UNLIMITED) caused overflow: clamp to 'infinity'
+        if (newLimit < rxBytes + txBytes) newLimit = QUOTA_UNLIMITED;
+
+        try {
+            mBpfLimitMap.updateEntry(new S32(ifIndex), new S64(newLimit));
+        } catch (ErrnoException e) {
+            mLog.e("Fail to set quota " + quotaBytes + " for interface index " + ifIndex + ": ", e);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Return BPF tethering offload statistics and clear the stats for a given upstream.
+     *
+     * Must only be called once all offload rules have already been deleted for the given upstream
+     * interface. The existing stats will be fetched and returned. The stats and the limit for the
+     * given upstream interface will be deleted as well.
+     *
+     * The stats and limit for a given upstream interface must be initialized (using
+     * tetherOffloadSetInterfaceQuota) before any offload will occur on that interface.
+     *
+     * Note that this can be only called while the BPF maps were initialized.
+     *
+     * @param ifIndex Index of upstream interface.
+     * @return TetherStatsValue, which contains the given upstream interface's tethering statistics
+     *         since tethering was first started on that upstream interface.
+     */
+    @Nullable
+    private TetherStatsValue tetherOffloadGetAndClearStats(int ifIndex) {
+        // getAndClearTetherOffloadStats is called after all offload rules have already been
+        // deleted for the given upstream interface. Before starting to do cleanup stuff in this
+        // function, use synchronizeKernelRCU to make sure that all the current running eBPF
+        // programs are finished on all CPUs, especially the unfinished packet processing. After
+        // synchronizeKernelRCU returned, we can safely read or delete on the stats map or the
+        // limit map.
+        final int res = synchronizeKernelRCU();
+        if (res != 0) {
+            // Error log but don't return. Do as much cleanup as possible.
+            mLog.e("synchronize_rcu() failed: " + res);
+        }
+
+        TetherStatsValue statsValue = null;
+        try {
+            statsValue = mBpfStatsMap.getValue(new S32(ifIndex));
+        } catch (ErrnoException e) {
+            mLog.e("Could not get stats entry for interface index " + ifIndex + ": ", e);
+            return null;
+        }
+
+        if (statsValue == null) {
+            mLog.e("Could not get stats entry for interface index " + ifIndex);
+            return null;
+        }
+
+        try {
+            mBpfStatsMap.deleteEntry(new S32(ifIndex));
+        } catch (ErrnoException e) {
+            mLog.e("Could not delete stats entry for interface index " + ifIndex + ": ", e);
+            return null;
+        }
+
+        try {
+            mBpfLimitMap.deleteEntry(new S32(ifIndex));
+        } catch (ErrnoException e) {
+            mLog.e("Could not delete limit for interface index " + ifIndex + ": ", e);
+            return null;
+        }
+
+        return statsValue;
+    }
+
+    /**
+     * Adds a tethering IPv4 offload rule to appropriate BPF map.
+     *
+     * @return true iff the map was modified, false if the key already exists or there was an error.
+     */
+    private boolean tetherOffloadRuleAdd(boolean downstream, @NonNull Tether4Key key,
+            @NonNull Tether4Value value) {
+        try {
+            if (downstream) {
+                mBpfDownstream4Map.insertEntry(key, value);
+
+                // Increase the rule count while a adding rule is using a given upstream interface.
+                final int upstreamIfindex = (int) key.iif;
+                int count = mRule4CountOnUpstream.get(upstreamIfindex, 0 /* default */);
+                mRule4CountOnUpstream.put(upstreamIfindex, ++count);
+
+                if (mSupportActiveSessionsMetrics) {
+                    mCurrentConnectionCount++;
+                    mLastMaxConnectionCount = Math.max(mCurrentConnectionCount,
+                            mLastMaxConnectionCount);
+                }
+            } else {
+                mBpfUpstream4Map.insertEntry(key, value);
+            }
+        } catch (ErrnoException e) {
+            mLog.e("Could not insert entry (" + key + ", " + value + "): " + e);
+            return false;
+        } catch (IllegalStateException e) {
+            // Silent if the rule already exists. Note that the errno EEXIST was rethrown as
+            // IllegalStateException. See BpfMap#insertEntry.
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Deletes a tethering IPv4 offload rule from the appropriate BPF map.
+     *
+     * @param downstream true if downstream, false if upstream.
+     * @param key the key to delete.
+     * @return true iff the map was modified, false if the key did not exist or there was an error.
+     */
+    private boolean tetherOffloadRuleRemove(boolean downstream, @NonNull Tether4Key key) {
+        try {
+            if (downstream) {
+                if (!mBpfDownstream4Map.deleteEntry(key)) return false;  // Rule did not exist
+
+                // Decrease the rule count while a deleting rule is not using a given upstream
+                // interface anymore.
+                final int upstreamIfindex = (int) key.iif;
+                Integer count = mRule4CountOnUpstream.get(upstreamIfindex);
+                if (count == null) {
+                    Log.wtf(TAG, "Could not delete count for interface " + upstreamIfindex);
+                    return false;
+                }
+
+                if (--count == 0) {
+                    // Remove the entry if the count decreases to zero.
+                    mRule4CountOnUpstream.remove(upstreamIfindex);
+                } else {
+                    mRule4CountOnUpstream.put(upstreamIfindex, count);
+                }
+
+                if (mSupportActiveSessionsMetrics) {
+                    mCurrentConnectionCount--;
+                }
+            } else {
+                if (!mBpfUpstream4Map.deleteEntry(key)) return false;  // Rule did not exist
+            }
+        } catch (ErrnoException e) {
+            mLog.e("Could not delete entry (key: " + key + ")", e);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Iterate through the map and handle each key -> value retrieved base on the given BiConsumer.
+     *
+     * @param downstream true if downstream, false if upstream.
+     * @param action represents the action for each key -> value. The entry deletion is not
+     *        allowed and use #tetherOffloadRuleRemove instead.
+     */
+    @Nullable
+    private void tetherOffloadRuleForEach(boolean downstream,
+            @NonNull IBpfMap.ThrowingBiConsumer<Tether4Key, Tether4Value> action) {
+        try {
+            if (downstream) {
+                mBpfDownstream4Map.forEach(action);
+            } else {
+                mBpfUpstream4Map.forEach(action);
+            }
+        } catch (ErrnoException e) {
+            mLog.e("Could not iterate map: ", e);
+        }
+    }
+
+    /**
+     * Whether there is currently any IPv4 rule on the specified upstream.
+     */
+    private boolean isAnyIpv4RuleOnUpstream(int ifIndex) {
+        // No entry means no rule for the given interface because 0 has never been stored.
+        return mRule4CountOnUpstream.get(ifIndex) != null;
+    }
+
+    /**
+     * Attach BPF program.
+     *
+     * @param iface the interface name to attach program.
+     * @param downstream indicate the datapath. true if downstream, false if upstream.
+     * @param ipv4 indicate the protocol family. true if ipv4, false if ipv6.
+     *
+     * TODO: consider using InterfaceParams to replace interface name.
+     */
+    private boolean attachProgram(@NonNull String iface, boolean downstream,
+            boolean ipv4) {
+        try {
+            BpfUtils.attachProgram(iface, downstream, ipv4);
+        } catch (IOException e) {
+            mLog.e("Could not attach program: " + e);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Detach BPF program.
+     *
+     * @param iface the interface name to detach program.
+     * @param ipv4 indicate the protocol family. true if ipv4, false if ipv6.
+     *
+     * TODO: consider using InterfaceParams to replace interface name.
+     */
+    private boolean detachProgram(@NonNull String iface, boolean ipv4) {
+        try {
+            BpfUtils.detachProgram(iface, ipv4);
+        } catch (IOException e) {
+            mLog.e("Could not detach program: " + e);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Add interface index mapping.
+     */
+    private boolean addDevMap(int ifIndex) {
+        try {
+            mBpfDevMap.updateEntry(new S32(ifIndex), new S32(ifIndex));
+        } catch (ErrnoException e) {
+            mLog.e("Could not add interface " + ifIndex + ": " + e);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Remove interface index mapping.
+     */
+    private boolean removeDevMap(int ifIndex) {
+        try {
+            mBpfDevMap.deleteEntry(new S32(ifIndex));
+        } catch (ErrnoException e) {
+            mLog.e("Could not delete interface " + ifIndex + ": " + e);
+            return false;
+        }
+        return true;
+    }
+
+    private String mapStatus(IBpfMap m, String name) {
+        return name + "{" + (m != null ? "OK" : "ERROR") + "}";
+    }
+
+    @Override
+    public String toString() {
+        return String.join(", ", new String[]{
+            mapStatus(mBpfDownstream6Map, "mBpfDownstream6Map"),
+            mapStatus(mBpfUpstream6Map, "mBpfUpstream6Map"),
+            mapStatus(mBpfDownstream4Map, "mBpfDownstream4Map"),
+            mapStatus(mBpfUpstream4Map, "mBpfUpstream4Map"),
+            mapStatus(mBpfStatsMap, "mBpfStatsMap"),
+            mapStatus(mBpfLimitMap, "mBpfLimitMap"),
+            mapStatus(mBpfDevMap, "mBpfDevMap"),
+            "mCurrentConnectionCount=" + mCurrentConnectionCount,
+            "mLastMaxConnectionCount=" + mLastMaxConnectionCount
+        });
     }
 
     /**
@@ -667,7 +1206,7 @@ public class BpfCoordinator {
      * See NetlinkMonitor#handlePacket, NetlinkMessage#parseNfMessage.
      */
     private void startConntrackMonitoring() {
-        // TODO: Wrap conntrackMonitor starting function into mBpfCoordinatorShim.
+        // TODO: Wrap conntrackMonitor starting function.
 
         mConntrackMonitor.start();
         mLog.i("Conntrack monitoring started.");
@@ -677,7 +1216,7 @@ public class BpfCoordinator {
      * Stop conntrack event monitoring.
      */
     private void stopConntrackMonitoring() {
-        // TODO: Wrap conntrackMonitor stopping function into mBpfCoordinatorShim.
+        // TODO: Wrap conntrackMonitor stopping function.
 
         mConntrackMonitor.stop();
         mLog.i("Conntrack monitoring stopped.");
@@ -699,7 +1238,7 @@ public class BpfCoordinator {
 
         // TODO: support upstream forwarding on non-point-to-point interfaces.
         // TODO: get the MTU from LinkProperties and update the rules when it changes.
-        if (!mBpfCoordinatorShim.addIpv6UpstreamRule(rule)) {
+        if (!tetherOffloadAddIpv6UpstreamRule(rule)) {
             return;
         }
 
@@ -725,7 +1264,7 @@ public class BpfCoordinator {
                 Log.wtf(TAG, "BUG: upstream rules point to more than one interface");
             }
             upstreamIfindex = rule.upstreamIfindex;
-            mBpfCoordinatorShim.removeIpv6UpstreamRule(rule);
+            tetherOffloadRemoveIpv6UpstreamRule(rule);
         }
         // Clear the limit if there are no more rules on the given upstream.
         // Using upstreamIfindex outside the loop is fine because all the rules for a given IpServer
@@ -750,7 +1289,7 @@ public class BpfCoordinator {
 
         // TODO: Perhaps avoid to add a duplicate rule.
         if (rule.upstreamIfindex != NO_UPSTREAM
-                && !mBpfCoordinatorShim.addIpv6DownstreamRule(rule)) return;
+                && !tetherOffloadAddIpv6DownstreamRule(rule)) return;
 
         LinkedHashMap<Inet6Address, Ipv6DownstreamRule> rules =
                 mIpv6DownstreamRules.computeIfAbsent(ipServer,
@@ -766,7 +1305,7 @@ public class BpfCoordinator {
         if (!isUsingBpf()) return;
 
         if (rule.upstreamIfindex != NO_UPSTREAM
-                && !mBpfCoordinatorShim.removeIpv6DownstreamRule(rule)) return;
+                && !tetherOffloadRemoveIpv6DownstreamRule(rule)) return;
 
         LinkedHashMap<Inet6Address, Ipv6DownstreamRule> rules = mIpv6DownstreamRules.get(ipServer);
         if (rules == null) return;
@@ -794,7 +1333,7 @@ public class BpfCoordinator {
         final Collection<Ipv6DownstreamRule> removedRules = downstreamRules.values();
         for (final Ipv6DownstreamRule rule : removedRules) {
             if (rule.upstreamIfindex == NO_UPSTREAM) continue;
-            mBpfCoordinatorShim.removeIpv6DownstreamRule(rule);
+            tetherOffloadRemoveIpv6DownstreamRule(rule);
         }
         return removedRules;
     }
@@ -834,7 +1373,7 @@ public class BpfCoordinator {
                 clearIpv6DownstreamRules(ipServer);
 
         // Remove IPv6 upstream rules. Downstream rules must be removed first because
-        // BpfCoordinatorShimImpl#tetherOffloadGetAndClearStats will be called after the removal of
+        // tetherOffloadGetAndClearStats will be called after the removal of
         // the last upstream rule and it requires that no rules be forwarding traffic to or from
         // that upstream.
         clearIpv6UpstreamRules(ipServer);
@@ -1086,12 +1625,12 @@ public class BpfCoordinator {
         final Set<Tether4Key> deleteDownstreamRuleKeys = new ArraySet<Tether4Key>();
 
         // Find the rules which are related with the given client.
-        mBpfCoordinatorShim.tetherOffloadRuleForEach(UPSTREAM, (k, v) -> {
+        tetherOffloadRuleForEach(UPSTREAM, (k, v) -> {
             if (Objects.equals(k.src4, clientAddr)) {
                 deleteUpstreamRuleKeys.add(k);
             }
         });
-        mBpfCoordinatorShim.tetherOffloadRuleForEach(DOWNSTREAM, (k, v) -> {
+        tetherOffloadRuleForEach(DOWNSTREAM, (k, v) -> {
             if (Objects.equals(v.dst46, clientAddr)) {
                 deleteDownstreamRuleKeys.add(k);
                 upstreamIndiceSet.add((int) k.iif);
@@ -1110,10 +1649,10 @@ public class BpfCoordinator {
 
         // Delete the rules which are related with the given client.
         for (final Tether4Key k : deleteUpstreamRuleKeys) {
-            mBpfCoordinatorShim.tetherOffloadRuleRemove(UPSTREAM, k);
+            tetherOffloadRuleRemove(UPSTREAM, k);
         }
         for (final Tether4Key k : deleteDownstreamRuleKeys) {
-            mBpfCoordinatorShim.tetherOffloadRuleRemove(DOWNSTREAM, k);
+            tetherOffloadRuleRemove(DOWNSTREAM, k);
         }
 
         // Cleanup each upstream interface by a set which avoids duplicated work on the same
@@ -1243,20 +1782,20 @@ public class BpfCoordinator {
     }
 
     private void maybeAttachProgramImpl(@NonNull String iface, boolean downstream) {
-        mBpfCoordinatorShim.attachProgram(iface, downstream, true /* ipv4 */);
+        attachProgram(iface, downstream, true /* ipv4 */);
 
         // Ignore 464xlat interface because it is IPv4 only.
         if (!is464XlatInterface(iface)) {
-            mBpfCoordinatorShim.attachProgram(iface, downstream, false /* ipv4 */);
+            attachProgram(iface, downstream, false /* ipv4 */);
         }
     }
 
     private void maybeDetachProgramImpl(@NonNull String iface) {
-        mBpfCoordinatorShim.detachProgram(iface, true /* ipv4 */);
+        detachProgram(iface, true /* ipv4 */);
 
         // Ignore 464xlat interface because it is IPv4 only.
         if (!is464XlatInterface(iface)) {
-            mBpfCoordinatorShim.detachProgram(iface, false /* ipv4 */);
+            detachProgram(iface, false /* ipv4 */);
         }
     }
 
@@ -1329,7 +1868,6 @@ public class BpfCoordinator {
         });
     }
 
-    // TODO: make mInterfaceNames accessible to the shim and move this code to there.
     // This function should only be used for logging/dump purposes.
     private String getIfName(int ifindex) {
         // TODO: return something more useful on lookup failure
@@ -1353,7 +1891,7 @@ public class BpfCoordinator {
                 ? "registered" : "not registered"));
         pw.println("Upstream quota: " + mInterfaceQuotas.toString());
         pw.println("Polling interval: " + getPollingInterval() + " ms");
-        pw.println("Bpf shim: " + mBpfCoordinatorShim.toString());
+        pw.println("Bpf: " + toString());
 
         pw.println("Forwarding stats:");
         pw.increaseIndent();
@@ -2205,9 +2743,9 @@ public class BpfCoordinator {
 
             if (e.msgType == (NetlinkConstants.NFNL_SUBSYS_CTNETLINK << 8
                     | NetlinkConstants.IPCTNL_MSG_CT_DELETE)) {
-                final boolean deletedUpstream = mBpfCoordinatorShim.tetherOffloadRuleRemove(
+                final boolean deletedUpstream = tetherOffloadRuleRemove(
                         UPSTREAM, upstream4Key);
-                final boolean deletedDownstream = mBpfCoordinatorShim.tetherOffloadRuleRemove(
+                final boolean deletedDownstream = tetherOffloadRuleRemove(
                         DOWNSTREAM, downstream4Key);
 
                 if (!deletedUpstream && !deletedDownstream) {
@@ -2235,9 +2773,9 @@ public class BpfCoordinator {
             maybeAddDevMap(upstreamIndex, tetherClient.downstreamIfindex);
             maybeSetLimit(upstreamIndex);
 
-            final boolean addedUpstream = mBpfCoordinatorShim.tetherOffloadRuleAdd(
+            final boolean addedUpstream = tetherOffloadRuleAdd(
                     UPSTREAM, upstream4Key, upstream4Value);
-            final boolean addedDownstream = mBpfCoordinatorShim.tetherOffloadRuleAdd(
+            final boolean addedDownstream = tetherOffloadRuleAdd(
                     DOWNSTREAM, downstream4Key, downstream4Value);
             if (addedUpstream != addedDownstream) {
                 Log.wtf(TAG, "The bidirectional rules should be added concurrently ("
@@ -2246,11 +2784,6 @@ public class BpfCoordinator {
                 return;
             }
         }
-    }
-
-    @VisibleForTesting(visibility = PRIVATE)
-    public int getLastMaxConnectionAndResetToCurrent() {
-        return mBpfCoordinatorShim.getLastMaxConnectionAndResetToCurrent();
     }
 
     @VisibleForTesting
@@ -2293,7 +2826,7 @@ public class BpfCoordinator {
             return false;
         }
 
-        return mBpfCoordinatorShim.tetherOffloadSetInterfaceQuota(ifIndex, quotaBytes);
+        return tetherOffloadSetInterfaceQuota(ifIndex, quotaBytes);
     }
 
     // Handle the data limit update from the service which is the stats provider registered for.
@@ -2322,7 +2855,7 @@ public class BpfCoordinator {
 
     private void maybeSetLimit(int upstreamIfindex) {
         if (isAnyRuleOnUpstream(upstreamIfindex)
-                || mBpfCoordinatorShim.isAnyIpv4RuleOnUpstream(upstreamIfindex)) {
+                || isAnyIpv4RuleOnUpstream(upstreamIfindex)) {
             return;
         }
 
@@ -2339,12 +2872,12 @@ public class BpfCoordinator {
     // conntrack event can't cover this case.
     private void maybeClearLimit(int upstreamIfindex) {
         if (isAnyRuleOnUpstream(upstreamIfindex)
-                || mBpfCoordinatorShim.isAnyIpv4RuleOnUpstream(upstreamIfindex)) {
+                || isAnyIpv4RuleOnUpstream(upstreamIfindex)) {
             return;
         }
 
         final TetherStatsValue statsValue =
-                mBpfCoordinatorShim.tetherOffloadGetAndClearStats(upstreamIfindex);
+                tetherOffloadGetAndClearStats(upstreamIfindex);
         if (statsValue == null) {
             Log.wtf(TAG, "Fail to cleanup tether stats for upstream index " + upstreamIfindex);
             return;
@@ -2359,7 +2892,7 @@ public class BpfCoordinator {
     }
 
     // TODO: Rename to isAnyIpv6RuleOnUpstream and define an isAnyRuleOnUpstream method that called
-    // both isAnyIpv6RuleOnUpstream and mBpfCoordinatorShim.isAnyIpv4RuleOnUpstream.
+    // both isAnyIpv6RuleOnUpstream and isAnyIpv4RuleOnUpstream.
     private boolean isAnyRuleOnUpstream(int upstreamIfindex) {
         for (ArraySet<Ipv6UpstreamRule> rules : mIpv6UpstreamRules.values()) {
             for (Ipv6UpstreamRule rule : rules) {
@@ -2374,7 +2907,7 @@ public class BpfCoordinator {
     private void maybeAddDevMap(int upstreamIfindex, int downstreamIfindex) {
         for (Integer index : new Integer[] {upstreamIfindex, downstreamIfindex}) {
             if (mDeviceMapSet.contains(index)) continue;
-            if (mBpfCoordinatorShim.addDevMap(index)) mDeviceMapSet.add(index);
+            if (addDevMap(index)) mDeviceMapSet.add(index);
         }
     }
 
@@ -2483,7 +3016,7 @@ public class BpfCoordinator {
 
     private void updateForwardedStats() {
         final SparseArray<TetherStatsValue> tetherStatsList =
-                mBpfCoordinatorShim.tetherOffloadGetStats();
+                tetherOffloadGetStats();
 
         if (tetherStatsList == null) {
             mLog.e("Problem fetching tethering stats");
@@ -2558,7 +3091,7 @@ public class BpfCoordinator {
         // TODO: Consider ignoring TCP traffic on upstream and monitor on downstream only
         // because TCP is a bidirectional traffic. Probably don't need to extend timeout by
         // both directions for TCP.
-        mBpfCoordinatorShim.tetherOffloadRuleForEach(UPSTREAM, (k, v) -> {
+        tetherOffloadRuleForEach(UPSTREAM, (k, v) -> {
             if ((now - v.lastUsed) / 1_000_000 < CONNTRACK_TIMEOUT_UPDATE_INTERVAL_MS) {
                 updateConntrackTimeout((byte) k.l4proto, k.src4, (short) k.srcPort, k.dst4,
                         (short) k.dstPort);
@@ -2568,7 +3101,7 @@ public class BpfCoordinator {
         // Reverse the source and destination {address, port} from downstream value because
         // #updateConntrackTimeout refresh the timeout of netlink attribute CTA_TUPLE_ORIG
         // which is opposite direction for downstream map value.
-        mBpfCoordinatorShim.tetherOffloadRuleForEach(DOWNSTREAM, (k, v) -> {
+        tetherOffloadRuleForEach(DOWNSTREAM, (k, v) -> {
             if ((now - v.lastUsed) / 1_000_000 < CONNTRACK_TIMEOUT_UPDATE_INTERVAL_MS) {
                 updateConntrackTimeout((byte) k.l4proto, (Inet4Address) v.dst46, (short) v.dstPort,
                         (Inet4Address) v.src46, (short) v.srcPort);
@@ -2578,7 +3111,7 @@ public class BpfCoordinator {
 
     private void uploadConntrackMetricsSample() {
         mDeps.sendTetheringActiveSessionsReported(
-                mBpfCoordinatorShim.getLastMaxConnectionAndResetToCurrent());
+                getLastMaxConnectionAndResetToCurrent());
     }
 
     private void schedulePollingStats() {
@@ -2646,6 +3179,56 @@ public class BpfCoordinator {
     @VisibleForTesting
     final HashMap<Inet4Address, Integer> getIpv4UpstreamIndicesForTesting() {
         return mIpv4UpstreamIndices;
+    }
+
+    /** Get last max connection count and reset to current count. */
+    public int getLastMaxConnectionAndResetToCurrent() {
+        final int ret = mLastMaxConnectionCount;
+        mLastMaxConnectionCount = mCurrentConnectionCount;
+        return ret;
+    }
+
+    /** Clear current connection count. */
+    public void clearConnectionCounters() {
+        mCurrentConnectionCount = 0;
+        mLastMaxConnectionCount = 0;
+    }
+
+    // AF_KEY socket type. See include/linux/socket.h.
+    private static final int AF_KEY = 15;
+    // PFKEYv2 constants. See include/uapi/linux/pfkeyv2.h.
+    private static final int PF_KEY_V2 = 2;
+
+    /**
+     * Call synchronize_rcu() to block until all existing RCU read-side critical sections have
+     * been completed.
+     * Note that BpfCoordinatorTest have no permissions to create or close pf_key socket. It is
+     * okay for now because the caller #bpfGetAndClearStats doesn't care the result of this
+     * function. The tests don't be broken.
+     * TODO: Wrap this function into Dependencies for mocking in tests.
+     */
+    private int synchronizeKernelRCU() {
+        // This is a temporary hack for network stats map swap on devices running
+        // 4.9 kernels. The kernel code of socket release on pf_key socket will
+        // explicitly call synchronize_rcu() which is exactly what we need.
+        FileDescriptor pfSocket;
+        try {
+            pfSocket = Os.socket(AF_KEY, OsConstants.SOCK_RAW | OsConstants.SOCK_CLOEXEC,
+                    PF_KEY_V2);
+        } catch (ErrnoException e) {
+            mLog.e("create PF_KEY socket failed: ", e);
+            return e.errno;
+        }
+
+        // When closing socket, synchronize_rcu() gets called in sock_release().
+        try {
+            Os.close(pfSocket);
+        } catch (ErrnoException e) {
+            mLog.e("failed to close the PF_KEY socket: ", e);
+            return e.errno;
+        }
+
+        return 0;
     }
 
     private static native String[] getBpfCounterNames();

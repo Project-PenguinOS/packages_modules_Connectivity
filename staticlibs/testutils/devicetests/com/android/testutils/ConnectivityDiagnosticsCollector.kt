@@ -42,7 +42,6 @@ import android.telephony.TelephonyManager.SIM_STATE_UNKNOWN
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.test.platform.app.InstrumentationRegistry
-import com.android.modules.utils.build.SdkLevel.isAtLeastS
 import com.android.testutils.com.android.testutils.getTargetModuleVersion
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -306,10 +305,8 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
         val hasWifi = pm.hasSystemFeature(FEATURE_WIFI)
         val hasMobileData = pm.hasSystemFeature(FEATURE_TELEPHONY)
         val tm = if (hasMobileData) ctx.getSystemService(TelephonyManager::class.java) else null
-        // getAdoptedShellPermissions is S+. Optimistically assume that tests are not holding on
-        // shell permissions during failure/cleanup on R.
-        val canUseShell = !isAtLeastS() ||
-                instr.uiAutomation.getAdoptedShellPermissions().isNullOrEmpty()
+        // getAdoptedShellPermissions is S+.
+        val canUseShell = instr.uiAutomation.getAdoptedShellPermissions().isNullOrEmpty()
         val headerObj = JSONObject()
         failureHeaderExtras.forEach { (k, v) -> headerObj.put(k, v) }
         failureHeaderExtras.clear()
@@ -358,16 +355,10 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
         }.toString()
     }
 
-    private class WifiInfoCallback : NetworkCallback {
-        private val network: Network
+    private class WifiInfoCallback(network: Network, flags: Int) : NetworkCallback(flags) {
+        private val network: Network = network
         val wifiInfoFuture = CompletableFuture<WifiInfo?>()
-        constructor(network: Network) : super() {
-            this.network = network
-        }
-        @RequiresApi(Build.VERSION_CODES.S)
-        constructor(network: Network, flags: Int) : super(flags) {
-            this.network = network
-        }
+
         override fun onCapabilitiesChanged(net: Network, nc: NetworkCapabilities) {
             if (network == net) {
                 wifiInfoFuture.complete(nc.transportInfo as? WifiInfo)
@@ -379,11 +370,7 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
         // Get the SSID via network callbacks, as the Networks are obtained via callbacks, and
         // synchronous calls (CM#getNetworkCapabilities) and callbacks should not be mixed.
         // A new callback needs to be filed and received while holding NETWORK_SETTINGS permission.
-        val cb = if (isAtLeastS()) {
-            WifiInfoCallback(network, FLAG_INCLUDE_LOCATION_INFO)
-        } else {
-            WifiInfoCallback(network)
-        }
+        val cb = WifiInfoCallback(network, FLAG_INCLUDE_LOCATION_INFO)
         cbHelper.registerNetworkCallback(
             NetworkRequest.Builder()
                 .addTransportType(TRANSPORT_WIFI)
@@ -443,7 +430,6 @@ class ConnectivityDiagnosticsCollector : BaseMetricListener() {
      * @param shell The shell to run the command in, for example "sh".
      * @param exceptionContext An exception to write a stacktrace to the dump for context.
      */
-    @RequiresApi(Build.VERSION_CODES.S)
     fun collectCommandOutput(
         cmd: String,
         shell: String,

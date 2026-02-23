@@ -119,8 +119,6 @@ import androidx.test.filters.SmallTest;
 
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.CollectionUtils;
-import com.android.networkstack.apishim.ProcessShimImpl;
-import com.android.networkstack.apishim.common.ProcessShim;
 import com.android.server.BpfNetMaps;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
@@ -228,7 +226,6 @@ public class PermissionMonitorTest {
     private NetdMonitor mNetdMonitor;
     private BpfMapMonitor mBpfMapMonitor;
     private HandlerThread mHandlerThread;
-    private ProcessShim mProcessShim = ProcessShimImpl.newInstance();
 
     @Before
     public void setUp() throws Exception {
@@ -666,7 +663,7 @@ public class PermissionMonitorTest {
         addPackage(name, uid, permissions);
         assertEquals(hasPermission, mPermissionMonitor.hasUseBackgroundNetworksPermission(uid));
         if (hasSdkSandbox(uid)) {
-            final int sdkSandboxUid = mProcessShim.toSdkSandboxUid(uid);
+            final int sdkSandboxUid = Process.toSdkSandboxUid(uid);
             assertEquals(hasPermission,
                     mPermissionMonitor.hasUseBackgroundNetworksPermission(sdkSandboxUid));
         }
@@ -751,7 +748,7 @@ public class PermissionMonitorTest {
                             + trafficPermissions.get(id));
                 }
                 if (hasSdkSandbox(id)) {
-                    int sdkSandboxId = mProcessShim.toSdkSandboxUid(id);
+                    int sdkSandboxId = Process.toSdkSandboxUid(id);
                     if (trafficPermissions.get(sdkSandboxId, DOES_NOT_EXIST)
                             == DOES_NOT_EXIST) {
                         fail("SDK sandbox id " + sdkSandboxId + " does not exist.");
@@ -823,7 +820,7 @@ public class PermissionMonitorTest {
                         fail("uid " + uid + " has wrong permission: " +  permission);
                     }
                     if (hasSdkSandbox(uid)) {
-                        int sdkSandboxUid = mProcessShim.toSdkSandboxUid(uid);
+                        int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                         if (mUidsNetworkPermission.get(sdkSandboxUid, DOES_NOT_EXIST)
                                 == DOES_NOT_EXIST) {
                             fail("SDK sandbox uid " + uid + " does not exist.");
@@ -845,7 +842,7 @@ public class PermissionMonitorTest {
                         fail("uid " + uid + " has listed permissions, expected none.");
                     }
                     if (hasSdkSandbox(uid)) {
-                        int sdkSandboxUid = mProcessShim.toSdkSandboxUid(uid);
+                        int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                         if (mUidsNetworkPermission.get(sdkSandboxUid, DOES_NOT_EXIST)
                                 != DOES_NOT_EXIST) {
                             fail("SDK sandbox uid " + sdkSandboxUid
@@ -960,7 +957,7 @@ public class PermissionMonitorTest {
         assertFalse(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
         if (hasSdkSandbox(MOCK_UID11)) {
             assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
-                    mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+                    Process.toSdkSandboxUid(MOCK_UID11)));
         }
     }
 
@@ -1324,12 +1321,12 @@ public class PermissionMonitorTest {
         SparseIntArray netdPermissionsAppIds = new SparseIntArray();
         netdPermissionsAppIds.put(MOCK_APPID1, PERMISSION_INTERNET);
         if (hasSdkSandbox(MOCK_APPID1)) {
-            netdPermissionsAppIds.put(mProcessShim.toSdkSandboxUid(MOCK_APPID1),
+            netdPermissionsAppIds.put(Process.toSdkSandboxUid(MOCK_APPID1),
                     PERMISSION_INTERNET);
         }
         netdPermissionsAppIds.put(MOCK_APPID2, PERMISSION_NONE);
         if (hasSdkSandbox(MOCK_APPID2)) {
-            netdPermissionsAppIds.put(mProcessShim.toSdkSandboxUid(MOCK_APPID2),
+            netdPermissionsAppIds.put(Process.toSdkSandboxUid(MOCK_APPID2),
                     PERMISSION_NONE);
         }
         netdPermissionsAppIds.put(SYSTEM_APPID1, PERMISSION_TRAFFIC_ALL);
@@ -1380,7 +1377,7 @@ public class PermissionMonitorTest {
         addPackage(MOCK_PACKAGE2, MOCK_UID12, ACCESS_LOCAL_NETWORK);
         assertTrue(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID12));
         if (hasSdkSandbox(MOCK_UID12)) assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
-                mProcessShim.toSdkSandboxUid(MOCK_UID12)));
+                Process.toSdkSandboxUid(MOCK_UID12)));
     }
 
     @Test
@@ -1487,14 +1484,14 @@ public class PermissionMonitorTest {
 
         assertTrue(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
         if (hasSdkSandbox(MOCK_UID12)) assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
-                mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+                Process.toSdkSandboxUid(MOCK_UID11)));
 
         removePackage(MOCK_PACKAGE1, MOCK_UID11);
         assertFalse(mBpfMapMonitor.isUidPresentInLocalNetBlockMap(MOCK_UID11));
         addPackage(MOCK_PACKAGE1, MOCK_UID11, INTERNET);
         assertFalse(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
         if (hasSdkSandbox(MOCK_UID12)) assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
-                mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+                Process.toSdkSandboxUid(MOCK_UID11)));
     }
 
     @Test
@@ -1887,7 +1884,7 @@ public class PermissionMonitorTest {
         if (hasSdkSandbox(MOCK_UID11)) {
             // The SDK sandbox never gets runtime permissions
             assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
-                    mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+                    Process.toSdkSandboxUid(MOCK_UID11)));
         }
     }
 
@@ -1903,7 +1900,7 @@ public class PermissionMonitorTest {
         assertFalse(mBpfMapMonitor.hasLocalNetPermissions(MOCK_UID11));
         if (hasSdkSandbox(MOCK_UID11)) {
             assertTrue(mBpfMapMonitor.hasBlockedLocalNetForSandboxUid(
-                    mProcessShim.toSdkSandboxUid(MOCK_UID11)));
+                    Process.toSdkSandboxUid(MOCK_UID11)));
         }
     }
 
@@ -2062,7 +2059,7 @@ public class PermissionMonitorTest {
         expected.put(MOCK_UID11, PERMISSION_BIT_ACCESS_LOCAL_NETWORK
                 | PERMISSION_BIT_UPDATE_DEVICE_STATS);
         if (hasSdkSandbox(MOCK_UID11)) {
-            expected.put(mProcessShim.toSdkSandboxUid(MOCK_UID11),
+            expected.put(Process.toSdkSandboxUid(MOCK_UID11),
                     PERMISSION_BIT_ACCESS_LOCAL_NETWORK | PERMISSION_BIT_UPDATE_DEVICE_STATS);
         }
         assertSameSparseIntArray(expected, actual);
@@ -2084,7 +2081,7 @@ public class PermissionMonitorTest {
         expected.put(MOCK_UID11, PERMISSION_BIT_ACCESS_LOCAL_NETWORK
                 | PERMISSION_BIT_UPDATE_DEVICE_STATS | PERMISSION_BIT_NO_INTERNET);
         if (hasSdkSandbox(MOCK_UID11)) {
-            expected.put(mProcessShim.toSdkSandboxUid(MOCK_UID11),
+            expected.put(Process.toSdkSandboxUid(MOCK_UID11),
                     PERMISSION_BIT_ACCESS_LOCAL_NETWORK | PERMISSION_BIT_UPDATE_DEVICE_STATS
                             | PERMISSION_BIT_NO_INTERNET);
         }
@@ -2109,8 +2106,8 @@ public class PermissionMonitorTest {
         permissionBpfMap.removeAppId(MOCK_APPID1);
         verify(mBpfNetMaps).removePermissionsForAppId(MOCK_APPID1);
         if (hasSdkSandbox(MOCK_APPID1)) {
-                int sdkSandboxAppId = mProcessShim.toSdkSandboxUid(MOCK_APPID1);
-                verify(mBpfNetMaps).removePermissionsForAppId(sdkSandboxAppId);
+            int sdkSandboxAppId = Process.toSdkSandboxUid(MOCK_APPID1);
+            verify(mBpfNetMaps).removePermissionsForAppId(sdkSandboxAppId);
         }
     }
 
@@ -2365,12 +2362,12 @@ public class PermissionMonitorTest {
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(MOCK_UID11, PERMISSION_INTERNET);
         if (hasSdkSandbox(MOCK_UID11)) {
-            permissionsUids.put(mProcessShim.toSdkSandboxUid(MOCK_UID11),
+            permissionsUids.put(Process.toSdkSandboxUid(MOCK_UID11),
                     PERMISSION_INTERNET);
         }
         permissionsUids.put(MOCK_UID12, PERMISSION_NONE);
         if (hasSdkSandbox(MOCK_UID12)) {
-            permissionsUids.put(mProcessShim.toSdkSandboxUid(MOCK_UID12),
+            permissionsUids.put(Process.toSdkSandboxUid(MOCK_UID12),
                     PERMISSION_NONE);
         }
 

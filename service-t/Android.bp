@@ -132,6 +132,7 @@ java_library {
     ],
     exclude_srcs: [
         "src/com/android/server/connectivity/mdns/internal/MdnsRealtimeScheduler.java",
+        "src/com/android/server/connectivity/mdns/internal/ServiceAccessDb.java",
         "src/com/android/server/connectivity/mdns/internal/ServiceAccessRepository.java",
         "src/com/android/server/connectivity/mdns/internal/SocketNetlinkMonitor.java",
         "src/com/android/server/connectivity/mdns/MdnsAdvertiser.java",

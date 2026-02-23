@@ -20,11 +20,14 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.nsd.DiscoveryRequest;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.PatternMatcher;
 import android.text.TextUtils;
 
 import com.android.net.module.util.ByteUtils;
+import com.android.net.module.util.HexDump;
 
 import java.nio.charset.Charset;
 import java.time.Instant;
@@ -43,6 +46,7 @@ import java.util.TreeMap;
 public class MdnsServiceInfo implements Parcelable {
     private static final Charset US_ASCII = Charset.forName("us-ascii");
     private static final Charset UTF_8 = Charset.forName("utf-8");
+    private static final String ATTRIBUTE_MATCHER_HEX_PREFIX = "0x";
 
     /** @hide */
     public static final Parcelable.Creator<MdnsServiceInfo> CREATOR =
@@ -306,6 +310,35 @@ public class MdnsServiceInfo implements Parcelable {
             map.put(kv.getKey(), value == null ? null : new String(value, UTF_8));
         }
         return Collections.unmodifiableMap(map);
+    }
+
+    /**
+     * Check if an attribute matches a filter as per {@link DiscoveryRequest#getAttributeFilters()}.
+     */
+    public boolean attributeMatches(@Nullable String key, @Nullable PatternMatcher matcher) {
+        if (key == null) {
+            // Filtering on null keys does not make sense; just fail to match.
+            return false;
+        }
+        if (matcher == null) {
+            // As per DiscoveryRequest.Builder#setAttributeFilters, if the matcher is null, the
+            // corresponding attribute is expected to be a boolean attribute with no value as per
+            // RFC6763 6.4.
+            return attributes.containsKey(key) && attributes.get(key) == null;
+        }
+        final byte[] attr = attributes.get(key);
+        if (attr == null) {
+            return false;
+        }
+        // As per DiscoveryRequest.Builder#setAttributeFilters, if the pattern starts with the
+        // hex prefix, matching is done on uppercase hexadecimal.
+        if (matcher.getPath().startsWith(ATTRIBUTE_MATCHER_HEX_PREFIX)) {
+            final PatternMatcher hexMatcher = new PatternMatcher(
+                    matcher.getPath().substring(ATTRIBUTE_MATCHER_HEX_PREFIX.length()),
+                    matcher.getType());
+            return hexMatcher.match(HexDump.toHexString(attr, /* upperCase= */true));
+        }
+        return matcher.match(new String(attr, UTF_8));
     }
 
     @Override

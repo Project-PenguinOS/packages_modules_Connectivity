@@ -49,6 +49,7 @@ import android.net.NetworkRequest;
 import android.net.ProxyInfo;
 import android.net.TestNetworkInterface;
 import android.net.VpnManager;
+import android.net.VpnProfileState;
 import android.net.cts.util.CtsNetUtils;
 import android.net.cts.util.IkeSessionTestUtils;
 import android.net.ipsec.ike.IkeTunnelConnectionParams;
@@ -64,10 +65,6 @@ import android.text.TextUtils;
 import androidx.test.InstrumentationRegistry;
 
 import com.android.net.module.util.HexDump;
-import com.android.networkstack.apishim.ConstantsShim;
-import com.android.networkstack.apishim.VpnManagerShimImpl;
-import com.android.networkstack.apishim.common.VpnManagerShim;
-import com.android.networkstack.apishim.common.VpnProfileStateShim;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.DevSdkIgnoreRunner;
@@ -202,8 +199,6 @@ public class Ikev2VpnTest {
             (VpnManager) sContext.getSystemService(Context.VPN_MANAGEMENT_SERVICE);
     private static final CtsNetUtils mCtsNetUtils = new CtsNetUtils(sContext);
     private static final long TIMEOUT_MS = 15_000;
-
-    private VpnManagerShim mVmShim = VpnManagerShimImpl.newInstance(sContext);
 
     private final X509Certificate mServerRootCa;
     private final CertificateAndKey mUserCertKey;
@@ -553,11 +548,11 @@ public class Ikev2VpnTest {
         if (testSessionKey) {
             // testSessionKey will never be true if running on <T
             // startProvisionedVpnProfileSession() should return a non-null & non-empty random UUID.
-            final String sessionId = mVmShim.startProvisionedVpnProfileSession();
+            final String sessionId = sVpnMgr.startProvisionedVpnProfileSession();
             assertFalse(TextUtils.isEmpty(sessionId));
-            final VpnProfileStateShim profileState = mVmShim.getProvisionedVpnProfileState();
+            final VpnProfileState profileState = sVpnMgr.getProvisionedVpnProfileState();
             assertNotNull(profileState);
-            assertEquals(ConstantsShim.VPN_PROFILE_STATE_CONNECTING, profileState.getState());
+            assertEquals(VpnProfileState.STATE_CONNECTING, profileState.getState());
             assertEquals(sessionId, profileState.getSessionId());
             assertFalse(profileState.isAlwaysOn());
             assertFalse(profileState.isLockdownEnabled());
@@ -576,9 +571,9 @@ public class Ikev2VpnTest {
         final Network vpnNetwork = cb.expect(Event.AVAILABLE).getNetwork();
 
         if (testSessionKey) {
-            final VpnProfileStateShim profileState = mVmShim.getProvisionedVpnProfileState();
+            final VpnProfileState profileState = sVpnMgr.getProvisionedVpnProfileState();
             assertNotNull(profileState);
-            assertEquals(ConstantsShim.VPN_PROFILE_STATE_CONNECTED, profileState.getState());
+            assertEquals(VpnProfileState.STATE_CONNECTED, profileState.getState());
             assertFalse(profileState.isAlwaysOn());
             assertFalse(profileState.isLockdownEnabled());
         }

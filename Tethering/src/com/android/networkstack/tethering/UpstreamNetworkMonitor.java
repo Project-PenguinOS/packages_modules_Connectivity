@@ -47,8 +47,6 @@ import androidx.annotation.Nullable;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.SharedLog;
-import com.android.networkstack.apishim.ConnectivityManagerShimImpl;
-import com.android.networkstack.apishim.common.ConnectivityManagerShim;
 import com.android.networkstack.tethering.util.PrefixUtils;
 
 import java.util.HashMap;
@@ -158,12 +156,11 @@ public class UpstreamNetworkMonitor {
             Log.wtf(TAG, "default network callback is already registered");
             return;
         }
-        ConnectivityManagerShim mCmShim = ConnectivityManagerShimImpl.newInstance(mContext);
         mDefaultNetworkCallback = new UpstreamNetworkCallback(CALLBACK_DEFAULT_INTERNET);
         // TODO (b/382413665): By definition, a local network cannot be the system default,
         //  because it does not provide internet capability. Figure out whether this
         //  is enforced in ConnectivityService. Or what will happen for tethering if it happens.
-        mCmShim.registerSystemDefaultNetworkCallback(mDefaultNetworkCallback, mHandler);
+        cm().registerSystemDefaultNetworkCallback(mDefaultNetworkCallback, mHandler);
         if (mEntitlementMgr == null) {
             mEntitlementMgr = entitle;
         }
