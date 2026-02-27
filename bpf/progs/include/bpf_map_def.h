@@ -156,7 +156,7 @@ struct bpf_map_def {
 };
 
 #ifdef __cplusplus
-static_assert(std::is_pod_v<struct bpf_map_def>);
+static_assert(std::is_trivial_v<struct bpf_map_def>);
 static_assert(std::is_standard_layout_v<struct bpf_map_def>);
 #endif
 
@@ -194,7 +194,7 @@ struct bpf_prog_def {
 };
 
 #ifdef __cplusplus
-static_assert(std::is_pod_v<struct bpf_prog_def>);
+static_assert(std::is_trivial_v<struct bpf_prog_def>);
 static_assert(std::is_standard_layout_v<struct bpf_prog_def>);
 #endif
 

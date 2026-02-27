@@ -17,8 +17,6 @@
 package com.android.net.module.util.bpf;
 
 import com.android.net.module.util.Struct;
-import com.android.net.module.util.Struct.Field;
-import com.android.net.module.util.Struct.Type;
 
 /**
  * A Struct for UidPermissionChunk type.
@@ -32,18 +30,24 @@ import com.android.net.module.util.Struct.Type;
  */
 public class UidPermissionChunk extends Struct {
 
-    // LINT.IfChange(uid_permission_chunk_type)
-    // Each UID has 3 permission bits (ACCESS_LOCAL_NETWORK / INTERNET /
-    // UPDATE_DEVICE_STATS). One int64 can store up to 21 UIDs (3 * 21 = 63 bits)
-    public final static int PERMISSION_COUNT = 3;
-    public final static int UIDS_PER_INT64 = 21;
-    public final static int CHUNK_INT64_COUNT = 128;
-    public final static int CHUNK_UID_COUNT = 2688; // 128 * 21 = 2688
-    public final static long UID_PERMISSION_MASK = 7L; // mask for 3 permission bits
-    public final static int PERMISSION_BIT_NONE = 0;
-    public final static int PERMISSION_BIT_ACCESS_LOCAL_NETWORK = 1;
-    public final static int PERMISSION_BIT_UPDATE_DEVICE_STATS = 2;
-    public final static int PERMISSION_BIT_NO_INTERNET = 4;
+     // LINT.IfChange(uid_permission_chunk_type)
+    // Each UID has 7 permission bits (ACCESS_LOCAL_NETWORK / INTERNET /
+    // UPDATE_DEVICE_STATS / USE_LOOPBACK_INTERFACE / FORCE_USE_LOOPBACK_INTERFACE /
+    // INTERACT_ACROSS_USERS_FULL / INTERACT_ACROSS_USERS_OR_PROFILES).
+    // One int64 can store up to 9 UIDs (7 * 9 = 63 bits)
+    public static final int PERMISSION_COUNT = 7;
+    public static final int UIDS_PER_INT64 = 64 / PERMISSION_COUNT;
+    public static final int CHUNK_INT64_COUNT = 128;
+    public static final int CHUNK_UID_COUNT = CHUNK_INT64_COUNT * UIDS_PER_INT64;
+    public static final long UID_PERMISSION_MASK = (1L << PERMISSION_COUNT) - 1;
+    public static final int PERMISSION_BIT_NONE = 0;
+    public static final int PERMISSION_BIT_ACCESS_LOCAL_NETWORK = 1 << 0;
+    public static final int PERMISSION_BIT_UPDATE_DEVICE_STATS = 1 << 1;
+    public static final int PERMISSION_BIT_NO_INTERNET = 1 << 2;
+    public static final int PERMISSION_BIT_USE_LOOPBACK_INTERFACE = 1 << 3;
+    public static final int PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE = 1 << 4;
+    public static final int PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL = 1 << 5;
+    public static final int PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES = 1 << 6;
     // LINT.ThenChange(../../../../../../../../bpf/progs/netd.h)
 
     @Struct.Field(order = 0, type = Struct.Type.S64Array,

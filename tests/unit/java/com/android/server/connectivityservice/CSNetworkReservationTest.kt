@@ -30,7 +30,6 @@ import android.net.NetworkProvider.NetworkOfferCallback
 import android.net.NetworkRequest
 import android.net.NetworkScore
 import android.os.Build
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.TestableNetworkCallback.Event.Reserved
@@ -65,7 +64,6 @@ private const val TIMEOUT_MS = 5_000L
 private const val NO_CB_TIMEOUT_MS = 200L
 
 @RunWith(DevSdkIgnoreRunner::class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 class CSNetworkReservationTest : CSTest() {
     private lateinit var provider: NetworkProvider
     private val blanketOffer = TestableNetworkOfferCallback(TIMEOUT_MS, NO_CB_TIMEOUT_MS)

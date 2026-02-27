@@ -25,7 +25,6 @@ import android.net.NetworkStack
 import android.os.Build
 import android.os.Process
 import android.util.Range
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.TestableNetworkCallback.Event.CapabilitiesChanged
@@ -33,7 +32,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(DevSdkIgnoreRunner::class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 class CSCreateAppSpecificNetworkPermissionTest : CSTest() {
     @Test
     fun testRegisterNetworkAgent() {

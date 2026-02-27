@@ -1844,7 +1844,7 @@ public class VpnTest {
     private static final boolean EXPECT_PASS = false;
     private static final boolean EXPECT_BLOCK = true;
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     public void testBlockIncomingPackets() throws Exception {
         final Network network = mCM.getActiveNetwork();
         assertNotNull("Requires a working Internet connection", network);

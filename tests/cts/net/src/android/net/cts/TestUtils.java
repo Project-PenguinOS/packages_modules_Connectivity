@@ -16,10 +16,7 @@
 
 package android.net.cts;
 
-import android.os.Build;
-
 import com.android.modules.utils.build.SdkLevel;
-import com.android.networkstack.apishim.ConstantsShim;
 
 /**
  * Utils class to provide common shared test helper methods or constants that behave differently
@@ -27,19 +24,11 @@ import com.android.networkstack.apishim.ConstantsShim;
  */
 public class TestUtils {
     /**
-     * Whether to test S+ APIs. This requires a) that the test be running on an S+ device, and
-     * b) that the code be compiled against shims new enough to access these APIs.
-     */
-    public static boolean shouldTestSApis() {
-        return SdkLevel.isAtLeastS() && ConstantsShim.VERSION > Build.VERSION_CODES.R;
-    }
-
-    /**
      * Whether to test T+ APIs. This requires a) that the test be running on an T+ device, and
      * b) that the code be compiled against shims new enough to access these APIs.
      */
     public static boolean shouldTestTApis() {
-        return SdkLevel.isAtLeastT() && ConstantsShim.VERSION > Build.VERSION_CODES.S_V2;
+        return SdkLevel.isAtLeastT();
     }
 
     /**
@@ -47,6 +36,6 @@ public class TestUtils {
      * b) that the code be compiled against shims new enough to access these APIs.
      */
     public static boolean shouldTestUApis() {
-        return SdkLevel.isAtLeastU() && ConstantsShim.VERSION > Build.VERSION_CODES.TIRAMISU;
+        return SdkLevel.isAtLeastU();
     }
 }

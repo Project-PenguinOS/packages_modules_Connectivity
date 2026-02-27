@@ -40,8 +40,6 @@ import android.util.ArrayMap;
 
 import com.android.net.module.util.BpfMap;
 import com.android.net.module.util.SingleWriterBpfMap;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
-import com.android.testutils.DevSdkIgnoreRunner;
 
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -62,8 +60,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 
-@RunWith(DevSdkIgnoreRunner.class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 public final class BpfMapTest {
     // Sync from packages/modules/Connectivity/bpf_progs/offload.c.
     private static final int TEST_MAP_SIZE = 16;

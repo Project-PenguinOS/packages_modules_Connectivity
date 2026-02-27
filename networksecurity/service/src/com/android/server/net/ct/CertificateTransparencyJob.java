@@ -42,6 +42,7 @@ public class CertificateTransparencyJob extends BroadcastReceiver {
     private final Collection<CompatibilityVersion> mCompatVersions;
     private final AlarmManager mAlarmManager;
     private final PendingIntent mPendingIntent;
+    private final IntentFilter mUpdateLogsIntentFilter;
 
     private boolean mScheduled = false;
     private boolean mDependenciesReady = false;
@@ -62,16 +63,15 @@ public class CertificateTransparencyJob extends BroadcastReceiver {
                 PendingIntent.getBroadcast(
                         mContext,
                         /* requestCode= */ 0,
-                        new Intent(ConfigUpdate.ACTION_UPDATE_CT_LOGS),
+                        new Intent(ConfigUpdate.ACTION_UPDATE_CT_LOGS)
+                                .setPackage(mContext.getPackageName()),
                         PendingIntent.FLAG_IMMUTABLE);
+        mUpdateLogsIntentFilter = new IntentFilter(ConfigUpdate.ACTION_UPDATE_CT_LOGS);
     }
 
     void schedule() {
         if (!mScheduled) {
-            mContext.registerReceiver(
-                    this,
-                    new IntentFilter(ConfigUpdate.ACTION_UPDATE_CT_LOGS),
-                    Context.RECEIVER_EXPORTED);
+            mContext.registerReceiver(this, mUpdateLogsIntentFilter, Context.RECEIVER_EXPORTED);
             mAlarmManager.setInexactRepeating(
                     AlarmManager.ELAPSED_REALTIME,
                     SystemClock
@@ -109,7 +109,7 @@ public class CertificateTransparencyJob extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!ConfigUpdate.ACTION_UPDATE_CT_LOGS.equals(intent.getAction())) {
+        if (!mUpdateLogsIntentFilter.hasAction(intent.getAction())) {
             Log.w(TAG, "Received unexpected broadcast with action " + intent);
             return;
         }

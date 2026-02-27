@@ -30,6 +30,7 @@ import android.app.DownloadManager.Query;
 import android.app.DownloadManager.Request;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.database.Cursor;
@@ -89,10 +90,12 @@ public class CertificateTransparencyDownloaderTest {
     private static final long LOG_LIST_TIMESTAMP = 123456789L;
 
     private final CountDownLatch mInstallCompletedLatch = new CountDownLatch(1);
+    private final IntentFilter mInstallCompleteFilter =
+            new IntentFilter(Config.INSTALL_COMPLETE_ACTION);
     private final BroadcastReceiver mInstallCompletedReceiver =
             new BroadcastReceiver() {
                 public void onReceive(Context context, Intent intent) {
-                    if (intent.getAction().equals(Config.INSTALL_COMPLETE_ACTION)) {
+                    if (mInstallCompleteFilter.hasAction(intent.getAction())) {
                         mInstallCompletedLatch.countDown();
                     }
                 }
@@ -107,7 +110,13 @@ public class CertificateTransparencyDownloaderTest {
         mPrivateKey = keyPair.getPrivate();
         mPublicKey = keyPair.getPublic();
 
-        mContext = InstrumentationRegistry.getInstrumentation().getContext();
+        mContext =
+                new ContextWrapper(InstrumentationRegistry.getInstrumentation().getContext()) {
+                    @Override
+                    public void sendBroadcast(Intent intent) {
+                        mInstallCompletedReceiver.onReceive(this, intent);
+                    }
+                };
         mSignatureVerifier = new SignatureVerifier(mContext);
 
         CompatibilityVersion.setRootDirectoryForTesting(mContext.getFilesDir());
@@ -118,7 +127,6 @@ public class CertificateTransparencyDownloaderTest {
                         Config.URL_LOG_LIST_V2);
         mCertificateTransparencyDownloader =
                 new CertificateTransparencyDownloader(
-                        mContext,
                         new DownloadHelper(mDownloadManager),
                         mSignatureVerifier,
                         mLogger,
@@ -126,10 +134,9 @@ public class CertificateTransparencyDownloaderTest {
 
         prepareDownloadManager();
         mSignatureVerifier.addAllowedKey(mPublicKey);
-
         mContext.registerReceiver(
                 mInstallCompletedReceiver,
-                new IntentFilter(Config.INSTALL_COMPLETE_ACTION),
+                mInstallCompleteFilter,
                 Context.RECEIVER_EXPORTED);
     }
 
@@ -375,32 +382,39 @@ public class CertificateTransparencyDownloaderTest {
                 new BroadcastReceiver() {
                     @Override
                     public void onReceive(Context context, Intent intent) {
-                        installTwiceLatch.countDown();
+                        if (mInstallCompleteFilter.hasAction(intent.getAction())) {
+                            installTwiceLatch.countDown();
+                        }
                     }
                 };
-        mContext.registerReceiver(
-                installTwiceReceiver,
-                new IntentFilter(Config.INSTALL_COMPLETE_ACTION),
-                Context.RECEIVER_EXPORTED);
+        Context installTwiceContext =
+                new ContextWrapper(mContext) {
+                    @Override
+                    public void sendBroadcast(Intent intent) {
+                        installTwiceReceiver.onReceive(this, intent);
+                    }
+                };
 
         // 1. Install the log list once.
         mCertificateTransparencyDownloader.startMetadataDownload();
         assertNoVersionIsInstalled();
         mCertificateTransparencyDownloader.onReceive(
-                mContext, makeMetadataDownloadCompleteIntent(mCompatVersion, metadataFile));
+                installTwiceContext,
+                makeMetadataDownloadCompleteIntent(mCompatVersion, metadataFile));
         mCertificateTransparencyDownloader.onReceive(
-                mContext, makeContentDownloadCompleteIntent(mCompatVersion, logListFile));
+                installTwiceContext,
+                makeContentDownloadCompleteIntent(mCompatVersion, logListFile));
         assertInstallSuccessful(newVersion);
 
         // 2. Receiving the same log list does not reinstall but the broadcast is sent.
         mCertificateTransparencyDownloader.onReceive(
-                mContext, makeContentDownloadCompleteIntent(mCompatVersion, logListFile));
+                installTwiceContext,
+                makeContentDownloadCompleteIntent(mCompatVersion, logListFile));
 
         assertTrue(
                 "The test timed out while waiting for the log list download.",
                 installTwiceLatch.await(10, TimeUnit.SECONDS));
         assertInstallSuccessful(newVersion);
-        mContext.unregisterReceiver(installTwiceReceiver);
     }
 
     @Test

@@ -54,7 +54,6 @@ import org.mockito.Mockito.inOrder
 @DevSdkIgnoreRunner.MonitorThreadLeak
 @RunWith(DevSdkIgnoreRunner::class)
 @SmallTest
-@IgnoreUpTo(Build.VERSION_CODES.R)
 class CSShellCommandsTest : CSTest() {
 
     @get:Rule

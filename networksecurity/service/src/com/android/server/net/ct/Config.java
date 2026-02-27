@@ -33,7 +33,6 @@ final class Config {
     static final String FLAG_SERVICE_ENABLED = FLAGS_PREFIX + "service_enabled";
 
     // properties
-    static final String VERSION = "version";
     static final String CONTENT_DOWNLOAD_ID = "content_download_id";
     static final String METADATA_DOWNLOAD_ID = "metadata_download_id";
     static final String PUBLIC_KEY_DOWNLOAD_ID = "public_key_download_id";

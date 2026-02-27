@@ -21,7 +21,6 @@ package com.android.server
 import android.net.ConnectivityManager
 import android.os.Build
 import androidx.test.filters.SmallTest
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -31,7 +30,6 @@ import org.junit.runner.RunWith
 @DevSdkIgnoreRunner.MonitorThreadLeak
 @RunWith(DevSdkIgnoreRunner::class)
 @SmallTest
-@IgnoreUpTo(Build.VERSION_CODES.R)
 class CSBasicMethodsTest : CSTest() {
     @Test
     fun testNetworkTypes() {

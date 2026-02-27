@@ -44,7 +44,6 @@ import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.LinkPropertiesUtils.CompareResult;
 import com.android.testutils.ConnectivityModuleTest;
 import com.android.testutils.DevSdkIgnoreRule;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreAfter;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.filters.CtsNetTestCasesMaxTargetSdk31;
 
@@ -1004,12 +1003,6 @@ public class LinkPropertiesTest {
         return source;
     }
 
-    @Test @IgnoreAfter(Build.VERSION_CODES.Q)
-    public void testLinkPropertiesParcelable_Q() throws Exception {
-        final LinkProperties source = makeLinkPropertiesForParceling();
-        assertParcelingIsLossless(source);
-    }
-
     @Test
     public void testLinkPropertiesParcelable() throws Exception {
         final LinkProperties source = makeLinkPropertiesForParceling();
@@ -1329,7 +1322,7 @@ public class LinkPropertiesTest {
         }
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     @CtsNetTestCasesMaxTargetSdk31(reason = "Testing behaviour for target SDK 31")
     public void testExcludedRoutesNotVisibleOnTargetSdk31() {
         checkExcludeRoutesNotVisibleAfterS();

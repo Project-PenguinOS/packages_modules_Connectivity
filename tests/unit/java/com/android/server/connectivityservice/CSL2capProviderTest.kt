@@ -43,7 +43,6 @@ import android.os.HandlerThread
 import android.os.ParcelFileDescriptor
 import com.android.server.net.L2capNetwork.L2capIpClient
 import com.android.server.net.L2capPacketForwarder
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.TestableNetworkCallback.Event.Lost
@@ -78,7 +77,6 @@ private val REQUEST = NetworkRequest.Builder()
         .build()
 
 @RunWith(DevSdkIgnoreRunner::class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @DevSdkIgnoreRunner.MonitorThreadLeak
 class CSL2capProviderTest : CSTest() {
     private val networkMonitor = mock<INetworkMonitor>()

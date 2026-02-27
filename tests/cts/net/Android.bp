@@ -79,7 +79,6 @@ java_defaults {
         "modules-utils-build",
         "net-tests-utils",
         "net-utils-framework-common",
-        "NetworkStackApiCurrentShims",
         "truth",
         "TetheringIntegrationTestsBaseLib",
     ],

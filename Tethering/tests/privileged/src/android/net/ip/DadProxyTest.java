@@ -41,7 +41,6 @@ import androidx.test.filters.SmallTest;
 
 import com.android.net.module.util.InterfaceParams;
 import com.android.networkstack.tethering.util.TetheringUtils;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.DevSdkIgnoreRunner;
 import com.android.testutils.PollPacketReader;
 import com.android.testutils.TapPacketReaderRule;
@@ -58,7 +57,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 
 @RunWith(DevSdkIgnoreRunner.class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @SmallTest
 public class DadProxyTest {
     private static final int DATA_BUFFER_LEN = 4096;

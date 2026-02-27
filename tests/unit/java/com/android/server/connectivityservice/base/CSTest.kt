@@ -79,7 +79,6 @@ import com.android.modules.utils.build.SdkLevel
 import com.android.net.module.util.ArrayTrackRecord
 import com.android.net.module.util.SharedLog
 import com.android.net.module.util.netlink.NetlinkMessage
-import com.android.networkstack.apishim.common.UnsupportedApiLevelException
 import com.android.server.connectivity.AppOptInDefaultNetworkController
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker

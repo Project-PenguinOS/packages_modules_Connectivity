@@ -58,6 +58,10 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_USE_LOOPBACK_INTERFACE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UID_PERMISSION_MASK;
@@ -2090,6 +2094,18 @@ public class BpfNetMaps {
         }
         if ((permissions & PERMISSION_BIT_NO_INTERNET) == 0) {
             sj.add("PERMISSION_INTERNET");
+        }
+        if ((permissions & PERMISSION_BIT_USE_LOOPBACK_INTERFACE) != 0) {
+            sj.add("PERMISSION_USE_LOOPBACK_INTERFACE");
+        }
+        if ((permissions & PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE) != 0) {
+            sj.add("PERMISSION_FORCE_USE_LOOPBACK_INTERFACE");
+        }
+        if ((permissions & PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL) != 0) {
+            sj.add("PERMISSION_INTERACT_ACROSS_USERS_FULL");
+        }
+        if ((permissions & PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES) != 0) {
+            sj.add("PERMISSION_INTERACT_ACROSS_USERS_OR_PROFILES");
         }
         if (sj.length() == 0) {
             return "PERMISSION_NONE";

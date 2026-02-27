@@ -88,7 +88,6 @@ private fun satelliteNc(restricted: Boolean) = nc(
 @DevSdkIgnoreRunner.MonitorThreadLeak
 @RunWith(DevSdkIgnoreRunner::class)
 @SmallTest
-@IgnoreUpTo(Build.VERSION_CODES.R)
 class CSPreferenceTest : CSTest() {
     @get:Rule
     val ignoreRule = DevSdkIgnoreRule()

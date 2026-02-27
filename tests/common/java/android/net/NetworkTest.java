@@ -174,24 +174,13 @@ public class NetworkTest {
         assertEquals(network.netId, Network.fromNetworkHandle(network.getNetworkHandle()).netId);
     }
 
-    // Parsing private DNS bypassing handle was not supported until S
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
-    public void testFromNetworkHandlePrivateDnsBypass_S() {
+    @Test
+    public void testFromNetworkHandlePrivateDnsBypass() {
         final Network network = new Network(1234, true);
 
         final Network recreatedNetwork = Network.fromNetworkHandle(network.getNetworkHandle());
         assertEquals(network.netId, recreatedNetwork.netId);
         assertEquals(network.getNetIdForResolv(), recreatedNetwork.getNetIdForResolv());
-    }
-
-    @Test @IgnoreAfter(Build.VERSION_CODES.R)
-    public void testFromNetworkHandlePrivateDnsBypass_R() {
-        final Network network = new Network(1234, true);
-
-        final Network recreatedNetwork = Network.fromNetworkHandle(network.getNetworkHandle());
-        assertEquals(network.netId, recreatedNetwork.netId);
-        // Until R included, fromNetworkHandle would not parse the private DNS bypass flag
-        assertEquals(network.netId, recreatedNetwork.getNetIdForResolv());
     }
 
     @Test
@@ -202,8 +191,7 @@ public class NetworkTest {
         assertNotEquals(mNetwork.getNetIdForResolv(), copy.getNetIdForResolv());
     }
 
-    // Connectivity module was not supported until S
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     @ConnectivityModuleTest
     public void testGetNonPrivateDnsBypassingCopy() {
         final Network bypass = mNetwork.getPrivateDnsBypassingCopy();

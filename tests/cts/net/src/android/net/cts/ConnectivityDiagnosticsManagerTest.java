@@ -86,7 +86,6 @@ import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.ArrayTrackRecord;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.HexDump;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.DevSdkIgnoreRunner;
 import com.android.testutils.com.android.testutils.CarrierConfigRule;
 
@@ -107,7 +106,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 @RunWith(DevSdkIgnoreRunner.class)
-@IgnoreUpTo(Build.VERSION_CODES.Q) // ConnectivityDiagnosticsManager did not exist in Q
 @AppModeFull(reason = "CHANGE_NETWORK_STATE, MANAGE_TEST_NETWORKS not grantable to instant apps")
 public class ConnectivityDiagnosticsManagerTest {
     private static final String TAG = ConnectivityDiagnosticsManagerTest.class.getSimpleName();

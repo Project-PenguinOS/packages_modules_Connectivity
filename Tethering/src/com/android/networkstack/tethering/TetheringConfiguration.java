@@ -22,8 +22,8 @@ import static android.net.ConnectivityManager.TYPE_MOBILE;
 import static android.net.ConnectivityManager.TYPE_MOBILE_DUN;
 import static android.net.ConnectivityManager.TYPE_MOBILE_HIPRI;
 import static android.provider.DeviceConfig.NAMESPACE_CONNECTIVITY;
+import static android.telephony.CarrierConfigManager.KEY_CARRIER_SUPPORTS_TETHERING_BOOL;
 
-import static com.android.networkstack.apishim.ConstantsShim.KEY_CARRIER_SUPPORTS_TETHERING_BOOL;
 import static com.android.networkstack.tethering.TetheringFeatureFlags.TETHER_ENABLE_WEAR_TETHERING;
 
 import android.content.ContentResolver;

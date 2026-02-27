@@ -70,7 +70,6 @@ cc_library_headers {
         "-Wall",
         "-Werror",
     ],
-    sdk_version: "30",
     min_sdk_version: "apex_inherit",
     // This header is for internal use within the tethering module.
     // Platform code should use bpf_prog_platform_headers instead.

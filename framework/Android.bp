@@ -63,7 +63,6 @@ java_defaults {
         ":framework-connectivity-sources",
         ":net-utils-framework-common-srcs",
         ":framework-connectivity-api-shared-srcs",
-        ":framework-networksecurity-sources",
         ":statslog-framework-connectivity-java-gen",
     ],
     aidl: {
