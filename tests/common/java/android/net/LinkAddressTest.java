@@ -44,10 +44,7 @@ import androidx.test.filters.SmallTest;
 import androidx.test.runner.AndroidJUnit4;
 
 import com.android.testutils.ConnectivityModuleTest;
-import com.android.testutils.DevSdkIgnoreRule;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -64,8 +61,6 @@ import java.util.List;
 @SmallTest
 @ConnectivityModuleTest
 public class LinkAddressTest {
-    @Rule
-    public final DevSdkIgnoreRule ignoreRule = new DevSdkIgnoreRule();
 
     private static final String V4 = "192.0.2.1";
     private static final String V6 = "2001:db8::1";
@@ -346,13 +341,13 @@ public class LinkAddressTest {
         assertParcelingIsLossless(l);
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.Q)
+    @Test
     public void testLifetimeParceling() {
         final LinkAddress l = new LinkAddress(V6_ADDRESS, 64, 123, 456, 1L, 3600000L);
         assertParcelingIsLossless(l);
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.Q)
+    @Test
     public void testDeprecationTime() {
         try {
             new LinkAddress(V6_ADDRESS, 64, 0, 456,
@@ -376,7 +371,7 @@ public class LinkAddressTest {
         assertEquals(100000L, addr.getDeprecationTime());
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.Q)
+    @Test
     public void testExpirationTime() {
         try {
             new LinkAddress(V6_ADDRESS, 64, 0, 456,
@@ -400,7 +395,7 @@ public class LinkAddressTest {
         assertEquals(123, l.getFlags());
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.Q)
+    @Test
     public void testGetFlags_Deprecation() {
         // Test if deprecated bit was added/remove automatically based on the provided deprecation
         // time
@@ -495,7 +490,7 @@ public class LinkAddressTest {
         assertGlobalPreferred(l, "v6,global,tempaddr+optimistic");
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.Q)
+    @Test
     public void testIsGlobalPreferred_DeprecatedInFuture() {
         final LinkAddress l = new LinkAddress(V6_ADDRESS, 64, IFA_F_DEPRECATED,
                 RT_SCOPE_UNIVERSE, SystemClock.elapsedRealtime() + 100000,

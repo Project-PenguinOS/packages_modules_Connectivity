@@ -101,9 +101,6 @@ android_library {
         "TetheringAndroidLibraryDefaults",
         "TetheringReleaseTargetSdk",
     ],
-    static_libs: [
-        "NetworkStackApiCurrentShims",
-    ],
     apex_available: ["com.android.tethering"],
     lint: {
         baseline_filename: "lint-baseline.xml",
@@ -115,9 +112,6 @@ android_library {
     defaults: [
         "TetheringAndroidLibraryDefaults",
         "TetheringReleaseTargetSdk",
-    ],
-    static_libs: [
-        "NetworkStackApiStableShims",
     ],
     apex_available: ["com.android.tethering"],
     lint: {

@@ -33,7 +33,6 @@ import com.android.net.module.util.SkDestroyListener
 import com.android.net.module.util.netlink.InetDiagMessage
 import com.android.net.module.util.netlink.StructInetDiagSockId
 import com.android.net.module.util.netlink.StructNlMsgHdr
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.visibleOnHandlerThread
 import java.net.InetSocketAddress
@@ -79,7 +78,6 @@ private val TEST_NETWORK = Network(TEST_NETID)
 private val TEST_PAYLOAD = byteArrayOf(0, 1, 2, 3, 4, 5)
 
 @RunWith(DevSdkIgnoreRunner::class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 class QuicConnectionCloserTest {
     private val pfd = mock(ParcelFileDescriptor::class.java)
     private val skDestroyListener = mock(SkDestroyListener::class.java)

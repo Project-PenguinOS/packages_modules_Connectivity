@@ -402,7 +402,6 @@ import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.LocationPermissionChecker;
 import com.android.net.module.util.NetworkMonitorUtils;
 import com.android.net.module.util.SdkUtil;
-import com.android.networkstack.apishim.ConstantsShim;
 import com.android.server.ConnectivityService.NetworkRequestInfo;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.DestroySocketsWrapper;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.ReportedInterfaces;
@@ -758,7 +757,7 @@ public class ConnectivityServiceTest {
         public ComponentName startService(Intent service) {
             final String action = service.getAction();
             if (!VpnConfig.SERVICE_INTERFACE.equals(action)
-                    && !ConstantsShim.ACTION_VPN_MANAGER_EVENT.equals(action)) {
+                    && !VpnManager.ACTION_VPN_MANAGER_EVENT.equals(action)) {
                 fail("Attempt to start unknown service, action=" + action);
             }
             return new ComponentName(service.getPackage(), "com.android.test.Service");
@@ -7002,18 +7001,18 @@ public class ConnectivityServiceTest {
             throws PackageManager.NameNotFoundException {
         if (networkSliceResourceId == 0) {
             doThrow(new PackageManager.NameNotFoundException()).when(mPackageManager).getProperty(
-                    ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                    PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                     mContext.getPackageName());
         } else {
             final PackageManager.Property property = new PackageManager.Property(
-                    ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                    PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                     networkSliceResourceId,
                     true /* isResource */,
                     mContext.getPackageName(),
                     "dummyClass"
             );
             doReturn(property).when(mPackageManager).getProperty(
-                    ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                    PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                     mContext.getPackageName());
             doReturn(mContext.getResources()).when(mPackageManager).getResourcesForApplication(
                     mContext.getPackageName());
@@ -7072,7 +7071,7 @@ public class ConnectivityServiceTest {
         final Exception e = assertThrows(SecurityException.class,
                 () -> mCm.requestNetwork(networkRequest, cb));
         assertThat(e.getMessage(),
-                containsString(ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES));
+                containsString(PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES));
     }
 
     @Test
@@ -7118,7 +7117,7 @@ public class ConnectivityServiceTest {
 
         // PackageManager's API only called once because the second call is using cache.
         verify(mPackageManager, times(1)).getProperty(
-                ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                 mContext.getPackageName());
         verify(mPackageManager, times(1)).getResourcesForApplication(
                 mContext.getPackageName());

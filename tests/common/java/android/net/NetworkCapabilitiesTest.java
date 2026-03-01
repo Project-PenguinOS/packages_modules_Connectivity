@@ -119,7 +119,6 @@ import java.util.Set;
 // NetworkCapabilities is only updatable on S+, and this test covers behavior which implementation
 // is self-contained within NetworkCapabilities.java, so it does not need to be run on, or
 // compatible with, earlier releases.
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @ConnectivityModuleTest
 public class NetworkCapabilitiesTest {
     private static final String TEST_SSID = "TEST_SSID";

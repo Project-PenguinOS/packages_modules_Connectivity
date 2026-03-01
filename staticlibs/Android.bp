@@ -54,7 +54,6 @@ java_library {
     ],
     sdk_version: "module_current",
     min_sdk_version: "31",
-    target_sdk_version: "30",
     apex_available: [
         "//apex_available:anyapex",
         "//apex_available:platform",
@@ -95,7 +94,6 @@ java_library {
     ],
     sdk_version: "module_current",
     min_sdk_version: "31",
-    target_sdk_version: "30",
     visibility: [
         "//packages/modules/Connectivity/tests:__subpackages__",
         "//packages/modules/NetworkStack:__subpackages__",
@@ -653,7 +651,7 @@ filegroup {
 java_library {
     name: "net-utils-framework-ipsec",
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     srcs: [":net-utils-framework-ipsec-common-srcs"],
     libs: [
         "androidx.annotation_annotation",

@@ -26,7 +26,6 @@ import android.net.NetworkCapabilities.TRANSPORT_WIFI
 import android.net.ProxyInfo
 import android.net.Uri
 import android.os.Build
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -45,7 +44,6 @@ private const val TIMEOUT_MS = 250L
 private fun lp(proxy: ProxyInfo) = LinkProperties().apply { httpProxy = proxy }
 
 @RunWith(DevSdkIgnoreRunner::class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @DevSdkIgnoreRunner.MonitorThreadLeak
 class ConnectivityServiceProxyTrackerTest : CSTest() {
 

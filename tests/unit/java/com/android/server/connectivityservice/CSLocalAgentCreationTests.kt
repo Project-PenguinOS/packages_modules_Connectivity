@@ -26,7 +26,6 @@ import android.net.NetworkRequest
 import android.net.VpnManager
 import android.os.Build
 import androidx.test.filters.SmallTest
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.TestableNetworkCallback.Event.Available
@@ -46,7 +45,6 @@ private const val NO_CALLBACK_TIMEOUT_MS = 200L
 @DevSdkIgnoreRunner.MonitorThreadLeak
 @RunWith(DevSdkIgnoreRunner::class)
 @SmallTest
-@IgnoreUpTo(Build.VERSION_CODES.R)
 class CSLocalAgentCreationTests : CSTest() {
     @Parameterized.Parameter(0) lateinit var params: TestParams
 

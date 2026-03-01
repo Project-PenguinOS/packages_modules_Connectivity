@@ -32,7 +32,7 @@ cc_library_static {
         "-Werror",
         "-Wno-unused-parameter",
     ],
-    sdk_version: "30",
+    sdk_version: "31",
     min_sdk_version: "apex_inherit",
     apex_available: [
         "//apex_available:anyapex",

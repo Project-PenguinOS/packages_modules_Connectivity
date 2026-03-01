@@ -28,7 +28,6 @@ import android.net.connectivity.ConnectivityCompatChanges.NETWORK_BLOCKED_WITHOU
 import android.os.Build
 import android.os.Process
 import androidx.test.filters.SmallTest
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.TestableNetworkOfferCallback
@@ -52,7 +51,6 @@ private fun cellRequest() = NetworkRequest.Builder()
 
 @RunWith(DevSdkIgnoreRunner::class)
 @SmallTest
-@IgnoreUpTo(Build.VERSION_CODES.R)
 class CSEnforceMeteredApnPolicy : CSTest() {
     @Parameterized.Parameter(0) lateinit var params: TestParams
 

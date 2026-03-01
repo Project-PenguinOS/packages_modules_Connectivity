@@ -3,17 +3,6 @@
 
     <issue
         id="NewApi"
-        message="Class requires API level 31 (current min is 30): `android.os.OutcomeReceiver`"
-        errorLine1="                new OutcomeReceiver&lt;Void, ThreadNetworkException&gt;() {"
-        errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="packages/modules/Connectivity/thread/service/java/com/android/server/thread/ThreadNetworkFactory.java"
-            line="111"
-            column="21"/>
-    </issue>
-
-    <issue
-        id="NewApi"
         message="Call requires API level 35 (current min is 30): `java.util.SequencedCollection#getLast`"
         errorLine1="        NetworkRequest lastRequest = mActiveRequests.getLast();"
         errorLine2="                                                     ~~~~~~~">

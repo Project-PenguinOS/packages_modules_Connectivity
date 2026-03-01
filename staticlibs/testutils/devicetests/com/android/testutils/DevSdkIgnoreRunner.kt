@@ -53,7 +53,7 @@ import org.mockito.Mockito
  * Example usage:
  *
  *     @RunWith(DevSdkIgnoreRunner::class)
- *     @IgnoreUpTo(Build.VERSION_CODES.Q)
+ *     @IgnoreUpTo(Build.VERSION_CODES.S)
  *     class MyTestClass { ... }
  */
 class DevSdkIgnoreRunner(private val klass: Class<*>) : Runner(), Filterable, Sortable {

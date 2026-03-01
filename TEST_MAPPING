@@ -270,166 +270,14 @@
       "name": "NetworkStaticLibHostPythonTests"
     }
   ],
-  "mainline-presubmit": [
-    {
-      "name": "CtsNetTestCases[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",
-      "options": [
-        {
-          "exclude-annotation": "com.android.testutils.SkipPresubmit"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.SkipMainlinePresubmit"
-        },
-        {
-          "exclude-annotation": "androidx.test.filters.RequiresDevice"
-        }
-      ]
-    },
-    {
-      "name": "CtsNetTestCasesMaxTargetSdk30[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",
-      "options": [
-        {
-          "exclude-annotation": "com.android.testutils.SkipPresubmit"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.SkipMainlinePresubmit"
-        },
-        {
-          "exclude-annotation": "androidx.test.filters.RequiresDevice"
-        }
-      ]
-    },
-    {
-      "name": "CtsNetTestCasesMaxTargetSdk31[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",
-      "options": [
-        {
-          "exclude-annotation": "com.android.testutils.SkipPresubmit"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.SkipMainlinePresubmit"
-        },
-        {
-          "exclude-annotation": "androidx.test.filters.RequiresDevice"
-        }
-      ]
-    },
-    {
-      "name": "CtsNetTestCasesMaxTargetSdk33[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",
-      "options": [
-        {
-          "exclude-annotation": "com.android.testutils.SkipPresubmit"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.SkipMainlinePresubmit"
-        },
-        {
-          "exclude-annotation": "androidx.test.filters.RequiresDevice"
-        }
-      ]
-    },
-    // Test with APK modules only, in cases where APEX is not supported, or the other modules
-    // were simply not updated
-    {
-      "name": "CtsNetTestCases[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk]",
-      "options": [
-        {
-          "exclude-annotation": "com.android.testutils.SkipPresubmit"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.SkipMainlinePresubmit"
-        },
-        {
-          "exclude-annotation": "androidx.test.filters.RequiresDevice"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.ConnectivityModuleTest"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.DnsResolverModuleTest"
-        }
-      ]
-    },
-    // Test with connectivity/tethering module only, to catch integration issues with older versions
-    // of other modules. "new tethering + old NetworkStack" is not a configuration that should
-    // really exist in the field, but there is no strong guarantee, and it is required by MTS
-    // testing for module qualification, where modules are tested independently.
-    {
-      "name": "CtsNetTestCases[com.google.android.tethering.apex]",
-      "options": [
-        {
-          "exclude-annotation": "com.android.testutils.SkipPresubmit"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.SkipMainlinePresubmit"
-        },
-        {
-          "exclude-annotation": "androidx.test.filters.RequiresDevice"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.DnsResolverModuleTest"
-        },
-        {
-          "exclude-annotation": "com.android.testutils.NetworkStackModuleTest"
-        }
-      ]
-    },
-    {
-      "name": "bpf_existence_test[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]"
-    },
-    {
-      "name": "connectivity_native_test[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]"
-    },
-    {
-      "name": "netd_updatable_unit_test[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]"
-    },
-    {
-      "name": "ConnectivityCoverageTests[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",
-      "options": [
-        {
-          "exclude-annotation": "com.android.testutils.SkipPresubmit"
-        }
-      ]
-    },
-    {
-      "name": "libnetworkstats_test[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]"
-    },
-    {
-      "name": "CtsTetheringTest[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",
-      "options": [
-        {
-          "exclude-annotation": "com.android.testutils.NetworkStackModuleTest"
-        }
-      ]
-    }
-  ],
-  "mainline-postsubmit": [
-    // Tests on physical devices with SIM cards: postsubmit only for capacity constraints
-    {
-      "name": "CtsNetTestCases[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",
-      "keywords": ["sim"]
-    },
-    {
-      "name": "CtsTetheringTest[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",
-      "keywords": ["sim"],
-      "options": [
-        {
-          "exclude-annotation": "com.android.testutils.NetworkStackModuleTest"
-        }
-      ]
-    },
-    // Postsubmit on virtual devices to monitor flakiness of @SkipMainlinePresubmit methods
-    {
-      "name": "CtsNetTestCases[CaptivePortalLoginGoogle.apk+NetworkStackGoogle.apk+com.google.android.resolv.apex+com.google.android.tethering.apex]",
-      "options": [
-        {
-          "exclude-annotation": "androidx.test.filters.RequiresDevice"
-        }
-      ]
-    }
-  ],
   "automotive-mumd-presubmit": [
     {
-      "name": "CtsNetTestCases"
+      "name": "CtsNetTestCases",
+      "options": [
+        {
+          "exclude-annotation": "androidx.test.filters.RequiresDevice"
+        }
+      ]
     },
     {
       "name": "CtsNetTestCasesUpdateStatsPermission"
@@ -437,7 +285,12 @@
   ],
   "hsum-presubmit": [
     {
-      "name": "CtsNetTestCases"
+      "name": "CtsNetTestCases",
+      "options": [
+        {
+          "exclude-annotation": "androidx.test.filters.RequiresDevice"
+        }
+      ]
     },
     {
       "name": "CtsNativeNetDnsTestCases"
@@ -454,7 +307,12 @@
   ],
   "tv-presubmit": [
     {
-      "name": "CtsNetTestCases"
+      "name": "CtsNetTestCases",
+      "options": [
+        {
+          "exclude-annotation": "androidx.test.filters.RequiresDevice"
+        }
+      ]
     },
     {
       "name": "CtsNativeNetDnsTestCases"

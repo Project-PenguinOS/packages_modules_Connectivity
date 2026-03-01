@@ -22,7 +22,6 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.connectivity.ConnectivityCompatChanges.ENABLE_SELF_CERTIFIED_CAPABILITIES_DECLARATION
 import com.android.connectivity.tests.lib.R
-import com.android.networkstack.apishim.ConstantsShim
 import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabilities
 import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.assertThrows
@@ -41,19 +40,19 @@ class CSSelfCertifiedNetworkCapabilitiesTest : CSTest() {
         if (networkSliceResourceId == 0) {
             doThrow(PackageManager.NameNotFoundException())
                     .`when`(packageManager)
-                    .getProperty(ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                    .getProperty(PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                             context.packageName)
         } else {
             val property =
                     PackageManager.Property(
-                            ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                            PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                             networkSliceResourceId,
                             true /* isResource */,
                             context.packageName,
                             "dummyClass"
                     )
             doReturn(property).`when`(packageManager).getProperty(
-                    ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                    PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                     context.packageName
             )
         }

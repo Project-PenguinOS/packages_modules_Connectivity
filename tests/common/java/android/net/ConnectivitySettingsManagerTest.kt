@@ -113,7 +113,6 @@ import org.junit.runner.RunWith
  * atest android.net.ConnectivitySettingsManagerTest
  */
 @RunWith(DevSdkIgnoreRunner::class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @SmallTest
 @AppModeFull(reason = "WRITE_SECURE_SETTINGS permission can't be granted to instant apps")
 class ConnectivitySettingsManagerTest {

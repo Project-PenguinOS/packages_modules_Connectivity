@@ -25,7 +25,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SmallTest
 import androidx.test.platform.app.InstrumentationRegistry
 import com.android.testutils.DevSdkIgnoreRule
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -74,7 +73,7 @@ class ProxyTest {
                 .getDefaultProxy()
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R) // setHttpProxyConfiguration was added in S
+    @Test  // setHttpProxyConfiguration was added in S
     fun testSetHttpProxyConfiguration_DirectProxy() {
         val info = ProxyInfo.buildDirectProxy(
                 "testproxy.android.com",
@@ -89,7 +88,7 @@ class ProxyTest {
         }
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R) // setHttpProxyConfiguration was added in S
+    @Test  // setHttpProxyConfiguration was added in S
     fun testSetHttpProxyConfiguration_PacProxy() {
         val pacInfo = ProxyInfo.buildPacProxy(Uri.parse("http://testpac.android.com/pac.pac"))
         val original = getDefaultProxy()

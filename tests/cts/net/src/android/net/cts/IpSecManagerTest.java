@@ -860,7 +860,6 @@ public class IpSecManagerTest extends IpSecBaseTest {
     //     checkTransform(IPPROTO_TCP, IPV4_LOOPBACK, crypt, auth, true, 1000);
     // }
 
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     @Test
     public void testGetSupportedAlgorithms() throws Exception {
         final Map<String, Integer> algoToRequiredMinSdk = new HashMap<>();

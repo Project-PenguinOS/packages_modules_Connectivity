@@ -305,6 +305,7 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.ConditionVariable;
+import android.os.ConfigUpdate;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -391,7 +392,6 @@ import com.android.net.module.util.netlink.NetlinkMessage;
 import com.android.net.module.util.netlink.NetlinkUtils;
 import com.android.net.module.util.netlink.RtNetlinkAddressMessage;
 import com.android.net.module.util.netlink.StructIfaddrMsg;
-import com.android.networkstack.apishim.ConstantsShim;
 import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy;
 import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabilities;
@@ -2122,8 +2122,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
          * The flag value can change at runtime via a server push.
          */
         public boolean shouldBluetoothTetheringUseRandomAddress() {
-            return SdkLevel.isAtLeastT() &&
-                    com.android.tethering.mainline.beta.Flags.bluetoothTetheringRandomizedAddress();
+            return SdkLevel.isAtLeastT();
         }
 
         /**
@@ -9417,7 +9416,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                             mContext.createContextAsUser(UserHandle.getUserHandleForUid(
                                     callingUid), 0 /* flags */).getPackageManager();
                     final PackageManager.Property networkSliceProperty = packageManager.getProperty(
-                            ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                            PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                             callerPackageName
                     );
                     final XmlResourceParser parser = packageManager
@@ -9432,7 +9431,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             }
         } catch (PackageManager.NameNotFoundException ne) {
             throw new SecurityException(
-                    "Cannot find " + ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES
+                    "Cannot find " + PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES
                             + " property");
         } catch (XmlPullParserException | IOException | InvalidTagException e) {
             throw new SecurityException(e.getMessage());
@@ -13964,6 +13963,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
                         }
                         return 0;
                     }
+                    case "log-list-update":
+                        mContext.sendBroadcast(
+                                new Intent(ConfigUpdate.ACTION_UPDATE_CT_LOGS)
+                                        .setPackage(mContext.getPackageName()));
+                        return 0;
                     case "reevaluate":
                         // Usage : adb shell cmd connectivity reevaluate <netId>
                         // If netId is omitted, then reevaluate the default network
@@ -14046,6 +14050,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
             pw.println("    Set the allow bit in FIREWALL_CHAIN_BACKGROUND for the given uid.");
             pw.println("  get-background-networking-enabled-for-uid [uid]");
             pw.println("    Get the allow bit in FIREWALL_CHAIN_BACKGROUND for the given uid.");
+            pw.println("  log-list-update");
+            pw.println("    Triggers an update of the CT log list.");
             if (Build.isDebuggable()) {
                 pw.println("  set-debug-fallback-network-for-uid [uid] [transport]");
                 pw.println("    Sets [uid] to use [transport] as its default network when there is"

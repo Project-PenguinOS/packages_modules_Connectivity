@@ -91,6 +91,9 @@ public class DnsHttpsRecord extends DnsRecord {
     @VisibleForTesting(visibility = PACKAGE)
     public static final String DEFAULT_HTTPS_ALPN_ID = "http/1.1";
 
+    @VisibleForTesting(visibility = PACKAGE)
+    public static final int ALIAS_MODE_PRIORITY = 0;
+
     public DnsHttpsRecord(@DnsPacket.RecordType int rType, @NonNull ByteBuffer buff)
             throws IllegalStateException, ParseException, BufferUnderflowException {
         super(rType, buff);
@@ -118,6 +121,13 @@ public class DnsHttpsRecord extends DnsRecord {
             throw new ParseException(
                     "Failed to parse HTTPS target name, name size is too long: "
                             + mTargetName.length());
+        }
+
+        // According to RFC 9460 2.4.2, in AliasMode, recipients MUST ignore any SvcParams that are
+        // present.
+        if (mSvcPriority == ALIAS_MODE_PRIORITY) {
+            // Skip processing any SvcParams if the record is in AliasMode.
+            return;
         }
 
         // Start here as 0 is a valid SvcParamKey value

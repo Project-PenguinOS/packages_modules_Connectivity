@@ -46,17 +46,28 @@ import static android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK;
 import static android.net.connectivity.ConnectivityCompatChanges.RESTRICT_LOCAL_NETWORK;
 import static android.os.Process.SYSTEM_UID;
 import static android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED;
+import static android.permission.flags.Flags.FLAG_USE_LOOPBACK_INTERFACE_PERMISSION_ENABLED;
 import static android.permission.PermissionManager.PERMISSION_GRANTED;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_USE_LOOPBACK_INTERFACE;
 import static com.android.server.connectivity.ConnectivityFlags.USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR;
 import static com.android.server.connectivity.PermissionMonitor.isHigherNetworkPermission;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_FORCE_USE_LOOPBACK_INTERFACE;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_PROFILES;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_INTERNET;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_UPDATE_DEVICE_STATS;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS_FULL;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSIONS;
 import static com.android.testutils.TestPermissionUtil.runAsShell;
 import static com.android.tethering.flags.Flags.FLAG_PERMISSION_MAP_UID_MIGRATION;
@@ -260,6 +271,9 @@ public class PermissionMonitorTest {
         doAnswer(invocation -> mFeatureFlags.getOrDefault(
                         FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, false))
                 .when(mBpfNetMaps).isPermissionPropagationEnabled();
+        doAnswer(invocation -> mFeatureFlags.getOrDefault(
+                        FLAG_USE_LOOPBACK_INTERFACE_PERMISSION_ENABLED, false))
+                .when(mDeps).isLoopbackPermissionEnabled();
         // BPF maps for local network restrictions are only supported on B+
         doReturn(isAtLeastB()).when(mDeps).isAccessLocalNetworkPermissionEnabled();
 
@@ -2109,6 +2123,89 @@ public class PermissionMonitorTest {
             int sdkSandboxAppId = Process.toSdkSandboxUid(MOCK_APPID1);
             verify(mBpfNetMaps).removePermissionsForAppId(sdkSandboxAppId);
         }
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    public void testSetUidsPermissionBits_loopbackPermissionDisabled() throws RemoteException {
+        LocalPermissionBpfMap permissionBpfMap = verifyAndCapturePermissionBpfMap();
+        SparseIntArray permsToSet = new SparseIntArray();
+        permsToSet.put(MOCK_UID11, PERMISSION_BPF_MAP_BIT_INTERNET
+                | PERMISSION_BPF_MAP_BIT_FORCE_USE_LOOPBACK_INTERFACE);
+        permsToSet.put(MOCK_UID12, PERMISSION_BPF_MAP_BIT_INTERNET
+                | PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS_FULL);
+        permsToSet.put(MOCK_UID13, PERMISSION_BPF_MAP_BIT_INTERNET
+                | PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_PROFILES);
+        permsToSet.put(MOCK_UID14, PERMISSION_BPF_MAP_BIT_INTERNET
+                | PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS);
+
+        permissionBpfMap.setUidsPermissionBits(permsToSet);
+
+        SparseIntArray actual = verifySetChunkPermListForUidsAndCaptureInput();
+        SparseIntArray expected = new SparseIntArray();
+        expected.put(MOCK_UID11, PERMISSION_BIT_NONE);
+        expected.put(Process.toSdkSandboxUid(MOCK_UID11), PERMISSION_BIT_NONE);
+        expected.put(MOCK_UID12, PERMISSION_BIT_NONE);
+        expected.put(Process.toSdkSandboxUid(MOCK_UID12), PERMISSION_BIT_NONE);
+        expected.put(MOCK_UID13, PERMISSION_BIT_NONE);
+        expected.put(Process.toSdkSandboxUid(MOCK_UID13), PERMISSION_BIT_NONE);
+        expected.put(MOCK_UID14, PERMISSION_BIT_NONE);
+        expected.put(Process.toSdkSandboxUid(MOCK_UID14), PERMISSION_BIT_NONE);
+
+        assertSameSparseIntArray(expected, actual);
+        verify(mDeps).logPermissionChangeListenerLatency(anyInt());
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @FeatureFlag(name = FLAG_USE_LOOPBACK_INTERFACE_PERMISSION_ENABLED, enabled = true)
+    public void testSetUidsPermissionBits_loopbackPermissionEnabled() throws RemoteException {
+        LocalPermissionBpfMap permissionBpfMap = verifyAndCapturePermissionBpfMap();
+        SparseIntArray permsToSet = new SparseIntArray();
+        permsToSet.put(MOCK_UID11, PERMISSION_BPF_MAP_BIT_INTERNET
+                | PERMISSION_BPF_MAP_BIT_FORCE_USE_LOOPBACK_INTERFACE);
+        permsToSet.put(MOCK_UID12, PERMISSION_BPF_MAP_BIT_INTERNET
+                | PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS_FULL);
+        permsToSet.put(MOCK_UID13, PERMISSION_BPF_MAP_BIT_INTERNET
+                | PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_PROFILES);
+        permsToSet.put(MOCK_UID14, PERMISSION_BPF_MAP_BIT_INTERNET
+                | PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS);
+
+        permissionBpfMap.setUidsPermissionBits(permsToSet);
+
+        SparseIntArray actual = verifySetChunkPermListForUidsAndCaptureInput();
+        SparseIntArray expected = new SparseIntArray();
+        expected.put(MOCK_UID11, PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE);
+        expected.put(Process.toSdkSandboxUid(MOCK_UID11),
+                PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE);
+        expected.put(MOCK_UID12, PERMISSION_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL);
+        expected.put(Process.toSdkSandboxUid(MOCK_UID12),
+                PERMISSION_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL);
+        expected.put(MOCK_UID13, PERMISSION_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES);
+        expected.put(Process.toSdkSandboxUid(MOCK_UID13),
+                PERMISSION_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES);
+        expected.put(MOCK_UID14, PERMISSION_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES);
+        expected.put(Process.toSdkSandboxUid(MOCK_UID14),
+                PERMISSION_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES);
+
+        assertSameSparseIntArray(expected, actual);
+        verify(mDeps).logPermissionChangeListenerLatency(anyInt());
     }
 
     private void assertSameSparseIntArray(SparseIntArray expected, SparseIntArray actual) {

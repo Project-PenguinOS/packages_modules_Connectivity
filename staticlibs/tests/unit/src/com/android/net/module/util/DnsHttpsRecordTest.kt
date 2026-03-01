@@ -137,6 +137,23 @@ class DnsHttpsRecordTest {
         assertEquals(1234, record.priority)
     }
 
+    // Special scenario, see RFC 9460 2.4.2.
+    @Test
+    fun getPriority_whenAliasMode_returnsNoSvcParamsEvenIfPresent() {
+        val record = DnsHttpsRecord(
+            DnsPacket.ANSECTION,
+            DnsSvcbTestUtils.toByteBuffer(FakeDnsRecord(
+                svcPriority = DnsHttpsRecord.ALIAS_MODE_PRIORITY.toShort(),
+                svcParams = listOf(
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_DOQ,
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_NO_DEFAULT_ALPN)))
+        )
+
+        assertEquals(DnsHttpsRecord.ALIAS_MODE_PRIORITY, record.priority)
+        // Verify that the SvcParams are ignored in AliasMode.
+        assertTrue(record.alpnIds.isEmpty())
+    }
+
     // Special scenario, see RFC 9460 2.5
     @Test
     fun getTargetName_whenEmptyString_returnsPeriod() {

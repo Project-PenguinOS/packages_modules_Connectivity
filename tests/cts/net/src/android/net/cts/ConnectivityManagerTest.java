@@ -28,6 +28,8 @@ import static android.Manifest.permission.NETWORK_SETUP_WIZARD;
 import static android.Manifest.permission.NETWORK_STACK;
 import static android.Manifest.permission.READ_DEVICE_CONFIG;
 import static android.Manifest.permission.TETHER_PRIVILEGED;
+import static android.content.Context.RECEIVER_EXPORTED;
+import static android.content.Context.RECEIVER_NOT_EXPORTED;
 import static android.content.pm.PackageManager.FEATURE_BLUETOOTH;
 import static android.content.pm.PackageManager.FEATURE_ETHERNET;
 import static android.content.pm.PackageManager.FEATURE_TELEPHONY;
@@ -43,7 +45,9 @@ import static android.net.ConnectivityManager.BLOCKED_REASON_APP_BACKGROUND;
 import static android.net.ConnectivityManager.BLOCKED_REASON_APP_STANDBY;
 import static android.net.ConnectivityManager.BLOCKED_REASON_BATTERY_SAVER;
 import static android.net.ConnectivityManager.BLOCKED_REASON_DOZE;
+import static android.net.ConnectivityManager.BLOCKED_REASON_LOCKDOWN_VPN;
 import static android.net.ConnectivityManager.BLOCKED_REASON_LOW_POWER_STANDBY;
+import static android.net.ConnectivityManager.BLOCKED_REASON_NONE;
 import static android.net.ConnectivityManager.BLOCKED_REASON_OEM_DENY;
 import static android.net.ConnectivityManager.BLOCKED_REASON_RESTRICTED_MODE;
 import static android.net.ConnectivityManager.EXTRA_NETWORK;
@@ -114,10 +118,6 @@ import static com.android.compatibility.common.util.SystemUtil.runWithShellPermi
 import static com.android.modules.utils.build.SdkLevel.isAtLeastS;
 import static com.android.net.module.util.NetworkStackConstants.TEST_CAPTIVE_PORTAL_HTTPS_URL;
 import static com.android.net.module.util.NetworkStackConstants.TEST_CAPTIVE_PORTAL_HTTP_URL;
-import static com.android.networkstack.apishim.ConstantsShim.BLOCKED_REASON_LOCKDOWN_VPN;
-import static com.android.networkstack.apishim.ConstantsShim.BLOCKED_REASON_NONE;
-import static com.android.networkstack.apishim.ConstantsShim.RECEIVER_EXPORTED;
-import static com.android.networkstack.apishim.ConstantsShim.RECEIVER_NOT_EXPORTED;
 import static com.android.testutils.Cleanup.testAndCleanup;
 import static com.android.testutils.MiscAsserts.assertEventuallyTrue;
 import static com.android.testutils.MiscAsserts.assertThrows;
@@ -463,11 +463,9 @@ public class ConnectivityManagerTest {
 
     @After
     public void tearDown() throws Exception {
-        if (TestUtils.shouldTestSApis()) {
-            runWithShellPermissionIdentity(
-                    () -> mCm.setRequireVpnForUids(false, mVpnRequiredUidRanges),
-                    NETWORK_SETTINGS);
-        }
+        runWithShellPermissionIdentity(
+                () -> mCm.setRequireVpnForUids(false, mVpnRequiredUidRanges),
+                NETWORK_SETTINGS);
 
         // All tests in this class require a working Internet connection as they start. Make
         // sure there is still one as they end that's ready to use for the next test to use.
@@ -1134,7 +1132,7 @@ public class ConnectivityManagerTest {
     }
 
     @AppModeFull(reason = "WRITE_SECURE_SETTINGS permission can't be granted to instant apps")
-    @Test @IgnoreUpTo(Build.VERSION_CODES.Q)
+    @Test
     public void testIsPrivateDnsBroken() throws Exception {
         final String invalidPrivateDnsServer = "invalidhostname.example.com";
         final String goodPrivateDnsServer = "dns.google";
@@ -1189,18 +1187,16 @@ public class ConnectivityManagerTest {
         final TestableNetworkCallback perUidCallback = new TestableNetworkCallback();
         final TestableNetworkCallback bestMatchingCallback = new TestableNetworkCallback();
         final Handler h = new Handler(Looper.getMainLooper());
-        if (TestUtils.shouldTestSApis()) {
-            assertThrows(SecurityException.class, () ->
-                    networkCallbackRule.registerSystemDefaultNetworkCallback(
-                            systemDefaultCallback, h));
-            runWithShellPermissionIdentity(() -> {
-                networkCallbackRule.registerSystemDefaultNetworkCallback(systemDefaultCallback, h);
-                networkCallbackRule.registerDefaultNetworkCallbackForUid(Process.myUid(),
-                        perUidCallback, h);
-            }, NETWORK_SETTINGS);
-            networkCallbackRule.registerBestMatchingNetworkCallback(
-                    makeDefaultRequest(), bestMatchingCallback, h);
-        }
+        assertThrows(SecurityException.class, () ->
+                networkCallbackRule.registerSystemDefaultNetworkCallback(
+                        systemDefaultCallback, h));
+        runWithShellPermissionIdentity(() -> {
+            networkCallbackRule.registerSystemDefaultNetworkCallback(systemDefaultCallback, h);
+            networkCallbackRule.registerDefaultNetworkCallbackForUid(Process.myUid(),
+                    perUidCallback, h);
+        }, NETWORK_SETTINGS);
+        networkCallbackRule.registerBestMatchingNetworkCallback(
+                makeDefaultRequest(), bestMatchingCallback, h);
 
         Network wifiNetwork = null;
         mCtsNetUtils.ensureWifiConnected();
@@ -1217,19 +1213,16 @@ public class ConnectivityManagerTest {
         assertNotNull("Did not receive onAvailable on default network callback",
                 defaultNetwork);
 
-        if (TestUtils.shouldTestSApis()) {
-            systemDefaultCallback.eventuallyExpect(Event.AVAILABLE);
-            final Network perUidNetwork = perUidCallback.eventuallyExpect(Event.AVAILABLE)
-                    .getNetwork();
-            assertEquals(defaultNetwork, perUidNetwork);
-            final Network bestMatchingNetwork = bestMatchingCallback.eventuallyExpect(
-                    Event.AVAILABLE).getNetwork();
-            assertEquals(defaultNetwork, bestMatchingNetwork);
-        }
+        systemDefaultCallback.eventuallyExpect(Event.AVAILABLE);
+        final Network perUidNetwork = perUidCallback.eventuallyExpect(Event.AVAILABLE)
+                .getNetwork();
+        assertEquals(defaultNetwork, perUidNetwork);
+        final Network bestMatchingNetwork = bestMatchingCallback.eventuallyExpect(
+                Event.AVAILABLE).getNetwork();
+        assertEquals(defaultNetwork, bestMatchingNetwork);
     }
 
     @ConnectivityModuleTest
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     @Test
     public void testRegisterSystemDefaultNetworkCallbackPermission() {
         final Handler h = new Handler(Looper.getMainLooper());
@@ -1294,7 +1287,6 @@ public class ConnectivityManagerTest {
     @Test
     // Running this test without aosp/3482151 will likely crash the device.
     @ConnectivityModuleTest
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testRegisterNetworkCallback_pendingIntent_classNotFound() {
         final Intent intent = new Intent()
                 .setClassName(mContext.getPackageName(), "NonExistent");
@@ -2289,7 +2281,6 @@ public class ConnectivityManagerTest {
      */
     @AppModeFull(reason = "Cannot get WifiManager in instant app mode")
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.Q)
     public void testRestrictedNetworkPermission() throws Exception {
         // Ensure that CONNECTIVITY_USE_RESTRICTED_NETWORKS isn't granted to this package.
         final PackageInfo app = mPackageManager.getPackageInfo(mContext.getPackageName(),
@@ -2527,10 +2518,6 @@ public class ConnectivityManagerTest {
     @AppModeFull(reason = "Instant apps cannot create test networks")
     @Test
     public void testRequestBackgroundNetwork() {
-        // Cannot use @IgnoreUpTo(Build.VERSION_CODES.R) because this test also requires API 31
-        // shims, and @IgnoreUpTo does not check that.
-        assumeTrue(TestUtils.shouldTestSApis());
-
         // Create a tun interface. Use the returned interface name as the specifier to create
         // a test network request.
         final TestNetworkManager tnm = runWithShellPermissionIdentity(() ->
@@ -2640,9 +2627,6 @@ public class ConnectivityManagerTest {
     @AppModeFull(reason = "Cannot get WifiManager in instant app mode")
     @Test @IgnoreAfter(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void testBlockedStatusCallback() throws Exception {
-        // Cannot use @IgnoreUpTo(Build.VERSION_CODES.R) because this test also requires API 31
-        // shims, and @IgnoreUpTo does not check that.
-        assumeTrue(TestUtils.shouldTestSApis());
         // The test will need a stable active network that is persistent during the test.
         // Try to connect to a wifi network and wait for it becomes the default network before
         // starting the test to prevent from sudden active network change caused by previous
@@ -2740,15 +2724,11 @@ public class ConnectivityManagerTest {
 
     @Test
     public void testLegacyLockdownEnabled() {
-        // Cannot use @IgnoreUpTo(Build.VERSION_CODES.R) because this test also requires API 31
-        // shims, and @IgnoreUpTo does not check that.
-        assumeTrue(TestUtils.shouldTestSApis());
         runWithShellPermissionIdentity(() -> doTestLegacyLockdownEnabled(), NETWORK_SETTINGS);
     }
 
     @Test
     public void testGetCapabilityCarrierName() {
-        assumeTrue(TestUtils.shouldTestSApis());
         assertEquals("ENTERPRISE", NetworkCapabilities
                 .getCapabilityCarrierName(NET_CAPABILITY_ENTERPRISE));
         assertNull(NetworkCapabilities
@@ -2757,7 +2737,6 @@ public class ConnectivityManagerTest {
 
     @Test
     public void testSetGlobalProxy() {
-        assumeTrue(TestUtils.shouldTestSApis());
         // Behavior is verified in gts. Verify exception thrown w/o permission.
         assertThrows(SecurityException.class, () -> mCm.setGlobalProxy(
                 ProxyInfo.buildDirectProxy("example.com" /* host */, 8080 /* port */)));
@@ -2765,15 +2744,12 @@ public class ConnectivityManagerTest {
 
     @Test
     public void testFactoryResetWithoutPermission() {
-        assumeTrue(TestUtils.shouldTestSApis());
         assertThrows(SecurityException.class, () -> mCm.factoryReset());
     }
 
     @AppModeFull(reason = "Cannot get WifiManager in instant app mode")
     @Test
     public void testFactoryReset() throws Exception {
-        assumeTrue(TestUtils.shouldTestSApis());
-
         // Store current settings.
         final int curAvoidBadWifi =
                 ConnectivitySettingsManager.getNetworkAvoidBadWifi(mContext);
@@ -2840,9 +2816,6 @@ public class ConnectivityManagerTest {
      */
     @Test
     public void testSetProfileNetworkPreference_NoPermission() {
-        // Cannot use @IgnoreUpTo(Build.VERSION_CODES.R) because this test also requires API 31
-        // shims, and @IgnoreUpTo does not check that.
-        assumeTrue(TestUtils.shouldTestSApis());
         assertThrows(SecurityException.class, () -> mCm.setProfileNetworkPreference(
                 UserHandle.of(0), PROFILE_NETWORK_PREFERENCE_ENTERPRISE, null /* executor */,
                 null /* listener */));
@@ -2850,13 +2823,11 @@ public class ConnectivityManagerTest {
 
     @Test
     public void testSystemReady() {
-        assumeTrue(TestUtils.shouldTestSApis());
         assertThrows(SecurityException.class, () -> mCm.systemReady());
     }
 
     @Test
     public void testGetIpSecNetIdRange() {
-        assumeTrue(TestUtils.shouldTestSApis());
         // The lower refers to ConnectivityManager.TUN_INTF_NETID_START.
         final long lower = 64512;
         // The upper refers to ConnectivityManager.TUN_INTF_NETID_START
@@ -2884,9 +2855,6 @@ public class ConnectivityManagerTest {
     @AppModeFull(reason = "Instant apps cannot create test networks")
     @Test
     public void testSetOemNetworkPreferenceForTestPref() throws Exception {
-        // Cannot use @IgnoreUpTo(Build.VERSION_CODES.R) because this test also requires API 31
-        // shims, and @IgnoreUpTo does not check that.
-        assumeTrue(TestUtils.shouldTestSApis());
         assumeTrue(mPackageManager.hasSystemFeature(FEATURE_WIFI));
 
         final TestNetworkTracker tnt = callWithShellPermissionIdentity(
@@ -2949,9 +2917,6 @@ public class ConnectivityManagerTest {
     @AppModeFull(reason = "Instant apps cannot create test networks")
     @Test
     public void testSetOemNetworkPreferenceForTestOnlyPref() throws Exception {
-        // Cannot use @IgnoreUpTo(Build.VERSION_CODES.R) because this test also requires API 31
-        // shims, and @IgnoreUpTo does not check that.
-        assumeTrue(TestUtils.shouldTestSApis());
         assumeTrue(mPackageManager.hasSystemFeature(FEATURE_WIFI));
 
         final TestNetworkTracker tnt = callWithShellPermissionIdentity(
@@ -3060,7 +3025,6 @@ public class ConnectivityManagerTest {
 
     @Test
     public void testSetAcceptPartialConnectivity_NoPermission_GetException() {
-        assumeTrue(TestUtils.shouldTestSApis());
         assertThrows(SecurityException.class, () -> mCm.setAcceptPartialConnectivity(
                 mCm.getActiveNetwork(), false /* accept */ , false /* always */));
     }
@@ -3080,7 +3044,6 @@ public class ConnectivityManagerTest {
     @AppModeFull(reason = "WRITE_DEVICE_CONFIG permission can't be granted to instant apps")
     @Test
     public void testAcceptPartialConnectivity_validatedNetwork() throws Exception {
-        assumeTrue(TestUtils.shouldTestSApis());
         assumeTrue("testAcceptPartialConnectivity_validatedNetwork cannot execute"
                         + " unless device supports WiFi",
                 mPackageManager.hasSystemFeature(FEATURE_WIFI));
@@ -3105,7 +3068,6 @@ public class ConnectivityManagerTest {
     @AppModeFull(reason = "WRITE_DEVICE_CONFIG permission can't be granted to instant apps")
     @Test
     public void testRejectPartialConnectivity_TearDownNetwork() throws Exception {
-        assumeTrue(TestUtils.shouldTestSApis());
         assumeTrue("testAcceptPartialConnectivity_validatedNetwork cannot execute"
                         + " unless device supports WiFi",
                 mPackageManager.hasSystemFeature(FEATURE_WIFI));
@@ -3135,7 +3097,6 @@ public class ConnectivityManagerTest {
 
     @Test
     public void testSetAcceptUnvalidated_NoPermission_GetException() {
-        assumeTrue(TestUtils.shouldTestSApis());
         assertThrows(SecurityException.class, () -> mCm.setAcceptUnvalidated(
                 mCm.getActiveNetwork(), false /* accept */ , false /* always */));
     }
@@ -3143,7 +3104,6 @@ public class ConnectivityManagerTest {
     @AppModeFull(reason = "WRITE_DEVICE_CONFIG permission can't be granted to instant apps")
     @Test
     public void testRejectUnvalidated_TearDownNetwork() throws Exception {
-        assumeTrue(TestUtils.shouldTestSApis());
         final boolean canRunTest = mPackageManager.hasSystemFeature(FEATURE_WIFI)
                 && mPackageManager.hasSystemFeature(FEATURE_TELEPHONY);
         assumeTrue("testAcceptPartialConnectivity_validatedNetwork cannot execute"
@@ -3433,7 +3393,6 @@ public class ConnectivityManagerTest {
     @AppModeFull(reason = "Cannot get WifiManager in instant app mode")
     @Test
     public void testMobileDataPreferredUids() throws Exception {
-        assumeTrue(TestUtils.shouldTestSApis());
         final boolean canRunTest = mPackageManager.hasSystemFeature(FEATURE_WIFI)
                 && mPackageManager.hasSystemFeature(FEATURE_TELEPHONY);
         assumeTrue("testMobileDataPreferredUidsWithCallback cannot execute"
@@ -3543,8 +3502,6 @@ public class ConnectivityManagerTest {
     @AppModeFull(reason = "WRITE_SECURE_SETTINGS permission can't be granted to instant apps")
     @Test
     public void testUidsAllowedOnRestrictedNetworks() throws Exception {
-        assumeTestSApis();
-
         // TODO (b/175199465): figure out a reasonable permission check for
         //  setUidsAllowedOnRestrictedNetworks that allows tests but not system-external callers.
         assumeTrue(Build.isDebuggable());
@@ -4166,12 +4123,6 @@ public class ConnectivityManagerTest {
                 FIREWALL_CHAIN_OEM_DENY_2, false /* isAllowChain */);
     }
 
-    private void assumeTestSApis() {
-        // Cannot use @IgnoreUpTo(Build.VERSION_CODES.R) because this test also requires API 31
-        // shims, and @IgnoreUpTo does not check that.
-        assumeTrue(TestUtils.shouldTestSApis());
-    }
-
     @Test
     public void testLegacyTetherApisThrowUnsupportedOperationExceptionAfterV() {
         assumeTrue(Build.VERSION.SDK_INT > Build.VERSION_CODES.VANILLA_ICE_CREAM);
@@ -4421,7 +4372,6 @@ public class ConnectivityManagerTest {
      * register/unregisterQuicConnectionClosePayload and socket destroy message handling.
      */
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     @ConnectivityModuleTest
     @AppModeFull(reason = "Cannot create test network in instant app mode")
     public void testRegisterQuicConnectionClosePayload_closeSocketAfterUnregister()

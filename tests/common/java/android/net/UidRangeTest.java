@@ -37,7 +37,6 @@ import androidx.test.runner.AndroidJUnit4;
 
 import com.android.testutils.ConnectivityModuleTest;
 import com.android.testutils.DevSdkIgnoreRule;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -107,7 +106,7 @@ public class UidRangeTest {
         assertEquals(MIN_SECONDARY_USER_ID, uidRangeOfSecondaryUser.getEndUser());
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     public void testCreateForUser() throws Exception {
         final UidRange uidRangeOfPrimaryUser = UidRange.createForUser(SYSTEM);
         final UidRange uidRangeOfSecondaryUser = UidRange.createForUser(
@@ -132,7 +131,7 @@ public class UidRangeTest {
     }
 
     // R doesn't have UidRange.hasSameUids, but since S has the module, it does have hasSameUids.
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     public void testHasSameUids() {
         final UidRange uids1 = new UidRange(1, 100);
         final UidRange uids2 = new UidRange(3, 300);
