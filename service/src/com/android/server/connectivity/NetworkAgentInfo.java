@@ -64,6 +64,7 @@ import android.net.QosFilterParcelable;
 import android.net.QosSession;
 import android.net.TcpKeepalivePacketData;
 import android.os.Handler;
+import android.util.Range;
 import android.os.IBinder;
 import android.os.Message;
 import android.os.RemoteException;
@@ -511,15 +512,24 @@ public class NetworkAgentInfo implements NetworkRanker.Scoreable {
             nc.setOwnerUid(networkCapabilities.getOwnerUid());
         }
         if (mIsAppSpecificNetwork) {
-            if (!networkCapabilities.getUids().equals(nc.getUids())) {
-                Log.e(TAG, toShortString() + ": ignoring attempt to change uid from "
-                        + networkCapabilities.getUids() + " to " + nc.getUids());
-                nc.setUids(networkCapabilities.getUids());
+            final Set<Range<Integer>> requiredUids = new ArraySet<>();
+            requiredUids.add(new Range<>(creatorUid, creatorUid));
+            if (!requiredUids.equals(nc.getUids())) {
+                Log.i(TAG, toShortString() + ": enforcing UID to creator UID " + requiredUids);
+                nc.setUids(requiredUids);
             }
             if (nc.hasCapability(NET_CAPABILITY_NOT_RESTRICTED)) {
                 Log.e(TAG, toShortString() + ": ignoring attempt to add "
                         + NetworkCapabilities.capabilityNameOf(NET_CAPABILITY_NOT_RESTRICTED));
                 nc.removeCapability(NET_CAPABILITY_NOT_RESTRICTED);
+            }
+            // Local network routes can take precedence over routes in other networks
+            // and making app that has CREATE_APP_SPECIFIC_NETWORK to get packets from
+            // any other app except itself.
+            if (nc.hasCapability(NET_CAPABILITY_LOCAL_NETWORK)) {
+                Log.e(TAG, toShortString() + ": ignoring attempt to add "
+                        + NetworkCapabilities.capabilityNameOf(NET_CAPABILITY_LOCAL_NETWORK));
+                nc.removeCapability(NET_CAPABILITY_LOCAL_NETWORK);
             }
         }
         restrictCapabilitiesFromNetworkAgent(nc, creatorUid, mHasAutomotiveFeature,

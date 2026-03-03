@@ -15,6 +15,8 @@
  */
 package com.android.server.net.ct;
 
+import static com.android.server.net.ct.Config.TAG;
+
 import android.annotation.RequiresApi;
 import android.os.Build;
 import android.system.ErrnoException;
@@ -34,8 +36,6 @@ import java.nio.file.Files;
 /** Represents a compatibility version directory. */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 class CompatibilityVersion {
-
-    private static final String TAG = "CompatibilityVersion";
 
     private static File sRootDirectory = new File(Config.CT_ROOT_DIRECTORY_PATH);
 

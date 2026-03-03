@@ -699,8 +699,8 @@ public class NsdService extends INsdManager.Stub {
                 return;
             }
             final String serviceTypeNoDot = serviceType.substring(0, serviceType.length() - 1);
-            mAccessRepository.addAllowedService(mClientInfo.mUid, service.getServiceName(),
-                    serviceTypeNoDot);
+            mAccessRepository.addAllowedService(mClientInfo.mUid, mClientInfo.mPackageName,
+                    service.getServiceName(), serviceTypeNoDot);
             mClientInfo.log("Service selected for request " + mClientRequestId + ": " + service);
             final int ifIndex = service.getInterfaceIndex();
             if (service.getNetwork() != null) {
@@ -911,7 +911,8 @@ public class NsdService extends INsdManager.Stub {
         }
         final String serviceType = joinServiceType(service);
         return serviceType != null && mAccessRepository.isServiceAllowed(
-                clientInfo.mUid, service.getServiceInstanceName(), serviceType);
+                clientInfo.mUid, clientInfo.mPackageName, service.getServiceInstanceName(),
+                serviceType);
     }
 
     /**
@@ -1797,7 +1798,8 @@ public class NsdService extends INsdManager.Stub {
             @NonNull Runnable disallowedCb, @NonNull Consumer<Boolean> allowedCb) {
         final boolean isServiceAllowed = mDeps.isAconfigFlagEnabled(FLAG_NSD_SERVICE_PICKER)
                 && serviceName != null && serviceType != null
-                && mAccessRepository.isServiceAllowed(clientInfo.mUid, serviceName, serviceType);
+                && mAccessRepository.isServiceAllowed(clientInfo.mUid, clientInfo.mPackageName,
+                serviceName, serviceType);
 
         // If the service is in the allowlist, no need for permissions.
         // Otherwise first check for local network permission. If it is not granted, still allow
@@ -2069,7 +2071,7 @@ public class NsdService extends INsdManager.Stub {
             return;
         }
         final boolean isServiceAllowed = mAccessRepository.isServiceAllowed(
-                clientInfo.mUid, args.mServiceName, args.mServiceType);
+                clientInfo.mUid, clientInfo.mPackageName, args.mServiceName, args.mServiceType);
         args.mResultReceiver.send(isServiceAllowed
                 ? NsdManager.SERVICE_PERMISSION_GRANTED
                 : NsdManager.SERVICE_PERMISSION_DENIED, /* resultData= */null);
@@ -2086,9 +2088,16 @@ public class NsdService extends INsdManager.Stub {
             final ClientInfo clientInfo = new ClientInfo(cb, arg.uid, arg.pid, arg.packageName,
                     arg.useJavaBackend, mServiceLogs.forSubComponent(tag), metrics);
             mClients.put(arg.connector, clientInfo);
+            if (mDeps.isAconfigFlagEnabled(FLAG_NSD_SERVICE_PICKER)) {
+                // Load the access allowlist synchronously on the handler at client creation.
+                // This ensures that any request processed for that client will have the allowlist
+                // loaded. Loading the allowlist asynchronously (including posting it to the
+                // handler) would create ordering problems where a request could come in before
+                // the allowlist is loaded.
+                mAccessRepository.loadPackage(arg.uid, arg.packageName);
+            }
         } catch (RemoteException e) {
-            Log.w(TAG, "Client request id " + clientRequestId
-                    + " has already died");
+            Log.w(TAG, "Client request id " + clientRequestId + " has already died");
         }
     }
 
@@ -2100,8 +2109,10 @@ public class NsdService extends INsdManager.Stub {
                 mLegacyClientCount -= 1;
             }
             if (mDeps.isAconfigFlagEnabled(FLAG_NSD_SERVICE_PICKER)
-                    && !CollectionUtils.any(mClients.values(), c -> c.mUid == clientInfo.mUid)) {
-                mAccessRepository.unloadUid(clientInfo.mUid);
+                    && !CollectionUtils.any(mClients.values(), c -> c.mUid == clientInfo.mUid
+                    && Objects.equals(c.mPackageName, clientInfo.mPackageName))) {
+                mAccessRepository.unloadPackage(clientInfo.mUid, clientInfo.mPackageName);
+                mAccessRepository.maybeScheduleDatabaseMaintenance();
             }
         }
         maybeStopMonitoringSocketsIfNoActiveRequest();
@@ -2854,7 +2865,11 @@ public class NsdService extends INsdManager.Stub {
         mPermissionManager = Objects.requireNonNull(
                 mContext.getSystemService(PermissionManager.class));
         mClock = deps.makeClock();
-        mAccessRepository = deps.makeAccessRepository(LOGGER.forSubComponent("MdnsAccess"));
+        mAccessRepository = deps.makeAccessRepository(ctx, looper,
+                LOGGER.forSubComponent("MdnsAccess"));
+        if (mEnablePicker) {
+            mAccessRepository.start();
+        }
     }
 
     /**
@@ -3044,8 +3059,9 @@ public class NsdService extends INsdManager.Stub {
         /**
          * @see ServiceAccessRepository
          */
-        public ServiceAccessRepository makeAccessRepository(@NonNull SharedLog sharedLog) {
-            return new ServiceAccessRepository(sharedLog);
+        public ServiceAccessRepository makeAccessRepository(@NonNull Context context,
+                @NonNull Looper looper, @NonNull SharedLog sharedLog) {
+            return new ServiceAccessRepository(context, looper, sharedLog);
         }
     }
 
@@ -3248,8 +3264,8 @@ public class NsdService extends INsdManager.Stub {
             final int clientRequestId = getClientRequestIdOrLog(clientInfo, transactionId);
             if (clientRequestId < 0) return;
 
-            // onRegisterServiceSucceeded only has the service name and hostname in its info. This
-            // aligns with historical behavior.
+            // onRegisterServiceSucceeded only has the service name in its info. This aligns with
+            // historical behavior. The host name field was added in Android B.
             final NsdServiceInfo cbInfo = new NsdServiceInfo(registeredInfo.getServiceName(), null);
             cbInfo.setHostname(registeredInfo.getHostname());
             final ClientRequest request = clientInfo.mClientRequests.get(clientRequestId);
@@ -3344,11 +3360,7 @@ public class NsdService extends INsdManager.Stub {
         mContext.enforceCallingOrSelfPermission(android.Manifest.permission.INTERNET, "NsdService");
         final int uid = mDeps.getCallingUid();
         final int pid = mDeps.getCallingPid();
-        if (mEnablePicker) {
-            enforcePackageNameMatchesUid(mContext, uid, packageName);
-        } else {
-            packageName = "";
-        }
+        enforcePackageNameMatchesUid(mContext, uid, packageName);
         if (cb == null) {
             throw new IllegalArgumentException("Unknown client callback from uid=" + uid);
         }

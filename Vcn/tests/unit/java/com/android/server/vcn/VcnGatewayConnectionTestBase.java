@@ -226,8 +226,8 @@ public class VcnGatewayConnectionTestBase {
 
         doReturn(mUnderlyingNetworkController)
                 .when(mDeps)
-                .newUnderlyingNetworkController(any(), any(), anyInt(), any(), any(), any());
-        doReturn(mVcnMetrics).when(mDeps).newVcnMetrics();
+                .newUnderlyingNetworkController(any(), any(), any(), any(), any(), any());
+        doReturn(mVcnMetrics).when(mDeps).newVcnMetrics(anyInt());
         doReturn(mWakeLock)
                 .when(mDeps)
                 .newWakeLock(eq(mContext), eq(PowerManager.PARTIAL_WAKE_LOCK), any());

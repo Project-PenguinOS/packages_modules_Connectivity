@@ -342,7 +342,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
     }
 
     @Test
-    public void testNotifyNetworkMetricMonitorOnLpChange() throws Exception {
+    public void testNotifyNetworkMetricMonitorOnNcChange() throws Exception {
         // Clear calls invoked when initializing mNetworkEvaluator
         reset(mIpSecPacketLossDetector);
 
@@ -354,11 +354,11 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
                 mSubscriptionSnapshot,
                 mCarrierConfig);
 
-        verify(mIpSecPacketLossDetector).onLinkPropertiesOrCapabilitiesChanged();
+        verify(mIpSecPacketLossDetector).onNetworkCapabilitiesChanged(CELL_NETWORK_CAPABILITIES);
     }
 
     @Test
-    public void testNotifyNetworkMetricMonitorOnNcChange() throws Exception {
+    public void testNotifyNetworkMetricMonitorOnLpChange() throws Exception {
         // Clear calls invoked when initializing mNetworkEvaluator
         reset(mIpSecPacketLossDetector);
 
@@ -370,7 +370,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
                 mSubscriptionSnapshot,
                 mCarrierConfig);
 
-        verify(mIpSecPacketLossDetector).onLinkPropertiesOrCapabilitiesChanged();
+        verify(mIpSecPacketLossDetector).onLinkPropertiesChanged(LINK_PROPERTIES);
     }
 
     @Test

@@ -86,7 +86,7 @@ class ConnectUtil(private val context: Context) {
         }
     }
 
-    fun withValidatedCellularNetwork(block: (Network) -> Unit) {
+    fun withValidatedCellularNetwork(block: (Network, TestableNetworkCallback) -> Unit) {
         val callback = TestableNetworkCallback()
         cm.requestNetwork(
             NetworkRequest.Builder()
@@ -99,7 +99,7 @@ class ConnectUtil(private val context: Context) {
                 "Timeout waiting for validated cellular network."
             ) {
                 it.caps.hasCapability(NET_CAPABILITY_VALIDATED)
-            }.network.let { block(it) }
+            }.network.let { block(it, callback) }
         } finally {
             cm.unregisterNetworkCallback(callback)
         }

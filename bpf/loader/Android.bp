@@ -19,6 +19,15 @@ package {
 }
 
 install_symlink {
+    name: "source_apex_version",
+
+    symlink_target: select(release_flag("RELEASE_DEFAULT_UPDATABLE_MODULE_VERSION"), {
+        any @ version: version,
+    }),
+    installed_location: "etc/source_apex_version",
+}
+
+install_symlink {
     name: "mainline_tethering_platform_components",
 
     symlink_target: "/apex/com.android.tethering/bin/ethtool",
@@ -28,6 +37,11 @@ install_symlink {
 
     init_rc: ["netbpfload.rc"],
     required: ["bpfloader"],
+    product_variables: {
+        debuggable: {
+            required: ["source_apex_version"],
+        },
+    },
 }
 
 cc_binary {

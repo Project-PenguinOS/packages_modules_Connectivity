@@ -89,7 +89,6 @@ const bool isAtLeastU    = (api_level_full >= 3400);  // 34
 const bool isAtLeastV    = (api_level_full >= 3500);  // 35
 const bool isAtLeast25Q2 = (api_level_full >= 3600);  // 36.0
 const bool isAtLeast25Q4 = (api_level_full >= 3610);  // 36.1
-const bool isAtLeast26Q1 = (api_level_full >= 3612);  // 36.1+
 const bool isAtLeast26Q2 = (api_level_full >= 3700);  // 37.0
 const bool isAtLeast26Q3 = (api_level_full >= 3702);  // 37.0+
 const bool isAtLeast26Q4 = (api_level_full >= 3710);  // 37.1

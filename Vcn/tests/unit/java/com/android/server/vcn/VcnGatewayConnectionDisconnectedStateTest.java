@@ -107,7 +107,7 @@ public class VcnGatewayConnectionDisconnectedStateTest extends VcnGatewayConnect
         assertEquals(mGatewayConnection.mDisconnectedState, mGatewayConnection.getCurrentState());
         assertFalse(mGatewayConnection.isQuitting());
         verify(mGatewayStatusCallback, never()).onQuit();
-        verify(mVcnMetrics, never()).logVcnGatewayTeardown(anyInt(), anyInt());
+        verify(mVcnMetrics, never()).logVcnGatewayTeardown(anyInt());
         // No safe mode timer changes expected.
     }
 
@@ -121,7 +121,7 @@ public class VcnGatewayConnectionDisconnectedStateTest extends VcnGatewayConnect
         verifySafeModeTimeoutAlarmAndGetCallback(true /* expectCanceled */);
         assertTrue(mGatewayConnection.isQuitting());
         verify(mGatewayStatusCallback).onQuit();
-        verify(mVcnMetrics).logVcnGatewayTeardown(anyInt(), anyInt());
+        verify(mVcnMetrics).logVcnGatewayTeardown(anyInt());
     }
 
     @Test

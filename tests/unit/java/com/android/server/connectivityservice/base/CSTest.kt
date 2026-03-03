@@ -328,6 +328,13 @@ open class CSTest {
         ) {}
     }
 
+    data class BpfProgramAttachInfo(
+            val ifIndex: Int,
+            val ingress: Boolean,
+            val prio: Short,
+            val protocol: Short
+    )
+
     inner class CSDeps : ConnectivityService.Dependencies() {
         override fun getResources(ctx: Context) = connResources
         override fun getBpfNetMaps(
@@ -582,7 +589,7 @@ open class CSTest {
 
         internal val ifnameToIndexMap = HashMap<String, Int>()
         override fun if_nametoindex(ifname: String): Int =
-            ifnameToIndexMap[ifname]!!
+            ifnameToIndexMap.getOrDefault(ifname, 0)
 
         override fun getNetworkInterfaces(): Enumeration<NetworkInterface?>? {
             return null
@@ -591,12 +598,20 @@ open class CSTest {
         internal var orderedRtmQdiscClsactHistory =
             ArrayTrackRecord<Pair<Int, Boolean>>().newReadHead()
 
+        internal var orderedL4sEgressProgramHistory =
+            ArrayTrackRecord<Pair<BpfProgramAttachInfo, String>>().newReadHead()
+
         override fun sendNewRtmQdiscClsactRequest(ifIndex: Int): Boolean {
             return orderedRtmQdiscClsactHistory.add(Pair(ifIndex, true))
         }
 
         override fun sendDelRtmQdiscClsactRequest(ifIndex: Int): Boolean {
             return orderedRtmQdiscClsactHistory.add(Pair(ifIndex, false))
+        }
+
+        internal val ethIntfIfname = HashSet<String>()
+        override fun isEthernet(iface: String?): Boolean {
+            return ethIntfIfname.contains(iface)
         }
 
         fun expectRtmQdiscClsactRequest(
@@ -613,6 +628,38 @@ open class CSTest {
         fun expectNoRtmQdiscClsactRequest(timeoutMs: Long = HANDLER_SHORT_TIMEOUT_MS) {
             assertNull(orderedRtmQdiscClsactHistory.poll(timeoutMs))
         }
+
+        override fun attachBpfProgram(
+            ifIndex: Int,
+            ingress: Boolean,
+            prio: Short,
+            protocol: Short,
+            bpfProgPath: String
+        ) {
+            orderedL4sEgressProgramHistory.add(
+                Pair(BpfProgramAttachInfo(ifIndex, ingress, prio, protocol), bpfProgPath)
+            )
+        }
+
+        fun expectAttachBpfProgram(
+            ifIndex: Int,
+            ingress: Boolean,
+            prio: Short,
+            protocol: Short,
+            bpfProgPath: String,
+            timeoutMs: Long = HANDLER_TIMEOUT_MS
+        ) {
+            val attachInfo = BpfProgramAttachInfo(ifIndex, ingress, prio, protocol)
+            assertNotNull(
+                orderedL4sEgressProgramHistory.poll(timeoutMs)
+                { it.first == attachInfo && it.second == bpfProgPath }
+            )
+        }
+
+        fun expectNoAttachBpfProgram(timeoutMs: Long = HANDLER_SHORT_TIMEOUT_MS) {
+            assertNull(orderedL4sEgressProgramHistory.poll(timeoutMs))
+        }
+
         override fun isLnpDeveloperOptInEnabled() = true
     }
 

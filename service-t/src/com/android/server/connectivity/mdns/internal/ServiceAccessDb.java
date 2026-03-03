@@ -17,6 +17,7 @@
 package com.android.server.connectivity.mdns.internal;
 
 import android.annotation.NonNull;
+import android.annotation.RequiresApi;
 import android.content.ApexEnvironment;
 import android.content.ContentValues;
 import android.content.Context;
@@ -24,11 +25,13 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteException;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.os.Build;
 import android.util.ArraySet;
 import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.net.module.util.DeviceConfigUtils;
+import com.android.server.connectivity.mdns.internal.ServiceAccessRepository.PackageEntry;
 import com.android.server.connectivity.mdns.internal.ServiceAccessRepository.Service;
 
 import java.io.File;
@@ -40,6 +43,7 @@ import java.util.ArrayList;
  * <p>Note operations may generally fail notably if there is no disk space left. In that case this
  * class does not report errors but returns default values as if no allowlist was persisted.
  */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 public class ServiceAccessDb {
     private static final String TAG = ServiceAccessDb.class.getSimpleName();
     private final ServiceAccessDbHelper mDbHelper;
@@ -227,7 +231,8 @@ public class ServiceAccessDb {
 
                 final ArraySet<Service> services = new ArraySet<>();
                 while (cursor.moveToNext()) {
-                    services.add(new Service(cursor.getString(0), cursor.getString(1)));
+                    services.add(new Service(cursor.getString(0), cursor.getString(1),
+                            /* needsSeenTimeRefresh= */false));
                 }
                 return services;
             }
@@ -245,13 +250,16 @@ public class ServiceAccessDb {
      */
     public void addAllowedService(int uid, @NonNull String packageName, @NonNull String serviceName,
             @NonNull String serviceType) {
+        // Ensure standard case conversion is used on service name/type
+        final Service service = new Service(serviceName, serviceType,
+                /* needsSeenTimeRefresh= */false);
         try {
             final SQLiteDatabase db = mDbHelper.getWritableDatabase();
             final ContentValues values = new ContentValues(5);
             values.put(ServiceAccessContract.COL_UID, uid);
             values.put(ServiceAccessContract.COL_PACKAGE_NAME, packageName);
-            values.put(ServiceAccessContract.COL_SERVICE_NAME, serviceName);
-            values.put(ServiceAccessContract.COL_SERVICE_TYPE, serviceType);
+            values.put(ServiceAccessContract.COL_SERVICE_NAME, service.mName);
+            values.put(ServiceAccessContract.COL_SERVICE_TYPE, service.mType);
             values.put(ServiceAccessContract.COL_LAST_SEEN_TIME, mClock.currentTimeMillis());
             db.replaceOrThrow(ServiceAccessContract.TABLE_NAME, null, values);
         } catch (SQLiteException e) {
@@ -276,9 +284,12 @@ public class ServiceAccessDb {
                     + " AND " + ServiceAccessContract.COL_UID + "=" + uid;
             db.beginTransaction();
             try {
-                services.forEach(s -> db.update(
-                        ServiceAccessContract.TABLE_NAME, values,
-                        selection, new String[]{packageName, s.mName, s.mType}));
+                services.forEach(s -> {
+                    if (s.mNeedsSeenTimeRefresh) {
+                        db.update(ServiceAccessContract.TABLE_NAME, values,
+                                selection, new String[]{packageName, s.mName, s.mType});
+                    }
+                });
                 db.setTransactionSuccessful();
             } finally {
                 db.endTransaction();
@@ -326,20 +337,6 @@ public class ServiceAccessDb {
                     new String[] { packageName });
         } catch (SQLiteException e) {
             Log.e(TAG, "Error deleting entries for package " + packageName, e);
-        }
-    }
-
-    /**
-     * Return value for {@link #getLeastRefreshedPackages(int)}.
-     */
-    public static class PackageEntry {
-        public final int uid;
-        @NonNull
-        public final String packageName;
-
-        PackageEntry(int uid, @NonNull String packageName) {
-            this.uid = uid;
-            this.packageName = packageName;
         }
     }
 

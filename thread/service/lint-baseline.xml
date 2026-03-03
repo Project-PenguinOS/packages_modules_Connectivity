@@ -34,4 +34,37 @@
             column="59"/>
     </issue>
 
+    <issue
+        id="NewApi"
+        message="Call requires API level 35 (current min is 31): `java.util.List#getLast`"
+        errorLine1="        NetworkRequest lastRequest = mActiveRequests.getLast();"
+        errorLine2="                                                     ~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/thread/service/java/com/android/server/thread/ThreadNetworkFactory.java"
+            line="133"
+            column="54"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 35 (current min is 31): `java.util.List#getLast`"
+        errorLine1="        } else if (!Objects.equals(mActiveRequests.getLast(), lastRequest)) {"
+        errorLine2="                                                   ~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/thread/service/java/com/android/server/thread/ThreadNetworkFactory.java"
+            line="138"
+            column="52"/>
+    </issue>
+
+    <issue
+        id="NewApi"
+        message="Call requires API level 35 (current min is 31): `java.util.List#getLast`"
+        errorLine1="            join((ThreadNetworkSpecifier) mActiveRequests.getLast().getNetworkSpecifier());"
+        errorLine2="                                                          ~~~~~~~">
+        <location
+            file="packages/modules/Connectivity/thread/service/java/com/android/server/thread/ThreadNetworkFactory.java"
+            line="141"
+            column="59"/>
+    </issue>
+
 </issues>

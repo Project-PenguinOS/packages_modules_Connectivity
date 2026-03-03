@@ -40,7 +40,7 @@ private const val TEST_PACKAGE = "com.example.app"
 private const val SERVICE_NAME = "MyService"
 private const val OTHER_SERVICE_NAME = "MyOtherService"
 private const val SERVICE_TYPE = "_test._tcp"
-private val TEST_SERVICE = Service(SERVICE_NAME, SERVICE_TYPE)
+private val TEST_SERVICE = Service(SERVICE_NAME, SERVICE_TYPE, /* needsSeenTimeRefresh= */false)
 private const val TEST_TIMESTAMP = 1000L
 
 @RunWith(DevSdkIgnoreRunner::class)
@@ -110,8 +110,10 @@ class ServiceAccessDbTest {
 
         val services = db.getAllowedServices(TEST_UID, TEST_PACKAGE)
         assertEquals(2, services.size)
-        assertTrue(services.contains(Service("service2", SERVICE_TYPE)))
-        assertTrue(services.contains(Service("service3", SERVICE_TYPE)))
+        assertTrue(services.contains(Service("service2", SERVICE_TYPE,
+            /* needsSeenTimeRefresh= */false)))
+        assertTrue(services.contains(Service("service3", SERVICE_TYPE,
+            /* needsSeenTimeRefresh= */false)))
     }
 
     @Test
@@ -156,6 +158,7 @@ class ServiceAccessDbTest {
         db.refreshPackage(TEST_UID, TEST_PACKAGE)
 
         val allowed = db.getAllowedServices(TEST_UID, TEST_PACKAGE)
-        assertEquals(setOf(Service(SERVICE_NAME, SERVICE_TYPE)), allowed)
+        assertEquals(setOf(Service(SERVICE_NAME, SERVICE_TYPE, /* needsSeenTimeRefresh= */false)),
+            allowed)
     }
 }

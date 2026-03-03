@@ -34,8 +34,11 @@ import com.android.net.module.util.NetworkStackConstants.IPV4_ADDR_ANY
 import com.android.net.module.util.NetworkStackConstants.IPV6_ADDR_ANY
 import com.android.testutils.AutoReleaseNetworkCallbackRule
 import com.android.testutils.ConnectUtil
+import com.android.testutils.TestableNetworkCallback
+import com.android.testutils.TestableNetworkCallback.Event.Available
 import com.android.testutils.TestableNetworkCallback.Event.CapabilitiesChanged
 import com.android.testutils.TestableNetworkCallback.Event.LinkPropertiesChanged
+import com.android.testutils.TestableNetworkCallback.Event.Lost
 import com.android.testutils.runAsShell
 import com.android.testutils.tryTest
 import java.io.IOException
@@ -52,6 +55,7 @@ import org.junit.runner.RunWith
 
 private const val QUIC_SOCKET_TIMEOUT_MS = 5_000
 private const val QUIC_RETRY_COUNT = 5
+private const val DISCONNECT_CHECK_TIMEOUT_MS = 10_000L
 
 @RunWith(AndroidJUnit4::class)
 class ConnectivityCheckTest {
@@ -74,7 +78,7 @@ class ConnectivityCheckTest {
         if (!pm.hasSystemFeature(FEATURE_WIFI)) return
         connectUtil.ensureWifiValidated()
 
-        val (wifiNetwork, wifiSsid) = runAsShell(NETWORK_SETTINGS) {
+        val (wifiNetwork, wifiSsid, cb) = runAsShell(NETWORK_SETTINGS) {
             val cb = networkCallbackRule.requestNetwork(
                 NetworkRequest.Builder()
                     .addTransportType(TRANSPORT_WIFI)
@@ -110,12 +114,12 @@ class ConnectivityCheckTest {
                         }
             )
 
-            Pair(network, ssid)
+            Triple(network, ssid, cb)
         }
 
-        checkQuic(wifiNetwork, netLabel = "SSID $wifiSsid", ipv6 = false)
+        checkQuic(wifiNetwork, cb, netLabel = "SSID $wifiSsid", ipv6 = false)
         if (!ipv6Unsupported(wifiSsid)) {
-            checkQuic(wifiNetwork, netLabel = "SSID $wifiSsid", ipv6 = true)
+            checkQuic(wifiNetwork, cb, netLabel = "SSID $wifiSsid", ipv6 = true)
         }
     }
 
@@ -126,7 +130,12 @@ class ConnectivityCheckTest {
      * through due to firewalling. Ensure that devices are setup on a network that has the proper
      * allowlists before trying to run the tests.
      */
-    private fun checkQuic(network: Network, netLabel: String, ipv6: Boolean) {
+    private fun checkQuic(
+        network: Network,
+        requestCb: TestableNetworkCallback,
+        netLabel: String,
+        ipv6: Boolean
+    ) {
         // Same endpoint as used in MultinetworkApiTest in CTS
         val hostname = "connectivitycheck.android.com"
         val targetAddrs = network.getAllByName(hostname)
@@ -185,9 +194,28 @@ class ConnectivityCheckTest {
                     "with local source port ${socket.localPort}: check the firewall (for Wi-Fi) " +
                     "or carrier/data plan (for cellular) for UDP port 443 access."
             )
+        }.catch<Throwable> { e ->
+            // Note this catches AssertionError thrown by "fail(...)" as well
+            assertNetworkNotDisconnected(network, netLabel, requestCb, e)
+            throw e
         } cleanup {
             socket.close()
         }
+    }
+
+    private fun assertNetworkNotDisconnected(
+        network: Network,
+        netLabel: String,
+        requestCb: TestableNetworkCallback,
+        cause: Throwable
+    ) {
+        requestCb.poll(timeoutMs = DISCONNECT_CHECK_TIMEOUT_MS) {
+            (it is Available || it is Lost)
+        } ?: return
+        throw AssertionError("Network $network ($netLabel) disconnected unexpectedly during the " +
+                "test. For Wi-Fi, this may happen if the gateway is unresponsive, not replying " +
+                "to ARP/ND probes for example. Check that the lab connection or access point is " +
+                "stable.", cause)
     }
 
     @Test
@@ -214,8 +242,8 @@ class ConnectivityCheckTest {
             "The device has a SIM card, but it does not supports data connectivity. " +
             "Check the data plan, and verify that mobile data is working. " + commonError
         )
-        connectUtil.withValidatedCellularNetwork { network ->
-            checkQuic(network, netLabel = "cellular", ipv6 = false)
+        connectUtil.withValidatedCellularNetwork { network, cb ->
+            checkQuic(network, cb, netLabel = "cellular", ipv6 = false)
         }
     }
 }
