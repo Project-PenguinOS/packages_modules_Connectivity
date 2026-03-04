@@ -258,7 +258,12 @@ public class MdnsAdvertiser {
                     // later added interface, or if a conflicting announcement/reply is detected
                     // (RFC6762 9.)
                     if (!registration.mNotifiedRegistrationSuccess) {
-                        mCb.onRegisterServiceSucceeded(serviceId, registration.getServiceInfo());
+                        final NsdServiceInfo serviceInfo = new NsdServiceInfo(
+                                registration.getServiceInfo());
+                        if (serviceInfo.getHostname() == null) {
+                            serviceInfo.setHostname(mDeviceHostName[0]);
+                        }
+                        mCb.onRegisterServiceSucceeded(serviceId, serviceInfo);
                         registration.mNotifiedRegistrationSuccess = true;
                     }
                 }

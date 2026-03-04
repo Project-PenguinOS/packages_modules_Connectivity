@@ -15,37 +15,13 @@
  *
  * Authors: Jayendra Reddy Kovvuri, Madhan Raj Kanagarathinam, Sandeep Irlanki
  *
- * Filename: tcpAccECN.c
  * Description: eBPF-based implementation of AccECN for IPv4 and IPv6 TCP connections.
  *              Includes separate handling for Ethernet and raw IP packets.
  */
 
-// The resulting maps/programs need to load on Android 26Q2+
-#undef BPFLOADER_MIN_VER
-#define BPFLOADER_MIN_VER BPFLOADER_MAINLINE_26Q2_VERSION
-
-#include "bpf_net_helpers.h"
-#include "netd.h"
-
-#define TCP_FLAGS_OFF 12
-#define IP4_TCP_FLAGS_OFF (sizeof(struct iphdr) + TCP_FLAGS_OFF)
-#define IP6_TCP_FLAGS_OFF (sizeof(struct ipv6hdr) + TCP_FLAGS_OFF)
-
-#define ETH_IP4_TCP_FLAGS_OFF (ETH_HLEN + IP4_TCP_FLAGS_OFF)
-#define ETH_IP6_TCP_FLAGS_OFF (ETH_HLEN + IP6_TCP_FLAGS_OFF)
-
-#define CUSTOM_TCP_OPTION_KIND 174
-#define CUSTOM_TCP_OPTION_SIZE 11
-#define TCPHDR_SYN 0x02
-
-#define L4S_CONN_COUNTER_SIZE 1
-DEFINE_BPF_MAP(l4s_conn_counter, ARRAY, uint32_t, uint32_t, L4S_CONN_COUNTER_SIZE)
+DEFINE_BPF_MAP(l4s_conn_counter, ARRAY, uint32_t, uint32_t, 1)
 DEFINE_BPF_SK_STORAGE(sk_l4s_storage, L4SStorage)
-DEFINE_BPF_MAP_NO_NETD_API(l4s_accecn_enabled_map, ARRAY, uint32_t, bool, 1, 26Q2)
-
-static long (*bpf_sock_ops_cb_flags_set)(struct bpf_sock_ops *skops, int flags) = (void *) BPF_FUNC_sock_ops_cb_flags_set;
-static long (*bpf_reserve_hdr_opt)(struct bpf_sock_ops *skops, int space, long flags) = (void *) BPF_FUNC_reserve_hdr_opt;
-static long (*bpf_store_hdr_opt)(struct bpf_sock_ops *skops, const void *from, int len, long flags) = (void *) BPF_FUNC_store_hdr_opt;
+DEFINE_BPF_MAP_NO_NETD(l4s_accecn_enabled_map, ARRAY, uint32_t, bool, 1)
 
 static inline __attribute__((always_inline)) int
 find_accecn_options_offset(struct __sk_buff *skb, uint8_t offset) {
@@ -133,11 +109,11 @@ is_l4s_enabled() {
 static const struct {
     __u8 kind;
     __u8 length;
-    __u8 data[CUSTOM_TCP_OPTION_SIZE - 2];
-} __attribute__((packed)) tcp_option = {
-    .kind = CUSTOM_TCP_OPTION_KIND,
-    .length = CUSTOM_TCP_OPTION_SIZE,
-    .data = {0},
+    __u8 data[9];
+} __attribute__((packed)) tcp_accecn_option = {
+    .kind = 174,
+    .length = sizeof tcp_accecn_option,
+    .data = {},
 };
 
 DEFINE_BPF_PROG_KVER(sockops, accecn_option, , AID_SYSTEM, 6_1)
@@ -157,7 +133,7 @@ DEFINE_BPF_PROG_KVER(sockops, accecn_option, , AID_SYSTEM, 6_1)
             break;
         case BPF_SOCK_OPS_HDR_OPT_LEN_CB:
         {
-            if (skops->skb_tcp_flags & TCPHDR_SYN) {
+            if (skops->skb_tcp_flags & TCP_FLAG8_SYN) {
                 break;
             }
 
@@ -165,12 +141,12 @@ DEFINE_BPF_PROG_KVER(sockops, accecn_option, , AID_SYSTEM, 6_1)
             if (!st || !st->byte_inited) {
                 break;
             }
-            bpf_reserve_hdr_opt(skops, CUSTOM_TCP_OPTION_SIZE, 0);
+            bpf_reserve_hdr_opt(skops, sizeof tcp_accecn_option, 0);
             break;
         }
         case BPF_SOCK_OPS_WRITE_HDR_OPT_CB:
         {
-            if (skops->skb_tcp_flags & TCPHDR_SYN) {
+            if (skops->skb_tcp_flags & TCP_FLAG8_SYN) {
                 break;
             }
 
@@ -178,7 +154,7 @@ DEFINE_BPF_PROG_KVER(sockops, accecn_option, , AID_SYSTEM, 6_1)
             if (!st || !st->byte_inited) {
                 break;
             }
-            bpf_store_hdr_opt(skops, &tcp_option, CUSTOM_TCP_OPTION_SIZE, 0);
+            bpf_store_hdr_opt(skops, &tcp_accecn_option, sizeof tcp_accecn_option, 0);
             break;
         }
         default:
@@ -232,7 +208,7 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, , AID_SYSTEM, 6_1)
         return TC_ACT_PIPE;
     }
 
-    int tcp_flags_offset = isIpv4 ? ETH_IP4_TCP_FLAGS_OFF : ETH_IP6_TCP_FLAGS_OFF;
+    int tcp_flags_offset = isIpv4 ? ETH_IP4_TCP_OFFSET(flags16) : ETH_IP6_TCP_OFFSET(flags16);
     int tcp_csum_offset = isIpv4 ? ETH_IP4_TCP_OFFSET(check) : ETH_IP6_TCP_OFFSET(check);
     int ret = 0;
 
@@ -374,7 +350,7 @@ DEFINE_BPF_PROG_KVER(ingress, accecn_common, , AID_SYSTEM, 6_1)
         return 1;
     }
 
-    int tcp_flags_offset = isIpv4 ? IP4_TCP_FLAGS_OFF : IP6_TCP_FLAGS_OFF;
+    int tcp_flags_offset = isIpv4 ? IP4_TCP_OFFSET(flags16) : IP6_TCP_OFFSET(flags16);
 
     if (tcph->syn && tcph->ack) {
         __u16 flags;
@@ -499,7 +475,7 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, , AID_SYSTEM, 6_1)
         return TC_ACT_PIPE;
     }
 
-    int tcp_flags_offset = isIpv4 ? IP4_TCP_FLAGS_OFF : IP6_TCP_FLAGS_OFF;
+    int tcp_flags_offset = isIpv4 ? IP4_TCP_OFFSET(flags16) : IP6_TCP_OFFSET(flags16);
     int tcp_csum_offset = isIpv4 ? IP4_TCP_OFFSET(check) : IP6_TCP_OFFSET(check);
     int ret = 0;
 

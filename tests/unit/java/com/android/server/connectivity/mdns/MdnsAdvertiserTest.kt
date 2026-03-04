@@ -333,7 +333,13 @@ class MdnsAdvertiserTest {
             mockInterfaceAdvertiser1,
             SERVICE_ID_1
         ) }
-        verify(cb).onRegisterServiceSucceeded(eq(SERVICE_ID_1), argThat { it.matches(SERVICE_1) })
+        verify(cb).onRegisterServiceSucceeded(
+            eq(SERVICE_ID_1),
+            argThat {
+                it.matches(SERVICE_1) &&
+                    it.hostname == TEST_HOSTNAME[0]
+            }
+        )
         verify(offloadCb).onOffloadStartOrUpdate(
             eq(TEST_INTERFACE1),
             eq(OFFLOAD_SERVICEINFO_NO_SUBTYPE)
@@ -456,7 +462,10 @@ class MdnsAdvertiserTest {
         verify(offloadCb).onOffloadStartOrUpdate(eq(TEST_INTERFACE2), eq(OFFLOAD_SERVICEINFO))
         verify(cb).onRegisterServiceSucceeded(
             eq(SERVICE_ID_1),
-            argThat { it.matches(ALL_NETWORKS_SERVICE_SUBTYPE) }
+            argThat {
+                it.matches(ALL_NETWORKS_SERVICE_SUBTYPE) &&
+                    it.hostname == TEST_HOSTNAME[0]
+            }
         )
 
         // Services are conflicted.
@@ -803,7 +812,13 @@ class MdnsAdvertiserTest {
             mockInterfaceAdvertiser1,
             SERVICE_ID_1
         ) }
-        verify(cb).onRegisterServiceSucceeded(eq(SERVICE_ID_1), argThat { it.matches(SERVICE_1) })
+        verify(cb).onRegisterServiceSucceeded(
+            eq(SERVICE_ID_1),
+            argThat {
+                it.matches(SERVICE_1) &&
+                    it.hostname == TEST_HOSTNAME[0]
+            }
+        )
 
         doReturn(false).`when`(mockInterfaceAdvertiser1).isProbing(SERVICE_ID_2)
         postSync { intAdvCbCaptor.value.onServiceProbingSucceeded(
@@ -812,7 +827,10 @@ class MdnsAdvertiserTest {
         ) }
         verify(cb).onRegisterServiceSucceeded(
             eq(SERVICE_ID_2),
-            argThat { it.matches(expectedRenamed) }
+            argThat {
+                it.matches(expectedRenamed) &&
+                    it.hostname == TEST_HOSTNAME[0]
+            }
         )
 
         postSync { oneNetSocketCb.onInterfaceDestroyed(TEST_SOCKETKEY_1, mockSocket1) }

@@ -128,16 +128,18 @@ typedef struct {
     unique_fd prog_fd; // fd after loading
 } codeSection;
 
-struct ElfObject {
-    const char * path;
+class ElfObject {
     void* base;
     size_t size;
     const Elf64_Ehdr* eh;
-    std::span<const Elf64_Shdr> sh;
     std::span<const char> bytes;
+    std::span<const Elf64_Shdr> sh;
     std::span<const char> strtab;
 
-    ElfObject(const char* elfPath) : path(elfPath), base(MAP_FAILED), size(0), eh(nullptr) {
+  public:
+    const char * const path;
+
+    ElfObject(const char* elfPath) : base(MAP_FAILED), size(0), eh(nullptr), path(elfPath) {
         unique_fd fd(open(path, O_RDONLY | O_CLOEXEC));
         if (fd < 0) {
             ALOGE("open(%s) failed: %s", path, strerror(errno));
@@ -193,6 +195,13 @@ struct ElfObject {
         if (base != MAP_FAILED) munmap(base, size);
     }
 
+    const Elf64_Ehdr & EH() const { return *eh; }
+
+    auto SHsize() const { return sh.size(); }
+
+    // UB if idx > SHsize()
+    const Elf64_Shdr & SH(unsigned idx) const { return sh[idx]; }
+
     // Get a span pointing to a section by its index
     std::span<const char> getSectionByIdx(unsigned id) const {
         if (id >= sh.size()) return {};
@@ -219,7 +228,7 @@ struct ElfObject {
                 auto s = getSectionByIdx(i);
                 if (s.empty() && sh[i].sh_size > 0) return -1;
 
-                if (s.size() % sizeof(T)) return -1;
+                if (s.size() % sizeof(T)) abort();
                 data.assign((const T*)s.data(), (const T*)(s.data() + s.size()));
 
                 return 0;
@@ -318,7 +327,7 @@ struct ElfObject {
 
     int getSymOffsetByName(const char *name, int *off) const {
         vector<Elf64_Sym> symtab;
-        int ret = readSymTab(1 /* sort */, symtab);
+        int ret = readSymTab(0 /* sort */, symtab);
         if (ret) return ret;
         for (unsigned i = 0; i < symtab.size(); i++) {
             const char* s = getStr(symtab[i].st_name);
@@ -334,7 +343,7 @@ struct ElfObject {
 
 // Read a section by its index - for ex to get sec hdr strtab blob
 int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
-    int entries = elfObj.sh.size();
+    int entries = elfObj.SHsize();
     int ret = 0;
 
     vector<struct bpf_prog_def> pd;
@@ -345,7 +354,7 @@ int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
     if (!pd.empty() && ret) return ret;
 
     for (int i = 0; i < entries; i++) {
-        const char* name = elfObj.getStr(elfObj.sh[i].sh_name);
+        const char* name = elfObj.getStr(elfObj.SH(i).sh_name);
         if (!name) return -1;
 
         // all we want to process is sections FOO/BAR, but:
@@ -364,10 +373,10 @@ int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
         string sanitizedName = name;
         sanitizedName[first_slash - name] = '_';
 
-        if (strchr(sanitizedName.c_str() + (first_slash - name) + 1, '/')) abort(); // There should only be one!
+        if (strchr(sanitizedName.c_str(), '/')) abort(); // There should only be one!
 
         auto s = elfObj.getSectionByIdx(i);
-        if (s.empty() && elfObj.sh[i].sh_size > 0) return -1;
+        if (s.empty() && elfObj.SH(i).sh_size > 0) return -1;
         codeSection cs_temp;
         cs_temp.data.assign(s.begin(), s.end());
         ALOGV("Loaded code section %d (%s)", i, sanitizedName.c_str());
@@ -387,12 +396,12 @@ int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
 
         // Check for rel section
         if (cs_temp.data.size() > 0 && i + 1 < entries) {
-            const char* next_name = elfObj.getStr(elfObj.sh[i + 1].sh_name);
+            const char* next_name = elfObj.getStr(elfObj.SH(i + 1).sh_name);
             if (!next_name) return -1;
 
             if (!strcmp(next_name, (".rel" + oldName).c_str())) {
                 auto rel_s = elfObj.getSectionByIdx(i + 1);
-                if (rel_s.empty() && elfObj.sh[i + 1].sh_size > 0) return -1;
+                if (rel_s.empty() && elfObj.SH(i + 1).sh_size > 0) return -1;
                 cs_temp.rel_data.assign(rel_s.begin(), rel_s.end());
                 ALOGV("Loaded relo section %d (%s)", i, next_name);
             }
@@ -815,16 +824,16 @@ static int createMaps(const ElfObject& elfObj, vector<struct bpf_map_def>& md, v
     }
 
     for (unsigned i = 0; i < md.size(); i++) {
-        if (api_level_full < md[i].bpfloader_min_ver) {
-            ALOGD("skipping map %s which requires bpfloader min ver 0x%05x", md[i].name(),
-                  md[i].bpfloader_min_ver);
+        if (api_level_full < md[i].min_api_level_full) {
+            ALOGD("skipping map %s which requires api >= %d", md[i].name(),
+                  md[i].min_api_level_full);
             mapFds.push_back(unique_fd());
             continue;
         }
 
-        if (api_level_full >= md[i].bpfloader_max_ver) {
-            ALOGD("skipping map %s which requires bpfloader max ver 0x%05x", md[i].name(),
-                  md[i].bpfloader_max_ver);
+        if (api_level_full >= md[i].max_api_level_full) {
+            ALOGD("skipping map %s which requires api < %d", md[i].name(),
+                  md[i].max_api_level_full);
             mapFds.push_back(unique_fd());
             continue;
         }
@@ -1030,7 +1039,7 @@ static int validateProg(const borrowed_fd& fd, const char* const progPinLoc) {
     }
     ALOGI("prog %s id %d len jit:%d xlat:%d", progPinLoc, progId, jitLen, xlatLen);
 
-    if (!jitLen && api_level_full >= BPFLOADER_MAINLINE_25Q2_VERSION) {
+    if (!jitLen && api_level_full >= NETBPFLOAD_25Q2_VER) {
         ALOGE("Kernel eBPF JIT failure for %s", progPinLoc);
         return -ENOTSUP;
     }
@@ -1055,15 +1064,15 @@ static int loadCodeSections(const ElfObject& elfObj, vector<codeSection>& cs, co
             return -EINVAL;
         }
 
-        ALOGD("cs[%d].name:%s kver in [%x,%x) bpfloader ver in [0x%05x,0x%05x)",
+        ALOGD("cs[%d].name:%s kver in [%x,%x) api level in [%d,%d)",
               i, cs[i].prog_def->name(),
               cs[i].prog_def->min_kver, cs[i].prog_def->max_kver,
-              cs[i].prog_def->bpfloader_min_ver, cs[i].prog_def->bpfloader_max_ver);
+              cs[i].prog_def->min_api_level_full, cs[i].prog_def->max_api_level_full);
 
         if (kernelVer < cs[i].prog_def->min_kver) continue;
         if (kernelVer >= cs[i].prog_def->max_kver) continue;
-        if (api_level_full < cs[i].prog_def->bpfloader_min_ver) continue;
-        if (api_level_full >= cs[i].prog_def->bpfloader_max_ver) continue;
+        if (api_level_full < cs[i].prog_def->min_api_level_full) continue;
+        if (api_level_full >= cs[i].prog_def->max_api_level_full) continue;
 
         bool reuse = false;
         if (access(cs[i].prog_def->pin_location, F_OK) == 0) {
@@ -1155,10 +1164,11 @@ static int prepareLoadMaps(const struct bpf_object* obj, const vector<struct bpf
             return -1;
         }
 
-        if (api_level_full < md[i].bpfloader_min_ver || api_level_full >= md[i].bpfloader_max_ver) {
-            ALOGD("skipping map %s: bpfloader 0x%05x is outside required range [0x%05x, 0x%05x)",
+        if (api_level_full < md[i].min_api_level_full ||
+            api_level_full >= md[i].max_api_level_full) {
+            ALOGD("skipping map %s: api %d is outside required range [%d, %d)",
                   md[i].name(), api_level_full,
-                  md[i].bpfloader_min_ver, md[i].bpfloader_max_ver);
+                  md[i].min_api_level_full, md[i].max_api_level_full);
             bpf_map__set_autocreate(m, false);
             continue;
         }
@@ -1204,11 +1214,11 @@ static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSecti
             continue;
         }
 
-        int bpfMinVer = cs[i].prog_def->bpfloader_min_ver;
-        int bpfMaxVer = cs[i].prog_def->bpfloader_max_ver;
-        if (api_level_full < bpfMinVer || api_level_full >= bpfMaxVer) {
-            ALOGD("skipping prog %s: bpfloader 0x%05x is outside required range [0x%05x, 0x%05x)",
-                  cs[i].prog_def->name(), api_level_full, bpfMinVer, bpfMaxVer);
+        if (api_level_full < cs[i].prog_def->min_api_level_full ||
+            api_level_full >= cs[i].prog_def->max_api_level_full) {
+            ALOGD("skipping prog %s: api %d is outside required range [%d, %d)",
+                  cs[i].prog_def->name(), api_level_full,
+                  cs[i].prog_def->min_api_level_full, cs[i].prog_def->max_api_level_full);
             bpf_program__set_autoload(prog, false);
             continue;
         }
@@ -1432,6 +1442,14 @@ const char *const uprobestatsBpfLoader =
     "/apex/com.android.uprobestats/bin/uprobestatsbpfload";
 
 static int logTetheringApexVersion(void) {
+    char src_apex[16] = {};
+    if (!isUser) {
+        // man readlink: Upon success, readlink() returns count of bytes placed in the buffer.
+        // Otherwise, it shall return a value of -1, leave buffer unchanged, and set errno.
+        int res = readlink("/system/etc/source_apex_version", src_apex, sizeof(src_apex) - 1);
+        src_apex[res >= 0 ? res : 0] = 0; // forcibly NUL terminate, safe since sizeof-1 above
+    }
+
     char * found_blockdev = NULL;
     FILE * f = NULL;
     char buf[4096];
@@ -1476,7 +1494,11 @@ static int logTetheringApexVersion(void) {
         char * at = strchr(mntpath, '@');
         if (!at) continue;
         char * ver = at + 1;
-        ALOGI("Tethering APEX version %s", ver);
+        if (isUser) {
+            ALOGI("Tethering APEX version %s", ver);
+        } else {
+            ALOGI("Tethering APEX version %s (system: %s)", ver, src_apex);
+        }
     }
     fclose(f);
     free(found_blockdev);

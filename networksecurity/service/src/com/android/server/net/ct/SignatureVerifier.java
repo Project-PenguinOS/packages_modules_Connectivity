@@ -22,6 +22,7 @@ import static com.android.server.net.ct.CertificateTransparencyLogger.CTLogListU
 import static com.android.server.net.ct.CertificateTransparencyLogger.CTLogListUpdateState.SIGNATURE_NOT_FOUND;
 import static com.android.server.net.ct.CertificateTransparencyLogger.CTLogListUpdateState.SIGNATURE_VERIFICATION_FAILED;
 import static com.android.server.net.ct.CertificateTransparencyLogger.CTLogListUpdateState.UNABLE_TO_READ_FILE;
+import static com.android.server.net.ct.Config.TAG;
 
 import android.annotation.NonNull;
 import android.annotation.RequiresApi;
@@ -52,8 +53,6 @@ import java.util.Set;
 /** Verifier of the log list signature. */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 public class SignatureVerifier {
-
-    private static final String TAG = "SignatureVerifier";
 
     private final Context mContext;
 

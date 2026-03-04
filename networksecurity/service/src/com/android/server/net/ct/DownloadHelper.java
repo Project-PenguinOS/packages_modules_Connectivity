@@ -15,16 +15,20 @@
  */
 package com.android.server.net.ct;
 
+import static com.android.server.net.ct.Config.TAG;
+
 import android.app.DownloadManager;
 import android.app.DownloadManager.Query;
 import android.app.DownloadManager.Request;
 import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
+import android.util.Log;
 
 import androidx.annotation.VisibleForTesting;
 
 import com.google.auto.value.AutoValue;
+
 import java.util.Objects;
 
 /** Class to handle downloads for Certificate Transparency. */
@@ -50,6 +54,7 @@ public class DownloadHelper {
     public long startDownload(String url) {
         long downloadId = isUrlAlreadyScheduled(url);
         if (downloadId != -1) {
+            Log.i(TAG, "Download for " + url + " already scheduled.");
             return downloadId;
         }
         return mDownloadManager.enqueue(

@@ -308,7 +308,7 @@ public class UnderlyingNetworkEvaluator {
                 underlyingNetworkTemplates, subscriptionGroup, lastSnapshot, carrierConfig);
 
         for (NetworkMetricMonitor monitor : mMetricMonitors) {
-            monitor.onLinkPropertiesOrCapabilitiesChanged();
+            monitor.onNetworkCapabilitiesChanged(nc);
         }
     }
 
@@ -325,7 +325,7 @@ public class UnderlyingNetworkEvaluator {
                 underlyingNetworkTemplates, subscriptionGroup, lastSnapshot, carrierConfig);
 
         for (NetworkMetricMonitor monitor : mMetricMonitors) {
-            monitor.onLinkPropertiesOrCapabilitiesChanged();
+            monitor.onLinkPropertiesChanged(lp);
         }
     }
 

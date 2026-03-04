@@ -16,6 +16,8 @@
 
 package com.android.server.net.ct;
 
+import static com.android.server.net.ct.Config.TAG;
+
 import android.annotation.RequiresApi;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
@@ -40,8 +42,6 @@ import java.util.Optional;
 /** Helper class to download certificate transparency log files. */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 class CertificateTransparencyDownloader extends BroadcastReceiver {
-
-    private static final String TAG = "CertificateTransparencyDownloader";
 
     private static final Intent INSTALL_COMPLETE = new Intent(Config.INSTALL_COMPLETE_ACTION);
 

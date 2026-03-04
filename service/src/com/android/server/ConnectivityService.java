@@ -16,6 +16,9 @@
 
 package com.android.server;
 
+import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS;
 import static android.Manifest.permission.RECEIVE_DATA_ACTIVITY_CHANGE;
 import static android.app.ActivityManager.UidFrozenStateChangedCallback.UID_FROZEN_STATE_FROZEN;
 import static android.content.pm.PackageManager.FEATURE_BLUETOOTH;
@@ -540,6 +543,17 @@ public class ConnectivityService extends IConnectivityManager.Stub
     // Delimiter used when creating the broadcast delivery group for sending
     // CONNECTIVITY_ACTION broadcast.
     private static final char DELIVERY_GROUP_KEY_DELIMITER = ';';
+
+    // After Dscp priority, see DscpPolicyTracker.PRIO_DSCP
+    @VisibleForTesting
+    static final short PRIO_L4S = 6;
+    private static final String BPF_NETD_PATH = "/sys/fs/bpf/netd_shared/";
+    @VisibleForTesting
+    static final String BPF_L4S_EGRESS_ETH_PROG =
+            BPF_NETD_PATH + "prog_netd_schedcls_egress_accecn_eth";
+    @VisibleForTesting
+    static final String BPF_L4S_EGRESS_RAWIP_PROG =
+            BPF_NETD_PATH + "prog_netd_schedcls_egress_accecn_rawip";
 
     // The maximum value for the blocking validation result, in milliseconds.
     public static final int MAX_VALIDATION_IGNORE_AFTER_ROAM_TIME_MS = 10000;
@@ -2096,6 +2110,25 @@ public class ConnectivityService extends IConnectivityManager.Stub
          */
         public boolean sendDelRtmQdiscClsactRequest(int ifIndex) {
             return NetlinkUtils.sendRtmDelQdiscRequest(ifIndex, CLSACT);
+        }
+
+        /**
+         * Wraps {@link TcUtils#tcFilerAddDevBpf}
+         */
+        public void attachBpfProgram(
+                int ifIndex, boolean ingress, short prio, short protocol, String bpfProgPath) {
+            try {
+                TcUtils.tcFilterAddDevBpf(ifIndex, ingress, prio, protocol, bpfProgPath);
+            } catch (IOException e) {
+                Log.e(TAG, "tc filter add dev " + ifIndex + " failure: " + e);
+            }
+        }
+
+        /**
+         * Wraps {@link TcUtils#isEthernet}
+         */
+        public boolean isEthernet(String iface) throws IOException {
+            return TcUtils.isEthernet(iface);
         }
 
         /**
@@ -6286,6 +6319,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         for (final String iface: nai.linkProperties.getAllInterfaceNames()) {
+            // attached programs are cleared by removing qdisc clsact
             maybeModifyQdiscClsact(iface, nai, false /* add */);
         }
 
@@ -9948,6 +9982,18 @@ public class ConnectivityService extends IConnectivityManager.Stub
         return (mDefaultNetworkRequests.contains(nri) && mDefaultRequest != nri);
     }
 
+    /** Whether this network is capable of supporting L4S */
+    public boolean shouldEnableL4s(@NonNull NetworkAgentInfo nai) {
+        if (nai.isVPN()) return false;
+
+        // TODO: add metrics in updateCapabilities to make sure these capabilities are not changed
+        return nai.networkCapabilities.hasCapability(NET_CAPABILITY_INTERNET)
+                || nai.networkCapabilities.hasCapability(NET_CAPABILITY_PRIORITIZE_LATENCY)
+                || nai.networkCapabilities.hasCapability(
+                NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
+                || nai.networkCapabilities.hasCapability(NET_CAPABILITY_PRIORITIZE_BANDWIDTH);
+    }
+
     /**
      * Return the default network request currently tracking the given uid.
      * @param uid the uid to check.
@@ -10229,12 +10275,6 @@ public class ConnectivityService extends IConnectivityManager.Stub
         final NetworkCapabilities ncCopy = new NetworkCapabilities(networkCapabilities);
         final LinkProperties lpCopy = new LinkProperties(linkProperties);
         // No need to copy |localNetworkConfiguration| as it is immutable.
-
-        if (isAppSpecificNetwork) {
-            // For app specific network, set the app's UID and make network restricted.
-            ncCopy.setSingleUid(uid);
-            ncCopy.removeCapability(NET_CAPABILITY_NOT_RESTRICTED);
-        }
 
         // At this point the capabilities/properties are untrusted and unverified, e.g. checks that
         // the capabilities' access UIDs comply with security limitations. They will be sanitized
@@ -10626,6 +10666,36 @@ public class ConnectivityService extends IConnectivityManager.Stub
         updateLinkProperties(nai, new LinkProperties(nai.linkProperties), null);
     }
 
+    private void maybeAttachL4sEgressProgram(@NonNull String iface, @NonNull NetworkAgentInfo nai) {
+        if (!mDeps.isAtLeast26Q2()) return;
+
+        if (iface.startsWith("v4-")) return;
+        if (!shouldEnableL4s(nai)) return;
+
+        final int ifIndex = mDeps.if_nametoindex(iface);
+        if (ifIndex == 0) {
+            Log.e(TAG, "Failed to get interface index for " + iface);
+            return;
+        }
+
+        try {
+            final String progPath = mDeps.isEthernet(iface)
+                    ? BPF_L4S_EGRESS_ETH_PROG
+                    : BPF_L4S_EGRESS_RAWIP_PROG;
+            // tc filter add dev .. egress prio 6 protocol ip bpf object-pinned /sys/fs/bpf/...
+            // direct-action
+            mDeps.attachBpfProgram(
+                    ifIndex,
+                    false /* ingress */,
+                    PRIO_L4S,
+                    (short) ETH_P_ALL,
+                    progPath);
+        } catch (IOException e) {
+            Log.e(TAG, "TcUtils.isEthernet(" + iface + ") failure" + e);
+            return;
+        }
+    }
+
     private void maybeModifyQdiscClsact(
             @NonNull String iface, @NonNull NetworkAgentInfo nai, Boolean add) {
         if (!mDeps.flagConnectivityServiceModifyQdiscClsact()) return;
@@ -10761,6 +10831,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 } catch (Exception e) {
                     logw("Exception adding interface: " + e);
                 }
+                maybeAttachL4sEgressProgram(iface, nai);
             }
         }
 
@@ -10773,6 +10844,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 if (DBG) log("Removing iface " + iface + " from network " + netId);
                 wakeupModifyInterface(iface, nai, false);
                 mRoutingCoordinatorService.removeInterfaceFromNetwork(netId, iface);
+                // attached programs are cleared by removing qdisc clsact
                 maybeModifyQdiscClsact(iface, nai, false /* add */);
             } catch (Exception e) {
                 loge("Exception removing interface: " + e);
@@ -13964,9 +14036,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
                         return 0;
                     }
                     case "log-list-update":
-                        mContext.sendBroadcast(
+                        Intent updateIntent =
                                 new Intent(ConfigUpdate.ACTION_UPDATE_CT_LOGS)
-                                        .setPackage(mContext.getPackageName()));
+                                        .setPackage(mContext.getPackageName());
+                        if ("delete".equals(getNextArg())) {
+                            updateIntent.putExtra("delete", true);
+                        }
+                        mContext.sendBroadcast(updateIntent);
                         return 0;
                     case "reevaluate":
                         // Usage : adb shell cmd connectivity reevaluate <netId>

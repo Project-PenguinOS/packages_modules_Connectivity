@@ -29,7 +29,9 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.IpSecTransformState;
+import android.net.LinkProperties;
 import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.vcn.Flags;
 import android.os.Build;
 import android.os.Handler;
@@ -202,6 +204,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
 
     @Nullable private IpSecTransformWrapper mInboundTransform;
     @Nullable private IpSecTransformState mLastIpSecTransformState;
+    @Nullable private NetworkCapabilities mNetworkCapabilities;
 
     @VisibleForTesting(visibility = Visibility.PRIVATE)
     public IpSecPacketLossDetector(
@@ -373,7 +376,15 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
     }
 
     @Override
-    public void onLinkPropertiesOrCapabilitiesChanged() {
+    public void onLinkPropertiesChanged(@NonNull LinkProperties lp) {
+        if (!isStarted()) return;
+
+        reschedulePolling();
+    }
+
+    @Override
+    public void onNetworkCapabilitiesChanged(@NonNull NetworkCapabilities nc) {
+        mNetworkCapabilities = nc;
         if (!isStarted()) return;
 
         reschedulePolling();

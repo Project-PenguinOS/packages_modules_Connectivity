@@ -149,7 +149,8 @@ public class MdnsServiceTypeClient {
          */
         public final String serviceName;
         /**
-         * The type of the service to filter for (e.g., "_http._tcp.").
+         * The type of the service to filter for (e.g., "_http._tcp.local."). The service type must
+         * include the ".local" suffix.
          */
         public final String serviceType;
         /**
@@ -166,6 +167,11 @@ public class MdnsServiceTypeClient {
         public DiscoveryOffloadInfo(@NonNull String serviceName, @NonNull String serviceType,
                 @NonNull List<String> subtypes, @NonNull String hostname) {
             this.serviceName = serviceName;
+            final String suffix = "." + MdnsUtils.LOCAL_TLD;
+            if (!serviceType.endsWith(suffix)) {
+                // Throw an exception because the service type must have the ".local" suffix.
+                throw new IllegalArgumentException("serviceType must end with " + suffix);
+            }
             this.serviceType = serviceType;
             this.subtypes = Collections.unmodifiableList(subtypes);
             this.hostname = hostname;

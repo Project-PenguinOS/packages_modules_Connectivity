@@ -830,7 +830,7 @@ public class VcnGatewayConnection extends StateMachine {
                 Objects.requireNonNull(gatewayStatusCallback, "Missing gatewayStatusCallback");
         mIsMobileDataEnabled = isMobileDataEnabled;
         mDeps = Objects.requireNonNull(deps, "Missing deps");
-        mVcnMetrics = mDeps.newVcnMetrics();
+        mVcnMetrics = mDeps.newVcnMetrics(mId);
 
         mLastSnapshot = Objects.requireNonNull(snapshot, "Missing snapshot");
 
@@ -843,7 +843,7 @@ public class VcnGatewayConnection extends StateMachine {
                 mDeps.newUnderlyingNetworkController(
                         mVcnContext,
                         mConnectionConfig,
-                        mId,
+                        mVcnMetrics,
                         subscriptionGroup,
                         mLastSnapshot,
                         mUnderlyingNetworkControllerCallback);
@@ -900,7 +900,7 @@ public class VcnGatewayConnection extends StateMachine {
 
         if (mNetworkAgent != null) {
             logWtf("NetworkAgent was non-null in onQuitting");
-            mVcnMetrics.logVcnNetworkNotConnected(mId, mNetworkAgent.getIdentityHashCode());
+            mVcnMetrics.logVcnNetworkNotConnected(mNetworkAgent.getIdentityHashCode());
             mNetworkAgent.unregister();
             mNetworkAgent = null;
         }
@@ -927,7 +927,7 @@ public class VcnGatewayConnection extends StateMachine {
 
         mGatewayStatusCallback.onQuit();
 
-        mVcnMetrics.logVcnGatewayTeardown(mId, mTeardownReason);
+        mVcnMetrics.logVcnGatewayTeardown(mTeardownReason);
         mConnectivityDiagnosticsManager.unregisterConnectivityDiagnosticsCallback(
                 mConnectivityDiagnosticsCallback);
     }
@@ -1543,7 +1543,7 @@ public class VcnGatewayConnection extends StateMachine {
 
         protected void teardownNetwork() {
             if (mNetworkAgent != null) {
-                mVcnMetrics.logVcnNetworkNotConnected(mId, mNetworkAgent.getIdentityHashCode());
+                mVcnMetrics.logVcnNetworkNotConnected(mNetworkAgent.getIdentityHashCode());
                 mNetworkAgent.unregister();
                 mNetworkAgent = null;
             }
@@ -1575,7 +1575,7 @@ public class VcnGatewayConnection extends StateMachine {
             // Connectivity for this GatewayConnection is broken; tear down the Network.
             teardownNetwork();
             if (!mIsInSafeMode) {
-                mVcnMetrics.logEnterSafeMode(mId);
+                mVcnMetrics.logEnterSafeMode();
             }
             mIsInSafeMode = true;
             mGatewayStatusCallback.onSafeModeStatusChanged();
@@ -1917,13 +1917,11 @@ public class VcnGatewayConnection extends StateMachine {
                                     case NetworkAgent.VALIDATION_STATUS_VALID:
                                         clearFailedAttemptCounterAndSafeModeAlarm();
                                         mNetworkAgent.logAndUpdateValidationStatus(
-                                                mVcnMetrics,
-                                                mId,
-                                                VcnMetrics.VALIDATION_STATUS_VALID);
+                                                mVcnMetrics, VcnMetrics.VALIDATION_STATUS_VALID);
                                         // TODO(b/460182066): Remove the old method of logging
                                         // validation status once new method is fully rolled out.
                                         mVcnMetrics.logVcnNetworkValidated(
-                                                mId, mNetworkAgent.getIdentityHashCode());
+                                                mNetworkAgent.getIdentityHashCode());
                                         break;
                                     case NetworkAgent.VALIDATION_STATUS_NOT_VALID:
                                         // Trigger re-validation of underlying networks; if it
@@ -1939,12 +1937,11 @@ public class VcnGatewayConnection extends StateMachine {
                                         setSafeModeAlarm();
                                         mNetworkAgent.logAndUpdateValidationStatus(
                                                 mVcnMetrics,
-                                                mId,
                                                 VcnMetrics.VALIDATION_STATUS_NOT_VALID);
                                         // TODO(b/460182066): Remove the old method of logging
                                         // validation status once new method is fully rolled out.
                                         mVcnMetrics.logVcnNetworkNotValidated(
-                                                mId, mNetworkAgent.getIdentityHashCode());
+                                                mNetworkAgent.getIdentityHashCode());
                                         break;
                                     default:
                                         logWtf(
@@ -1957,10 +1954,9 @@ public class VcnGatewayConnection extends StateMachine {
 
             agent.register();
             agent.markConnected();
-            mVcnMetrics.logVcnNetworkConnected(mId, agent.getIdentityHashCode());
+            mVcnMetrics.logVcnNetworkConnected(agent.getIdentityHashCode());
             // Log that we're now pending for first validation since initial connection.
-            agent.logAndUpdateValidationStatus(
-                    mVcnMetrics, mId, VcnMetrics.VALIDATION_STATUS_PENDING);
+            agent.logAndUpdateValidationStatus(mVcnMetrics, VcnMetrics.VALIDATION_STATUS_PENDING);
 
             return agent;
         }
@@ -1973,7 +1969,7 @@ public class VcnGatewayConnection extends StateMachine {
             cancelSafeModeAlarm();
 
             if (mIsInSafeMode) {
-                mVcnMetrics.logExitSafeMode(mId);
+                mVcnMetrics.logExitSafeMode();
             }
             mIsInSafeMode = false;
             mGatewayStatusCallback.onSafeModeStatusChanged();
@@ -2191,7 +2187,7 @@ public class VcnGatewayConnection extends StateMachine {
             if (oldUnderlying == null || !oldUnderlying.network.equals(mUnderlying.network)) {
                 logInfo("Migrating to new network: " + mUnderlying.network);
                 mVcnMetrics.logUnderlyingNetworkSwitched(
-                        mId, getTransportMask(oldUnderlying), getTransportMask(mUnderlying));
+                        getTransportMask(oldUnderlying), getTransportMask(mUnderlying));
                 mIkeSession.setNetwork(mUnderlying.network);
             } else {
                 // oldUnderlying is non-null & underlying network itself has not changed
@@ -2844,22 +2840,22 @@ public class VcnGatewayConnection extends StateMachine {
     @VisibleForTesting(visibility = Visibility.PRIVATE)
     public static class Dependencies {
         /** Builds a new VcnMetrics. */
-        public VcnMetrics newVcnMetrics() {
-            return new VcnMetrics();
+        public VcnMetrics newVcnMetrics(int gatewayConnectionId) {
+            return new VcnMetrics(gatewayConnectionId);
         }
 
         /** Builds a new UnderlyingNetworkController. */
         public UnderlyingNetworkController newUnderlyingNetworkController(
                 VcnContext vcnContext,
                 VcnGatewayConnectionConfig connectionConfig,
-                int gatewayConnectionId,
+                VcnMetrics vcnMetrics,
                 ParcelUuid subscriptionGroup,
                 TelephonySubscriptionSnapshot snapshot,
                 UnderlyingNetworkControllerCallback callback) {
             return new UnderlyingNetworkController(
                     vcnContext,
                     connectionConfig,
-                    gatewayConnectionId,
+                    vcnMetrics,
                     subscriptionGroup,
                     snapshot,
                     callback);
@@ -3162,10 +3158,8 @@ public class VcnGatewayConnection extends StateMachine {
          */
         public void logAndUpdateValidationStatus(
                 @NonNull VcnMetrics vcnMetrics,
-                int gatewayConnectionId,
                 @VcnMetrics.ValidationStatus int status) {
-            vcnMetrics.logVcnNetworkValidationStatus(
-                    gatewayConnectionId, mId, mValidationStatus, status);
+            vcnMetrics.logVcnNetworkValidationStatus(mId, mValidationStatus, status);
             mValidationStatus = status;
         }
     }

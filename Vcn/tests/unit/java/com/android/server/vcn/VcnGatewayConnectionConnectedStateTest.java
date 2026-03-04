@@ -179,7 +179,6 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
         verify(mIkeSession).setNetwork(TEST_UNDERLYING_NETWORK_RECORD_2.network);
         verify(mVcnMetrics)
                 .logUnderlyingNetworkSwitched(
-                        anyInt(),
                         eq(VcnMetrics.TRANSPORT_MASK_CELLULAR),
                         eq(VcnMetrics.TRANSPORT_MASK_WIFI));
     }
@@ -193,7 +192,7 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
 
         assertEquals(mGatewayConnection.mConnectedState, mGatewayConnection.getCurrentState());
         verify(mIkeSession, never()).setNetwork(any());
-        verify(mVcnMetrics, never()).logUnderlyingNetworkSwitched(anyInt(), anyInt(), anyInt());
+        verify(mVcnMetrics, never()).logUnderlyingNetworkSwitched(anyInt(), anyInt());
     }
 
     private void verifyDataStallTriggersMigration(
@@ -660,12 +659,10 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
         verify(mVcnMetrics)
                 .logVcnNetworkValidationStatus(
                         anyInt(),
-                        anyInt(),
                         eq(VcnMetrics.VALIDATION_STATUS_PENDING),
                         eq(VcnMetrics.VALIDATION_STATUS_VALID));
         verify(mVcnMetrics)
                 .logVcnNetworkValidationStatus(
-                        anyInt(),
                         anyInt(),
                         eq(VcnMetrics.VALIDATION_STATUS_VALID),
                         eq(VcnMetrics.VALIDATION_STATUS_NOT_VALID));
@@ -686,7 +683,7 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
 
         verifySafeModeStateAndCallbackFired(2 /* invocationCount */, false /* isInSafeMode */);
         assertFalse(mGatewayConnection.isInSafeMode());
-        verify(mVcnMetrics).logExitSafeMode(anyInt());
+        verify(mVcnMetrics).logExitSafeMode();
     }
 
     @Test
@@ -715,7 +712,7 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
         mTestLooper.dispatchAll();
 
         verifySafeModeStateAndCallbackFired(2 /* invocationCount */, true /* isInSafeMode */);
-        verify(mVcnMetrics).logEnterSafeMode(anyInt());
+        verify(mVcnMetrics).logEnterSafeMode();
     }
 
     private void verifySetSafeModeAlarm(

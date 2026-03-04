@@ -172,6 +172,7 @@ import com.android.server.connectivity.mdns.MdnsServiceTypeClient.DiscoveryOfflo
 import com.android.server.connectivity.mdns.MdnsSocketProvider;
 import com.android.server.connectivity.mdns.MdnsSocketProvider.SocketRequestMonitor;
 import com.android.server.connectivity.mdns.OffloadCallback;
+import com.android.server.connectivity.mdns.internal.ServiceAccessDb;
 import com.android.server.connectivity.mdns.internal.ServiceAccessRepository;
 import com.android.server.connectivity.mdns.util.MdnsUtils;
 import com.android.testutils.DevSdkIgnoreRule;
@@ -285,6 +286,7 @@ public class NsdServiceTest {
     PermissionManager mPermissionManager;
     @Mock NetworkNsdReportedMetrics mMetrics;
     @Mock MdnsUtils.Clock mClock;
+    @Mock ServiceAccessDb mServiceAccessDb;
     ServiceAccessRepository mAccessRepository;
     SocketRequestMonitor mSocketRequestMonitor;
     OnUidImportanceListener mUidImportanceListener;
@@ -294,6 +296,7 @@ public class NsdServiceTest {
     Handler mHandler;
     NsdService mService;
     OffloadCallback mOffloadCallback;
+    private String mPackageName;
 
     private static class LinkToDeathRecorder extends Binder {
         IBinder.DeathRecipient mDr;
@@ -311,7 +314,9 @@ public class NsdServiceTest {
         mThread = new HandlerThread("mock-service-handler");
         mThread.start();
         mHandler = new Handler(mThread.getLooper());
-        mAccessRepository = new ServiceAccessRepository(new SharedLog("TestAccessRepo"));
+        mPackageName = getInstrumentation().getContext().getPackageName();
+        mAccessRepository = new ServiceAccessRepository(mContext, mThread.getLooper(),
+                new SharedLog("TestAccessRepo"), mServiceAccessDb);
         when(mContext.getContentResolver()).thenReturn(mResolver);
         when(mContext.getSystemService(PermissionManager.class)).thenReturn(mPermissionManager);
         mockService(mContext, MDnsManager.class, MDnsManager.MDNS_SERVICE, mMockMDnsM);
@@ -382,7 +387,7 @@ public class NsdServiceTest {
                 com.android.tethering.mainline.beta.Flags.FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT,
                 false))
                 .when(mDeps).isSupportTetheringAndP2pGoLocalAgent(any(Context.class));
-        doReturn(mAccessRepository).when(mDeps).makeAccessRepository(any());
+        doReturn(mAccessRepository).when(mDeps).makeAccessRepository(any(), any(), any());
         mService = makeService();
         final ArgumentCaptor<SocketRequestMonitor> cbMonitorCaptor =
                 ArgumentCaptor.forClass(SocketRequestMonitor.class);
@@ -1241,7 +1246,7 @@ public class NsdServiceTest {
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     public void testRegisterServiceInfoCallback_MissingLocalNetworkPermission_Fails() {
-        mAccessRepository.unloadUid(Process.myUid());
+        mAccessRepository.unloadPackage(Process.myUid(), mPackageName);
         final AttributionSource attributionSource = getAttributionSource();
         doReturn(PermissionManager.PERMISSION_SOFT_DENIED).when(
                 mPermissionManager).checkPermissionForStartDataDelivery(
@@ -1266,7 +1271,7 @@ public class NsdServiceTest {
     @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     public void testRegisterServiceInfoCallback_ChosenViaPicker_Succeeds() throws Exception {
         setMdnsDiscoveryManagerEnabled();
-        mAccessRepository.unloadUid(Process.myUid());
+        mAccessRepository.unloadPackage(Process.myUid(), mPackageName);
         final NsdManager client = connectClient(mService);
         final ServiceInfoCallback serviceInfoCallback = mock(ServiceInfoCallback.class);
         final NsdServiceInfo serviceInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE + ".");
@@ -1288,7 +1293,7 @@ public class NsdServiceTest {
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     public void testRegisterServiceInfoCallback_HasLocalNetworkPermission_Succeeds() {
-        mAccessRepository.unloadUid(Process.myUid());
+        mAccessRepository.unloadPackage(Process.myUid(), mPackageName);
         final AttributionSource attributionSource = getAttributionSource();
         doReturn(PermissionManager.PERMISSION_GRANTED).when(
                 mPermissionManager).checkPermissionForStartDataDelivery(
@@ -2127,7 +2132,7 @@ public class NsdServiceTest {
     private DiscoveryListener startDiscoveryReceivingApprovedAndNotApprovedServices(
             long discoveryFlags) throws Exception {
         setMdnsDiscoveryManagerEnabled();
-        mAccessRepository.unloadUid(Process.myUid());
+        mAccessRepository.unloadPackage(Process.myUid(), mPackageName);
         final NsdManager client = connectClient(mService);
 
         // Approve a service via the picker
@@ -2284,7 +2289,7 @@ public class NsdServiceTest {
     public void testResolutionWithMdnsDiscoveryManager_ChosenViaPicker_Succeeds()
             throws Exception {
         setMdnsDiscoveryManagerEnabled();
-        mAccessRepository.unloadUid(Process.myUid());
+        mAccessRepository.unloadPackage(Process.myUid(), mPackageName);
 
         final NsdManager client = connectClient(mService);
         final ResolveListener resolveListener = mock(ResolveListener.class);
@@ -3281,7 +3286,7 @@ public class NsdServiceTest {
         doReturn(List.of(new MdnsAdvertiser.OffloadServiceInfoWrapper(123, advertingInfo)))
                 .when(mAdvertiser).notifyOffloadStart(interfaceName);
         final DiscoveryOffloadInfo filerRepliesInfo = new DiscoveryOffloadInfo(
-                "_testService", "_testType", List.of("_sub1", "_sub2"), "Android.local");
+                "_testService", "_testType._tcp.local", List.of("_sub1", "_sub2"), "Android.local");
         final OffloadServiceInfo discoveryInfoExpected =
                 createOffloadServiceInfoFromDiscoveryOffload(
                         filerRepliesInfo,
@@ -3332,7 +3337,7 @@ public class NsdServiceTest {
         final String interfaceName = "iface";
         final DiscoveryOffloadInfo discoveryOffloadInfo = new DiscoveryOffloadInfo(
                 "_testService",
-                "_testType",
+                "_testType._tcp.local",
                 List.of("_sub1", "_sub2"),
                 "Android.local"
         );
@@ -3353,7 +3358,7 @@ public class NsdServiceTest {
     public void testRegisterOffloadSession_sendAllOffloadServiceInfos() {
         final String interfaceName = "iface";
         final DiscoveryOffloadInfo discoveryOffloadInfo = new DiscoveryOffloadInfo(
-                "_testService", "_testType", List.of("_sub1", "_sub2"), "Android.local");
+                "_testService", "_testType._tcp.local", List.of("_sub1", "_sub2"), "Android.local");
         long offloadType = OFFLOAD_TYPE_QUERY | OFFLOAD_TYPE_REPLY;
         long expectedOffloadType = DiscoveryOffloadInfo.OFFLOAD_TYPE;
         if (nsdMdnsScanOffload()) {
@@ -3765,12 +3770,14 @@ public class NsdServiceTest {
         final INsdManagerCallback cb = getCallback();
         final IBinder.DeathRecipient deathRecipient = verifyLinkToDeath(cb);
         mHandler.post(() ->
-                mAccessRepository.addAllowedService(Process.myUid(), SERVICE_NAME, SERVICE_TYPE));
+                mAccessRepository.addAllowedService(Process.myUid(), mPackageName, SERVICE_NAME,
+                        SERVICE_TYPE));
         deathRecipient.binderDied();
         waitForIdle();
 
         assertFalse(HandlerUtils.visibleOnHandlerThread(mHandler, () ->
-                mAccessRepository.isServiceAllowed(Process.myUid(), SERVICE_NAME, SERVICE_TYPE)));
+                mAccessRepository.isServiceAllowed(Process.myUid(), mPackageName, SERVICE_NAME,
+                        SERVICE_TYPE)));
     }
 
     @Test
@@ -3778,7 +3785,7 @@ public class NsdServiceTest {
     @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
     public void testCheckPermissionForService() throws Exception {
         setMdnsDiscoveryManagerEnabled();
-        mAccessRepository.unloadUid(Process.myUid());
+        mAccessRepository.unloadPackage(Process.myUid(), mPackageName);
         final NsdManager client = connectClient(mService);
         final IntConsumer resultReceiver = mock(IntConsumer.class);
 
@@ -3805,7 +3812,8 @@ public class NsdServiceTest {
         final AttributionSource attributionSource = getAttributionSource();
         doReturn(PermissionManager.PERMISSION_SOFT_DENIED).when(mPermissionManager)
                 .checkPermissionForStartDataDelivery(ACCESS_LOCAL_NETWORK, attributionSource, null);
-        mAccessRepository.addAllowedService(Process.myUid(), SERVICE_NAME, SERVICE_TYPE);
+        mAccessRepository.addAllowedService(
+                Process.myUid(), mPackageName, SERVICE_NAME, SERVICE_TYPE);
         final NsdServiceInfo request = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
         final ResolveListener resolveListener = mock(ResolveListener.class);
         client.resolveService(request, resolveListener);
@@ -3838,7 +3846,8 @@ public class NsdServiceTest {
         final AttributionSource attributionSource = getAttributionSource();
         doReturn(PermissionManager.PERMISSION_SOFT_DENIED).when(mPermissionManager)
                 .checkPermissionForStartDataDelivery(ACCESS_LOCAL_NETWORK, attributionSource, null);
-        mAccessRepository.addAllowedService(Process.myUid(), SERVICE_NAME, SERVICE_TYPE);
+        mAccessRepository.addAllowedService(
+                Process.myUid(), mPackageName, SERVICE_NAME, SERVICE_TYPE);
         final NsdServiceInfo request = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
         final ServiceInfoCallback serviceInfoCallback = mock(ServiceInfoCallback.class);
         client.registerServiceInfoCallback(request, Runnable::run, serviceInfoCallback);
@@ -3916,5 +3925,22 @@ public class NsdServiceTest {
         verify(mConnectivityManager).allowLocalNetAccess(eq(Process.myUid()),
                 eq(TEST_INTERFACE_INDEX),
                 argThat(addrs -> new ArraySet<>(addrs).equals(expectedAddrs)));
+    }
+
+    @Test
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testCheckPermissionForService_Persisted() throws Exception {
+        final int uid = Process.myUid();
+        final ArraySet<ServiceAccessRepository.Service> persisted = new ArraySet<>();
+        persisted.add(new ServiceAccessRepository.Service(SERVICE_NAME, SERVICE_TYPE, false));
+        doReturn(persisted).when(mServiceAccessDb).getAllowedServices(uid, mPackageName);
+
+        final NsdManager client = connectClient(mService);
+        final CompletableFuture<Integer> result = new CompletableFuture<>();
+        client.checkPermissionForService(SERVICE_NAME, SERVICE_TYPE, Runnable::run,
+                result::complete);
+
+        assertEquals(NsdManager.SERVICE_PERMISSION_GRANTED,
+                (int) result.get(TIMEOUT_MS, TimeUnit.MILLISECONDS));
     }
 }

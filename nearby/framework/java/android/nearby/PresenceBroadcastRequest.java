@@ -126,7 +126,7 @@ public final class PresenceBroadcastRequest extends BroadcastRequest implements 
         dest.writeInt(mSalt.length);
         dest.writeByteArray(mSalt);
         dest.writeList(mActions);
-        dest.writeParcelable(mCredential, /** parcelableFlags= */0);
+        dest.writeParcelable(mCredential, /* parcelableFlags= */0);
         dest.writeList(mExtendedProperties);
     }
 

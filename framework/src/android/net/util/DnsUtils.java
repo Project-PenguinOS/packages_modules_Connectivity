@@ -322,7 +322,7 @@ public class DnsUtils {
             if (addr.isMulticastAddress()) {
                 return getIpv6MulticastScope(addr);
             } else if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()) {
-                /**
+                /*
                  * RFC 4291 section 2.5.3 says loopback is to be treated as having
                  * link-local scope.
                  */
@@ -336,14 +336,14 @@ public class DnsUtils {
             if (addr.isLoopbackAddress() || addr.isLinkLocalAddress()) {
                 return IPV6_ADDR_SCOPE_LINKLOCAL;
             } else {
-                /**
+                /*
                  * RFC 6724 section 3.2. Other IPv4 addresses, including private addresses
                  * and shared addresses (100.64.0.0/10), are assigned global scope.
                  */
                 return IPV6_ADDR_SCOPE_GLOBAL;
             }
         } else {
-            /**
+            /*
              * This should never happen.
              * Return a scope with low priority as a last resort.
              */

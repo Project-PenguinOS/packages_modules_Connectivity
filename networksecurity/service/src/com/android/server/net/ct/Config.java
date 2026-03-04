@@ -18,6 +18,7 @@ package com.android.server.net.ct;
 /** Class holding the constants used by the CT feature. */
 final class Config {
 
+    static final String TAG = "CertificateTransparency";
     static final boolean DEBUG = false;
 
     public static final String INSTALL_COMPLETE_ACTION = "android.intent.action.INSTALL_COMPLETE";

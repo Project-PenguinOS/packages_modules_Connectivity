@@ -16,8 +16,8 @@
 
 package com.android.server.net.ct;
 
-
 import static com.android.net.ct.flags.Flags.flatbuffersLogList;
+import static com.android.server.net.ct.Config.TAG;
 
 import android.annotation.RequiresApi;
 import android.content.Context;
@@ -35,8 +35,6 @@ import java.util.concurrent.Executors;
 /** Implementation of the Certificate Transparency service. */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 public class CertificateTransparencyService implements DeviceConfig.OnPropertiesChangedListener {
-
-    private static final String TAG = "CertificateTransparencyService";
 
     private final CertificateTransparencyJob mCertificateTransparencyJob;
 
