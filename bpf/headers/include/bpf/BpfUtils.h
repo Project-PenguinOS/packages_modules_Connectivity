@@ -37,7 +37,7 @@ namespace bpf {
 
 static inline bool getIsCuttlefish() {
     char value[92] = {};
-    if (__system_property_get("ro.product.board", value) < 1) abort();
+    if (__system_property_get("ro.product.board", value) < 1) return false;
     return !strcmp(value, "cutf");
 }
 
@@ -45,7 +45,7 @@ const bool isCuttlefish = getIsCuttlefish();
 
 static inline bool getIsDesktop() {
     char value[92] = {};
-    if (__system_property_get("ro.boot.hardware", value) < 1) abort();
+    if (__system_property_get("ro.boot.hardware", value) < 1) return false;
     return !strcmp(value, "android-desktop");
 }
 

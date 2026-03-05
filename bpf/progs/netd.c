@@ -879,7 +879,7 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q2) && (match != DROP)) {
         // TODO(b/467964186): use the parsed skb
-        if (should_block_local_network_packets(skb, statsUid, egress, kver)) {
+        if (should_block_local_network_packets(skb, sock_uid, egress, kver)) {
             if (KVER_IS_AT_LEAST(kver, 5, 10, 0) && skb->sk && egress.egress) {
                 SkStorageValue *v = bpf_sk_storage_get(skb->sk, 0, 0);
                 if (v) v->dropReasons |= DROP_REASON_LNP;
@@ -890,9 +890,8 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
     // If an outbound packet is going to be dropped, we do not count that traffic.
     if (egress.egress && (match == DROP)) {
-        // TODO(maze): enable interface stats undo
-        // uint32_t key = skb->ifindex;
-        // update_iface_stats_map(skb, &key, EGRESS, KVER_4_9, UNDO);
+        uint32_t key = skb->ifindex;
+        update_iface_stats_map(skb, &key, EGRESS, KVER_4_9, UNDO);
         return DROP;
     }
 

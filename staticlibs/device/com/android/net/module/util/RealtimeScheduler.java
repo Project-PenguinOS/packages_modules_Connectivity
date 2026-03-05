@@ -34,6 +34,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.PriorityQueue;
 
 /**
@@ -210,8 +211,14 @@ public class RealtimeScheduler {
      */
     public void removeDelayedRunnable(@NonNull Runnable runnable) {
         ensureRunningOnCorrectThread();
-        mTaskQueue.removeIf(task -> task instanceof RunnableTask
-                && ((RunnableTask) task).mRunnable == runnable);
+        final Iterator<Task> it = mTaskQueue.iterator();
+        while (it.hasNext()) {
+            final Task task = it.next();
+            if (task instanceof RunnableTask && ((RunnableTask) task).mRunnable == runnable) {
+                it.remove();
+            }
+        }
+        mHandler.removeCallbacks(runnable);
     }
 
     /**
@@ -247,6 +254,7 @@ public class RealtimeScheduler {
     public void removeDelayedMessage(int what) {
         ensureRunningOnCorrectThread();
         mTaskQueue.removeIf(task -> isMessageTask(task, what));
+        mHandler.removeMessages(what);
     }
 
     /**

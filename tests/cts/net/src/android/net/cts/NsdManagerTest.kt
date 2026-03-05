@@ -3434,6 +3434,88 @@ class NsdManagerTest {
         }
     }
 
+    @Test
+    @RequiresFlagsEnabled(FLAG_NSD_SERVICE_PICKER)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    fun testDiscoverServices_withDisplayNameAttributeAndPicker() {
+        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        uiDevice.wakeUp()
+        uiDevice.executeShellCommand("wm dismiss-keyguard")
+        val packetReader = makePacketReader()
+        val discoveryRecord = NsdDiscoveryRecord()
+        tryTest {
+            val request = DiscoveryRequest.Builder(serviceType)
+                .setNetwork(testNetwork1.network)
+                .setFlags(DiscoveryRequest.FLAG_SHOW_PICKER)
+                .setDisplayNameAttribute("displayattr")
+                .build()
+            nsdManager.discoverServices(
+                request,
+                Executor { it.run() },
+                discoveryRecord
+            )
+            discoveryRecord.expectCallback<DiscoveryStarted>()
+            assertNotNull(packetReader.pollForQuery("$serviceType.local", DnsResolver.TYPE_PTR))
+
+            // Service 1 has the "displayattr" attribute
+            /*
+               Generated with:
+               scapy.raw(scapy.dns_compress(scapy.DNS(rd=0, qr=1, aa=1, qd = None,
+                an = [scapy.DNSRR(rrname='_nmt123456789._tcp.local', type='PTR', ttl=120,
+                        rdata='NsdTest123456789._nmt123456789._tcp.local')],
+                ar = [scapy.DNSRRSRV(rrname='NsdTest123456789._nmt123456789._tcp.local',
+                        rclass=0x8001, port=31234, target='testhost.local', ttl=120),
+                    scapy.DNSRR(rrname='NsdTest123456789._nmt123456789._tcp.local', type='TXT',
+                        ttl=120, rdata='displayattr=Display Name 1'),
+                    scapy.DNSRR(rrname='testhost.local', type='AAAA', ttl=120,
+                                    rdata='2001:db8::1')]
+               ))).hex()
+             */
+            val payload1 = hexStringToByteArray("0000840000000001000000030d5f6e6d7431323334353637" +
+                    "3839045f746370056c6f63616c00000c0001000000780013104e736454657374313233343536" +
+                    "373839c00cc03000210001000000780011000000007a020874657374686f7374c01fc0300010" +
+                    "000100000078001b1a646973706c6179617474723d446973706c6179204e616d652031c05500" +
+                    "1c000100000078001020010db8000000000000000000000001")
+            replaceServiceNameAndTypeWithTestSuffix(payload1, serviceName)
+            packetReader.sendResponse(buildMdnsPacket(payload1))
+
+            // Service 2 does NOT have the "displayattr" attribute
+            /*
+               Generated with:
+               scapy.raw(scapy.dns_compress(scapy.DNS(rd=0, qr=1, aa=1, qd = None,
+                an = [scapy.DNSRR(rrname='_nmt123456789._tcp.local', type='PTR', ttl=120,
+                        rdata='NsdTest123456789._nmt123456789._tcp.local')],
+                ar = [scapy.DNSRRSRV(rrname='NsdTest123456789._nmt123456789._tcp.local',
+                        rclass=0x8001, port=31235, target='testhost2.local', ttl=120),
+                    scapy.DNSRR(rrname='NsdTest123456789._nmt123456789._tcp.local', type='TXT',
+                        ttl=120, rdata='otherattr=somevalue'),
+                    scapy.DNSRR(rrname='testhost2.local', type='AAAA', ttl=120,
+                                    rdata='2001:db8::2')]
+               ))).hex()
+             */
+            val payload2 = hexStringToByteArray("0000840000000001000000030d5f6e6d7431323334353637" +
+                    "3839045f746370056c6f63616c00000c0001000000780013104e736454657374313233343536" +
+                    "373839c00cc03000210001000000780012000000007a030974657374686f737432c01fc03000" +
+                    "100001000000780014136f74686572617474723d736f6d6576616c7565c055001c0001000000" +
+                    "78001020010db8000000000000000000000002")
+            replaceServiceNameAndTypeWithTestSuffix(payload2, serviceName2)
+            packetReader.sendResponse(buildMdnsPacket(payload2))
+
+            val service1Text = uiDevice.findObject(UiSelector().text("Display Name 1"))
+            assertTrue("Picker did not show service 1 with display attribute value",
+                service1Text.waitForExists(UI_TIMEOUT_MS))
+
+            val service2Text = uiDevice.findObject(UiSelector().text(serviceName2))
+            assertTrue("Picker did not show service 2 with its service name",
+                service2Text.waitForExists(UI_TIMEOUT_MS))
+        } cleanup {
+            packetReader.handler.post { packetReader.stop() }
+            handlerThread.waitForIdle(TIMEOUT_MS)
+            nsdManager.stopServiceDiscovery(discoveryRecord)
+            discoveryRecord.expectCallback<DiscoveryStopped>()
+        }
+    }
+
     private fun hasServiceTypeClientsForNetwork(clients: List<String>, network: Network): Boolean {
         return clients.any { client -> client.substring(
                 client.indexOf("network=") + "network=".length,

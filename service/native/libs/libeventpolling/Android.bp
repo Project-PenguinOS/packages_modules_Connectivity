@@ -27,7 +27,9 @@ cc_defaults {
         "-Wno-unused-parameter",
         "-Wthread-safety",
     ],
-    static_libs: ["libstatslog_connectivity_sdk30"],
+    static_libs: [
+        "libstatslog_connectivity_sdk30",
+    ],
     shared_libs: [
         "libbase",
         "libcutils",

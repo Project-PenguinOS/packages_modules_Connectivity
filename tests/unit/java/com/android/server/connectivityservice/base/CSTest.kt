@@ -36,6 +36,7 @@ import android.net.INetd.PERMISSION_INTERNET
 import android.net.InetAddresses
 import android.net.LinkProperties
 import android.net.LocalNetworkConfig
+import android.net.Network
 import android.net.NetworkAgentConfig
 import android.net.NetworkCapabilities
 import android.net.NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED
@@ -239,11 +240,7 @@ open class CSTest {
     }
     val clatCoordinator = mock<ClatCoordinator>()
     val networkRequestStateStatsMetrics = mock<NetworkRequestStateStatsMetrics>()
-    val proxyTracker = ProxyTracker(
-            context,
-            mock<Handler>(),
-            16 // EVENT_PROXY_HAS_CHANGED
-    )
+    val proxyTracker = mock<ProxyTracker>()
     val systemConfigManager = makeMockSystemConfigManager()
     val batteryStats = mock<IBatteryStats>()
     val batteryManager = BatteryStatsManager(batteryStats)
@@ -356,6 +353,7 @@ open class CSTest {
 
         override fun makeHandlerThread(tag: String) = csHandlerThread
         override fun makeProxyTracker(context: Context, connServiceHandler: Handler) = proxyTracker
+        override fun queryUserAccess(uid: Int, network: Network, cs: ConnectivityService) = true
         override fun makeMulticastRoutingCoordinatorService(handler: Handler) =
                 this@CSTest.multicastRoutingCoordinatorService
 

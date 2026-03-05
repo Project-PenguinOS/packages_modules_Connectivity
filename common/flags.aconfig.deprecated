@@ -105,15 +105,6 @@ flag {
 }
 
 flag {
-  name: "blocked_reason_oem_deny_chains"
-  is_exported: true
-  namespace: "android_core_networking"
-  description: "Flag for oem deny chains blocked reasons API"
-  bug: "328732146"
-  is_fixed_read_only: true
-}
-
-flag {
   name: "blocked_reason_network_restricted"
   is_exported: true
   namespace: "android_core_networking"

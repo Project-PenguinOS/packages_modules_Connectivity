@@ -23,7 +23,11 @@ import static android.system.OsConstants.SOCK_DGRAM;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.content.Context;
+import android.net.ConnectivityManager;
 import android.net.InetAddresses;
+import android.net.LinkAddress;
+import android.net.LinkProperties;
 import android.net.Network;
 import android.system.ErrnoException;
 import android.system.Os;
@@ -133,6 +137,32 @@ public class DnsUtils {
 
     /**
      * Sort the given address list in RFC6724 order.
+     *
+     * <p>Will leave the list unchanged if an error occurs or default to
+     * {@link #rfc6724Sort(Network, List)} if {@link LinkProperties} is null.
+     *
+     * <p>TODO(b/483607527): fully match the behaviour of _rfc6724_sort in the native resolver.
+     *
+     * @param linkProperties used to get the source address.
+     * @param network the network to sort the addresses on.
+     * @param answers the list of addresses to sort.
+     */
+    public static @NonNull List<InetAddress> rfc6724Sort(@Nullable LinkProperties linkProperties,
+            @NonNull Network network, @NonNull List<InetAddress> answers) {
+        if (linkProperties == null) {
+            return rfc6724Sort(network, answers);
+        }
+
+        final ArrayList<SortableAddress> sortableAnswerList = new ArrayList<>();
+        for (InetAddress addr : answers) {
+            sortableAnswerList.add(new SortableAddress(addr, findSrcAddress(linkProperties, addr)));
+        }
+
+        return createSortedList(sortableAnswerList);
+    }
+
+    /**
+     * Sort the given address list in RFC6724 order.
      * Will leave the list unchanged if an error occurs.
      *
      * This function matches the behaviour of _rfc6724_sort in the native resolver.
@@ -144,6 +174,15 @@ public class DnsUtils {
             sortableAnswerList.add(new SortableAddress(addr, findSrcAddress(network, addr)));
         }
 
+        return createSortedList(sortableAnswerList);
+    }
+
+    /**
+     * Sorts the given list of {@link SortableAddress} in RFC6724 order and returns the sorted list
+     * of {@link InetAddress}.
+     */
+    private static @NonNull List<InetAddress> createSortedList(
+            @NonNull List<SortableAddress> sortableAnswerList) {
         Collections.sort(sortableAnswerList, sRfc6724Comparator);
 
         final List<InetAddress> sortedAnswers = new ArrayList<>();
@@ -154,6 +193,33 @@ public class DnsUtils {
         return sortedAnswers;
     }
 
+    /**
+     * Returns the source address for the given destination address on the given network.
+     *
+     * <p>This function is more efficient than {@link #findSrcAddress(Network, InetAddress)} as it
+     * does not require socket operations and can use information in {@link LinkProperties}.
+     *
+     * <p>TODO(b/483607527): fully implement the logic here to get the source address properly.
+     */
+    private static @Nullable InetAddress findSrcAddress(@NonNull LinkProperties linkProperties,
+            @NonNull InetAddress addr) {
+        for (LinkAddress linkAddr : linkProperties.getLinkAddresses()) {
+            InetAddress srcAddr = linkAddr.getAddress();
+            if ((isIpv6Address(addr) && isIpv6Address(srcAddr))
+                    || (isIpv4Address(addr) && isIpv4Address(srcAddr))) {
+                // TODO(b/483607527): fully implement the logic here to get the source address.
+                return srcAddr;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the source address for the given destination address on the given network.
+     *
+     * <p>This function is not as efficient as {@link #findSrcAddress(LinkProperties, InetAddress)}
+     * as it opens sockets due to a lack of access to a {@link Context} and {@link LinkProperties}.
+     */
     private static @Nullable InetAddress findSrcAddress(@Nullable Network network,
             @NonNull InetAddress addr) {
         final int domain;

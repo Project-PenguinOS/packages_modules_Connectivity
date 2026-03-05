@@ -869,7 +869,7 @@ public class DnsResolverTest {
         Looper handlerLooper = handlerThread.getLooper();
         // Use a separate DnsResolver instance because we are modifying which looper is used, which
         // would affect the other tests.
-        DnsResolver dns = DnsResolver.getInstance(mContext, handlerLooper);
+        DnsResolver dns = new DnsResolver(mContext, handlerLooper);
 
         doTestQueryForHttpsRecord(dns, mExecutorInline);
     }
@@ -889,7 +889,8 @@ public class DnsResolverTest {
             final VerifyCancelHttpsEndpointInfoCallback callback =
                     new VerifyCancelHttpsEndpointInfoCallback(msg, /* cancellationSignal= */ null);
             dns.query(network, TEST_HTTPS_RECORD_DOMAIN, FLAG_NO_CACHE_LOOKUP,
-                    executor, /* timeoutMillis= */ 0, /* cancellationSignal= */ null, callback);
+                    executor, DnsResolver.HTTPS_QUERY_WAIT_UNTIL_TIMEOUT,
+                    /* cancellationSignal= */ null, callback);
 
             assertTrue(msg + " but no answer after " + TIMEOUT_MS + "ms.",
                     callback.waitForAnswer());

@@ -1707,7 +1707,7 @@ static int doLoad(char** argv, char * const envp[]) {
         REQUIRE(6, 1, 57)
         REQUIRE(6, 6, 0)
         REQUIRE(6, 12, 0)
-        REQUIRE(6, 18, 4)
+        REQUIRE(6, 18, 9)
 
 #undef REQUIRE
 
@@ -1967,6 +1967,12 @@ int main(int argc, char** argv, char * const envp[]) {
         InitLogging(argv);
     }
 
+    // U QPR3+: we should never be run twice -- exit if bpf.progs_loaded is already set.
+    if (GetIntProperty("bpf.progs_loaded", 0) && !getuid()) {
+        ALOGE("bpf.progs_loaded already set to 1 - exiting.");
+        return 0;
+    }
+
     if (argc == 2 && !strcmp(argv[1], "done")) {
         // we're being re-exec'ed from platform bpfloader to 'finalize' things
         if (!SetProperty("bpf.progs_loaded", "1")) {
@@ -1977,5 +1983,6 @@ int main(int argc, char** argv, char * const envp[]) {
         return 0;
     }
 
+    // Normal 'initial' entry point
     return android::bpf::doLoad(argv, envp);
 }
