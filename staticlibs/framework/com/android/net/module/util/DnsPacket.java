@@ -56,7 +56,8 @@ public class DnsPacket {
      * Type of the canonical name for an alias. Refer to RFC 1035 section 3.2.2.
      */
     // TODO: Define the constant as a public constant in DnsResolver since it can never change.
-    private static final int TYPE_CNAME = 5;
+    public static final int TYPE_CNAME = 5;
+    public static final int TYPE_SOA = 6;
     public static final int TYPE_SVCB = 64;
 
     /**

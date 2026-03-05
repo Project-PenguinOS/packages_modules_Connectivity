@@ -98,8 +98,7 @@ public abstract class SvcParam<T> {
 
         @Override
         short[] getValue() {
-            /* Not yet implemented */
-            return null;
+            return mValue;
         }
 
         @Override
@@ -321,7 +320,10 @@ public abstract class SvcParam<T> {
         }
     }
 
-    private static String toKeyName(int key) {
+    /**
+     * Returns the human-readable name of the SvcParamKey.
+     */
+    static String toKeyName(int key) {
         return switch (key) {
             case KEY_MANDATORY -> "mandatory";
             case KEY_ALPN -> "alpn";

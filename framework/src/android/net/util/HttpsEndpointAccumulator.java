@@ -24,6 +24,8 @@ import static android.net.DnsResolver.TYPE_HTTPS;
 
 import static com.android.net.module.util.DnsPacket.ANSECTION;
 import static com.android.net.module.util.DnsPacket.QDSECTION;
+import static com.android.net.module.util.DnsPacket.TYPE_CNAME;
+import static com.android.net.module.util.DnsPacket.TYPE_SOA;
 
 import android.annotation.FlaggedApi;
 import android.annotation.NonNull;
@@ -150,8 +152,6 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
         final int queryType = questionRecords.get(0).nsType;
 
         if (queryType != TYPE_A && queryType != TYPE_AAAA && queryType != TYPE_HTTPS) {
-            // Don't try to parse any other types of records (e.g. CNAME), but don't mark this as an
-            // error since as long as we get an answer for the types we're looking for, we're fine.
             return;
         }
 
@@ -170,13 +170,27 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                         addresses.add(InetAddress.getByAddress(record.getRR()));
                     }
                     case TYPE_HTTPS -> {
+                        DnsHttpsRecord dnsHttpsRecord = (DnsHttpsRecord) record;
+                        try {
+                            dnsHttpsRecord.verifyMandatoryKeys();
+                        } catch (DnsPacket.ParseException e) {
+                            // Ignore the HTTPS record as it is missing mandatory keys.
+                            continue;
+                        }
+
                         HttpsRecord httpsRecord =
-                                new HttpsRecord(mNetwork, mLinkProperties, (DnsHttpsRecord) record);
+                                new HttpsRecord(mNetwork, mLinkProperties, dnsHttpsRecord);
                         httpsRecords.add(httpsRecord);
 
                         // Add only the relevant IP hints to the list of IP addresses.
                         if (mHasIpv4) addresses.addAll(httpsRecord.getIpv4Hints());
                         if (mHasIpv6) addresses.addAll(httpsRecord.getIpv6Hints());
+                    }
+                    case TYPE_CNAME, TYPE_SOA -> {
+                        // Skip CNAME and SOA records, but don't mark this as an error.
+                        // Most servers will return the full CNAME chain in the answer to the final
+                        // A/AAAA record. If not, we'll assume NODATA for this queryType.
+                        continue;
                     }
                     default -> {
                         exception = new DnsException(ERROR_PARSE,
@@ -199,8 +213,9 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
         synchronized (mResult) {
             mResult.mAddresses.addAll(addresses);
             mResult.mHttpsRecords.addAll(httpsRecords);
-            // Add the query type even in the case of NODATA or mismatched query/response type,
-            // since this indicates we received an answer for the type of record we were querying.
+            // Add the query type even in the case of NODATA, mismatched query/response type (even
+            // in the case of CNAME responses with no actual address records), since this indicates
+            // we received an answer for the type of record we were querying.
             mResult.mReceivedAnswersToQueryTypes.add(queryType);
             if (exception != null) {
                 mResult.mDnsException = exception;
@@ -214,7 +229,8 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                     // If we have received all but the HTTPS records, decide whether to return
                     // immediately or wait the given amount of time before returning incomplete
                     // results.
-                    if (mHttpsTimeoutMillis == DnsResolver.HTTPS_QUERY_WAIT_NONE) {
+                    if (mHttpsTimeoutMillis == DnsResolver.HTTPS_QUERY_WAIT_NONE
+                            || mResult.mReceivedAnswersToQueryTypes.contains(TYPE_HTTPS)) {
                         endpoint = createHttpsEndpoint(rcode);
                     } else if (mHttpsTimeoutMillis > 0) {
                         shouldStartHttpsTimeout = true;
@@ -247,7 +263,6 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
         // TODO(b/448882639): handle filtering out HTTPS records with specified mandatory values
         // that are absent
         // TODO(b/448882639): handle if the HTTPS record name does not match the A/AAAA ones
-        // TODO(b/448882639): handle parsing the CNAME chain for the A/AAAA records
     }
 
     @Override

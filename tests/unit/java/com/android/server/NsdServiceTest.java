@@ -49,6 +49,7 @@ import static android.net.nsd.NsdManager.FAILURE_MAX_LIMIT;
 import static android.net.nsd.NsdManager.FAILURE_OPERATION_NOT_RUNNING;
 import static android.net.nsd.NsdManager.FAILURE_PERMISSION_DENIED;
 import static android.net.nsd.OffloadEngine.OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK;
+import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_FILTER_QUERIES;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_QUERY;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_REPLY;
@@ -2972,6 +2973,8 @@ public class NsdServiceTest {
     @Test
     @EnableCompatChanges(ENABLE_PLATFORM_MDNS_BACKEND)
     public void testTakeMulticastLockOnBehalfOfClient_ForWifiNetworksOnly() {
+        doReturn("iface").when(mDeps).getSocketInterfaceName(any());
+
         // Test on one client in the foreground
         mUidImportanceListener.onUidImportance(123, IMPORTANCE_FOREGROUND);
         doReturn(123).when(mDeps).getCallingUid();
@@ -3538,6 +3541,275 @@ public class NsdServiceTest {
     }
 
     @Test
+    @EnableCompatChanges(ENABLE_PLATFORM_MDNS_BACKEND)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public void testTakeMulticastLock_BypassedByOffloadEngine() {
+        final InOrder lockOrder = inOrder(mMulticastLock, mWifiManager);
+        final String interfaceName = "iface";
+        doReturn(PERMISSION_GRANTED).when(mContext).checkCallingOrSelfPermission(
+                REGISTER_NSD_OFFLOAD_ENGINE);
+        doReturn(interfaceName).when(mDeps).getSocketInterfaceName(any());
+
+        // A foreground client makes a request.
+        mUidImportanceListener.onUidImportance(123, IMPORTANCE_FOREGROUND);
+        doReturn(123).when(mDeps).getCallingUid();
+        final NsdManager client = connectClient(mService);
+        final RegistrationListener regListener = mock(RegistrationListener.class);
+        final NsdServiceInfo regInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        regInfo.setPort(12345);
+        // File a request for all networks
+        regInfo.setNetwork(null);
+        client.registerService(regInfo, NsdManager.PROTOCOL_DNS_SD, Runnable::run, regListener);
+        waitForIdle();
+
+        // Register an offload engine that can bypass the lock.
+        final OffloadEngine offloadEngine = mock(OffloadEngine.class);
+        client.registerOffloadEngine(interfaceName,
+                OFFLOAD_TYPE_REPLY | OFFLOAD_TYPE_FILTER_REPLIES,
+                OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run, offloadEngine);
+        waitForIdle();
+
+        // When a Wi-Fi network is used, the lock is NOT taken due to the offload engine.
+        final Network wifiNetwork = new Network(456);
+        final MdnsInterfaceSocket wifiSocket = mock(MdnsInterfaceSocket.class);
+        mHandler.post(() -> mSocketRequestMonitor.onSocketRequestFulfilled(
+                wifiNetwork, wifiSocket, new int[]{TRANSPORT_WIFI}));
+        waitForIdle();
+        lockOrder.verify(mWifiManager, never()).createMulticastLock(any());
+        lockOrder.verify(mMulticastLock, never()).acquire();
+
+        // Unregister the offload engine.
+        client.unregisterOffloadEngine(offloadEngine);
+        waitForIdle();
+
+        // The lock is now taken.
+        lockOrder.verify(mWifiManager).createMulticastLock(any());
+        lockOrder.verify(mMulticastLock).acquire();
+
+        // Re-register the offload engine.
+        client.registerOffloadEngine(interfaceName,
+                OFFLOAD_TYPE_REPLY | OFFLOAD_TYPE_FILTER_REPLIES,
+                OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run, offloadEngine);
+        waitForIdle();
+
+        // The lock is released.
+        lockOrder.verify(mMulticastLock).release();
+    }
+
+    @Test
+    @EnableCompatChanges(ENABLE_PLATFORM_MDNS_BACKEND)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public void testTakeMulticastLock_NotBypassedWithPartialOffloadTypes() {
+        final InOrder lockOrder = inOrder(mMulticastLock, mWifiManager);
+        final String interfaceName = "iface";
+        doReturn(PERMISSION_GRANTED).when(mContext).checkCallingOrSelfPermission(
+                REGISTER_NSD_OFFLOAD_ENGINE);
+        doReturn(interfaceName).when(mDeps).getSocketInterfaceName(any());
+
+        // A foreground client makes a request.
+        mUidImportanceListener.onUidImportance(123, IMPORTANCE_FOREGROUND);
+        doReturn(123).when(mDeps).getCallingUid();
+        final NsdManager client = connectClient(mService);
+        final RegistrationListener regListener = mock(RegistrationListener.class);
+        final NsdServiceInfo regInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        regInfo.setPort(12345);
+        // File a request for all networks
+        regInfo.setNetwork(null);
+        client.registerService(regInfo, NsdManager.PROTOCOL_DNS_SD, Runnable::run, regListener);
+        waitForIdle();
+
+        // When a Wi-Fi network is used, the lock is taken.
+        final Network wifiNetwork = new Network(456);
+        final MdnsInterfaceSocket wifiSocket = mock(MdnsInterfaceSocket.class);
+        mHandler.post(() -> mSocketRequestMonitor.onSocketRequestFulfilled(
+                wifiNetwork, wifiSocket, new int[]{TRANSPORT_WIFI}));
+        waitForIdle();
+        lockOrder.verify(mWifiManager).createMulticastLock(any());
+        lockOrder.verify(mMulticastLock).acquire();
+
+        // Register an offload engine with only one of the required types.
+        final OffloadEngine offloadEngineReply = mock(OffloadEngine.class);
+        client.registerOffloadEngine(interfaceName, OFFLOAD_TYPE_REPLY,
+                OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run, offloadEngineReply);
+        waitForIdle();
+
+        // The lock is still held.
+        lockOrder.verify(mMulticastLock, never()).release();
+
+        // Register another engine with the other required type.
+        final OffloadEngine offloadEngineFilter = mock(OffloadEngine.class);
+        client.registerOffloadEngine(interfaceName, OFFLOAD_TYPE_FILTER_REPLIES,
+                OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run, offloadEngineFilter);
+        waitForIdle();
+
+        // The lock is still held as no single engine has both types.
+        lockOrder.verify(mMulticastLock, never()).release();
+
+        final OffloadEngine offloadEngineQuery = mock(OffloadEngine.class);
+        client.registerOffloadEngine(interfaceName, OFFLOAD_TYPE_QUERY,
+                OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run, offloadEngineQuery);
+        waitForIdle();
+        lockOrder.verify(mMulticastLock, never()).release();
+
+        // Register an engine with both types.
+        final OffloadEngine offloadEngineBoth = mock(OffloadEngine.class);
+        client.registerOffloadEngine(interfaceName,
+                OFFLOAD_TYPE_REPLY | OFFLOAD_TYPE_FILTER_REPLIES,
+                OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run, offloadEngineBoth);
+        waitForIdle();
+
+        // The lock is now released.
+        lockOrder.verify(mMulticastLock).release();
+    }
+
+    @Test
+    @EnableCompatChanges(ENABLE_PLATFORM_MDNS_BACKEND)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public void testTakeMulticastLock_BypassedByOffloadEngine_NewCombinations() {
+        final InOrder lockOrder = inOrder(mMulticastLock, mWifiManager);
+        final String interfaceName = "iface";
+
+        doReturn(PERMISSION_GRANTED).when(mContext).checkCallingOrSelfPermission(
+                REGISTER_NSD_OFFLOAD_ENGINE);
+        doReturn(interfaceName).when(mDeps).getSocketInterfaceName(any());
+
+        // A foreground client makes a request.
+        mUidImportanceListener.onUidImportance(123, IMPORTANCE_FOREGROUND);
+        doReturn(123).when(mDeps).getCallingUid();
+        final NsdManager client = connectClient(mService);
+        final RegistrationListener regListener = mock(RegistrationListener.class);
+        final NsdServiceInfo regInfo = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        regInfo.setPort(12345);
+        // File a request for all networks
+        regInfo.setNetwork(null);
+        client.registerService(regInfo, NsdManager.PROTOCOL_DNS_SD, Runnable::run, regListener);
+        waitForIdle();
+
+        // Register an offload engine that can bypass the lock.
+        final OffloadEngine offloadEngine1 = mock(OffloadEngine.class);
+        client.registerOffloadEngine(interfaceName,
+                OFFLOAD_TYPE_REPLY | OFFLOAD_TYPE_QUERY, OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK,
+                Runnable::run, offloadEngine1);
+        waitForIdle();
+
+        // When a Wi-Fi network is used, the lock is NOT taken due to the offload engine.
+        final Network wifiNetwork = new Network(456);
+        final MdnsInterfaceSocket wifiSocket = mock(MdnsInterfaceSocket.class);
+        mHandler.post(() -> mSocketRequestMonitor.onSocketRequestFulfilled(
+                wifiNetwork, wifiSocket, new int[]{TRANSPORT_WIFI}));
+        waitForIdle();
+        lockOrder.verify(mWifiManager, never()).createMulticastLock(any());
+        lockOrder.verify(mMulticastLock, never()).acquire();
+
+        // Unregister the offload engine.
+        client.unregisterOffloadEngine(offloadEngine1);
+        waitForIdle();
+
+        // The lock is now taken.
+        lockOrder.verify(mWifiManager).createMulticastLock(any());
+        lockOrder.verify(mMulticastLock).acquire();
+
+        // Register another offload engine with another combination.
+        final OffloadEngine offloadEngine2 = mock(OffloadEngine.class);
+        client.registerOffloadEngine(interfaceName,
+                OFFLOAD_TYPE_FILTER_REPLIES | OFFLOAD_TYPE_FILTER_QUERIES,
+                OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run, offloadEngine2);
+        waitForIdle();
+
+        // The lock is released.
+        lockOrder.verify(mMulticastLock).release();
+
+        // Unregister the offload engine.
+        client.unregisterOffloadEngine(offloadEngine2);
+        waitForIdle();
+
+        // The lock is taken again.
+        lockOrder.verify(mMulticastLock).acquire();
+
+        // Register another offload engine with another combination.
+        final OffloadEngine offloadEngine3 = mock(OffloadEngine.class);
+        client.registerOffloadEngine(interfaceName,
+                OFFLOAD_TYPE_QUERY | OFFLOAD_TYPE_FILTER_QUERIES,
+                OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run, offloadEngine3);
+        waitForIdle();
+
+        // The lock is released.
+        lockOrder.verify(mMulticastLock).release();
+    }
+
+    @Test
+    @EnableCompatChanges(ENABLE_PLATFORM_MDNS_BACKEND)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public void testTakeMulticastLock_ForegroundAppWithOffload_BackgroundAppNoOffload() {
+        final InOrder lockOrder = inOrder(mMulticastLock, mWifiManager);
+        final String ifaceA = "wlan0";
+        final String ifaceB = "wlan1";
+        final Network wifiNetA = new Network(100);
+        final Network wifiNetB = new Network(101);
+
+        doReturn(PERMISSION_GRANTED).when(mContext).checkCallingOrSelfPermission(
+                REGISTER_NSD_OFFLOAD_ENGINE);
+
+        // App 1: Foreground
+        final int uid1 = 123;
+        mUidImportanceListener.onUidImportance(uid1, IMPORTANCE_FOREGROUND);
+        waitForIdle();
+        doReturn(uid1).when(mDeps).getCallingUid();
+        final NsdManager client1 = connectClient(mService);
+
+        // App 2: Background
+        final int uid2 = 456;
+        mUidImportanceListener.onUidImportance(uid2, IMPORTANCE_CACHED);
+        doReturn(uid2).when(mDeps).getCallingUid();
+        final NsdManager client2 = connectClient(mService);
+
+        // App 1 makes request on wifiNetA
+        final RegistrationListener regListener1 = mock(RegistrationListener.class);
+        final NsdServiceInfo regInfo1 = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
+        regInfo1.setPort(12345);
+        regInfo1.setNetwork(wifiNetA);
+        client1.registerService(regInfo1, NsdManager.PROTOCOL_DNS_SD, Runnable::run, regListener1);
+        waitForIdle();
+
+        // App 2 makes request on wifiNetB
+        final RegistrationListener regListener2 = mock(RegistrationListener.class);
+        final NsdServiceInfo regInfo2 = new NsdServiceInfo(OTHER_SERVICE_NAME, SERVICE_TYPE);
+        regInfo2.setPort(12346);
+        regInfo2.setNetwork(wifiNetB);
+        client2.registerService(regInfo2, NsdManager.PROTOCOL_DNS_SD, Runnable::run, regListener2);
+        waitForIdle();
+
+        // App 1 registers offload on ifaceA
+        final OffloadEngine offloadEngine1 = mock(OffloadEngine.class);
+        doReturn(uid1).when(mDeps).getCallingUid();
+        client1.registerOffloadEngine(ifaceA,
+                OFFLOAD_TYPE_REPLY | OFFLOAD_TYPE_FILTER_REPLIES,
+                OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK, Runnable::run, offloadEngine1);
+        waitForIdle();
+
+        // Fulfillment
+        final MdnsInterfaceSocket socketA = mock(MdnsInterfaceSocket.class);
+        final MdnsInterfaceSocket socketB = mock(MdnsInterfaceSocket.class);
+        doReturn(ifaceA).when(mDeps).getSocketInterfaceName(socketA);
+        doReturn(ifaceB).when(mDeps).getSocketInterfaceName(socketB);
+
+        mHandler.post(() -> {
+            mSocketRequestMonitor.onSocketRequestFulfilled(
+                    wifiNetA, socketA, new int[]{TRANSPORT_WIFI});
+            mSocketRequestMonitor.onSocketRequestFulfilled(
+                    wifiNetB, socketB, new int[]{TRANSPORT_WIFI});
+        });
+        waitForIdle();
+
+        // No lock should be taken:
+        // App 1 is foreground on ifaceA but has offload.
+        // App 2 is background on ifaceB.
+        lockOrder.verify(mWifiManager, never()).createMulticastLock(any());
+        lockOrder.verify(mMulticastLock, never()).acquire();
+    }
+
+    @Test
+    @EnableCompatChanges(ENABLE_PLATFORM_MDNS_BACKEND)
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void testRegisterOffloadSession_OffloadServiceUpdatedAndRemoved_DiscoveryManager() {
         final String interfaceName = "iface";
