@@ -79,6 +79,7 @@ public class NsdPickerFragment extends DialogFragment {
     private State mState;
     private PickerDialogListener mListener;
     private boolean mIsSelectionDone = false;
+    private ServiceReceiver mServiceReceiver;
 
     public NsdPickerFragment() {
         // The fragment is being recreated; the state will be in savedInstanceState
@@ -222,18 +223,41 @@ public class NsdPickerFragment extends DialogFragment {
                 .setNegativeButton(R.string.choose_device_cancel, (d, which) -> onCancel(d))
                 .create();
 
-        final ServiceReceiver receiver = makeOrGetServiceReceiver(
-                mState.mReceiverId, mState.mConnector);
-        receiver.setParent(this);
-
+        mServiceReceiver = makeOrGetServiceReceiver(mState.mReceiverId, mState.mConnector);
+        if (!mServiceReceiver.setParent(this)) {
+            selectionDone();
+        }
         return dialog;
     }
 
+    @UiThread
+    @Override
+    public void onStop() {
+        super.onStop();
+        if (DBG) Log.d(TAG, "Fragment stopped");
+        mServiceReceiver.setParent(null);
+    }
+
+    @UiThread
     @Override
     public void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         if (mState != null) {
             outState.putParcelable(KEY_STATE, mState);
+        }
+    }
+
+    @UiThread
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (DBG) Log.d(TAG, "Fragment resumed");
+        if (!mServiceReceiver.setParent(this)) {
+            // Note calling selectionDone (dismissing the dialog) is not allowed while there is
+            // saved state; see the difference between dismiss() and dismissAllowingStateLoss().
+            // In onResume saved state has already been cleared or restored so the dialog may be
+            // dismissed.
+            selectionDone();
         }
     }
 
@@ -362,6 +386,9 @@ public class NsdPickerFragment extends DialogFragment {
         );
         private final Handler mHandler;
         private WeakReference<NsdPickerFragment> mParent;
+        // Indicates that discovery was canceled by NsdService. This is never reset to false after
+        // being set to true, since a ServiceReceiver is for a single NsdService discovery request.
+        private boolean mCancelled;
 
         @UiThread
         ServiceReceiver(Looper looper) {
@@ -369,11 +396,18 @@ public class NsdPickerFragment extends DialogFragment {
         }
 
         @UiThread
-        void setParent(NsdPickerFragment fragment) {
+        boolean setParent(NsdPickerFragment fragment) {
+            if (fragment != null && mCancelled) {
+                Log.i(TAG, "Skipping reattaching ServiceReceiver: request is cancelled");
+                return false;
+            }
             mParent = new WeakReference<>(fragment);
             // Notify the parent of existing services in the next handler loop, as the parent may
             // be initializing.
-            mHandler.post(this::notifyServicesUpdated);
+            if (fragment != null) {
+                mHandler.post(this::notifyServicesUpdated);
+            }
+            return true;
         }
 
         // The receiver is only registered on the connector, so no permission checks are necessary
@@ -412,8 +446,13 @@ public class NsdPickerFragment extends DialogFragment {
         public void onCancelled() {
             if (DBG) Log.d(TAG, "Service discovery cancelled");
             mHandler.post(() -> {
+                if (DBG) Log.d(TAG, "Processing service discovery cancel");
+                mCancelled = true;
                 final NsdPickerFragment parent = mParent.get();
-                if (parent == null) return;
+                if (parent == null) {
+                    if (DBG) Log.d(TAG, "Discovery cancelled while ServiceReceiver is detached");
+                    return;
+                }
                 parent.selectionDone();
             });
         }

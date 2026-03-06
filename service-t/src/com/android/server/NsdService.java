@@ -47,6 +47,11 @@ import static android.os.Process.SYSTEM_UID;
 import static android.permission.PermissionManager.PERMISSION_GRANTED;
 import static android.permission.flags.Flags.accessLocalNetworkPermissionEnabled;
 import static android.provider.DeviceConfig.NAMESPACE_TETHERING;
+import static android.net.nsd.OffloadEngine.OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK;
+import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_FILTER_QUERIES;
+import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
+import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_QUERY;
+import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_REPLY;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.modules.utils.build.SdkLevel.isAtLeastU;
@@ -118,6 +123,7 @@ import android.os.UserHandle;
 import android.permission.PermissionManager;
 import android.provider.DeviceConfig;
 import android.text.TextUtils;
+import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.Log;
 import android.util.Pair;
@@ -300,10 +306,10 @@ public class NsdService extends INsdManager.Stub {
     // Note this is not final to avoid depending on the Wi-Fi service starting before NsdService
     @Nullable
     private WifiManager.MulticastLock mHeldMulticastLock;
-    // Fulfilled network requests that require the Wi-Fi lock: key is the obtained Network
-    // (non-null), value is the requested Network (nullable)
+    // Fulfilled network requests that require the Wi-Fi lock: key is the obtained Network,
+    // value is the interface name.
     @NonNull
-    private final ArraySet<Network> mWifiLockRequiredNetworks = new ArraySet<>();
+    private final ArrayMap<Network, String> mWifiLockRequiredNetworks = new ArrayMap<>();
     @NonNull
     private final ArraySet<Integer> mRunningAppActiveUids = new ArraySet<>();
 
@@ -840,7 +846,8 @@ public class NsdService extends INsdManager.Stub {
                 return;
             }
 
-            if (mWifiLockRequiredNetworks.add(socketNetwork)) {
+            if (mWifiLockRequiredNetworks.put(socketNetwork, mDeps.getSocketInterfaceName(socket))
+                    == null) {
                 updateMulticastLock();
             }
         }
@@ -848,7 +855,7 @@ public class NsdService extends INsdManager.Stub {
         @Override
         public void onSocketDestroyed(@Nullable Network socketNetwork,
                 @NonNull MdnsInterfaceSocket socket) {
-            if (mWifiLockRequiredNetworks.remove(socketNetwork)) {
+            if (mWifiLockRequiredNetworks.remove(socketNetwork) != null) {
                 updateMulticastLock();
             }
         }
@@ -915,6 +922,35 @@ public class NsdService extends INsdManager.Stub {
                 serviceType);
     }
 
+    @NonNull
+    private Set<String> getOffloadedInterfaces() {
+        final ArraySet<String> offloadedInterfaces = new ArraySet<>();
+        final int count = mOffloadEngines.beginBroadcast();
+        try {
+            for (int i = 0; i < count; i++) {
+                final OffloadEngineInfo engineInfo =
+                        (OffloadEngineInfo) mOffloadEngines.getBroadcastCookie(i);
+
+                final boolean hasBypassCapability = (engineInfo.mOffloadCapabilities
+                        & OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK) != 0;
+                final boolean matchQueryOffload =
+                        (engineInfo.mOffloadType & OFFLOAD_TYPE_FILTER_REPLIES) != 0
+                        || (engineInfo.mOffloadType & OFFLOAD_TYPE_QUERY) != 0;
+                final boolean matchReplyOffload =
+                        (engineInfo.mOffloadType & OFFLOAD_TYPE_FILTER_QUERIES) != 0
+                        || (engineInfo.mOffloadType & OFFLOAD_TYPE_REPLY) != 0;
+                final boolean hasRequiredTypes = matchQueryOffload && matchReplyOffload;
+
+                if (hasBypassCapability && hasRequiredTypes) {
+                    offloadedInterfaces.add(engineInfo.mInterfaceName);
+                }
+            }
+        } finally {
+            mOffloadEngines.finishBroadcast();
+        }
+        return offloadedInterfaces;
+    }
+
     /**
      * Take or release the lock based on updated internal state.
      *
@@ -925,7 +961,10 @@ public class NsdService extends INsdManager.Stub {
      */
     private void updateMulticastLock() {
         final int needsLockUid = getMulticastLockNeededUid();
-        if (needsLockUid >= 0 && mHeldMulticastLock == null) {
+        final boolean shouldHoldLock = (needsLockUid >= 0);
+
+        if (shouldHoldLock && mHeldMulticastLock == null) {
+            // Acquire lock
             final WifiManager wm = mContext.getSystemService(WifiManager.class);
             if (wm == null) {
                 Log.wtf(TAG, "Got a TRANSPORT_WIFI network without WifiManager");
@@ -934,7 +973,8 @@ public class NsdService extends INsdManager.Stub {
             mHeldMulticastLock = wm.createMulticastLock(TAG);
             mHeldMulticastLock.acquire();
             mServiceLogs.log("Taking multicast lock for uid " + needsLockUid);
-        } else if (needsLockUid < 0 && mHeldMulticastLock != null) {
+        } else if (!shouldHoldLock && mHeldMulticastLock != null) {
+            // Release lock
             mHeldMulticastLock.release();
             mHeldMulticastLock = null;
             mServiceLogs.log("Released multicast lock");
@@ -949,6 +989,16 @@ public class NsdService extends INsdManager.Stub {
             // Return early if NSD is not active, or not on any relevant network
             return -1;
         }
+
+        // Get Wi-Fi networks that require multicast lock
+        final Set<String> offloadedInterfaces = getOffloadedInterfaces();
+        final Set<Network> networksRequiringLock = new ArraySet<>();
+        mWifiLockRequiredNetworks.forEach((key, value) -> {
+            if (!offloadedInterfaces.contains(value)) {
+                networksRequiringLock.add(key);
+            }
+        });
+
         for (int i = 0; i < mTransactionIdToClientInfoMap.size(); i++) {
             final ClientInfo clientInfo = mTransactionIdToClientInfoMap.valueAt(i);
             if (!mRunningAppActiveUids.contains(clientInfo.mUid)) {
@@ -956,7 +1006,7 @@ public class NsdService extends INsdManager.Stub {
                 continue;
             }
 
-            if (clientInfo.hasAnyJavaBackendRequestForNetworks(mWifiLockRequiredNetworks)) {
+            if (clientInfo.hasAnyJavaBackendRequestForNonOffloadedNetworks(networksRequiringLock)) {
                 return clientInfo.mUid;
             }
         }
@@ -2032,6 +2082,8 @@ public class NsdService extends INsdManager.Stub {
         mOffloadEngines.register(offloadEngineInfo.mOffloadEngine,
                 offloadEngineInfo);
         sendAllOffloadServiceInfos(offloadEngineInfo);
+        // Update the multicast lock state.
+        updateMulticastLock();
     }
 
     private void handleUnregisterOffloadEngine(IOffloadEngine offloadEngine) {
@@ -2050,6 +2102,8 @@ public class NsdService extends INsdManager.Stub {
         } finally {
             mOffloadEngines.finishBroadcast();
         }
+        // Update the multicast lock state.
+        updateMulticastLock();
     }
 
     private void handleInjectProxyOffloadEngineResponse(
@@ -3062,6 +3116,13 @@ public class NsdService extends INsdManager.Stub {
         public ServiceAccessRepository makeAccessRepository(@NonNull Context context,
                 @NonNull Looper looper, @NonNull SharedLog sharedLog) {
             return new ServiceAccessRepository(context, looper, sharedLog);
+        }
+
+        /**
+         * @see MdnsInterfaceSocket#getInterface()
+         */
+        public String getSocketInterfaceName(@NonNull MdnsInterfaceSocket socket) {
+            return socket.getInterface().getName();
         }
     }
 
@@ -4215,7 +4276,7 @@ public class NsdService extends INsdManager.Stub {
          * Returns true if this client has any Java backend request that requests one of the given
          * networks.
          */
-        boolean hasAnyJavaBackendRequestForNetworks(@NonNull ArraySet<Network> networks) {
+        boolean hasAnyJavaBackendRequestForNonOffloadedNetworks(@NonNull Set<Network> networks) {
             for (int i = 0; i < mClientRequests.size(); i++) {
                 final ClientRequest req = mClientRequests.valueAt(i);
                 if (!(req instanceof JavaBackendClientRequest)) {

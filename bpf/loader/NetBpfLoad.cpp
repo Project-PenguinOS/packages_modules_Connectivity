@@ -78,6 +78,7 @@ using android::base::StartsWith;
 using android::base::Tokenize;
 using android::base::unique_fd;
 using std::optional;
+using std::span;
 using std::string;
 using std::vector;
 using std::chrono::duration_cast;
@@ -132,9 +133,9 @@ class ElfObject {
     void* base;
     size_t size;
     const Elf64_Ehdr* eh;
-    std::span<const char> bytes;
-    std::span<const Elf64_Shdr> sh;
-    std::span<const char> strtab;
+    span<const char> bytes;
+    span<const Elf64_Shdr> sh;
+    span<const char> strtab;
 
   public:
     const char * const path;
@@ -203,10 +204,14 @@ class ElfObject {
     const Elf64_Shdr & SH(unsigned idx) const { return sh[idx]; }
 
     // Get a span pointing to a section by its index
-    std::span<const char> getSectionByIdx(unsigned id) const {
+    template <typename T = char>
+    span<const T> getSectionByIdx(unsigned id) const {
         if (id >= sh.size()) return {};
-        if (sh[id].sh_offset > size || sh[id].sh_size > size - sh[id].sh_offset) return {};
-        return bytes.subspan(sh[id].sh_offset, sh[id].sh_size);
+        const auto& s = sh[id];
+        if (s.sh_offset > size || s.sh_size > size - s.sh_offset) return {};
+        if (s.sh_size % sizeof(T)) abort();
+        return {reinterpret_cast<const T*>(bytes.data() + s.sh_offset),
+                static_cast<size_t>(s.sh_size / sizeof(T))};
     }
 
     // Get string from offset in strtab.
@@ -219,55 +224,49 @@ class ElfObject {
 
     // Reads a full section by name - example to get the GPL license
     template <typename T>
-    int readSectionByName(const char* name, vector<T>& data) const {
+    int readSectionByName(const char* name, span<const T>& data) const {
         for (unsigned i = 0; i < sh.size(); i++) {
             const char* secname = getStr(sh[i].sh_name);
             if (!secname) continue;
 
             if (!strcmp(secname, name)) {
-                auto s = getSectionByIdx(i);
-                if (s.empty() && sh[i].sh_size > 0) return -1;
-
-                if (s.size() % sizeof(T)) abort();
-                data.assign((const T*)s.data(), (const T*)(s.data() + s.size()));
-
+                data = getSectionByIdx<T>(i);
+                if (data.empty() && sh[i].sh_size > 0) return -1;
                 return 0;
             }
         }
         return -2;
     }
 
-    int readSectionByType(unsigned type, vector<char>& data) const {
+    template <typename T>
+    int readSectionByType(unsigned type, span<const T>& data) const {
         for (unsigned i = 0; i < sh.size(); i++) {
             if (sh[i].sh_type != type) continue;
 
-            auto s = getSectionByIdx(i);
-            if (s.empty() && sh[i].sh_size > 0) return -1;
-
-            data.assign(s.begin(), s.end());
-
+            data = getSectionByIdx<T>(i);
+            if (data.empty() && sh[i].sh_size > 0) return -1;
             return 0;
         }
         return -2;
+    }
+
+    int getSymTab(span<const Elf64_Sym>& data) const {
+        return readSectionByType(SHT_SYMTAB, data);
     }
 
     static bool symCompare(Elf64_Sym a, Elf64_Sym b) {
         return (a.st_value < b.st_value);
     }
 
-    int readSymTab(int sort, vector<Elf64_Sym>& data) const {
-        int ret, numElems;
-        Elf64_Sym* buf;
-        vector<char> secData;
+    int readSortedSymTab(vector<Elf64_Sym>& data) const {
+        span<const Elf64_Sym> symtab;
 
-        ret = readSectionByType(SHT_SYMTAB, secData);
+        int ret = getSymTab(symtab);
         if (ret) return ret;
 
-        buf = (Elf64_Sym*)secData.data();
-        numElems = (secData.size() / sizeof(Elf64_Sym));
-        data.assign(buf, buf + numElems);
+        data.assign(symtab.begin(), symtab.end());
 
-        if (sort) std::sort(data.begin(), data.end(), symCompare);
+        std::sort(data.begin(), data.end(), symCompare);
         return 0;
     }
 
@@ -276,7 +275,7 @@ class ElfObject {
         int ret;
         vector<Elf64_Sym> symtab;
 
-        ret = readSymTab(1 /* sort */, symtab);
+        ret = readSortedSymTab(symtab);
         if (ret) return ret;
 
         // Get index of section
@@ -311,10 +310,10 @@ class ElfObject {
     }
 
     int getSymNameByIdx(unsigned index, string& name) const {
-        vector<Elf64_Sym> symtab;
+        span<const Elf64_Sym> symtab;
         int ret = 0;
 
-        ret = readSymTab(0 /* !sort */, symtab);
+        ret = getSymTab(symtab);
         if (ret) return ret;
 
         if (index >= symtab.size()) return -1;
@@ -326,14 +325,14 @@ class ElfObject {
     }
 
     int getSymOffsetByName(const char *name, int *off) const {
-        vector<Elf64_Sym> symtab;
-        int ret = readSymTab(0 /* sort */, symtab);
+        span<const Elf64_Sym> symtab;
+        int ret = getSymTab(symtab);
         if (ret) return ret;
-        for (unsigned i = 0; i < symtab.size(); i++) {
-            const char* s = getStr(symtab[i].st_name);
+        for (const auto& sym : symtab) {
+            const char* s = getStr(sym.st_name);
             if (!s) continue;
             if (!strcmp(s, name)) {
-                *off = symtab[i].st_value;
+                *off = sym.st_value;
                 return 0;
             }
         }
@@ -346,7 +345,7 @@ int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
     int entries = elfObj.SHsize();
     int ret = 0;
 
-    vector<struct bpf_prog_def> pd;
+    span<const struct bpf_prog_def> pd;
     ret = elfObj.readSectionByName(".android_progs", pd);
     if (ret) return ret;
     vector<string> progDefNames;
@@ -485,7 +484,7 @@ static int setBtfDatasecSize(const ElfObject &elfObj, struct btf *btf,
         return -errno;
     }
 
-    vector<char> data;
+    span<const char> data;
     int ret = elfObj.readSectionByName(name, data);
     if (ret) {
         ALOGE("Couldn't read section %s, ret: %d", name, ret);
@@ -508,7 +507,7 @@ static int setBtfVarOffset(const ElfObject &elfObj, struct btf *btf,
     for (i = 0, vsi = btf_var_secinfos(datasecBt); i < vars; i++, vsi++) {
         const struct btf_type *varBt = btf__type_by_id(btf, vsi->type);
         if (!varBt || !btf_is_var(varBt)) {
-            ALOGE("Found non VAR kind btf_type, section: %s id: %d", datasecName,
+            ALOGE("Found non VAR kind btf_type, section: %s id: %u", datasecName,
                   vsi->type);
             return -1;
         }
@@ -660,12 +659,12 @@ int getKeyValueTids(const struct btf *btf, const char *mapName,
 
     kvBt = btf__type_by_id(btf, kvId);
     if (!kvBt) {
-        ALOGE("Couldn't find BTF type, map: %s id: %u", mapName, kvId);
+        ALOGE("Couldn't find BTF type, map: %s id: %d", mapName, kvId);
         return -1;
     }
 
     if (!btf_is_struct(kvBt) || btf_vlen(kvBt) < 2) {
-        ALOGE("Non Struct kind or invalid vlen, map: %s id: %u", mapName, kvId);
+        ALOGE("Non Struct kind or invalid vlen, map: %s id: %d", mapName, kvId);
         return -1;
     }
 
@@ -685,10 +684,10 @@ int getKeyValueTids(const struct btf *btf, const char *mapName,
     }
 
     if (expectedKeySize != keySize || expectedValueSize != valueSize) {
-        ALOGE("Key value size mismatch, map: %s key size: %d expected key size: "
-              "%d value size: %d expected value size: %d",
-              mapName, (uint32_t)keySize, expectedKeySize, (uint32_t)valueSize,
-              expectedValueSize);
+        ALOGE("Key value size mismatch, map: %s"
+              " key size: %" PRId64 " expected key size: %u"
+              " value size: %" PRId64 " expected value size: %u",
+              mapName, keySize, expectedKeySize, valueSize, expectedValueSize);
         return -1;
     }
 
@@ -801,9 +800,10 @@ static enum bpf_map_type sanitizeMapType(enum bpf_map_type type) {
     return type;
 }
 
-static int createMaps(const ElfObject& elfObj, vector<struct bpf_map_def>& md, vector<unique_fd>& mapFds) {
+static int createMaps(const ElfObject& elfObj, const span<const struct bpf_map_def> md,
+                      vector<unique_fd>& mapFds) {
     int ret = 0;
-    vector<char> btfData;
+    span<const char> btfData;
     struct btf *btf = NULL;
     auto btfGuard = base::make_scope_guard([&btf] { if (btf) btf__free(btf); });
     if (isAtLeastKernelVersion(4, 19)) {
@@ -949,7 +949,7 @@ static void applyRelo(void* insnsPtr, Elf64_Addr offset, int fd) {
     insn->src_reg = BPF_PSEUDO_MAP_FD;
 }
 
-static void applyMapRelo(const ElfObject& elfObj, const vector<struct bpf_map_def>& md,
+static void applyMapRelo(const ElfObject& elfObj, const span<const struct bpf_map_def> md,
                          vector<unique_fd> &mapFds, vector<codeSection>& cs) {
     for (unsigned k = 0; k < cs.size(); k++) {
         Elf64_Rel* rel = (Elf64_Rel*)(cs[k].rel_data.data());
@@ -1006,7 +1006,7 @@ static int pinProg(const borrowed_fd& fd, const struct bpf_prog_def& progDef) {
     if (chown(progDef.pin_location, (uid_t)progDef.uid,
               (gid_t)progDef.gid)) {
         const int err = errno;
-        ALOGE("chown %s %d %d -> [%d:%s]", progDef.pin_location, progDef.uid,
+        ALOGE("chown %s %u %u -> [%d:%s]", progDef.pin_location, progDef.uid,
               progDef.gid, err, strerror(err));
         return -err;
     }
@@ -1060,11 +1060,11 @@ static int loadCodeSections(const ElfObject& elfObj, vector<codeSection>& cs, co
         int ret;
 
         if (!cs[i].prog_def.has_value()) {
-            ALOGE("[%d] missing program definition! bad bpf.o build?", i);
+            ALOGE("[%u] missing program definition! bad bpf.o build?", i);
             return -EINVAL;
         }
 
-        ALOGD("cs[%d].name:%s kver in [%x,%x) api level in [%d,%d)",
+        ALOGD("cs[%u].name:%s kver in [%x,%x) api level in [%d,%d)",
               i, cs[i].prog_def->name(),
               cs[i].prog_def->min_kver, cs[i].prog_def->max_kver,
               cs[i].prog_def->min_api_level_full, cs[i].prog_def->max_api_level_full);
@@ -1156,7 +1156,7 @@ static int loadCodeSections(const ElfObject& elfObj, vector<codeSection>& cs, co
     return 0;
 }
 
-static int prepareLoadMaps(const struct bpf_object* obj, const vector<struct bpf_map_def>& md) {
+static int prepareLoadMaps(const struct bpf_object* obj, const span<const struct bpf_map_def> md) {
     for (unsigned i = 0; i < md.size(); i++) {
         struct bpf_map* m = bpf_object__find_map_by_name(obj, md[i].name());
         if (!m) {
@@ -1195,7 +1195,7 @@ static int prepareLoadMaps(const struct bpf_object* obj, const vector<struct bpf
 static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSection>& cs) {
     for (unsigned i = 0; i < cs.size(); i++) {
         if (!cs[i].prog_def.has_value()) {
-            ALOGE("[%d] missing program definition! bad bpf.o build?", i);
+            ALOGE("[%u] missing program definition! bad bpf.o build?", i);
             return -EINVAL;
         }
         string program_name = cs[i].program_name;
@@ -1235,7 +1235,7 @@ static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSecti
     return 0;
 }
 
-static int pinMaps(const struct bpf_object* obj, const vector<struct bpf_map_def>& md) {
+static int pinMaps(const struct bpf_object* obj, const span<const struct bpf_map_def> md) {
     for (unsigned i = 0; i < md.size(); i++) {
         struct bpf_map* m = bpf_object__find_map_by_name(obj, md[i].name());
         if (!m) {
@@ -1287,7 +1287,7 @@ static int pinProgs(const struct bpf_object * obj,
 
 static int loadProgByLibbpf(const char* const elfPath) {
     ElfObject elfObj(elfPath);
-    vector<struct bpf_map_def> md;
+    span<const struct bpf_map_def> md;
     vector<codeSection> cs;
     int ret;
 
@@ -1326,9 +1326,9 @@ static int loadProgByLibbpf(const char* const elfPath) {
 
 int loadProg(const char* const elfPath) {
     ElfObject elfObj(elfPath);
-    vector<char> license;
+    span<const char> license;
     vector<codeSection> cs;
-    vector<struct bpf_map_def> md;
+    span<const struct bpf_map_def> md;
     vector<unique_fd> mapFds;
     int ret;
 
@@ -1354,7 +1354,7 @@ int loadProg(const char* const elfPath) {
     }
 
     for (unsigned i = 0; i < mapFds.size(); i++)
-        ALOGV("map_fd found at %d is %d in %s", i, mapFds[i].get(), elfPath);
+        ALOGV("map_fd found at %u is %d in %s", i, mapFds[i].get(), elfPath);
 
     ret = readCodeSections(elfObj, cs);
     if (ret == -ENOENT) return 0;
@@ -1365,7 +1365,7 @@ int loadProg(const char* const elfPath) {
 
     applyMapRelo(elfObj, md, mapFds, cs);
 
-    ret = loadCodeSections(elfObj, cs, string(license.data()));
+    ret = loadCodeSections(elfObj, cs, string(license.data(), license.size()));
     if (ret) ALOGE("Failed to load programs, loadCodeSections ret=%d", ret);
 
     return ret;
@@ -1406,7 +1406,7 @@ static bool createDir(const char* const dir) {
 
     if (mkdir(dir, S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST) {
         umask(prevUmask); // cannot fail
-        ALOGE("Failed to create directory: %s, ret: %s", dir, std::strerror(errno));
+        ALOGE("Failed to create directory: %s, err: %s", dir, std::strerror(errno));
         return false;
     }
 
@@ -1595,7 +1595,7 @@ static int doLoad(char** argv, char * const envp[]) {
     // first in U QPR2 beta~2
     const bool has_platform_netbpfload_rc = exists("/system/etc/init/netbpfload.rc");
 
-    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%d rc:%d%d user:%d%d%d",
+    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%u rc:%d%d user:%d%d%d",
           argv[0], android_get_device_api_level(), api_level_full,
           kernelVer, describeArch(), page_size >> 10,
           libbpf_major_version(), libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
@@ -1878,7 +1878,7 @@ static int doLoad(char** argv, char * const envp[]) {
             // We should fail here on Xiaomi S 4.14.180 due to kernel uapi bug,
             // which causes bpfGetNextMapId to behave as bpfGetNextProgId,
             // and thus it should return 0 with errno == ENOENT.
-            ALOGE("bpfGetNextMapId(final %d) returned %d errno %d", mapId, next, errno);
+            ALOGE("bpfGetNextMapId(final %u) returned %u errno %d", mapId, next, errno);
             if (next || errno != ENOENT) return 35;
             if (isAtLeastT || isAtLeastKernelVersion(4, 20)) return 36;
             // implies Android S with 4.14 or 4.19 kernel

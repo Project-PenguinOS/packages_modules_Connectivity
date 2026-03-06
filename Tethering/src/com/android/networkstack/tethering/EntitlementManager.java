@@ -66,6 +66,7 @@ import androidx.annotation.Nullable;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.FrameworkConnectivityStatsLog;
+import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.SharedLog;
 import com.android.tethering.flags.Flags;
 
@@ -236,7 +237,10 @@ public class EntitlementManager {
          * @return true if entitlement UI should be shown to requesters, false otherwise.
          */
         protected boolean shouldShowEntitlementUiToRequesters() {
-            return Flags.showEntitlementUiToRequesters();
+            // Guarded the feature by a platform version to prevent breaking changes
+            // on released platforms via mainline updates and to allow further
+            // OEM/carrier testing.
+            return SdkUtil.isAtLeast26Q2() && Flags.showEntitlementUiToRequesters();
         }
 
         /**

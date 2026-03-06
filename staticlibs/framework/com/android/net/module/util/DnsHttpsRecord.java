@@ -151,6 +151,23 @@ public class DnsHttpsRecord extends DnsRecord {
     }
 
     /**
+     * Verifies that all mandatory keys are present in the HTTPS record.
+     *
+     * @throws ParseException if a mandatory key is missing.
+     */
+    public void verifyMandatoryKeys() throws ParseException {
+        // Check if all mandatory keys are present.
+        final short[] mandatoryKeys = getMandatory();
+        for (short key : mandatoryKeys) {
+            final int keyInt = Short.toUnsignedInt(key);
+            if (!mSvcParams.contains(keyInt)) {
+                throw new ParseException("Invalid DnsHttpsRecord: mandatory key " +
+                        SvcParam.toKeyName(keyInt) + " is missing");
+            }
+        }
+    }
+
+    /**
      * Returns the priority of the HTTPS record.
      *
      * <p>See RFC 9460 2.4 for more details.
@@ -185,9 +202,13 @@ public class DnsHttpsRecord extends DnsRecord {
      *
      * <p>See RFC 9460 8 for more details.
      */
-    public @NonNull List<String> getMandatory() {
-        // TODO(b/454544870): implement this after fixing the return type of SvcParamMandatory
-        return Collections.emptyList();
+    public @NonNull short[] getMandatory() {
+        final SvcParam svcParamMandatory = mSvcParams.get(KEY_MANDATORY);
+        if (svcParamMandatory == null || !(svcParamMandatory instanceof SvcParamMandatory)) {
+            return new short[0];
+        }
+
+        return ((SvcParamMandatory) svcParamMandatory).getValue();
     }
 
     /**

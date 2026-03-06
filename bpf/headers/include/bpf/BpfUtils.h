@@ -113,7 +113,7 @@ static inline uint64_t getSocketCookie(int sockFd) {
     }
     if (cookie_len != sizeof(sock_cookie)) {
         // This probably cannot actually happen, but...
-        ALOGE("Failed to get socket cookie: len %d != 8\n", cookie_len);
+        ALOGE("Failed to get socket cookie: len %d != 8\n", (int)cookie_len);
         errno = 523; // EBADCOOKIE: kernel internal, seems reasonable enough...
         return NONEXISTENT_COOKIE;
     }

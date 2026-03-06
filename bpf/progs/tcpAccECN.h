@@ -116,7 +116,7 @@ static const struct {
     .data = {},
 };
 
-DEFINE_BPF_PROG_KVER(sockops, accecn_option, , AID_SYSTEM, 6_1)
+DEFINE_BPF_PROG_KVER(sockops, accecn_option, AID_SYSTEM, 6_1)
 (struct bpf_sock_ops *skops) {
     if (!is_l4s_enabled()) return 1;
     if (!skops->sk) {
@@ -163,7 +163,7 @@ DEFINE_BPF_PROG_KVER(sockops, accecn_option, , AID_SYSTEM, 6_1)
     return 1;
 }
 
-DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, , AID_SYSTEM, 6_1)
+DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
     if (!is_l4s_enabled()) return TC_ACT_PIPE;
 
@@ -286,7 +286,7 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, , AID_SYSTEM, 6_1)
     return TC_ACT_PIPE;
 }
 
-DEFINE_BPF_PROG_KVER(ingress, accecn_common, , AID_SYSTEM, 6_1)
+DEFINE_BPF_PROG_KVER(ingress, accecn_common, AID_SYSTEM, 6_1)
 (struct __sk_buff* skb)
 {
     if (!is_l4s_enabled()) return 1;
@@ -430,7 +430,7 @@ DEFINE_BPF_PROG_KVER(ingress, accecn_common, , AID_SYSTEM, 6_1)
     return 1;
 }
 
-DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, , AID_SYSTEM, 6_1)
+DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, AID_SYSTEM, 6_1)
 (struct __sk_buff* skb) {
     if (!is_l4s_enabled()) return TC_ACT_PIPE;
 
