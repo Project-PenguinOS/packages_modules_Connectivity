@@ -57,6 +57,9 @@ on load-bpf-programs
     # At this point 'bpf.progs_loaded' is guaranteed to be '1'
     trigger bpf-progs-loaded
 
+on bpf-progs-loaded
+    start netd
+
 # Note: This will actually execute /apex/com.android.tethering/bin/netbpfload
 # by virtue of 'service bpfloader' being overridden by the apex shipped .rc
 # Warning: the below settings are irrelevant unless the apex is missing.

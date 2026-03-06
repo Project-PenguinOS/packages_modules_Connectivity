@@ -103,8 +103,9 @@ _Static_assert(_Alignof(unsigned long long) == 8, "_Alignof unsigned long long !
 
 // for programs:
 struct optional_bool { bool optional; };
-#define MANDATORY ((struct optional_bool){ .optional = false })
-#define OPTIONAL ((struct optional_bool){ .optional = true })
+
+static const struct optional_bool MANDATORY = { .optional = false };
+static const struct optional_bool OPTIONAL = { .optional = true };
 
 
 // Length of strings (incl. selinux_context and pin_subdir)

@@ -411,6 +411,7 @@ import com.android.server.connectivity.DnsManager;
 import com.android.server.connectivity.DnsManager.PrivateDnsValidationUpdate;
 import com.android.server.connectivity.DscpPolicyTracker;
 import com.android.server.connectivity.FullScore;
+import com.android.server.connectivity.IProxyTracker;
 import com.android.server.connectivity.IntegerRangeUtils;
 import com.android.server.connectivity.InterfaceTracker;
 import com.android.server.connectivity.InvalidTagException;
@@ -1108,7 +1109,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
     // A helper object to track the current default HTTP proxy. ConnectivityService needs to tell
     // the world when it changes.
-    private final ProxyTracker mProxyTracker;
+    private final IProxyTracker mProxyTracker;
 
     final private SettingsObserver mSettingsObserver;
 
@@ -1677,7 +1678,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         /**
          * @see ProxyTracker
          */
-        public ProxyTracker makeProxyTracker(@NonNull Context context,
+        public IProxyTracker makeProxyTracker(@NonNull Context context,
                 @NonNull Handler connServiceHandler) {
             return new ProxyTracker(context, connServiceHandler, EVENT_PAC_PROXY_HAS_CHANGED);
         }
@@ -6170,7 +6171,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             // that there is no longer a default proxy.
             // Strictly speaking this is not essential because having a proxy setting when
             // there is no network is harmless, but it's still counter-intuitive so reset to null.
-            mProxyTracker.setDefaultProxy(null);
+            mProxyTracker.updateDefaultNetworkState(null, null);
         }
 
         // Immediate teardown.
@@ -7957,7 +7958,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void handlePacProxyServiceStarted(@Nullable Network net, @Nullable ProxyInfo proxy) {
-        mProxyTracker.setDefaultProxy(proxy);
+        mProxyTracker.updateDefaultNetworkState(net, proxy);
         final NetworkAgentInfo nai = getDefaultNetwork();
         // TODO : this method should check that net == nai.network, unfortunately at this point
         // 'net' is always null in practice (see PacProxyService#sendPacBroadcast). PAC proxy
@@ -7975,12 +7976,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
     // when any network changes proxy.
     // TODO: Remove usage of broadcast extras as they are deprecated and not applicable in a
     // multi-network world where an app might be bound to a non-default network.
-    private void updateProxy(@NonNull LinkProperties newLp, @Nullable LinkProperties oldLp) {
+    private void updateProxy(@NonNull Network network, @NonNull LinkProperties newLp,
+            @Nullable LinkProperties oldLp) {
         ProxyInfo newProxyInfo = newLp.getHttpProxy();
         ProxyInfo oldProxyInfo = oldLp == null ? null : oldLp.getHttpProxy();
 
         if (!ProxyTracker.proxyInfoEqual(newProxyInfo, oldProxyInfo)) {
-            mProxyTracker.sendProxyBroadcast();
+            mProxyTracker.updateNetworkProxy(network, newProxyInfo, oldProxyInfo);
         }
     }
 
@@ -10534,9 +10536,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
         mDnsManager.updatePrivateDnsStatus(netId, newLp);
 
         if (isDefaultNetwork(networkAgent)) {
-            mProxyTracker.setDefaultProxy(newLp.getHttpProxy());
+            mProxyTracker.updateDefaultNetworkState(networkAgent.network, newLp.getHttpProxy());
         } else if (networkAgent.everConnected()) {
-            updateProxy(newLp, oldLp);
+            updateProxy(networkAgent.network, newLp, oldLp);
         }
 
         updateWakeOnLan(newLp);
@@ -12059,7 +12061,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
         final Set<UidRange> newUids = newNc == null ? null : newNc.getUidRanges();
         if (nai.isVPN() && nai.everConnected() && !UidRange.hasSameUids(prevUids, newUids)
                 && (nai.linkProperties.getHttpProxy() != null || isProxySetOnAnyDefaultNetwork())) {
-            mProxyTracker.sendProxyBroadcast();
+            mProxyTracker.updateNetworkProxy(
+                    nai.network,
+                    nai.linkProperties.getHttpProxy(),
+                    nai.linkProperties.getHttpProxy());
         }
     }
 
@@ -12533,8 +12538,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
         mNetworkActivityTracker.updateDefaultNetwork(newDefaultNetwork, oldDefaultNetwork);
         maybeDestroyPendingSockets(newDefaultNetwork, oldDefaultNetwork);
-        mProxyTracker.setDefaultProxy(null != newDefaultNetwork
-                ? newDefaultNetwork.linkProperties.getHttpProxy() : null);
+        mProxyTracker.updateDefaultNetworkState(
+                null != newDefaultNetwork ? newDefaultNetwork.network : null,
+                null != newDefaultNetwork ? newDefaultNetwork.linkProperties.getHttpProxy() : null);
         resetHttpProxyForNonDefaultNetwork(oldDefaultNetwork);
         updateTcpBufferSizes(null != newDefaultNetwork
                 ? newDefaultNetwork.linkProperties.getTcpBufferSizes() : null);
@@ -13369,7 +13375,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 // If something depends on both LinkProperties and connected state, it should be in
                 // this method as well.
                 networkAgent.clatd.update();
-                updateProxy(networkAgent.linkProperties, null);
+                updateProxy(networkAgent.network, networkAgent.linkProperties, null);
             }
 
             // If a rate limit has been configured and is applicable to this network (network
@@ -13471,7 +13477,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 // apps may need to update their proxy data. This is called after disconnecting from
                 // VPN to make sure we do not broadcast the old proxy data.
                 // TODO(b/122649188): send the broadcast only to VPN users.
-                mProxyTracker.sendProxyBroadcast();
+                mProxyTracker.updateNetworkProxy(
+                        networkAgent.network,
+                        null /* newProxyInfo */,
+                        networkAgent.linkProperties.getHttpProxy());
             }
         } else if (networkAgent.isCreated() && (oldInfo.getState() == NetworkInfo.State.SUSPENDED
                 || state == NetworkInfo.State.SUSPENDED)) {

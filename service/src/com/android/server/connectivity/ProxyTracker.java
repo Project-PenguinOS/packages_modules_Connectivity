@@ -51,7 +51,7 @@ import java.util.Objects;
  *
  * @hide
  */
-public class ProxyTracker {
+public class ProxyTracker implements IProxyTracker {
     private static final String TAG = ProxyTracker.class.getSimpleName();
     private static final boolean DBG = true;
 
@@ -155,7 +155,7 @@ public class ProxyTracker {
      * @return The default system-wide proxy or null if none.
      */
     @Nullable
-    public ProxyInfo getDefaultProxy() {
+    private ProxyInfo getDefaultProxy() {
         // This information is already available as a world read/writable jvm property.
         synchronized (mProxyLock) {
             if (mGlobalProxy != null) return mGlobalProxy;
@@ -168,6 +168,7 @@ public class ProxyTracker {
      *
      * @return The global proxy or null if none.
      */
+    @Override
     @Nullable
     public ProxyInfo getGlobalProxy() {
         // This information is already available as a world read/writable jvm property.
@@ -177,6 +178,7 @@ public class ProxyTracker {
     }
 
     /** Read the global proxy settings and cache them in memory. */
+    @Override
     public void loadGlobalProxy() {
         if (loadDeprecatedGlobalHttpProxy()) {
             return;
@@ -215,6 +217,7 @@ public class ProxyTracker {
      * Read the global proxy from the deprecated Settings.Global.HTTP_PROXY setting and apply it.
      * Returns {@code true} when global proxy was set successfully from deprecated setting.
      */
+    @Override
     public boolean loadDeprecatedGlobalHttpProxy() {
         final String proxy = Settings.Global.getString(mContext.getContentResolver(), HTTP_PROXY);
         if (!TextUtils.isEmpty(proxy)) {
@@ -246,7 +249,7 @@ public class ProxyTracker {
      * <p>Confusingly this method also sets the PAC file URL. TODO : separate this, it has nothing
      * to do in a "sendProxyBroadcast" method.
      */
-    public void sendProxyBroadcast() {
+    private void sendProxyBroadcast() {
         final ProxyInfo defaultProxy = getDefaultProxy();
         final ProxyInfo proxyInfo =
                 null != defaultProxy
@@ -279,10 +282,40 @@ public class ProxyTracker {
     }
 
     /**
+     * In this legacy ProxyTracker implementation, only the {@code proxyInfo} parameter is used to
+     * update the default proxy settings by calling {@link #setDefaultProxy}. The {@code
+     * newDefaultNetwork} parameter is ignored because this tracker is not multi-network aware. The
+     * method signature is defined by {@link IProxyTracker} to also support future multi-network
+     * aware implementations which will use the network parameter.
+     */
+    @Override
+    public void updateDefaultNetworkState(
+            @Nullable Network newDefaultNetwork, @Nullable ProxyInfo proxyInfo) {
+        setDefaultProxy(proxyInfo);
+    }
+
+    /**
+     * In this legacy ProxyTracker implementation, any update to a network's proxy properties
+     * triggers a general proxy broadcast via {@link #sendProxyBroadcast}. The specific details
+     * provided in {@code network}, {@code newProxyInfo}, and {@code oldProxyInfo} are ignored
+     * because this tracker does not manage per-network proxy states. The method signature is
+     * defined by {@link IProxyTracker} to also support future multi-network aware implementations
+     * that will use these parameters to handle per-network changes.
+     */
+    @Override
+    public void updateNetworkProxy(
+            @NonNull Network network,
+            @Nullable ProxyInfo newProxyInfo,
+            @Nullable ProxyInfo oldProxyInfo) {
+        sendProxyBroadcast();
+    }
+
+    /**
      * Sets the global proxy in memory. Also writes the values to the global settings of the device.
      *
      * @param proxyInfo the proxy spec, or null for no proxy.
      */
+    @Override
     public void setGlobalProxy(@Nullable ProxyInfo proxyInfo) {
         synchronized (mProxyLock) {
             // ProxyInfo#equals is not commutative :( and is public API, so it can't be fixed.
@@ -338,7 +371,7 @@ public class ProxyTracker {
      *
      * @param proxyInfo the proxy spec, or null for no proxy.
      */
-    public void setDefaultProxy(@Nullable ProxyInfo proxyInfo) {
+    private void setDefaultProxy(@Nullable ProxyInfo proxyInfo) {
         // The code has been accepting empty proxy objects forever, so for backward
         // compatibility it should continue doing so.
         if (proxyInfo != null
@@ -393,6 +426,7 @@ public class ProxyTracker {
      * @param network the network of the local proxy server.
      */
     // TODO: Leave network unused to support local proxy server per network in the future.
+    @Override
     public void updateDefaultNetworkProxyPortForPAC(
             @NonNull final LinkProperties lp, @Nullable Network network) {
         final ProxyInfo defaultProxy = getDefaultProxy();

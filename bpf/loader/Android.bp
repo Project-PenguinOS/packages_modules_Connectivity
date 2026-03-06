@@ -48,6 +48,10 @@ cc_binary {
     name: "netbpfload",
 
     defaults: ["bpf_cc_defaults"],
+    cflags: [
+        "-Wformat",
+        "-Wformat-signedness",
+    ],
     sanitize: {
         integer_overflow: true,
     },

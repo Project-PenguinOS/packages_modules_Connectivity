@@ -413,6 +413,7 @@ import com.android.server.connectivity.CarrierPrivilegeAuthenticator;
 import com.android.server.connectivity.ClatCoordinator;
 import com.android.server.connectivity.ConnectivityFlags;
 import com.android.server.connectivity.ConnectivityResources;
+import com.android.server.connectivity.IProxyTracker;
 import com.android.server.connectivity.InterfaceTracker;
 import com.android.server.connectivity.KeepaliveTracker;
 import com.android.server.connectivity.MultinetworkPolicyTracker;
@@ -607,7 +608,7 @@ public class ConnectivityServiceTest {
     private Context mContext;
     private NetworkPolicyCallback mPolicyCallback;
     private WrappedMultinetworkPolicyTracker mPolicyTracker;
-    private ProxyTracker mProxyTracker;
+    private IProxyTracker mProxyTracker;
     private HandlerThread mAlarmManagerThread;
     private TestNetIdManager mNetIdManager;
     private QosCallbackMockHelper mQosCallbackMockHelper;
@@ -2052,7 +2053,7 @@ public class ConnectivityServiceTest {
         }
 
         @Override
-        public ProxyTracker makeProxyTracker(final Context context, final Handler handler) {
+        public IProxyTracker makeProxyTracker(final Context context, final Handler handler) {
             return mProxyTracker;
         }
 

@@ -85,6 +85,7 @@ import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator
 import com.android.server.connectivity.ClatCoordinator
 import com.android.server.connectivity.ConnectivityFlags
+import com.android.server.connectivity.IProxyTracker
 import com.android.server.connectivity.InterfaceTracker
 import com.android.server.connectivity.MulticastRoutingCoordinatorService
 import com.android.server.connectivity.MultinetworkPolicyTracker
@@ -92,7 +93,6 @@ import com.android.server.connectivity.MultinetworkPolicyTrackerTestDependencies
 import com.android.server.connectivity.NetworkAgentInfo
 import com.android.server.connectivity.NetworkRequestStateStatsMetrics
 import com.android.server.connectivity.PermissionMonitor
-import com.android.server.connectivity.ProxyTracker
 import com.android.server.connectivity.QuicConnectionCloser
 import com.android.testutils.ContentResolverWithFakeSettingsProvider
 import com.android.testutils.visibleOnHandlerThread
@@ -229,7 +229,7 @@ open class CSTest {
     }
     val clatCoordinator = mock<ClatCoordinator>()
     val networkRequestStateStatsMetrics = mock<NetworkRequestStateStatsMetrics>()
-    val proxyTracker = mock<ProxyTracker>()
+    val proxyTracker = mock<IProxyTracker>()
     val systemConfigManager = makeMockSystemConfigManager()
     val batteryStats = mock<IBatteryStats>()
     val batteryManager = BatteryStatsManager(batteryStats)

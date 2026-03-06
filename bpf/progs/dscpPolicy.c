@@ -273,7 +273,7 @@ static inline __always_inline void match_policy(struct __sk_buff* skb, const boo
 // This is likely a Linux kernel bug, as 0 is the default, and PACKET_OUTGOING appears to be
 // set ONLY in dev_queue_xmit_nit() on skb2 post-clone - ie. on ptype delivered packets
 // (ie. AF_PACKET/tcpdump on egress) and not on the core packet itself.
-DEFINE_BPF_PROG_KVER(schedcls, set_dscp_ether, , AID_SYSTEM, 5_15)
+DEFINE_BPF_PROG_KVER(schedcls, set_dscp_ether, AID_SYSTEM, 5_15)
 (struct __sk_buff* skb) {
     if (skb->protocol == htons(ETH_P_IP)) {
         match_policy(skb, true);
