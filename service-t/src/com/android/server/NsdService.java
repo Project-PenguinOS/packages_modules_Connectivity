@@ -16,7 +16,6 @@
 
 package com.android.server;
 
-import static android.Manifest.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS;
 import static android.Manifest.permission.DEVICE_POWER;
 import static android.Manifest.permission.NETWORK_SETTINGS;
 import static android.Manifest.permission.NETWORK_STACK;
@@ -256,11 +255,6 @@ public class NsdService extends INsdManager.Stub {
     private static final int DISCOVERY_QUERY_SENT_CALLBACK = 1000;
     private static final int MAX_SUBTYPE_COUNT = 100;
     private static final int DNSSEC_PROTOCOL = 3;
-    /**
-     * Argument for {@link NsdManager#REGISTER_SERVICE} indicating that a fallback permission is
-     * being used
-     */
-    private static final int ARG_USE_FALLBACK_PERM = 1;
     /**
      * Argument for {@link NsdManager#DISCOVER_SERVICES} indicating that the listener is a
      * {@link android.net.nsd.NsdManager.ServiceInfoCallback}, meaning that all services should
@@ -1053,15 +1047,6 @@ public class NsdService extends INsdManager.Stub {
                 localNetPermission, attributionSource, null);
     }
 
-    // TODO(464406138): do not allow using a fallback permission
-    private boolean hasFallbackPermission(int uid, int pid) {
-        if (!accessLocalNetworkPermissionEnabled()) {
-            return false;
-        }
-        return mContext.checkPermission(CONNECTIVITY_USE_RESTRICTED_NETWORKS, pid, uid)
-                == PackageManager.PERMISSION_GRANTED;
-    }
-
     private boolean hasNetworkSettingsPermission(int uid, int pid) {
         return mContext.checkPermission(NETWORK_SETTINGS, pid, uid)
                 == PackageManager.PERMISSION_GRANTED;
@@ -1210,13 +1195,12 @@ public class NsdService extends INsdManager.Stub {
     }
 
     private void storeAdvertiserRequestMap(int clientRequestId, int transactionId,
-            ClientInfo clientInfo, @NonNull NsdServiceInfo serviceInfo,
-            boolean usingFallbackPermission) {
+            ClientInfo clientInfo, @NonNull NsdServiceInfo serviceInfo) {
         final String serviceFullName =
                 serviceInfo.getServiceName() + "." + serviceInfo.getServiceType();
         clientInfo.mClientRequests.put(clientRequestId, new AdvertiserClientRequest(
                 transactionId, serviceInfo.getNetwork(), serviceFullName,
-                mClock.elapsedRealtime(), usingFallbackPermission));
+                mClock.elapsedRealtime()));
         mTransactionIdToClientInfoMap.put(transactionId, clientInfo);
         updateMulticastLock();
     }
@@ -1355,7 +1339,7 @@ public class NsdService extends INsdManager.Stub {
                 case NsdManager.STOP_DISCOVERY -> handleStopDiscovery(clientRequestId,
                         (ListenerArgs) msg.obj);
                 case NsdManager.REGISTER_SERVICE -> handleRegisterService(clientRequestId,
-                        msg.arg1 == ARG_USE_FALLBACK_PERM, (AdvertisingArgs) msg.obj);
+                        (AdvertisingArgs) msg.obj);
                 case NsdManager.UNREGISTER_SERVICE -> handleUnregisterService(clientRequestId,
                         (ListenerArgs) msg.obj);
                 case NsdManager.RESOLVE_SERVICE -> handleResolveService(clientRequestId,
@@ -1443,9 +1427,7 @@ public class NsdService extends INsdManager.Stub {
         if (permissionsRequired) {
             usingLocalNetPermission = checkDataDeliveryPermissions(
                     clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
-            final boolean usingFallbackPermission = !usingLocalNetPermission
-                    && hasFallbackPermission(clientInfo.mUid, clientInfo.mPid);
-            usePicker = !usingLocalNetPermission && !usingFallbackPermission;
+            usePicker = !usingLocalNetPermission;
         } else {
             usingLocalNetPermission = false;
             usePicker = pickerRequested;
@@ -1593,8 +1575,7 @@ public class NsdService extends INsdManager.Stub {
         }
     }
 
-    private void handleRegisterService(int clientRequestId, boolean usingFallbackPermission,
-            AdvertisingArgs args) {
+    private void handleRegisterService(int clientRequestId, AdvertisingArgs args) {
         if (DBG) Log.d(TAG, "Register service");
         final ClientInfo clientInfo = mClients.get(args.connector);
         // If the binder death notification for a INsdManagerCallback was received
@@ -1605,8 +1586,9 @@ public class NsdService extends INsdManager.Stub {
             return;
         }
 
-        // Advertising always requires local network or fallback permissions
-        final boolean usingLocalNetworkPermission = !usingFallbackPermission;
+        // Advertising always requires local network permissions, which are checked before posting
+        // the request to the handler.
+        final boolean usingLocalNetworkPermission = true;
         if (requestLimitReached(clientInfo)) {
             clientInfo.onRegisterServiceFailedImmediately(clientRequestId,
                     NsdManager.FAILURE_MAX_LIMIT, true /* isLegacy */, usingLocalNetworkPermission);
@@ -1739,8 +1721,7 @@ public class NsdService extends INsdManager.Stub {
                             .build();
             mAdvertiser.addOrUpdateService(transactionId, serviceInfo,
                     mdnsAdvertisingOptions, clientInfo.mUid);
-            storeAdvertiserRequestMap(clientRequestId, transactionId, clientInfo,
-                    serviceInfo, usingFallbackPermission);
+            storeAdvertiserRequestMap(clientRequestId, transactionId, clientInfo, serviceInfo);
         } else {
             maybeStartDaemon();
             final int transactionId = getUniqueId();
@@ -1852,20 +1833,17 @@ public class NsdService extends INsdManager.Stub {
                 serviceName, serviceType);
 
         // If the service is in the allowlist, no need for permissions.
-        // Otherwise first check for local network permission. If it is not granted, still allow
-        // resolving if the app has a fallback permission.
-        // NsdService needs to track whether the local network permission or a fallback
-        // permission is being used, as if checkDataDeliveryPermissions returned
-        // PERMISSION_GRANTED, finishDataDelivery will need to be called when the request is
-        // unregistered to stop blaming the app for using the local network permission.
+        // Otherwise check for local network permission.
+        // NsdService needs to track whether the local network permission or the allowlist is being
+        // used, as if checkDataDeliveryPermissions returned PERMISSION_GRANTED, finishDataDelivery
+        // will need to be called when the request is unregistered to stop blaming the app for using
+        // the local network permission.
         final boolean usingPermissionExemption;
         if (isServiceAllowed) {
             usingPermissionExemption = true;
         } else if (checkDataDeliveryPermissions(
                 clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED) {
             usingPermissionExemption = false;
-        } else if (hasFallbackPermission(clientInfo.mUid, clientInfo.mPid)) {
-            usingPermissionExemption = true;
         } else {
             disallowedCb.run();
             return;
@@ -3528,17 +3506,12 @@ public class NsdService extends INsdManager.Stub {
         public void registerService(int listenerKey, AdvertisingRequest advertisingRequest)
                 throws RemoteException {
             int status = checkDataDeliveryPermissions(getCallingUid(), getCallingPid());
-            int args = 0;
             if (status != PERMISSION_GRANTED) {
-                if (hasFallbackPermission(getCallingUid(), getCallingPid())) {
-                    args = ARG_USE_FALLBACK_PERM;
-                } else {
-                    throw new SecurityException("Missing local network permission");
-                }
+                throw new SecurityException("Missing local network permission");
             }
             NsdManager.checkServiceInfoForRegistration(advertisingRequest.getServiceInfo());
             mHandler.sendMessage(
-                    NsdManager.REGISTER_SERVICE, args, listenerKey,
+                    NsdManager.REGISTER_SERVICE, /* arg1= */0, listenerKey,
                     new AdvertisingArgs(this, advertisingRequest)
             );
         }
@@ -3988,10 +3961,10 @@ public class NsdService extends INsdManager.Stub {
         private final int mRequestCode;
 
         private LegacyClientRequest(int transactionId, int requestCode, long startTimeMs) {
-            // Legacy requests cannot be using the legacy permission since they are always unused on
-            // U+ (see Dependencies#isMdnsDiscoveryManagerEnabled), and the local network permission
-            // check is only done on B+.
-            super(transactionId, startTimeMs, /* usingFallbackPermission= */false);
+            // Legacy requests cannot be using a permission exemption since they are always unused
+            // on U+ (see Dependencies#isMdnsDiscoveryManagerEnabled), and the local network
+            // permission check is only done on B+.
+            super(transactionId, startTimeMs, /* usingPermissionExemption= */false);
             mRequestCode = requestCode;
         }
 
@@ -4028,9 +4001,10 @@ public class NsdService extends INsdManager.Stub {
         private final String mServiceFullName;
 
         private AdvertiserClientRequest(int transactionId, @Nullable Network requestedNetwork,
-                @NonNull String serviceFullName, long startTimeMs,
-                boolean usingFallbackPermission) {
-            super(transactionId, requestedNetwork, startTimeMs, usingFallbackPermission);
+                @NonNull String serviceFullName, long startTimeMs) {
+            super(transactionId, requestedNetwork, startTimeMs,
+                    // The picker does not apply to advertising, so there is no permission exemption
+                    /* usingPermissionExemption= */false);
             mServiceFullName = serviceFullName;
         }
 

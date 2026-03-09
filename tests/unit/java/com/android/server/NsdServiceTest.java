@@ -17,7 +17,6 @@
 package com.android.server;
 
 import static android.Manifest.permission.ACCESS_LOCAL_NETWORK;
-import static android.Manifest.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS;
 import static android.Manifest.permission.DEVICE_POWER;
 import static android.Manifest.permission.NEARBY_WIFI_DEVICES;
 import static android.Manifest.permission.NETWORK_SETTINGS;
@@ -326,8 +325,6 @@ public class NsdServiceTest {
         mockService(mContext, ConnectivityManager.class, Context.CONNECTIVITY_SERVICE,
                 mConnectivityManager);
         doReturn(mPackageManager).when(mContext).getPackageManager();
-        doReturn(PERMISSION_DENIED).when(mContext)
-                .checkPermission(eq(CONNECTIVITY_USE_RESTRICTED_NETWORKS), anyInt(), anyInt());
         doReturn(mContext).when(mContext).createContextAsUser(any(), anyInt());
         final String packageName = getInstrumentation().getContext().getPackageName();
         doReturn(packageName).when(mContext).getPackageName();
@@ -1350,33 +1347,6 @@ public class NsdServiceTest {
                 attributionSource);
     }
 
-    @Test
-    @DisableCompatChanges(RESTRICT_LOCAL_NETWORK)
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
-    public void testRegisterServiceInfoCallback_RestrictedNetPermission_Succeeds() {
-        final AttributionSource attributionSource = getAttributionSource();
-        doReturn(PermissionManager.PERMISSION_HARD_DENIED).when(
-                mPermissionManager).checkPermissionForStartDataDelivery(
-                ACCESS_LOCAL_NETWORK, attributionSource, null);
-        doReturn(PERMISSION_GRANTED).when(mContext)
-                .checkPermission(CONNECTIVITY_USE_RESTRICTED_NETWORKS,
-                        Process.myPid(), Process.myUid());
-
-        final NsdManager client = connectClient(mService);
-        final NsdServiceInfo request = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
-        final ServiceInfoCallback serviceInfoCallback = mock(ServiceInfoCallback.class);
-        final String serviceTypeWithLocalDomain = SERVICE_TYPE + ".local";
-        client.registerServiceInfoCallback(request, Runnable::run, serviceInfoCallback);
-        waitForIdle();
-
-        verify(mDiscoveryManager).registerListener(eq(serviceTypeWithLocalDomain), any(), any());
-
-        client.unregisterServiceInfoCallback(serviceInfoCallback);
-        waitForIdle();
-        verify(mPermissionManager, never()).finishDataDelivery(any(), any());
-    }
-
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void testPickerStartIntent_AppNameNotFound() throws Exception {
         setMdnsDiscoveryManagerEnabled();
@@ -2018,38 +1988,6 @@ public class NsdServiceTest {
     }
 
     @Test
-    @DisableCompatChanges(RESTRICT_LOCAL_NETWORK)
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
-    public void testDiscoveryWithMdnsDiscoveryManager_RestrictedNetPermission_Succeeds() {
-        setMdnsDiscoveryManagerEnabled();
-        final AttributionSource attributionSource = getAttributionSource();
-        doReturn(PermissionManager.PERMISSION_HARD_DENIED).when(
-                mPermissionManager).checkPermissionForStartDataDelivery(
-                ACCESS_LOCAL_NETWORK, attributionSource, null);
-        doReturn(PERMISSION_GRANTED).when(mContext)
-                .checkPermission(CONNECTIVITY_USE_RESTRICTED_NETWORKS,
-                        Process.myPid(), Process.myUid());
-
-        final NsdManager client = connectClient(mService);
-        final DiscoveryListener discListener = mock(DiscoveryListener.class);
-        final String serviceTypeWithLocalDomain = SERVICE_TYPE + ".local";
-        // Verify the discovery start / stop.
-        final ArgumentCaptor<MdnsListener> listenerCaptor =
-                ArgumentCaptor.forClass(MdnsListener.class);
-        client.discoverServices(SERVICE_TYPE, PROTOCOL, TEST_NETWORK, r -> r.run(), discListener);
-        waitForIdle();
-        verify(mDiscoveryManager).registerListener(eq(serviceTypeWithLocalDomain),
-                listenerCaptor.capture(), any());
-
-        client.stopServiceDiscovery(discListener);
-        waitForIdle();
-
-        verify(mDiscoveryManager).unregisterListener(eq(serviceTypeWithLocalDomain), any());
-        verify(mPermissionManager, never()).finishDataDelivery(any(), any());
-    }
-
-    @Test
     @EnableCompatChanges(ENABLE_PLATFORM_MDNS_BACKEND)
     public void testDiscoveryWithMdnsDiscoveryManager_UsesSubtypes() {
         final String typeWithSubtype = SERVICE_TYPE + ",_subtype";
@@ -2347,37 +2285,6 @@ public class NsdServiceTest {
                 .unregisterListener(eq(SERVICE_TYPE_WITH_LOCAL_TLD), any());
         verify(mPermissionManager, times(1)).finishDataDelivery(ACCESS_LOCAL_NETWORK,
                 attributionSource);
-    }
-
-    @Test
-    @DisableCompatChanges(RESTRICT_LOCAL_NETWORK)
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
-    public void testResolutionWithMdnsDiscoveryManager_RestrictedNetPermission_Succeeds()
-            throws Exception {
-        setMdnsDiscoveryManagerEnabled();
-        final AttributionSource attributionSource = getAttributionSource();
-        doReturn(PermissionManager.PERMISSION_HARD_DENIED).when(
-                mPermissionManager).checkPermissionForStartDataDelivery(
-                ACCESS_LOCAL_NETWORK, attributionSource, null);
-        doReturn(PERMISSION_GRANTED).when(mContext)
-                .checkPermission(CONNECTIVITY_USE_RESTRICTED_NETWORKS,
-                        Process.myPid(), Process.myUid());
-
-        final NsdManager client = connectClient(mService);
-        final ResolveListener resolveListener = mock(ResolveListener.class);
-        final NsdServiceInfo request = new NsdServiceInfo(SERVICE_NAME, SERVICE_TYPE);
-        client.resolveService(request, resolveListener);
-        waitForIdle();
-        final String serviceTypeWithLocalDomain = SERVICE_TYPE + ".local";
-        verify(mDiscoveryManager).registerListener(eq(serviceTypeWithLocalDomain), any(), any());
-
-        client.stopServiceResolution(resolveListener);
-        waitForIdle();
-
-        verify(mDiscoveryManager, timeout(TIMEOUT_MS))
-                .unregisterListener(eq(serviceTypeWithLocalDomain), any());
-        verify(mPermissionManager, never()).finishDataDelivery(any(), any());
     }
 
     @Test
