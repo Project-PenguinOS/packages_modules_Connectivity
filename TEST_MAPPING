@@ -88,6 +88,9 @@
       ]
     },
     {
+      "name": "ServiceConnectivityResourcesTests"
+    },
+    {
       "name": "libnetworkstats_test"
     },
     {
@@ -151,6 +154,9 @@
           "exclude-annotation": "com.android.testutils.SkipPresubmit"
         }
       ]
+    },
+    {
+      "name": "ServiceConnectivityResourcesTests"
     },
     // Run in addition to mainline-presubmit as mainline-presubmit is not
     // supported in every branch.

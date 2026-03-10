@@ -23,9 +23,12 @@ import android.net.nsd.DiscoveryRequest
 import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.os.Bundle
+import android.os.ConditionVariable
 import android.os.IBinder
 import android.view.View
+import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onData
@@ -43,13 +46,18 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import com.android.connectivity.resources.aidl.NsdPickerConnector
 import com.android.connectivity.resources.aidl.NsdServiceReceiver
+import com.android.testutils.AutoCloseTestResourcesRule
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
+import com.android.testutils.com.android.testutils.CloseableGlobalSetting
+import kotlin.test.assertTrue
 import org.hamcrest.Description
 import org.hamcrest.Matcher
 import org.hamcrest.Matchers.not
+import org.junit.After
 import org.junit.Before
 import org.junit.BeforeClass
+import org.junit.ClassRule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
@@ -73,12 +81,22 @@ class NsdPickerActivityTest {
     private lateinit var mServiceReceiver: NsdServiceReceiver
 
     companion object {
+        @get:ClassRule
+        val autoCloseRule = AutoCloseTestResourcesRule()
+
         @JvmStatic
         @BeforeClass
         fun setUpClass() {
             val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
             device.wakeUp()
             device.executeShellCommand("wm dismiss-keyguard")
+            // As per Espresso prerequisites, disable animations
+            autoCloseRule.add(
+                CloseableGlobalSetting("transition_animation_scale").apply { setValue("0") })
+            autoCloseRule.add(
+                CloseableGlobalSetting("window_animation_scale").apply { setValue("0") })
+            autoCloseRule.add(
+                CloseableGlobalSetting("animator_duration_scale").apply { setValue("0") })
             device.waitForIdle()
         }
     }
@@ -118,6 +136,13 @@ class NsdPickerActivityTest {
 
         verify(mMockConnector).setServiceReceiver(receiverCaptor.capture())
         mServiceReceiver = receiverCaptor.value
+    }
+
+    @After
+    fun tearDown() {
+        if (this::mScenario.isInitialized) {
+            mScenario.close()
+        }
     }
 
     @Test
@@ -184,9 +209,10 @@ class NsdPickerActivityTest {
     @Test
     fun testDiscoveryCancelled() {
         onView(withText(R.string.choose_device_title)).check(matches(isDisplayed()))
-        mServiceReceiver.onCancelled()
 
-        onView(withText(R.string.choose_device_title)).check(doesNotExist())
+        assertFinishesActivity {
+            mServiceReceiver.onCancelled()
+        }
         verifyNoMoreInteractions(mMockConnector)
     }
 
@@ -304,6 +330,19 @@ class NsdPickerActivityTest {
             withText(mContext.getString(R.string.choose_device_summary, otherAppName))
         )
             .check(matches(isDisplayed()))
+    }
+
+    private fun assertFinishesActivity(action: () -> Unit) {
+        val cv = ConditionVariable(false)
+        mScenario.onActivity {
+            it.lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onDestroy(owner: LifecycleOwner) {
+                    cv.open()
+                }
+            })
+        }
+        action()
+        assertTrue(cv.block(TEST_TIMEOUT_MS), "Activity did not finish with $TEST_TIMEOUT_MS ms")
     }
 }
 
