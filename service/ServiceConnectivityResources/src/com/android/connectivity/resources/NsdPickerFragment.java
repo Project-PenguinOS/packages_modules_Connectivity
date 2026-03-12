@@ -314,8 +314,14 @@ public class NsdPickerFragment extends DialogFragment {
         super.onCancel(dialog);
         if (DBG) Log.d(TAG, "Dialog cancelled");
         mIsSelectionDone = true;
+        if (mState != null) {
+            try {
+                mState.mConnector.notifySelectionCancelled();
+            } catch (RemoteException e) {
+                Log.e(TAG, "Failed to notify of cancelled selection", e);
+            }
+        }
         // onDetach will be called after onCancel
-        // TODO: stop discovery, don't wait for the requesting app to time out and unregister
     }
 
     @UiThread

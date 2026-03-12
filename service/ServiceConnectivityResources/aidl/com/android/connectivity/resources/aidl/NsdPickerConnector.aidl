@@ -43,4 +43,5 @@ interface NsdPickerConnector {
 
     oneway void setServiceReceiver(in NsdServiceReceiver receiver);
     oneway void notifyServiceSelected(in NsdServiceInfo service);
+    oneway void notifySelectionCancelled();
 }

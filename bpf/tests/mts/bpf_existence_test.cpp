@@ -94,6 +94,7 @@ static const set<string> MAINLINE_FOR_T_PLUS = {
     NETD "map_netd_iface_stats_map",
     NETD "map_netd_ingress_discard_map",
     NETD "map_netd_loopback_access_metrics_enabled_map",
+    NETD "map_netd_loopback_checks_enabled_map",
     NETD "map_netd_netd_pid_map",
     NETD "map_netd_permission_propagation_enabled_map",
     NETD "map_netd_stats_map_A",
