@@ -118,9 +118,6 @@ public class VcnManager {
     /**
      * Key for the interval to poll IpSecTransformState for packet loss monitoring
      *
-     * <p>If the reported packet loss rate is equal to or larger than this threshold, VCN will
-     * switch away to use a different underlying network.
-     *
      * <p>Defaults to 10, unless overridden by carrier config
      *
      * @hide
@@ -132,9 +129,14 @@ public class VcnManager {
     /**
      * Key for the threshold of IPSec packet loss rate
      *
-     * <p>Defaults to 12, unless overridden by carrier config
+     * <p>If the reported packet loss rate is equal to or larger than this threshold, VCN will
+     * switch away to use a different underlying network.
      *
-     * <p>Setting to -1 will disable the IPsec packet loss detector
+     * <p>Setting to -1 will disable the IPsec packet loss detector. Setting to >100 will
+     * effectively disable the switching based on packet loss, but still allow the detector to
+     * monitor and log the loss rates for informational purposes.
+     *
+     * <p>Defaults to 12, unless overridden by carrier config
      *
      * @hide
      */

@@ -31,6 +31,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
+import androidx.annotation.VisibleForTesting;
 import androidx.fragment.app.FragmentActivity;
 
 import com.android.connectivity.resources.NsdPickerFragment.PickerDialogListener;
@@ -44,10 +45,12 @@ import java.util.Queue;
 @TargetApi(Build.VERSION_CODES.TIRAMISU) // NsdManager is only updatable on T+
 public class NsdPickerActivity extends FragmentActivity implements PickerDialogListener {
     private static final String TAG = NsdPickerActivity.class.getSimpleName();
+    private static final boolean DBG = Log.isLoggable(TAG, Log.DEBUG);
     private static final String FRAGMENT_PICKER_DIALOG = "picker_dialog";
     private static final String KEY_INTENT_QUEUE = "intent_queue";
 
     private final Queue<Intent> mIntentQueue = new ArrayDeque<>();
+    private Runnable mStopReceiver;
 
     @UiThread
     @Override
@@ -66,6 +69,20 @@ public class NsdPickerActivity extends FragmentActivity implements PickerDialogL
         showNextPickerFragmentOrFinish();
     }
 
+    @VisibleForTesting
+    void setStopAction(Runnable stopReceiver) {
+        mStopReceiver = stopReceiver;
+    }
+
+    @UiThread
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (mStopReceiver != null) {
+            mStopReceiver.run();
+        }
+    }
+
     @UiThread
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
@@ -77,6 +94,7 @@ public class NsdPickerActivity extends FragmentActivity implements PickerDialogL
     private void showNextPickerFragmentOrFinish() {
         if (getSupportFragmentManager().findFragmentByTag(FRAGMENT_PICKER_DIALOG) != null) {
             // A dialog fragment is already shown
+            if (DBG) Log.d(TAG, "showNextPickerFragmentOrFinish: fragment already shown");
             return;
         }
 
@@ -104,12 +122,14 @@ public class NsdPickerActivity extends FragmentActivity implements PickerDialogL
                 continue;
             }
 
+            if (DBG) Log.d(TAG, "showNextPickerFragmentOrFinish: showing a new dialog");
             NsdPickerFragment.newInstance(connector, appName, request)
                     .show(getSupportFragmentManager(), FRAGMENT_PICKER_DIALOG);
             return;
         }
 
         // No picker currently shown and no valid intents left to show a picker for.
+        if (DBG) Log.d(TAG, "showNextPickerFragmentOrFinish: empty queue, finishing");
         finish();
     }
 
@@ -117,6 +137,16 @@ public class NsdPickerActivity extends FragmentActivity implements PickerDialogL
     @Override
     public void onNewIntent(@NonNull Intent intent) {
         super.onNewIntent(intent);
+        if (DBG) Log.d(TAG, "Received new intent: " + intent);
+        if (isFinishing()) {
+            // There is a possible race where finish() was called already, and onNewIntent is
+            // received immediately afterwards instead of a new activity being created and receiving
+            // onCreate. Create a new activity manually in that case instead of handling the intent
+            // in a dying activity.
+            Log.w(TAG, "onNewIntent: restarting activity after finish");
+            startActivity(intent);
+            return;
+        }
         mIntentQueue.add(intent);
         showNextPickerFragmentOrFinish();
     }

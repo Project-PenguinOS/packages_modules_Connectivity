@@ -121,9 +121,9 @@ static_assert(!minSupportedKernelVer, "NetBpfLoad must not assume min kver");
 static unsigned int page_size = static_cast<unsigned int>(getpagesize());
 
 typedef struct {
-    string program_name;
+    const char* program_name;
     vector<char> data;
-    vector<char> rel_data;
+    span<const Elf64_Rel> rel_data;
     optional<struct bpf_prog_def> prog_def;
 
     unique_fd prog_fd; // fd after loading
@@ -136,6 +136,8 @@ class ElfObject {
     span<const char> bytes;
     span<const Elf64_Shdr> sh;
     span<const char> strtab;
+    span<const Elf64_Sym> symtab;
+    vector<Elf64_Sym> sortedSymtab;
 
   public:
     const char * const path;
@@ -190,6 +192,12 @@ class ElfObject {
         }
         sh = {(const Elf64_Shdr*)((char*)base + eh->e_shoff), eh->e_shnum};
         strtab = getSectionByIdx(eh->e_shstrndx);
+        if (readSectionByType(SHT_SYMTAB, symtab)) {
+            ALOGE("file %s symtab not found", path);
+            abort();
+        }
+        sortedSymtab.assign(symtab.begin(), symtab.end());
+        std::sort(sortedSymtab.begin(), sortedSymtab.end(), symCompare);
     }
 
     ~ElfObject() {
@@ -250,41 +258,19 @@ class ElfObject {
         return -2;
     }
 
-    int getSymTab(span<const Elf64_Sym>& data) const {
-        return readSectionByType(SHT_SYMTAB, data);
-    }
-
     static bool symCompare(Elf64_Sym a, Elf64_Sym b) {
         return (a.st_value < b.st_value);
     }
 
-    int readSortedSymTab(vector<Elf64_Sym>& data) const {
-        span<const Elf64_Sym> symtab;
-
-        int ret = getSymTab(symtab);
-        if (ret) return ret;
-
-        data.assign(symtab.begin(), symtab.end());
-
-        std::sort(data.begin(), data.end(), symCompare);
-        return 0;
-    }
-
-    int getSectionSymNames(const string& sectionName, vector<string>& names,
+    int getSectionSymNames(const char* const sectionName, vector<const char*>& names,
                            optional<unsigned> symbolType = std::nullopt) const {
-        int ret;
-        vector<Elf64_Sym> symtab;
-
-        ret = readSortedSymTab(symtab);
-        if (ret) return ret;
-
         // Get index of section
         int sec_idx = -1;
         for (unsigned i = 0; i < sh.size(); i++) {
             const char* name = getStr(sh[i].sh_name);
             if (!name) return -1;
 
-            if (!sectionName.compare(name)) {
+            if (!strcmp(sectionName, name)) {
                 sec_idx = i;
                 break;
             }
@@ -292,15 +278,15 @@ class ElfObject {
 
         // No section found with matching name
         if (sec_idx == -1) {
-            ALOGW("No %s section could be found in elf object", sectionName.c_str());
+            ALOGW("No %s section could be found in elf object", sectionName);
             return -1;
         }
 
-        for (unsigned i = 0; i < symtab.size(); i++) {
-            if (symbolType.has_value() && ELF_ST_TYPE(symtab[i].st_info) != symbolType) continue;
+        for (unsigned i = 0; i < sortedSymtab.size(); i++) {
+            if (symbolType.has_value() && ELF_ST_TYPE(sortedSymtab[i].st_info) != symbolType) continue;
 
-            if (symtab[i].st_shndx == sec_idx) {
-                const char* s = getStr(symtab[i].st_name);
+            if (sortedSymtab[i].st_shndx == sec_idx) {
+                const char* s = getStr(sortedSymtab[i].st_name);
                 if (!s) return -1;
                 names.push_back(s);
             }
@@ -309,34 +295,19 @@ class ElfObject {
         return 0;
     }
 
-    int getSymNameByIdx(unsigned index, string& name) const {
-        span<const Elf64_Sym> symtab;
-        int ret = 0;
-
-        ret = getSymTab(symtab);
-        if (ret) return ret;
-
-        if (index >= symtab.size()) return -1;
-
-        const char* s = getStr(symtab[index].st_name);
-        if (!s) return -1;
-        name = s;
-        return 0;
+    const char* getSymNameByIdx(unsigned index) const {
+        if (index >= symtab.size()) return nullptr;
+        return getStr(symtab[index].st_name);
     }
 
-    int getSymOffsetByName(const char *name, int *off) const {
-        span<const Elf64_Sym> symtab;
-        int ret = getSymTab(symtab);
-        if (ret) return ret;
+    // sym.st_value is an Elf64_Addr (u64), however we don't need to support huge ELF objects
+    int getSymOffsetByName(const char *name) const {
         for (const auto& sym : symtab) {
             const char* s = getStr(sym.st_name);
             if (!s) continue;
-            if (!strcmp(s, name)) {
-                *off = sym.st_value;
-                return 0;
-            }
+            if (!strcmp(s, name)) return sym.st_value;
         }
-        return -1;
+        return -1;  // not found
     }
 };
 
@@ -348,12 +319,12 @@ int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
     span<const struct bpf_prog_def> pd;
     ret = elfObj.readSectionByName(".android_progs", pd);
     if (ret) return ret;
-    vector<string> progDefNames;
+    vector<const char*> progDefNames;
     ret = elfObj.getSectionSymNames(".android_progs", progDefNames);
     if (!pd.empty() && ret) return ret;
 
     for (int i = 0; i < entries; i++) {
-        const char* name = elfObj.getStr(elfObj.SH(i).sh_name);
+        const char* const name = elfObj.getStr(elfObj.SH(i).sh_name);
         if (!name) return -1;
 
         // all we want to process is sections FOO/BAR, but:
@@ -368,7 +339,6 @@ int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
         // Ignore sections without a /  (basically 'license' section)
         if (!first_slash) continue;
 
-        string oldName = name;
         string sanitizedName = name;
         sanitizedName[first_slash - name] = '_';
 
@@ -380,12 +350,13 @@ int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
         cs_temp.data.assign(s.begin(), s.end());
         ALOGV("Loaded code section %d (%s)", i, sanitizedName.c_str());
 
-        vector<string> csSymNames;
-        ret = elfObj.getSectionSymNames(oldName, csSymNames, STT_FUNC);
+        vector<const char*> csSymNames;
+        ret = elfObj.getSectionSymNames(name, csSymNames, STT_FUNC);
         if (ret || !csSymNames.size()) return ret;
         cs_temp.program_name = csSymNames[0];
+        string prog_def_name = string(cs_temp.program_name) + "_def";
         for (size_t j = 0; j < progDefNames.size(); ++j) {
-            if (!progDefNames[j].compare(csSymNames[0] + "_def")) {
+            if (prog_def_name == progDefNames[j]) {
                 cs_temp.prog_def = pd[j];
                 break;
             }
@@ -393,15 +364,16 @@ int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
 
         if (!cs_temp.prog_def) abort();
 
+        string relname = string(".rel") + name;
+
         // Check for rel section
         if (cs_temp.data.size() > 0 && i + 1 < entries) {
             const char* next_name = elfObj.getStr(elfObj.SH(i + 1).sh_name);
             if (!next_name) return -1;
 
-            if (!strcmp(next_name, (".rel" + oldName).c_str())) {
-                auto rel_s = elfObj.getSectionByIdx(i + 1);
-                if (rel_s.empty() && elfObj.SH(i + 1).sh_size > 0) return -1;
-                cs_temp.rel_data.assign(rel_s.begin(), rel_s.end());
+            if (!strcmp(next_name, relname.c_str())) {
+                cs_temp.rel_data = elfObj.getSectionByIdx<Elf64_Rel>(i + 1);
+                if (cs_temp.rel_data.empty() && elfObj.SH(i + 1).sh_size > 0) return -1;
                 ALOGV("Loaded relo section %d (%s)", i, next_name);
             }
         }
@@ -521,14 +493,12 @@ static int setBtfVarOffset(const ElfObject &elfObj, struct btf *btf,
             return -1;
         }
 
-        int off;
-        int ret = elfObj.getSymOffsetByName(varName, &off);
-        if (ret) {
-            ALOGE("No offset found in symbol table, section: %s, var: %s, ret: %d",
-                  datasecName, varName, ret);
-            return ret;
+        vsi->offset = elfObj.getSymOffsetByName(varName);
+        if (!~vsi->offset) {
+            ALOGE("No offset found in symbol table, section: %s, var: %s",
+                  datasecName, varName);
+            return -1;
         }
-        vsi->offset = off;
     }
     return 0;
 }
@@ -952,20 +922,16 @@ static void applyRelo(void* insnsPtr, Elf64_Addr offset, int fd) {
 static void applyMapRelo(const ElfObject& elfObj, const span<const struct bpf_map_def> md,
                          vector<unique_fd> &mapFds, vector<codeSection>& cs) {
     for (unsigned k = 0; k < cs.size(); k++) {
-        Elf64_Rel* rel = (Elf64_Rel*)(cs[k].rel_data.data());
-        int n_rel = cs[k].rel_data.size() / sizeof(*rel);
+        for (const auto& rel : cs[k].rel_data) {
+            int symIndex = ELF64_R_SYM(rel.r_info);
 
-        for (int i = 0; i < n_rel; i++) {
-            int symIndex = ELF64_R_SYM(rel[i].r_info);
-            string symName;
-
-            int ret = elfObj.getSymNameByIdx(symIndex, symName);
-            if (ret) return;
+            const char* symName = elfObj.getSymNameByIdx(symIndex);
+            if (!symName) return;
 
             // Find the map fd and apply relo
             for (unsigned j = 0; j < md.size(); j++) {
-                if (!symName.compare(md[j].name())) {
-                    applyRelo(cs[k].data.data(), rel[i].r_offset, mapFds[j]);
+                if (!strcmp(symName, md[j].name())) {
+                    applyRelo(cs[k].data.data(), rel.r_offset, mapFds[j]);
                     break;
                 }
             }
@@ -1054,7 +1020,8 @@ static enum bpf_attach_type fixup_attach(enum bpf_prog_type prog_type, enum bpf_
     return expected_attach_type;
 }
 
-static int loadCodeSections(const ElfObject& elfObj, vector<codeSection>& cs, const string& license) {
+static int loadCodeSections(const ElfObject& elfObj, vector<codeSection>& cs,
+                            const char* const license) {
     for (unsigned i = 0; i < cs.size(); i++) {
         unique_fd& fd = cs[i].prog_fd;
         int ret;
@@ -1088,7 +1055,7 @@ static int loadCodeSections(const ElfObject& elfObj, vector<codeSection>& cs, co
               .prog_type = cs[i].prog_def->type,
               .insn_cnt = static_cast<__u32>(cs[i].data.size() / sizeof(struct bpf_insn)),
               .insns = ptr_to_u64(cs[i].data.data()),
-              .license = ptr_to_u64(license.c_str()),
+              .license = ptr_to_u64(license),
               .expected_attach_type = fixup_attach(cs[i].prog_def->type, cs[i].prog_def->attach_type),
             };
             if (isAtLeastKernelVersion(4, 15))
@@ -1198,10 +1165,9 @@ static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSecti
             ALOGE("[%u] missing program definition! bad bpf.o build?", i);
             return -EINVAL;
         }
-        string program_name = cs[i].program_name;
-        struct bpf_program* prog = bpf_object__find_program_by_name(obj, program_name.c_str());
+        struct bpf_program* prog = bpf_object__find_program_by_name(obj, cs[i].program_name);
         if (!prog) {
-            ALOGE("bpf_object does not contain program: %s", cs[i].program_name.c_str());
+            ALOGE("bpf_object does not contain program: %s", cs[i].program_name);
             return -1;
         }
 
@@ -1261,10 +1227,9 @@ static int pinProgs(const struct bpf_object * obj,
     int ret;
 
     for (unsigned i = 0; i < cs.size(); i++) {
-        string program_name = cs[i].program_name;
-        struct bpf_program* prog = bpf_object__find_program_by_name(obj, program_name.c_str());
+        struct bpf_program* prog = bpf_object__find_program_by_name(obj, cs[i].program_name);
         if (!prog) {
-            ALOGE("bpf_object does not contain program: %s", program_name.c_str());
+            ALOGE("bpf_object does not contain program: %s", cs[i].program_name);
             return -1;
         }
         // This program was skipped
@@ -1330,20 +1295,15 @@ int loadProg(const char* const elfPath) {
     vector<codeSection> cs;
     span<const struct bpf_map_def> md;
     vector<unique_fd> mapFds;
-    int ret;
 
-    ret = elfObj.readSectionByName("license", license);
-    if (ret) {
-        ALOGE("Couldn't find license in %s", elfPath);
-        return ret;
-    } else {
-        ALOGD("Loading ELF object %s with license %s",
-              elfPath, (char*)license.data());
-    }
+    // Read license section - must exist and be NUL terminated.
+    if (elfObj.readSectionByName("license", license)) abort();
+    if (license.empty()) abort();
+    if (license.data()[license.size() - 1]) abort();
 
-    ALOGD("Processing ELF object %s", elfPath);
+    ALOGD("Processing ELF object %s (license %s)", elfPath, license.data());
 
-    ret = elfObj.readSectionByName(".android_maps", md);
+    int ret = elfObj.readSectionByName(".android_maps", md);
     if (ret == -2) ret = 0; // -2 means there were no maps to read
     if (ret) return ret;
 
@@ -1365,7 +1325,7 @@ int loadProg(const char* const elfPath) {
 
     applyMapRelo(elfObj, md, mapFds, cs);
 
-    ret = loadCodeSections(elfObj, cs, string(license.data(), license.size()));
+    ret = loadCodeSections(elfObj, cs, license.data());
     if (ret) ALOGE("Failed to load programs, loadCodeSections ret=%d", ret);
 
     return ret;
@@ -1777,8 +1737,19 @@ static int doLoad(char** argv, char * const envp[]) {
         }
         int y = -1, q = -1, a = -1, b = -1, c = -1;
         int v = fscanf(f, "# %d %d %d %d %d #", &y, &q, &a, &b, &c);
-        ALOGI("detected %d of 5: %dQ%d api:%d.%d.%d", v, y, q, a, b, c);
         fclose(f);
+        // y = year, q = quarter, a = major sdk, b = minor sdk
+        int abc = a * 100 + b * 10 + c * 2;
+        if ((api_level_full & ~1) == abc) {  // bottom bit means unreleased, ignore it
+            ALOGI("detected %d of 5: %dQ%d api:%d.%d.%d=%d", v, y, q, a, b, c, abc);
+        } else {
+            // it did not match, presumably we upgraded due to apex version
+            int yy = y;
+            int qq = q + 1;
+            if (qq == 5) { qq = 1; yy++; };
+            ALOGI("parsed %d of 5: %dQ%d -> %dQ%d api:%d.%d.%d=%d -> %d",
+                  v, y, q, yy, qq, a, b, c, abc, api_level_full & ~1);
+        }
         if (v != 5) return 16;
         if (y < 2025 || y > 2099) return 17;
         if (q < 1 || q > 4) return 18;
