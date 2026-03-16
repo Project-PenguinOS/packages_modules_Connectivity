@@ -77,29 +77,6 @@ static inline int get_api_level_full() {
     const bool unreleased = (base::GetProperty("ro.build.version.codename", "REL") != "REL");
     int rv = std::max(api_level_fuller, api_level_full) + unreleased;
 
-    // no extra magic on RELeased builds
-    if (!unreleased) return rv;
-
-    // this should return one of user/userdebug/eng, if not return what we already have
-    if (__system_property_get("ro.build.type", value) < 1) return rv;
-
-    // no extra magic on user builds, besides they don't include the symlink anyway
-    if (!strcmp(value, "user")) return rv;
-
-    // OK, we know we have an unreleased !user (ie. debuggable, userdebug/eng) build
-    char src_apex[16] = {};
-    // man readlink: Upon success, readlink() returns count of bytes placed in the buffer.
-    // Otherwise, it shall return a value of -1, leave buffer unchanged, and set errno.
-    int res = readlink("/system/etc/source_apex_version", src_apex, sizeof(src_apex) - 1);
-    if (res < 0) return rv;  // symlink missing?
-    src_apex[res] = 0; // forcibly NUL terminate, safe since sizeof-1 above
-
-    if (rv != 3701) return rv;
-
-    // platform/system reported value of RELEASE_DEFAULT_UPDATABLE_MODULE_VERSION at build time
-    if (!strcmp(src_apex, "371899999")) return 3703;  // trunk -> 26Q3
-    if (!strcmp(src_apex, "373399999")) return 3705;  // trunk_staging -> 26Q3
-
     return rv;
 }
 

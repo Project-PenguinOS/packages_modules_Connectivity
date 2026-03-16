@@ -140,7 +140,6 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.Random
 import java.util.concurrent.Executor
-import java.util.regex.Pattern
 import kotlin.math.min
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -3517,43 +3516,6 @@ class NsdManagerTest {
             handlerThread.waitForIdle(TIMEOUT_MS)
             nsdManager.stopServiceDiscovery(discoveryRecord)
             discoveryRecord.expectCallback<DiscoveryStopped>()
-        }
-    }
-
-    @Test
-    @RequiresFlagsEnabled(FLAG_NSD_SERVICE_PICKER)
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    fun testDiscoverServices_withPicker_cancel() {
-        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
-        uiDevice.wakeUp()
-        uiDevice.executeShellCommand("wm dismiss-keyguard")
-        val discoveryRecord = NsdDiscoveryRecord()
-        tryTest {
-            val request = DiscoveryRequest.Builder(serviceType)
-                .setNetwork(testNetwork1.network)
-                .setFlags(DiscoveryRequest.FLAG_SHOW_PICKER)
-                .build()
-            nsdManager.discoverServices(
-                request,
-                Executor { it.run() },
-                discoveryRecord
-            )
-            discoveryRecord.expectCallback<DiscoveryStarted>()
-
-            // Find and click the standard dialog negative button (Cancel)
-            val buttonMatcher = By.pkg(Pattern.compile(".*android.connectivity.resources"))
-                .res("android:id/button2")
-            val cancelButton = uiDevice.wait(Until.findObject(buttonMatcher), UI_TIMEOUT_MS)
-            assertNotNull(cancelButton, "Cancel button not found")
-            cancelButton.click()
-
-            // Expect DiscoveryStopped callback
-            discoveryRecord.expectCallback<DiscoveryStopped>()
-        } cleanup {
-            handlerThread.waitForIdle(TIMEOUT_MS)
-            // If discovery is already stopped, this is a no-op; otherwise it ensures discovery
-            // is stopped if the test failed before cancellation.
-            nsdManager.stopServiceDiscovery(discoveryRecord)
         }
     }
 

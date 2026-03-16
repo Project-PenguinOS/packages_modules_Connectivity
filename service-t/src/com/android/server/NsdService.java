@@ -506,12 +506,6 @@ public class NsdService extends INsdManager.Stub {
             public void notifyServiceSelected(@NonNull NsdServiceInfo service) {
                 mHandler.post(() -> handleServiceSelected(service));
             }
-
-            @RequiresNoPermission
-            @Override
-            public void notifySelectionCancelled() {
-                mHandler.post(() -> handleSelectionCancelled());
-            }
         };
 
         private PickerListener(int clientRequestId, int transactionId, String listenedServiceType,
@@ -731,17 +725,6 @@ public class NsdService extends INsdManager.Stub {
                 mClientInfo.tryNotifyServiceFound(mClientRequestId, service);
             }
 
-            stopDiscoveryManagerRequest(request, mClientRequestId, mTransactionId, mClientInfo);
-            mClientInfo.onStopDiscoverySucceeded(mClientRequestId, request);
-        }
-
-        private void handleSelectionCancelled() {
-            final ClientRequest request = getRequest();
-            if (request == null) {
-                Log.d(TAG, "Client request unregistered, ignoring selection cancellation");
-                return;
-            }
-            mClientInfo.log("Service selection cancelled for request " + mClientRequestId);
             stopDiscoveryManagerRequest(request, mClientRequestId, mTransactionId, mClientInfo);
             mClientInfo.onStopDiscoverySucceeded(mClientRequestId, request);
         }
@@ -2850,18 +2833,18 @@ public class NsdService extends INsdManager.Stub {
                 .setIsSelectiveMdnsResponseOffloadEnabled(mDeps.isAconfigFlagEnabled(
                         com.android.tethering.mainline.beta
                                 .Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD))
-                // Note that on V+, isChangeEnabled returns false for
-                // ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS even if the system UID is targeting
-                // higher SDK due to b/401088586.
-                // Thus, check compat change against the system UID is needed.
-                // If this check is not performed, MdnsSocketProvider may fail to learn
-                // local network agent events via network callbacks.
                 .setUseNetworkCallbackForLocalNetworksEnabled(
+                        // Note that on V+, isChangeEnabled returns false for
+                        // ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS even if the app is targeting
+                        // higher SDK due to b/401088586.
+                        // Thus, check compat change against the current process's uid is needed.
+                        // If this check is not performed, MdnsSocketProvider may fail to learn
+                        // local network agent events via network callbacks.
                         mDeps.isSupportTetheringAndP2pGoLocalAgent(mContext)
                                 && mDeps.isAconfigFlagEnabled(
                                         Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS)
-                                && mDeps.isCompatChangeEnabledForSystem(
-                                        ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS))
+                                && CompatChanges.isChangeEnabled(
+                                        ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS, Process.myUid()))
                 .setIsMdnsScanOffloadEnabled(mDeps.isAconfigFlagEnabled(
                         com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD))
                 .setOverrideProvider(new MdnsFeatureFlags.FlagOverrideProvider() {
@@ -2972,13 +2955,7 @@ public class NsdService extends INsdManager.Stub {
             return DeviceConfigUtils.isTetheringFeatureNotChickenedOut(context, feature);
         }
 
-        /**
-         * @see CompatChanges#isChangeEnabled(long, int)
-         */
-        public boolean isCompatChangeEnabledForSystem(long changeId) {
-            return CompatChanges.isChangeEnabled(changeId, Process.SYSTEM_UID);
-        }
-
+        /** Get whether a feature config is enabled. */
         /** Get whether tethering and P2P GO local agent is enabled. */
         public boolean isSupportTetheringAndP2pGoLocalAgent(Context context) {
             // Determines support for the Tethering/P2P GO local network agent. This feature is

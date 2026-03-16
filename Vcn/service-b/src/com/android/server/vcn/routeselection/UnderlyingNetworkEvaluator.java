@@ -40,7 +40,6 @@ import com.android.internal.annotations.VisibleForTesting.Visibility;
 import com.android.server.vcn.TelephonySubscriptionTracker.TelephonySubscriptionSnapshot;
 import com.android.server.vcn.VcnCarrierConfig;
 import com.android.server.vcn.VcnContext;
-import com.android.server.vcn.metrics.VcnMetrics;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -69,7 +68,6 @@ public class UnderlyingNetworkEvaluator {
     @NonNull private final NetworkEvaluatorCallback mEvaluatorCallback;
     @NonNull private final List<NetworkMetricMonitor> mMetricMonitors = new ArrayList<>();
 
-    @NonNull private final VcnMetrics mVcnMetrics;
     @NonNull private final Dependencies mDependencies;
 
     // TODO: Support back-off timeouts
@@ -87,13 +85,11 @@ public class UnderlyingNetworkEvaluator {
             @NonNull ParcelUuid subscriptionGroup,
             @NonNull TelephonySubscriptionSnapshot lastSnapshot,
             @Nullable PersistableBundleWrapper carrierConfig,
-            @NonNull VcnMetrics vcnMetrics,
             @NonNull NetworkEvaluatorCallback evaluatorCallback,
             @NonNull Dependencies dependencies) {
         mVcnContext = Objects.requireNonNull(vcnContext, "Missing vcnContext");
         mHandler = new Handler(mVcnContext.getLooper());
 
-        mVcnMetrics = Objects.requireNonNull(vcnMetrics, "Missing vcnMetrics");
         mDependencies = Objects.requireNonNull(dependencies, "Missing dependencies");
         mEvaluatorCallback = Objects.requireNonNull(evaluatorCallback, "Missing deps");
 
@@ -116,7 +112,6 @@ public class UnderlyingNetworkEvaluator {
                     mDependencies.newIpSecPacketLossDetector(
                             mVcnContext,
                             mNetworkRecordBuilder.getNetwork(),
-                            mVcnMetrics,
                             new VcnCarrierConfig(carrierConfig),
                             new MetricMonitorCallbackImpl()));
         } catch (IllegalAccessException e) {
@@ -131,7 +126,6 @@ public class UnderlyingNetworkEvaluator {
             @NonNull ParcelUuid subscriptionGroup,
             @NonNull TelephonySubscriptionSnapshot lastSnapshot,
             @Nullable PersistableBundleWrapper carrierConfig,
-            @NonNull VcnMetrics vcnMetrics,
             @NonNull NetworkEvaluatorCallback evaluatorCallback) {
         this(
                 vcnContext,
@@ -140,7 +134,6 @@ public class UnderlyingNetworkEvaluator {
                 subscriptionGroup,
                 lastSnapshot,
                 carrierConfig,
-                vcnMetrics,
                 evaluatorCallback,
                 new Dependencies());
     }
@@ -151,12 +144,10 @@ public class UnderlyingNetworkEvaluator {
         public IpSecPacketLossDetector newIpSecPacketLossDetector(
                 @NonNull VcnContext vcnContext,
                 @NonNull Network network,
-                @NonNull VcnMetrics vcnMetrics,
                 @NonNull VcnCarrierConfig carrierConfig,
                 @NonNull NetworkMetricMonitor.NetworkMetricMonitorCallback callback)
                 throws IllegalAccessException {
-            return new IpSecPacketLossDetector(
-                    vcnContext, network, vcnMetrics, carrierConfig, callback);
+            return new IpSecPacketLossDetector(vcnContext, network, carrierConfig, callback);
         }
     }
 

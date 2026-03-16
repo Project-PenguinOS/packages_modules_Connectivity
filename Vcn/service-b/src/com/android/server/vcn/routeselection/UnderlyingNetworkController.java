@@ -519,14 +519,8 @@ public class UnderlyingNetworkController {
             if (!allNetworkPriorities.isEmpty()) {
                 allNetworkPriorities += ", ";
             }
-
-            final String penalizedState = recordEvaluator.isPenalized() ? "|penalized" : "";
             allNetworkPriorities +=
-                    recordEvaluator.getNetwork()
-                            + ": ("
-                            + recordEvaluator.getPriorityClass()
-                            + penalizedState
-                            + ")";
+                    recordEvaluator.getNetwork() + ": " + recordEvaluator.getPriorityClass();
         }
 
         if (!UnderlyingNetworkRecord.isSameNetwork(mCurrentRecord, candidate)) {
@@ -583,7 +577,6 @@ public class UnderlyingNetworkController {
                             mSubscriptionGroup,
                             mLastSnapshot,
                             mCarrierConfig,
-                            mVcnMetrics,
                             new NetworkEvaluatorCallbackImpl()));
         }
 
@@ -768,7 +761,6 @@ public class UnderlyingNetworkController {
                 @NonNull ParcelUuid subscriptionGroup,
                 @NonNull TelephonySubscriptionSnapshot lastSnapshot,
                 @Nullable PersistableBundleWrapper carrierConfig,
-                @NonNull VcnMetrics vcnMetrics,
                 @NonNull NetworkEvaluatorCallback evaluatorCallback) {
             return new UnderlyingNetworkEvaluator(
                     vcnContext,
@@ -777,7 +769,6 @@ public class UnderlyingNetworkController {
                     subscriptionGroup,
                     lastSnapshot,
                     carrierConfig,
-                    vcnMetrics,
                     evaluatorCallback);
         }
     }

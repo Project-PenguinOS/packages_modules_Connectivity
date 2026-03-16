@@ -43,7 +43,6 @@ import android.telephony.TelephonyManager;
 import com.android.server.vcn.TelephonySubscriptionTracker.TelephonySubscriptionSnapshot;
 import com.android.server.vcn.VcnContext;
 import com.android.server.vcn.VcnNetworkProvider;
-import com.android.server.vcn.metrics.VcnMetrics;
 
 import org.junit.Before;
 import org.mockito.Mock;
@@ -104,7 +103,6 @@ public abstract class NetworkEvaluationTestBase {
     @Mock protected ConnectivityManager mConnectivityManager;
     @Mock protected TelephonyManager mTelephonyManager;
     @Mock protected IPowerManager mPowerManagerService;
-    @Mock protected VcnMetrics mVcnMetrics;
 
     protected TestLooper mTestLooper;
     protected VcnContext mVcnContext;

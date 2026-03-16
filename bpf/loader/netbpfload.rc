@@ -55,7 +55,6 @@ on load-bpf-programs
     write /proc/sys/kernel/kptr_restrict 2
 
     # At this point 'bpf.progs_loaded' is guaranteed to be '1'
-    exec_start netd1shot
     start netd
 
 # Note: This will actually execute /apex/com.android.tethering/bin/netbpfload

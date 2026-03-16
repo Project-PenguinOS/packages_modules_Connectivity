@@ -154,7 +154,6 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
             }
 
             mIsPenalized = false;
-            logInfo("Exit Penalty Box");
             mCallback.onIsPenalizedChanged();
         }
     }
@@ -194,9 +193,6 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
 
             // Notify the callback if penalty state has changed
             if (oldIsPenalized != mIsPenalized) {
-                logInfo(
-                        "#onValidationResultReceivedInternal: mIsPenalized changed to "
-                                + mIsPenalized);
                 mCallback.onIsPenalizedChanged();
             }
         } else {

@@ -17,7 +17,6 @@
 package android.net.vcn;
 
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
-import static android.net.NetworkCapabilities.TRANSPORT_ETHERNET;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
@@ -31,16 +30,11 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.TelephonyNetworkSpecifier;
 import android.net.wifi.WifiInfo;
-import android.os.Build;
 
 import androidx.test.filters.SmallTest;
 import androidx.test.runner.AndroidJUnit4;
 
-import com.android.testutils.DevSdkIgnoreRule;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
-
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -50,11 +44,9 @@ import java.util.Collections;
 @RunWith(AndroidJUnit4.class)
 @SmallTest
 public class VcnUtilsTest {
-    @Rule public final DevSdkIgnoreRule mIgnoreRule = new DevSdkIgnoreRule();
     private static final int SUB_ID = 1;
 
-    private static final WifiInfo WIFI_INFO =
-            new WifiInfo.Builder().setSubscriptionId(SUB_ID).build();
+    private static final WifiInfo WIFI_INFO = new WifiInfo.Builder().build();
     private static final TelephonyNetworkSpecifier TEL_NETWORK_SPECIFIER =
             new TelephonyNetworkSpecifier.Builder().setSubscriptionId(SUB_ID).build();
     private static final VcnTransportInfo VCN_TRANSPORT_INFO =
@@ -146,38 +138,5 @@ public class VcnUtilsTest {
                                         new Network[] {mMockCellNetwork, mock(Network.class)}))
                         .build();
         assertEquals(SUB_ID, VcnUtils.getSubIdFromVcnCaps(mMockConnectivityManager, vcnCaps));
-    }
-
-    @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
-    @Test
-    public void getSubIdFromVcnCapsForAnyTransport_onVcnWithUnderlyingCell() {
-        assertEquals(
-                SUB_ID,
-                VcnUtils.getSubIdFromVcnCapsForAnyTransport(
-                        mMockConnectivityManager, mVcnCapsWithUnderlyingCell));
-    }
-
-    @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
-    @Test
-    public void getSubIdFromVcnCapsForAnyTransport_onVcnWithUnderlyingWifiWithSubId() {
-        assertEquals(
-                SUB_ID,
-                VcnUtils.getSubIdFromVcnCapsForAnyTransport(
-                        mMockConnectivityManager, mVcnCapsWithUnderlyingWifi));
-    }
-
-    @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
-    @Test
-    public void getSubIdFromVcnCapsForAnyTransport_onVcnWithNonWifiNonCellUnderlying() {
-        final Network mockOtherNetwork = mock(Network.class);
-        final NetworkCapabilities otherCaps =
-                new NetworkCapabilities.Builder().addTransportType(TRANSPORT_ETHERNET).build();
-        when(mMockConnectivityManager.getNetworkCapabilities(mockOtherNetwork))
-                .thenReturn(otherCaps);
-        final NetworkCapabilities vcnCaps = newVcnCaps(VCN_TRANSPORT_INFO, mockOtherNetwork);
-
-        assertEquals(
-                INVALID_SUBSCRIPTION_ID,
-                VcnUtils.getSubIdFromVcnCapsForAnyTransport(mMockConnectivityManager, vcnCaps));
     }
 }

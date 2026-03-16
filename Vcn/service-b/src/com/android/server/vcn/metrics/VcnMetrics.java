@@ -16,12 +16,6 @@
 
 package com.android.server.vcn.metrics;
 
-import static com.android.server.vcn.metrics.VcnStatsLog.IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_PACKETS_TOO_OLD;
-import static com.android.server.vcn.metrics.VcnStatsLog.IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_SEQ_DIFF_TOO_SMALL;
-import static com.android.server.vcn.metrics.VcnStatsLog.IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_UNEXPECTED_ERROR;
-import static com.android.server.vcn.metrics.VcnStatsLog.IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_UNSPECIFIED;
-import static com.android.server.vcn.metrics.VcnStatsLog.IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_UNUSUAL_SEQ_NUM_LEAP;
-import static com.android.server.vcn.metrics.VcnStatsLog.IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_VALID;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_INTERNAL_ERROR;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_NETWORK_AGENT_UNWANTED;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_NONE;
@@ -81,20 +75,6 @@ public class VcnMetrics {
             })
     public @interface ValidationStatus {}
 
-    /** @hide */
-    @Retention(RetentionPolicy.SOURCE)
-    @IntDef(
-            prefix = {"IPSEC_PACKET_LOSS_RESULT_TYPE_"},
-            value = {
-                IPSEC_PACKET_LOSS_RESULT_TYPE_UNSPECIFIED,
-                IPSEC_PACKET_LOSS_RESULT_TYPE_VALID,
-                IPSEC_PACKET_LOSS_RESULT_TYPE_SEQ_DIFF_TOO_SMALL,
-                IPSEC_PACKET_LOSS_RESULT_TYPE_UNUSUAL_SEQ_NUM_LEAP,
-                IPSEC_PACKET_LOSS_RESULT_TYPE_UNEXPECTED_ERROR,
-                IPSEC_PACKET_LOSS_RESULT_TYPE_PACKETS_TOO_OLD
-            })
-    public @interface IpSecPacketLossResultType {}
-
     public VcnMetrics(int gatewayConnectionId) {
         mGatewayConnectionId = gatewayConnectionId;
     }
@@ -125,18 +105,6 @@ public class VcnMetrics {
             VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_VALID;
     public static final int VALIDATION_STATUS_NOT_VALID =
             VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_NOT_VALID;
-    public static final int IPSEC_PACKET_LOSS_RESULT_TYPE_UNSPECIFIED =
-            IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_UNSPECIFIED;
-    public static final int IPSEC_PACKET_LOSS_RESULT_TYPE_VALID =
-            IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_VALID;
-    public static final int IPSEC_PACKET_LOSS_RESULT_TYPE_SEQ_DIFF_TOO_SMALL =
-            IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_SEQ_DIFF_TOO_SMALL;
-    public static final int IPSEC_PACKET_LOSS_RESULT_TYPE_UNUSUAL_SEQ_NUM_LEAP =
-            IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_UNUSUAL_SEQ_NUM_LEAP;
-    public static final int IPSEC_PACKET_LOSS_RESULT_TYPE_UNEXPECTED_ERROR =
-            IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_UNEXPECTED_ERROR;
-    public static final int IPSEC_PACKET_LOSS_RESULT_TYPE_PACKETS_TOO_OLD =
-            IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_PACKETS_TOO_OLD;
 
     /** Log an atom when a VcnGatewayConnection has entered safe mode. */
     public void logEnterSafeMode() {
@@ -241,22 +209,5 @@ public class VcnMetrics {
                 mGatewayConnectionId,
                 oldNetworkType,
                 newNetworkType);
-    }
-
-    /** Log an atom when IpSecPacketLossDetector reports a result. */
-    public void logIpSecPacketLossDetectorReported(
-            @TransportMask int transport,
-            int signalStrength,
-            int packetLossPercent,
-            @IpSecPacketLossResultType int resultType,
-            int configuredPacketLossThreshold) {
-        VcnStatsLog.write(
-                VcnStatsLog.IP_SEC_PACKET_LOSS_DETECTOR_REPORTED,
-                mGatewayConnectionId,
-                transport,
-                signalStrength,
-                packetLossPercent,
-                resultType,
-                configuredPacketLossThreshold);
     }
 }

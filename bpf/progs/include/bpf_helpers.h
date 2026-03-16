@@ -64,9 +64,29 @@ struct kver_uint { unsigned int kver; };
 // as it's probably a bad idea to actually use them.
 
 struct sdk_level_uint { unsigned int sdk_level; };
-#define API(v) ((struct sdk_level_uint){ .sdk_level = NETBPFLOAD_##v##_VER })
+#define SDK_LEVEL_(v) ((struct sdk_level_uint){ .sdk_level = (v) })
+//      SDK_LEVEL_NONE   SDK_LEVEL_(0)    // mainline implies S+
+#define SDK_LEVEL_S      SDK_LEVEL_(3100) // Android 12     [31]
+//      SDK_LEVEL_Sv2    SDK_LEVEL_(3200) // Android 12L    [32]
+#define SDK_LEVEL_T      SDK_LEVEL_(3300) // Android 13     [33]
+#define SDK_LEVEL_U      SDK_LEVEL_(3400) // Android 14/U   [34]
+//      SDK_LEVEL_U_QPR1 SDK_LEVEL_(3402) // Android 14/U QPR1
+//      SDK_LEVEL_24Q1   SDK_LEVEL_(3404) // Android 14/U QPR2
+//      SDK_LEVEL_24Q2   SDK_LEVEL_(3406) // Android 14/U QPR3
+#define SDK_LEVEL_24Q3   SDK_LEVEL_(3500) // Android 15/V   [35]
+//      SDK_LEVEL_24Q4   SDK_LEVEL_(3502) // Android 15/V QPR1
+//      SDK_LEVEL_25Q1   SDK_LEVEL_(3504) // Android 15/V QPR2
+#define SDK_LEVEL_25Q2   SDK_LEVEL_(3600) // Android 16 (B) [36.0]
+//      SDK_LEVEL_25Q3   SDK_LEVEL_(3602) // Android 16 QPR
+#define SDK_LEVEL_25Q4   SDK_LEVEL_(3610) // Android 16.1   [36.1]
+//      SDK_LEVEL_26Q1   SDK_LEVEL_(3612) // Android 16.1 QPR
+#define SDK_LEVEL_26Q2   SDK_LEVEL_(3700) // Android 17 (C) [37.0]
+//      SDK_LEVEL_26Q3   SDK_LEVEL_(3702) // Android 17 QPR
+#define SDK_LEVEL_26Q4   SDK_LEVEL_(3710) // Android 17.1   [37.1]
+//      SDK_LEVEL_27Q1   SDK_LEVEL_(3712) // Android 17.1 QPR
+#define SDK_LEVEL_27Q2   SDK_LEVEL_(3800) // Android 18     [38.0]
 
-#define API_IS_AT_LEAST(lvl, v) ((lvl).sdk_level >= NETBPFLOAD_##v##_VER)
+#define SDK_LEVEL_IS_AT_LEAST(lvl, v) ((lvl).sdk_level >= (SDK_LEVEL_##v).sdk_level)
 
 /*
  * BPFFS (ie. /sys/fs/bpf) labelling is as follows:
@@ -507,8 +527,8 @@ static long (*bpf_trace_printk)(const char* fmt, int fmt_size, ...) = (void*) BP
 #define BPF_PROG_ATTACH_TYPE_sysctl            BPF_CGROUP_SYSCTL
 #define BPF_PROG_ATTACH_TYPE_xdp               BPF_PROG_ATTACH_TYPE_DEFAULT
 
-#define DEFINE_BPF_PROG_EXT__(TYPE, NAME, VER, prog_uid, prog_gid, min_kv, max_kv,            \
-                             min_api, max_api, opt, selinux, pindir)                          \
+#define DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, prog_uid, prog_gid, min_kv, max_kv,              \
+                            min_api, max_api, opt, selinux, pindir)                           \
     VALIDATE_SELINUX_CONTEXT(min_api, selinux);                                               \
     VALIDATE_PIN_DIR(min_api, pindir);                                                        \
     const struct bpf_prog_def SECTION(".android_progs") TYPE##_##NAME##_##VER##_def = {       \
@@ -528,28 +548,9 @@ static long (*bpf_trace_printk)(const char* fmt, int fmt_size, ...) = (void*) BP
     SECTION(#TYPE "/" #NAME "$" #VER)                                                         \
     long TYPE##_##NAME##_##VER
 
-// Same as above but expands any macros present in all arguments first
-#define DEFINE_BPF_PROG_EXT_(TYPE, NAME, VER, uid, gid, minKV, maxKV, minApi, maxApi, opt, selinux, pindir) \
-       DEFINE_BPF_PROG_EXT__(TYPE, NAME, VER, uid, gid, minKV, maxKV, minApi, maxApi, opt, selinux, pindir)
-
-// Converts MANDATORY/OPTIONAL into a token used for disambiguation, visible in section name after the $
-#define BPF_OPT_MANDATORY
-#define BPF_OPT_OPTIONAL opt
-
-// note: BPF_API_* constants are declared in bpf_map_def.h
-
-#define CONCAT3_(a, b, c) a ## b ## c
-#define CONCAT3(a, b, c) CONCAT3_(a, b, c)
-#define BPF_GEN_VER(opt, kv, api) CONCAT3(BPF_OPT_ ## opt, kv, BPF_API_ ## api)
-
-// This version autogenerates the 'VER' (section) suffix
-#define DEFINE_BPF_PROG_EXT(TYPE, NAME, uid, gid, minKV, maxKV, minApi, maxApi, opt, selinux, pindir) \
-       DEFINE_BPF_PROG_EXT_(TYPE, NAME, BPF_GEN_VER(opt, minKV, minApi), uid, gid, \
-                            minKV, maxKV, minApi, maxApi, opt, selinux, pindir)
-
-#define DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, prog_gid, minKV, maxKV, opt) \
-  DEFINE_BPF_PROG_EXT(TYPE, NAME, AID_ROOT, prog_gid, minKV, maxKV, MINAPI, MAXAPI, opt, \
-                      DEFAULT_BPF_MAP_SELINUX_CONTEXT, DEFAULT_BPF_PIN_SUBDIR)
+#define DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, VER, prog_gid, min_kv, max_kv, opt) \
+    DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, AID_ROOT, prog_gid, min_kv, max_kv, MINAPI, MAXAPI, \
+                        opt, DEFAULT_BPF_MAP_SELINUX_CONTEXT, DEFAULT_BPF_PIN_SUBDIR)
 
 // Programs (here used in the sense of functions/sections) marked optional are allowed to fail
 // to load (for example due to missing kernel patches).
@@ -564,9 +565,9 @@ static long (*bpf_trace_printk)(const char* fmt, int fmt_size, ...) = (void*) BP
 
 // programs requiring a kernel version >= min_kv && < max_kv
 #define DEFINE_BPF_PROG_KVER_RANGE(TYPE, NAME, prog_gid, min_kv, max_kv) \
-    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, prog_gid, min_kv, max_kv, MANDATORY)
+    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, min_kv, prog_gid, min_kv, max_kv, MANDATORY)
 #define DEFINE_OPTIONAL_BPF_PROG_KVER_RANGE(TYPE, NAME, prog_gid, min_kv, max_kv)  \
-    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, prog_gid, min_kv, max_kv, OPTIONAL)
+    DEFINE_BPF_PROG_KVER_RANGE_OPT(TYPE, NAME, opt##min_kv, prog_gid, min_kv, max_kv, OPTIONAL)
 
 // programs requiring a kernel version >= min_kv
 #define DEFINE_BPF_PROG_KVER(TYPE, NAME, prog_gid, min_kv) \

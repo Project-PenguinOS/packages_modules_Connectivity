@@ -61,7 +61,6 @@ import androidx.test.filters.SmallTest;
 import androidx.test.runner.AndroidJUnit4;
 
 import com.android.server.vcn.VcnCarrierConfig;
-import com.android.server.vcn.metrics.VcnMetrics;
 import com.android.server.vcn.routeselection.IpSecPacketLossDetector.PacketLossCalculationResult;
 import com.android.server.vcn.routeselection.IpSecPacketLossDetector.PacketLossCalculator;
 import com.android.server.vcn.routeselection.NetworkMetricMonitor.IpSecTransformWrapper;
@@ -92,7 +91,6 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     private static final int REPLAY_BITMAP_LEN_BYTE = 512;
     private static final int REPLAY_BITMAP_LEN_BIT = REPLAY_BITMAP_LEN_BYTE * 8;
     private static final int IPSEC_PACKET_LOSS_PERCENT_THRESHOLD = 5;
-    private static final int IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_ABOVE_100 = 101;
     private static final int MAX_SEQ_NUM_INCREASE_DEFAULT_DISABLED = -1;
     private static final int MIN_SEQ_NUM_INCREASE = 200;
 
@@ -150,14 +148,11 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 .thenReturn(PENALTY_TIMEOUT_MILLIS_LIST);
 
         when(mDependencies.getPacketLossCalculator()).thenReturn(mPacketLossCalculator);
-        when(mConnectivityManager.getNetworkCapabilities(mNetwork))
-                .thenReturn(WIFI_NETWORK_CAPABILITIES);
 
         mIpSecPacketLossDetector =
                 new IpSecPacketLossDetector(
                         mVcnContext,
                         mNetwork,
-                        mVcnMetrics,
                         mCarrierConfig,
                         mMetricMonitorCallback,
                         mDependencies);
@@ -462,25 +457,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
             PacketLossCalculationResult mockPacketLossRate,
             int expectedSucceedCount,
             boolean isLastStateExpectedToUpdate,
-            boolean isCallbackExpected,
-            @VcnMetrics.IpSecPacketLossResultType int loggedResultType)
-            throws Exception {
-        checkHandleLossRate(
-                mockPacketLossRate,
-                expectedSucceedCount,
-                isLastStateExpectedToUpdate,
-                isCallbackExpected,
-                loggedResultType,
-                IPSEC_PACKET_LOSS_PERCENT_THRESHOLD);
-    }
-
-    private void checkHandleLossRate(
-            PacketLossCalculationResult mockPacketLossRate,
-            int expectedSucceedCount,
-            boolean isLastStateExpectedToUpdate,
-            boolean isCallbackExpected,
-            @VcnMetrics.IpSecPacketLossResultType int loggedResultType,
-            int expectedThreshold)
+            boolean isCallbackExpected)
             throws Exception {
         final OutcomeReceiver<IpSecTransformState, RuntimeException> xfrmStateReceiver =
                 startMonitorAndCaptureStateReceiver();
@@ -518,14 +495,6 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
         } else {
             verify(mMetricMonitorCallback, never()).onIsPenalizedChanged();
         }
-
-        verify(mVcnMetrics)
-                .logIpSecPacketLossDetectorReported(
-                        eq(VcnMetrics.TRANSPORT_MASK_WIFI),
-                        eq(WIFI_RSSI),
-                        eq(mockPacketLossRate.getPacketLossRatePercent()),
-                        eq(loggedResultType),
-                        eq(expectedThreshold));
     }
 
     @Test
@@ -534,8 +503,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 PacketLossCalculationResult.valid(2),
                 1 /* expectedSucceedCount */,
                 true /* isLastStateExpectedToUpdate */,
-                false /* isCallbackExpected */,
-                VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_VALID);
+                false /* isCallbackExpected */);
     }
 
     @Test
@@ -544,26 +512,8 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 PacketLossCalculationResult.valid(22),
                 0 /* expectedSucceedCount */,
                 true /* isLastStateExpectedToUpdate */,
-                true /* isCallbackExpected */,
-                VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_VALID);
+                true /* isCallbackExpected */);
         verify(mConnectivityManager).reportNetworkConnectivity(mNetwork, false);
-    }
-
-    @Test
-    public void testHandleLossRate_thresholdAbove100_noCallback() throws Exception {
-        // Set the threshold to a value above 100% so that validation always passes.
-        when(mCarrierConfig.getNwSelectIpSecLossDetectPercentThreshold())
-                .thenReturn(IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_ABOVE_100);
-        mIpSecPacketLossDetector.setCarrierConfig(mCarrierConfig);
-
-        checkHandleLossRate(
-                PacketLossCalculationResult.valid(100),
-                1 /* expectedSucceedCount */,
-                true /* isLastStateExpectedToUpdate */,
-                false /* isCallbackExpected */,
-                VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_VALID,
-                IPSEC_PACKET_LOSS_PERCENT_THRESHOLD_ABOVE_100);
-        verify(mConnectivityManager, never()).reportNetworkConnectivity(mNetwork, false);
     }
 
     @Test
@@ -572,8 +522,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 PacketLossCalculationResult.seqDiffTooSmall(),
                 0 /* expectedSucceedCount */,
                 false /* isLastStateExpectedToUpdate */,
-                false /* isCallbackExpected */,
-                VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_SEQ_DIFF_TOO_SMALL);
+                false /* isCallbackExpected */);
     }
 
     @Test
@@ -582,8 +531,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 PacketLossCalculationResult.unusualSeqNumLeap(22),
                 0 /* expectedSucceedCount */,
                 true /* isLastStateExpectedToUpdate */,
-                false /* isCallbackExpected */,
-                VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_UNUSUAL_SEQ_NUM_LEAP);
+                false /* isCallbackExpected */);
     }
 
     @Test
@@ -592,8 +540,7 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 PacketLossCalculationResult.unusualSeqNumLeap(2),
                 1 /* expectedSucceedCount */,
                 true /* isLastStateExpectedToUpdate */,
-                false /* isCallbackExpected */,
-                VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_UNUSUAL_SEQ_NUM_LEAP);
+                false /* isCallbackExpected */);
     }
 
     private void checkGetPacketLossRate(
@@ -847,7 +794,6 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 new IpSecPacketLossDetector(
                         mVcnContext,
                         mNetwork,
-                        mVcnMetrics,
                         mCarrierConfig,
                         mMetricMonitorCallback,
                         mDependencies);
@@ -1081,3 +1027,5 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
         verify(mMetricMonitorCallback, never()).onIsPenalizedChanged();
     }
 }
+
+
