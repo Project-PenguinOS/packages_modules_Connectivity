@@ -24,6 +24,7 @@ import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.ConditionVariable
+import android.os.Handler
 import android.os.IBinder
 import android.view.View
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -329,6 +330,30 @@ class NsdPickerActivityTest {
         onDialogView(
             withText(mContext.getString(R.string.choose_device_summary, otherAppName))
         )
+            .check(matches(isDisplayed()))
+    }
+
+    @Test
+    fun testOnNewIntent_restartsActivityIfFinishing() {
+        val otherAppName = "Other Test App"
+        val otherConnector = mock(NsdPickerConnector::class.java)
+        val newIntent = makeStartIntent(otherConnector, otherAppName)
+
+        mScenario.onActivity { activity ->
+            // Simulate onNewIntent being called immediately after onStop(), while the activity is
+            // finishing
+            activity.setStopAction {
+                Handler(activity.mainLooper).postAtFrontOfQueue {
+                    activity.onNewIntent(newIntent)
+                }
+            }
+        }
+
+        // Close the first dialog
+        onDialogView(withText(R.string.choose_device_cancel)).perform(click())
+
+        // A new activity should have been started for the new intent
+        onDialogView(withText(mContext.getString(R.string.choose_device_summary, otherAppName)))
             .check(matches(isDisplayed()))
     }
 

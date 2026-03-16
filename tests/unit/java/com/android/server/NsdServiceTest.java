@@ -83,6 +83,7 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.any;
@@ -186,6 +187,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestName;
 import org.junit.rules.TestRule;
 import org.junit.runner.RunWith;
 import org.mockito.AdditionalAnswers;
@@ -195,6 +197,11 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Duration;
@@ -236,6 +243,9 @@ public class NsdServiceTest {
                 mFeatureFlags.put(name, enabled);
                 return null;
             }, (name) -> mFeatureFlags.getOrDefault(name, false));
+
+    @Rule
+    public final TestName mTestName = new TestName();
 
     static final int PROTOCOL = NsdManager.PROTOCOL_DNS_SD;
     private static final long CLEANUP_DELAY_MS = 500;
@@ -306,6 +316,12 @@ public class NsdServiceTest {
             super.linkToDeath(recipient, flags);
             mDr = recipient;
         }
+    }
+
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target({ElementType.METHOD})
+    private @interface EnableCompatChangesForSystem {
+        long changeId();
     }
 
     @Before
@@ -385,7 +401,16 @@ public class NsdServiceTest {
                 com.android.tethering.mainline.beta.Flags.FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT,
                 false))
                 .when(mDeps).isSupportTetheringAndP2pGoLocalAgent(any(Context.class));
+
         doReturn(mAccessRepository).when(mDeps).makeAccessRepository(any(), any(), any());
+
+        doReturn(false).when(mDeps).isCompatChangeEnabledForSystem(anyLong());
+        final Method method = getClass().getMethod(mTestName.getMethodName());
+        for (EnableCompatChangesForSystem annotation : method.getAnnotationsByType(
+                EnableCompatChangesForSystem.class)) {
+            doReturn(true).when(mDeps).isCompatChangeEnabledForSystem(annotation.changeId());
+        }
+
         mService = makeService();
         final ArgumentCaptor<SocketRequestMonitor> cbMonitorCaptor =
                 ArgumentCaptor.forClass(SocketRequestMonitor.class);
@@ -3876,6 +3901,7 @@ public class NsdServiceTest {
             .FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT, enabled = true)
     @FeatureFlag(name = Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS, enabled = true)
     @EnableCompatChanges(ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS)
+    @EnableCompatChangesForSystem(changeId = ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS)
     @Test
     public void testBuildNsdServiceInfoFromMdnsEvent_localNetwork_flagEnabled() {
         doTestBuildNsdServiceInfoFromMdnsEvent_localNetwork(true /* expectNetwork */);
@@ -3884,7 +3910,7 @@ public class NsdServiceTest {
     @FeatureFlag(name = com.android.tethering.mainline.beta.Flags
             .FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT, enabled = false)
     @FeatureFlag(name = Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS, enabled = true)
-    @EnableCompatChanges(ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS)
+    @EnableCompatChangesForSystem(changeId = ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS)
     @Test
     public void testBuildNsdServiceInfoFromMdnsEvent_localNetwork_localAgentDisabled() {
         doTestBuildNsdServiceInfoFromMdnsEvent_localNetwork(false /* expectNetwork */);
@@ -3893,7 +3919,6 @@ public class NsdServiceTest {
     @FeatureFlag(name = com.android.tethering.mainline.beta.Flags
             .FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT, enabled = true)
     @FeatureFlag(name = Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS, enabled = true)
-    @DisableCompatChanges(ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS)
     @Test
     public void testBuildNsdServiceInfoFromMdnsEvent_localNetwork_compatChangeDisabled() {
         doTestBuildNsdServiceInfoFromMdnsEvent_localNetwork(false /* expectNetwork */);

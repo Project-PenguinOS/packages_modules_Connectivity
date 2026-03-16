@@ -74,7 +74,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
     public void setUp() throws Exception {
         super.setUp();
 
-        when(mDependencies.newIpSecPacketLossDetector(any(), any(), any(), any()))
+        when(mDependencies.newIpSecPacketLossDetector(any(), any(), any(), any(), any()))
                 .thenReturn(mIpSecPacketLossDetector);
 
         when(mCarrierConfig.getIntArray(
@@ -92,6 +92,7 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
                 SUB_GROUP,
                 mSubscriptionSnapshot,
                 mCarrierConfig,
+                mVcnMetrics,
                 mEvaluatorCallback,
                 mDependencies);
     }
@@ -231,7 +232,8 @@ public class UnderlyingNetworkEvaluatorTest extends NetworkEvaluationTestBase {
 
     private NetworkMetricMonitorCallback getMetricMonitorCbCaptor() throws Exception {
         verify(mDependencies)
-                .newIpSecPacketLossDetector(any(), any(), any(), mMetricMonitorCbCaptor.capture());
+                .newIpSecPacketLossDetector(
+                        any(), any(), any(), any(), mMetricMonitorCbCaptor.capture());
 
         return mMetricMonitorCbCaptor.getValue();
     }
