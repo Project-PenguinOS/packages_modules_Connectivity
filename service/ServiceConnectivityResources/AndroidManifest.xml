@@ -41,7 +41,7 @@
              permissions) to start it. -->
         <activity
             android:name=".NsdPickerActivity"
-            android:theme="@style/Theme.AppCompat.DayNight.Dialog.Alert"
+            android:theme="@style/NsdPickerActivityTheme"
             android:excludeFromRecents="true"
             android:launchMode="singleTop"
             android:taskAffinity=".NsdPickerActivity"

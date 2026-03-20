@@ -2847,9 +2847,7 @@ public class NsdService extends INsdManager.Stub {
                         mContext, MdnsFeatureFlags.NSD_CACHE_FLUSH_PER_ADDRESS_TYPE))
                 .setIsIgnoreTemporaryIPv6AddressesEnabled(mDeps.isTetheringFeatureNotChickenedOut(
                         mContext, MdnsFeatureFlags.NSD_IGNORE_TEMPORARY_IPV6_ADDRESSES))
-                .setIsSelectiveMdnsResponseOffloadEnabled(mDeps.isAconfigFlagEnabled(
-                        com.android.tethering.mainline.beta
-                                .Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD))
+                .setIsSelectiveMdnsResponseOffloadEnabled(true)
                 // Note that on V+, isChangeEnabled returns false for
                 // ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS even if the system UID is targeting
                 // higher SDK due to b/401088586.
@@ -3009,9 +3007,6 @@ public class NsdService extends INsdManager.Stub {
         /** Get whether a feature config is enabled. */
         public boolean isAconfigFlagEnabled(String feature) {
             return switch (feature) {
-                case com.android.tethering.mainline.beta
-                        .Flags.FLAG_NSD_SELECTIVE_MDNS_RESPONSE_OFFLOAD ->
-                        com.android.tethering.mainline.beta.Flags.nsdSelectiveMdnsResponseOffload();
                 case Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER ->
                         com.android.tethering.flags.Flags.nsdQueryWithKnownAnswer();
                 case Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS ->

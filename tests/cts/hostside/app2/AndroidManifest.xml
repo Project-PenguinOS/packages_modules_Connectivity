@@ -37,7 +37,7 @@
      This application also provides a service, RemoteSocketFactoryService, that the test app can
      use to open sockets to remote hosts as a different user ID.
     -->
-    <application android:usesCleartextTraffic="true"
+    <application android:networkSecurityConfig="@xml/network_security_config"
             android:testOnly="true"
             android:debuggable="true">
         <service android:name=".RemoteSocketFactoryService"

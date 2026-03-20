@@ -438,7 +438,7 @@ public class MdnsFeatureFlags {
             mIsCacheFlushPerAddressTypeEnabled = true; // Default enabled.
             mIsOptimizedExpiredServiceRemovalEnabled = false;
             mIsIgnoreTemporaryIPv6AddressesEnabled = true; // Default enabled.
-            mIsSelectiveMdnsResponseOffloadEnabled = false;
+            mIsSelectiveMdnsResponseOffloadEnabled = true; // Default enabled.
             mUseNetworkCallbackForLocalNetworks = false;
             mIsMdnsScanOffloadEnabled = false;
             mMdnsSocketThreadStatsTag = MDNS_SOCKET_THREAD_STATS_TAG_NONE;

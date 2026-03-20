@@ -26,13 +26,6 @@ flag {
     bug: "420590461"
 }
 
-flag {
-    name: "nsd_selective_mdns_response_offload"
-    namespace: "com_android_tethering"
-    description: "A flag to control whether the selective mDNS response offload should be enabled."
-    bug: "410734687"
-}
-
 # Do not add new flags to this file.
 # For platform flag, use frameworks/base/core/java/android/net/flags.aconfig
 # For module flag, use packages/modules/Connectivity/common/flags.aconfig

@@ -16,6 +16,7 @@
 
 package com.android.connectivity.resources
 
+import android.app.LocaleManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -26,7 +27,10 @@ import android.os.Bundle
 import android.os.ConditionVariable
 import android.os.Handler
 import android.os.IBinder
+import android.os.LocaleList
+import android.text.Layout
 import android.view.View
+import android.widget.TextView
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -37,6 +41,7 @@ import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
+import androidx.test.espresso.matcher.BoundedDiagnosingMatcher
 import androidx.test.espresso.matcher.BoundedMatcher
 import androidx.test.espresso.matcher.RootMatchers.isDialog
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
@@ -51,6 +56,7 @@ import com.android.testutils.AutoCloseTestResourcesRule
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.com.android.testutils.CloseableGlobalSetting
+import com.android.testutils.tryTest
 import kotlin.test.assertTrue
 import org.hamcrest.Description
 import org.hamcrest.Matcher
@@ -357,6 +363,18 @@ class NsdPickerActivityTest {
             .check(matches(isDisplayed()))
     }
 
+    @Test
+    fun testRtlLayout_summaryAlignedRight() {
+        overrideLocales(LocaleList.forLanguageTags("ur"))
+
+        tryTest {
+            onDialogView(withId(android.R.id.summary)).check(matches(isTextLayoutRtl()))
+        } cleanup {
+            // Reset to system locales
+            overrideLocales(LocaleList.getEmptyLocaleList())
+        }
+    }
+
     private fun assertFinishesActivity(action: () -> Unit) {
         val cv = ConditionVariable(false)
         mScenario.onActivity {
@@ -375,6 +393,37 @@ private fun onDialogView(matcher: Matcher<View>) = onView(matcher).inRoot(isDial
 
 private fun onServiceInList(serviceName: String) =
     onData(ServiceMatcher(serviceName)).inRoot(isDialog())
+
+private fun isTextLayoutRtl(): Matcher<View> {
+    return object : BoundedDiagnosingMatcher<View, TextView>(TextView::class.java) {
+        override fun describeMoreTo(description: Description) {
+            description.appendText("with text layout RTL")
+        }
+
+        override fun matchesSafely(textView: TextView, mismatchDescription: Description): Boolean {
+            val textLayout = textView.layout ?: run {
+                mismatchDescription.appendText("TextView has no layout")
+                return false
+            }
+            for (line in 0 until textLayout.lineCount) {
+                val actualDir = textLayout.getParagraphDirection(line)
+                if (actualDir != Layout.DIR_RIGHT_TO_LEFT) {
+                    mismatchDescription.appendText("Line $line has paragraph direction $actualDir")
+                    return false
+                }
+            }
+            return true
+        }
+    }
+}
+
+private fun overrideLocales(locales: LocaleList) {
+    InstrumentationRegistry.getInstrumentation().apply {
+        runOnMainSync {
+            context.getSystemService(LocaleManager::class.java).applicationLocales = locales
+        }
+    }
+}
 
 private class ServiceMatcher(private val serviceName: String) :
     BoundedMatcher<Any, NsdServiceInfo>(NsdServiceInfo::class.java) {

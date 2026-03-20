@@ -41,6 +41,7 @@ android_test {
         "service-connectivity-tiramisu-pre-jarjar",
         "flag-junit",
     ],
+    jarjar_rules: "jarjar-rules.txt",
     libs: [
         "android.test.runner.stubs",
         "android.test.base.stubs",

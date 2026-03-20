@@ -192,7 +192,6 @@ static const set<string> MAINLINE_FOR_26Q2_PLUS = {
 
 // Provided by *current* mainline module for 26Q2+ devices with 6.1+ kernels
 static const set<string> MAINLINE_FOR_26Q2_6_1_PLUS = {
-    NETD "prog_netd_ingress_accecn_common",
     NETD "prog_netd_schedcls_egress_accecn_eth",
     NETD "prog_netd_schedcls_egress_accecn_rawip",
     NETD "prog_netd_sockops_accecn_option",

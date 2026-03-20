@@ -106,16 +106,6 @@ is_l4s_enabled() {
     return l4s_status_ptr && *l4s_status_ptr;
 }
 
-static const struct {
-    __u8 kind;
-    __u8 length;
-    __u8 data[9];
-} __attribute__((packed)) tcp_accecn_option = {
-    .kind = 174,
-    .length = sizeof tcp_accecn_option,
-    .data = {},
-};
-
 DEFINE_BPF_PROG_KVER(sockops, accecn_option, AID_SYSTEM, 6_1)
 (struct bpf_sock_ops *skops) {
     if (!is_l4s_enabled()) return 1;
@@ -141,7 +131,7 @@ DEFINE_BPF_PROG_KVER(sockops, accecn_option, AID_SYSTEM, 6_1)
             if (!st || !st->byte_inited) {
                 break;
             }
-            bpf_reserve_hdr_opt(skops, sizeof tcp_accecn_option, 0);
+            bpf_reserve_hdr_opt(skops, 11, 0);
             break;
         }
         case BPF_SOCK_OPS_WRITE_HDR_OPT_CB:
@@ -154,6 +144,25 @@ DEFINE_BPF_PROG_KVER(sockops, accecn_option, AID_SYSTEM, 6_1)
             if (!st || !st->byte_inited) {
                 break;
             }
+
+            struct {
+                __u8 kind;
+                __u8 length;
+                __u8 data[9];
+            } __attribute__((packed)) tcp_accecn_option = {
+                .kind = 174,
+                .length = 11,
+                .data = {0},
+            };
+
+            __u32 e0b_val = htonl((__u32)(st->e0b & 0x0000000000FFFFFF)) >> 8;
+            __u32 ceb_val = htonl((__u32)(st->ceb & 0x0000000000FFFFFF)) >> 8;
+            __u32 e1b_val = htonl((__u32)(st->e1b & 0x0000000000FFFFFF)) >> 8;
+
+            __builtin_memcpy(&tcp_accecn_option.data[0], &e1b_val, 3);
+            __builtin_memcpy(&tcp_accecn_option.data[3], &ceb_val, 3);
+            __builtin_memcpy(&tcp_accecn_option.data[6], &e0b_val, 3);
+
             bpf_store_hdr_opt(skops, &tcp_accecn_option, sizeof tcp_accecn_option, 0);
             break;
         }
@@ -177,7 +186,6 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, AID_SYSTEM, 6_1)
     const bool isIpv4 = skb->protocol == htons(ETH_P_IP);
     const bool isIpv6 = skb->protocol == htons(ETH_P_IPV6);
     struct tcphdr* tcph = NULL;
-    int hdr_len = sizeof(struct ethhdr);
 
     if (isIpv4) {
         struct iphdr* ip = data + ETH_HLEN;
@@ -186,7 +194,6 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, AID_SYSTEM, 6_1)
                 return TC_ACT_PIPE;
             }
             tcph = (void*)(ip + 1);
-            hdr_len += sizeof(struct iphdr);
         } else {
             return TC_ACT_PIPE;
         }
@@ -200,7 +207,6 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, AID_SYSTEM, 6_1)
                 return TC_ACT_PIPE;
             }
             tcph = (void*)(ip6 + 1);
-            hdr_len += sizeof(struct ipv6hdr);
         } else {
             return TC_ACT_PIPE;
         }
@@ -252,43 +258,12 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, AID_SYSTEM, 6_1)
                 bpf_l3_csum_replace(skb, ETH_IP4_OFFSET(check), htons(old_tos), htons(new_tos), 2);
             }
             bpf_skb_store_bytes(skb, ip_tos_offset, &new_tos, sizeof(new_tos), 0);
-
-            if (st->byte_inited) {
-                __u8 ace_option[12] = { 0 };
-                __u32 e0b_val = htonl((__u32)(st->e0b & 0x0000000000FFFFFF)) >> 8;
-                __u32 ceb_val = htonl((__u32)(st->ceb & 0x0000000000FFFFFF)) >> 8;
-                __u32 e1b_val = htonl((__u32)(st->e1b & 0x0000000000FFFFFF)) >> 8;
-                __builtin_memcpy(&ace_option[0], &e0b_val, 3);
-                __builtin_memcpy(&ace_option[3], &ceb_val, 3);
-                __builtin_memcpy(&ace_option[6], &e1b_val, 3);
-
-                int offset = find_accecn_options_offset(skb, hdr_len);
-                if (offset < 0) return TC_ACT_PIPE;
-
-                __u16 current_checksum = ntohs(load_half(skb, tcp_csum_offset));
-                int64_t res = bpf_csum_diff(NULL, 0, (__be32*)ace_option, 12, current_checksum);
-                if (res < 0) return TC_ACT_PIPE;
-
-                ret = bpf_l4_csum_replace(skb, tcp_csum_offset, 0, (__u64)res, 0);
-                if (ret) return TC_ACT_PIPE;
-
-                ret = bpf_skb_store_bytes(skb, hdr_len + offset + 2, &e1b_val, 3, BPF_F_RECOMPUTE_CSUM);
-                if (ret) return TC_ACT_PIPE;
-
-                ret = bpf_skb_store_bytes(skb, hdr_len + offset + 5, &ceb_val, 3, BPF_F_RECOMPUTE_CSUM);
-                if (ret) return TC_ACT_PIPE;
-
-                ret = bpf_skb_store_bytes(skb, hdr_len + offset + 8, &e0b_val, 3, BPF_F_RECOMPUTE_CSUM);
-                if (ret) return TC_ACT_PIPE;
-          }
        }
     }
     return TC_ACT_PIPE;
 }
 
-DEFINE_BPF_PROG_KVER(ingress, accecn_common, AID_SYSTEM, 6_1)
-(struct __sk_buff* skb)
-{
+static __always_inline inline int update_accecn_counter(struct __sk_buff* skb) {
     if (!is_l4s_enabled()) return 1;
     if (!skb->sk) {
         return 1;
@@ -358,7 +333,7 @@ DEFINE_BPF_PROG_KVER(ingress, accecn_common, AID_SYSTEM, 6_1)
                                         sizeof(flags), BPF_HDR_START_NET)) {
             return 1;
         }
-        __u16 ace = (flags & 0x01c0) >> 6;
+        __u16 ace = (ntohs(flags) & 0x01c0) >> 6;
 
         if (ace == 0b010 || ace == 0b011 || ace == 0b100 || ace == 0b110) {
             L4SStorage* st = bpf_sk_l4s_storage_get(sk, 0, BPF_SK_STORAGE_GET_F_CREATE);
@@ -444,7 +419,6 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, AID_SYSTEM, 6_1)
     const bool isIpv4 = skb->protocol == htons(ETH_P_IP);
     const bool isIpv6 = skb->protocol == htons(ETH_P_IPV6);
     struct tcphdr* tcph = NULL;
-    int hdr_len = 0;
 
     if (isIpv4) {
         struct iphdr* ip = data;
@@ -453,7 +427,6 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, AID_SYSTEM, 6_1)
                 return TC_ACT_PIPE;
             }
             tcph = (void*)(ip + 1);
-            hdr_len += sizeof(struct iphdr);
         } else {
             return TC_ACT_PIPE;
         }
@@ -467,7 +440,6 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, AID_SYSTEM, 6_1)
                 return TC_ACT_PIPE;
             }
             tcph = (void*)(ip6 + 1);
-            hdr_len += sizeof(struct ipv6hdr);
         } else {
             return TC_ACT_PIPE;
         }
@@ -519,35 +491,6 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, AID_SYSTEM, 6_1)
                 bpf_l3_csum_replace(skb, IP4_OFFSET(check), htons(old_tos), htons(new_tos), 2);
             }
             bpf_skb_store_bytes(skb, ip_tos_offset, &new_tos, sizeof(new_tos), 0);
-
-            if (st->byte_inited) {
-                __u8 ace_option[12] = { 0 };
-                __u32 e0b_val = htonl((__u32)(st->e0b & 0x0000000000FFFFFF)) >> 8;
-                __u32 ceb_val = htonl((__u32)(st->ceb & 0x0000000000FFFFFF)) >> 8;
-                __u32 e1b_val = htonl((__u32)(st->e1b & 0x0000000000FFFFFF)) >> 8;
-                __builtin_memcpy(&ace_option[0], &e0b_val, 3);
-                __builtin_memcpy(&ace_option[3], &ceb_val, 3);
-                __builtin_memcpy(&ace_option[6], &e1b_val, 3);
-
-                int offset = find_accecn_options_offset(skb, hdr_len);
-                if (offset < 0) return TC_ACT_PIPE;
-
-                __u16 current_checksum = ntohs(load_half(skb, tcp_csum_offset));
-                int64_t res = bpf_csum_diff(NULL, 0, (__be32*)ace_option, 12, current_checksum);
-                if (res < 0) return TC_ACT_PIPE;
-
-                ret = bpf_l4_csum_replace(skb, tcp_csum_offset, 0, (__u64)res, 0);
-                if (ret) return TC_ACT_PIPE;
-
-                ret = bpf_skb_store_bytes(skb, hdr_len + offset + 2, &e1b_val, 3, BPF_F_RECOMPUTE_CSUM);
-                if (ret) return TC_ACT_PIPE;
-
-                ret = bpf_skb_store_bytes(skb, hdr_len + offset + 5, &ceb_val, 3, BPF_F_RECOMPUTE_CSUM);
-                if (ret) return TC_ACT_PIPE;
-
-                ret = bpf_skb_store_bytes(skb, hdr_len + offset + 8, &e0b_val, 3, BPF_F_RECOMPUTE_CSUM);
-                if (ret) return TC_ACT_PIPE;
-          }
        }
     }
     return TC_ACT_PIPE;

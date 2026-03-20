@@ -39,8 +39,8 @@ import org.mockito.Mockito.verify
 import java.util.HashMap
 import java.util.function.LongSupplier
 
-const val TEST_EXPIRY_DURATION_MS = 1000
-const val TEST_IFACE = "wlan0"
+private const val TEST_EXPIRY_DURATION_MS = 1000
+private const val TEST_IFACE = "wlan0"
 
 @RunWith(DevSdkIgnoreRunner::class)
 @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.S_V2)
