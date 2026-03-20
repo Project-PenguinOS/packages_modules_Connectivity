@@ -256,6 +256,13 @@ public class BpfNetMaps {
     }
 
     /**
+     * Get android.permission.flags.Flags#accessLocalNetworkPermissionEnabled()
+     */
+    public boolean isAccessLocalNetworkPermissionEnabled() {
+        return mDeps.isAccessLocalNetworkPermissionEnabled();
+    }
+
+    /**
      * Enable new permission propagation API when uid migration is enabled
      */
     public boolean isPermissionPropagationEnabled() {
