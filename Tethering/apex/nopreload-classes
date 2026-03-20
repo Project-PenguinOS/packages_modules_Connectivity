@@ -1,0 +1,2 @@
+# Initializing this in zygote causes a failure to join connectivity thread in pre-fork hook.
+android.net.ConnectivityThread$Singleton
