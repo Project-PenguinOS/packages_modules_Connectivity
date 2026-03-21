@@ -217,6 +217,7 @@ public class BpfNetMaps {
     private static boolean sPermissionMapUidMigrationEnabled = false;
     private static boolean sLoopbackAccessMetricsEnabled = false;
     private static boolean sLoopbackChecksEnabled = false;
+    private static boolean sBetaMetricsEnabled = false;
     @GuardedBy("sLocalNetAccessLock")
     private static long sLnpGenerationID = 0L;
 
@@ -242,6 +243,14 @@ public class BpfNetMaps {
      */
     public boolean isLoopbackChecksEnabled() {
         return sLoopbackChecksEnabled;
+    }
+
+    /**
+     * Get the cached com.android.tethering.flags.Flags#collectBetaMetrics() so the flag
+     * value is process stable.
+     */
+    public boolean isLocalNetMetricsEnabled() {
+        return sBetaMetricsEnabled;
     }
 
     /**
@@ -756,6 +765,7 @@ public class BpfNetMaps {
         sPermissionMapUidMigrationEnabled = deps.isPermissionMapUidMigrationEnabled();
         sLoopbackAccessMetricsEnabled = deps.isLoopbackAccessMetricsEnabled();
         sLoopbackChecksEnabled = deps.isLoopbackChecksEnabled();
+        sBetaMetricsEnabled = deps.isBetaMetricsEnabled();
 
         if (SdkLevel.isAtLeastT()) {
             initBpfMaps(deps);
@@ -850,6 +860,17 @@ public class BpfNetMaps {
             // Local network permission will be supported from Android C+, update this when
             // isAtLeastC() is available.
             return SdkLevel.isAtLeastB() && accessLocalNetworkPermissionEnabled();
+        }
+
+        /**
+         * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than lnp
+         * permission propagation. Wrapper around collectBetaMetrics() so that it can be mocked in
+         * unit tests.
+         *
+         * @see com.android.tethering.flags.Flags#collectBetaMetrics()
+         */
+        public boolean isBetaMetricsEnabled() {
+            return SdkLevel.isAtLeastB() && com.android.tethering.flags.Flags.collectBetaMetrics();
         }
 
         /**

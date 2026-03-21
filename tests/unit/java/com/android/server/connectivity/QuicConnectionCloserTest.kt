@@ -20,7 +20,6 @@ import android.net.InetAddresses
 import android.net.LinkAddress
 import android.net.LinkProperties
 import android.net.Network
-import android.net.TEST_IFACE
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -60,6 +59,7 @@ private const val SHORT_TIMEOUT_MS = 100L
 
 // TODO: Use OsConstants.SO_MARK once this API is available
 private const val SO_MARK = 36
+private const val TEST_IFACE = "wlan0"
 
 private val TEST_SRC_ADDRESS = InetAddresses.parseNumericAddress("2001:db8:1:2::2")
 private val TEST_SRC_SOCKET_ADDRESS = InetSocketAddress(

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Always use a dark theme for watches, since *.DayNight themes doesn't work. -->
+    <style name="NsdPickerActivityTheme" parent="@style/Theme.AppCompat.Dialog.Alert"/>
+    <style name="NsdPickerTitleStyle">
+        <item name="android:visibility">gone</item>
+    </style>
+</resources>

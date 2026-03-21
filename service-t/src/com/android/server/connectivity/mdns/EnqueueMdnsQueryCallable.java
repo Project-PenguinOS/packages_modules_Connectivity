@@ -82,7 +82,8 @@ public class EnqueueMdnsQueryCallable implements Callable<QuerySentResult> {
     private final byte[] packetCreationBuffer = new byte[1500]; // TODO: use interface MTU
     @NonNull
     private final List<MdnsResponse> existingServices;
-    private final boolean isQueryWithKnownAnswer;
+    @NonNull
+    private final MdnsFeatureFlags featureFlags;
     private final MdnsQueryScheduler.ScheduledQueryTaskArgs taskArgs;
 
     EnqueueMdnsQueryCallable(
@@ -98,7 +99,7 @@ public class EnqueueMdnsQueryCallable implements Callable<QuerySentResult> {
             @NonNull SharedLog sharedLog,
             @NonNull MdnsServiceTypeClient.Dependencies dependencies,
             @NonNull Collection<MdnsResponse> existingServices,
-            boolean isQueryWithKnownAnswer) {
+            @NonNull MdnsFeatureFlags featureFlags) {
         weakRequestSender = new WeakReference<>(requestSender);
         serviceTypeLabels = TextUtils.split(serviceType, "\\.");
         this.subtypes = new ArrayList<>(subtypes);
@@ -111,7 +112,7 @@ public class EnqueueMdnsQueryCallable implements Callable<QuerySentResult> {
         this.sharedLog = sharedLog;
         this.dependencies = dependencies;
         this.existingServices = new ArrayList<>(existingServices);
-        this.isQueryWithKnownAnswer = isQueryWithKnownAnswer;
+        this.featureFlags = featureFlags;
     }
 
     /**
@@ -129,101 +130,25 @@ public class EnqueueMdnsQueryCallable implements Callable<QuerySentResult> {
                 return QuerySentResult.createFailedQueryResult(taskArgs);
             }
 
-            final List<MdnsRecord> questions = new ArrayList<>();
             final boolean expectUnicastResponse = taskArgs.config.expectUnicastResponse;
             final int transactionId = taskArgs.config.getTransactionId();
-            final List<MdnsResponse> resolvedServices = new ArrayList<>();
-            boolean queriedBaseType = false;
+            final Pair<MdnsPacket, List<MdnsResponse>> result =
+                    buildPacket(expectUnicastResponse, transactionId);
+            final MdnsPacket queryPacket = result.first;
+            final List<MdnsResponse> resolvedServices = result.second;
 
-            if (sendDiscoveryQueries) {
-                // Base service type
-                questions.add(new MdnsPointerRecord(serviceTypeLabels, expectUnicastResponse));
-                queriedBaseType = true;
-                for (String subtype : subtypes) {
-                    final String[] labels = MdnsUtils.constructFullSubtype(serviceTypeLabels,
-                            MdnsConstants.SUBTYPE_PREFIX + subtype);
-                    questions.add(new MdnsPointerRecord(labels, expectUnicastResponse));
-                }
-            }
-
-            // List of (name, type) to query
-            final long now = clock.elapsedRealtime();
-            for (MdnsResponse response : servicesToResolve) {
-                final String[] serviceName = response.getServiceName();
-                if (serviceName == null) continue;
-                boolean renewTxt = !response.hasTextRecord() || MdnsUtils.isRecordRenewalNeeded(
-                        response.getTextRecord(), now);
-                boolean renewSrv = !response.hasServiceRecord() || MdnsUtils.isRecordRenewalNeeded(
-                        response.getServiceRecord(), now);
-                final int questionsBeforeAdding = questions.size();
-                if (renewSrv && renewTxt) {
-                    questions.add(new MdnsAnyRecord(serviceName, expectUnicastResponse));
-                } else {
-                    if (renewTxt) {
-                        questions.add(new MdnsTextRecord(serviceName, expectUnicastResponse));
-                    }
-                    if (renewSrv) {
-                        questions.add(new MdnsServiceRecord(serviceName, expectUnicastResponse));
-                        // The hostname is not yet known, so queries for address records will be
-                        // sent the next time the EnqueueMdnsQueryCallable is enqueued if the reply
-                        // does not contain them. In practice, advertisers should include the
-                        // address records when queried for SRV, although it's not a MUST
-                        // requirement (RFC6763 12.2).
-                    } else if (!response.hasInet4AddressRecord()
-                            && !response.hasInet6AddressRecord()) {
-                        final String[] host = response.getServiceRecord().getServiceHost();
-                        questions.add(new MdnsInetAddressRecord(
-                                host, MdnsRecord.TYPE_A, expectUnicastResponse));
-                        questions.add(new MdnsInetAddressRecord(
-                                host, MdnsRecord.TYPE_AAAA, expectUnicastResponse));
-                    }
-                }
-                if (questions.size() > questionsBeforeAdding) {
-                    resolvedServices.add(response);
-                }
-            }
-
-            if (questions.size() == 0) {
-                // No query to send
+            if (queryPacket == null) {
                 return QuerySentResult.createFailedQueryResult(taskArgs);
             }
 
-            // Put the existing ptr records into known-answer section.
-            final List<MdnsRecord> knownAnswers = new ArrayList<>();
-            if (sendDiscoveryQueries) {
-                for (MdnsResponse existingService : existingServices) {
-                    for (MdnsPointerRecord ptrRecord : existingService.getPointerRecords()) {
-                        // Ignore any PTR records that don't match the current query.
-                        if (!CollectionUtils.any(questions,
-                                q -> q instanceof MdnsPointerRecord
-                                        && DnsUtils.equalsDnsLabelIgnoreDnsCase(
-                                                q.getName(), ptrRecord.getName()))) {
-                            continue;
-                        }
-
-                        knownAnswers.add(new MdnsPointerRecord(
-                                ptrRecord.getName(),
-                                ptrRecord.getReceiptTime(),
-                                ptrRecord.getCacheFlush(),
-                                ptrRecord.getRemainingTTL(now), // Put the remaining ttl.
-                                ptrRecord.getPointer()));
-                    }
-                }
-            }
-
-            final MdnsPacket queryPacket = new MdnsPacket(
-                    transactionId,
-                    MdnsConstants.FLAGS_QUERY,
-                    questions,
-                    knownAnswers,
-                    Collections.emptyList(), /* authorityRecords */
-                    Collections.emptyList() /* additionalRecords */);
-            sendPacketToIpv4AndIpv6(requestSender, MdnsConstants.MDNS_PORT, queryPacket);
+            sendPacketToIpv4AndIpv6(
+                    requestSender, MdnsConstants.MDNS_PORT, queryPacket, expectUnicastResponse);
             for (Integer emulatorPort : castShellEmulatorMdnsPorts) {
-                sendPacketToIpv4AndIpv6(requestSender, emulatorPort, queryPacket);
+                sendPacketToIpv4AndIpv6(
+                        requestSender, emulatorPort, queryPacket, expectUnicastResponse);
             }
             return new QuerySentResult(
-                    transactionId, subtypes, taskArgs, queriedBaseType, resolvedServices);
+                    transactionId, subtypes, taskArgs, sendDiscoveryQueries, resolvedServices);
         } catch (Exception e) {
             sharedLog.e(String.format("Failed to create mDNS packet for subtype: %s.",
                     TextUtils.join(",", subtypes)), e);
@@ -231,11 +156,102 @@ public class EnqueueMdnsQueryCallable implements Callable<QuerySentResult> {
         }
     }
 
+    private Pair<MdnsPacket, List<MdnsResponse>> buildPacket(
+            boolean expectUnicastResponse, int transactionId) {
+        final List<MdnsRecord> questions = new ArrayList<>();
+        final List<MdnsResponse> resolvedServices = new ArrayList<>();
+
+        if (sendDiscoveryQueries) {
+            // Base service type
+            questions.add(new MdnsPointerRecord(serviceTypeLabels, expectUnicastResponse));
+            for (String subtype : subtypes) {
+                final String[] labels = MdnsUtils.constructFullSubtype(serviceTypeLabels,
+                        MdnsConstants.SUBTYPE_PREFIX + subtype);
+                questions.add(new MdnsPointerRecord(labels, expectUnicastResponse));
+            }
+        }
+
+        // List of (name, type) to query
+        final long now = clock.elapsedRealtime();
+        for (MdnsResponse response : servicesToResolve) {
+            final String[] serviceName = response.getServiceName();
+            if (serviceName == null) continue;
+            boolean renewTxt = !response.hasTextRecord() || MdnsUtils.isRecordRenewalNeeded(
+                    response.getTextRecord(), now);
+            boolean renewSrv = !response.hasServiceRecord() || MdnsUtils.isRecordRenewalNeeded(
+                    response.getServiceRecord(), now);
+            final int questionsBeforeAdding = questions.size();
+            if (renewSrv && renewTxt) {
+                questions.add(new MdnsAnyRecord(serviceName, expectUnicastResponse));
+            } else {
+                if (renewTxt) {
+                    questions.add(new MdnsTextRecord(serviceName, expectUnicastResponse));
+                }
+                if (renewSrv) {
+                    questions.add(new MdnsServiceRecord(serviceName, expectUnicastResponse));
+                    // The hostname is not yet known, so queries for address records will be
+                    // sent the next time the EnqueueMdnsQueryCallable is enqueued if the reply
+                    // does not contain them. In practice, advertisers should include the
+                    // address records when queried for SRV, although it's not a MUST
+                    // requirement (RFC6763 12.2).
+                } else if (!response.hasInet4AddressRecord()
+                        && !response.hasInet6AddressRecord()) {
+                    final String[] host = response.getServiceRecord().getServiceHost();
+                    questions.add(new MdnsInetAddressRecord(
+                            host, MdnsRecord.TYPE_A, expectUnicastResponse));
+                    questions.add(new MdnsInetAddressRecord(
+                            host, MdnsRecord.TYPE_AAAA, expectUnicastResponse));
+                }
+            }
+            if (questions.size() > questionsBeforeAdding) {
+                resolvedServices.add(response);
+            }
+        }
+
+        if (questions.size() == 0) {
+            // No query to send
+            return new Pair<>(null, resolvedServices);
+        }
+
+        // Put the existing ptr records into known-answer section.
+        final List<MdnsRecord> knownAnswers = new ArrayList<>();
+        if (sendDiscoveryQueries) {
+            for (MdnsResponse existingService : existingServices) {
+                for (MdnsPointerRecord ptrRecord : existingService.getPointerRecords()) {
+                    // Ignore any PTR records that don't match the current query.
+                    if (!CollectionUtils.any(questions,
+                            q -> q instanceof MdnsPointerRecord
+                                    && DnsUtils.equalsDnsLabelIgnoreDnsCase(
+                                    q.getName(), ptrRecord.getName()))) {
+                        continue;
+                    }
+
+                    knownAnswers.add(new MdnsPointerRecord(
+                            ptrRecord.getName(),
+                            ptrRecord.getReceiptTime(),
+                            ptrRecord.getCacheFlush(),
+                            ptrRecord.getRemainingTTL(now), // Put the remaining ttl.
+                            ptrRecord.getPointer()));
+                }
+            }
+        }
+
+        final MdnsPacket queryPacket = new MdnsPacket(
+                transactionId,
+                MdnsConstants.FLAGS_QUERY,
+                questions,
+                knownAnswers,
+                Collections.emptyList(), /* authorityRecords */
+                Collections.emptyList() /* additionalRecords */);
+        return new Pair<>(queryPacket, resolvedServices);
+    }
+
     private void sendPacket(MdnsSocketClientBase requestSender, InetSocketAddress address,
-            MdnsPacket mdnsPacket) throws IOException {
+            MdnsPacket mdnsPacket, boolean expectUnicastResponse) throws IOException {
         final List<DatagramPacket> packets = dependencies.getDatagramPacketsFromMdnsPacket(
-                packetCreationBuffer, mdnsPacket, address, isQueryWithKnownAnswer);
-        if (taskArgs.config.expectUnicastResponse) {
+                packetCreationBuffer, mdnsPacket, address,
+                featureFlags.isQueryWithKnownAnswerEnabled());
+        if (expectUnicastResponse) {
             // MdnsMultinetworkSocketClient is only available on T+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                     && requestSender instanceof MdnsMultinetworkSocketClient) {
@@ -259,16 +275,22 @@ public class EnqueueMdnsQueryCallable implements Callable<QuerySentResult> {
     }
 
     private void sendPacketToIpv4AndIpv6(MdnsSocketClientBase requestSender, int port,
-            MdnsPacket mdnsPacket) {
+            MdnsPacket mdnsPacket, boolean expectUnicastResponse) {
         try {
-            sendPacket(requestSender,
-                    new InetSocketAddress(MdnsConstants.getMdnsIPv4Address(), port), mdnsPacket);
+            sendPacket(
+                    requestSender,
+                    new InetSocketAddress(MdnsConstants.getMdnsIPv4Address(), port),
+                    mdnsPacket,
+                    expectUnicastResponse);
         } catch (IOException e) {
             sharedLog.e("Can't send packet to IPv4", e);
         }
         try {
-            sendPacket(requestSender,
-                    new InetSocketAddress(MdnsConstants.getMdnsIPv6Address(), port), mdnsPacket);
+            sendPacket(
+                    requestSender,
+                    new InetSocketAddress(MdnsConstants.getMdnsIPv6Address(), port),
+                    mdnsPacket,
+                    expectUnicastResponse);
         } catch (IOException e) {
             sharedLog.e("Can't send packet to IPv6", e);
         }

@@ -526,13 +526,11 @@ public class MdnsServiceTypeClientTests {
         verify(mockDeps, times(2)).removeMessages(any(), eq(EVENT_START_QUERYTASK));
         assertNotNull(delayMessage);
         verifyAndSendQuery(12 /* index */, (long) (TEST_TTL / 2 * 0.8) /* timeInMs */,
-                false /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                14 /* scheduledCount */);
+                false /* expectsUnicastResponse */, 14 /* scheduledCount */);
         currentTime += (long) (TEST_TTL / 2 * 0.8);
         doReturn(currentTime).when(mockDecoderClock).elapsedRealtime();
         verifyAndSendQuery(13 /* index */, MdnsConfigs.timeBetweenQueriesInBurstMs(),
-                false /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                15 /* scheduledCount */);
+                false /* expectsUnicastResponse */, 15 /* scheduledCount */);
     }
 
     @Test
@@ -547,16 +545,13 @@ public class MdnsServiceTypeClientTests {
         verify(mockDeps, times(1)).removeMessages(any(), eq(EVENT_START_QUERYTASK));
 
         verifyAndSendQuery(0 /* index */, 0 /* timeInMs */, true /* expectsUnicastResponse */,
-                true /* multipleSocketDiscovery */, 1 /* scheduledCount */);
+                1 /* scheduledCount */);
         verifyAndSendQuery(1 /* index */, MdnsConfigs.timeBetweenQueriesInBurstMs(),
-                false /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                2 /* scheduledCount */);
+                false /* expectsUnicastResponse */, 2 /* scheduledCount */);
         verifyAndSendQuery(2 /* index */, MdnsConfigs.timeBetweenQueriesInBurstMs(),
-                false /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                3 /* scheduledCount */);
+                false /* expectsUnicastResponse */, 3 /* scheduledCount */);
         verifyAndSendQuery(3 /* index */, MdnsConfigs.timeBetweenBurstsMs(),
-                false /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                4 /* scheduledCount */);
+                false /* expectsUnicastResponse */, 4 /* scheduledCount */);
 
         // In backoff mode, the current scheduled task will be canceled and reschedule if the
         // 0.8 * smallestRemainingTtl is larger than time to next run.
@@ -569,10 +564,10 @@ public class MdnsServiceTypeClientTests {
         verify(mockDeps, times(2)).removeMessages(any(), eq(EVENT_START_QUERYTASK));
         assertNotNull(delayMessage);
         verifyAndSendQuery(4 /* index */, 80000 /* timeInMs */, false /* expectsUnicastResponse */,
-                true /* multipleSocketDiscovery */, 6 /* scheduledCount */);
+                6 /* scheduledCount */);
         // Next run should also be scheduled in 0.8 * smallestRemainingTtl
         verifyAndSendQuery(5 /* index */, 80000 /* timeInMs */, false /* expectsUnicastResponse */,
-                true /* multipleSocketDiscovery */, 7 /* scheduledCount */);
+                7 /* scheduledCount */);
 
         // If the records is not refreshed, the current scheduled task will not be canceled.
         doReturn(TEST_ELAPSED_REALTIME + 20001).when(mockDecoderClock).elapsedRealtime();
@@ -2330,16 +2325,13 @@ public class MdnsServiceTypeClientTests {
         verify(mockDeps, times(2)).removeMessages(any(), eq(EVENT_START_QUERYTASK));
         assertNotNull(delayMessage);
         verifyAndSendQuery(12 /* index */, (long) (TEST_TTL / 2 * 0.8) /* timeInMs */,
-                true /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                14 /* scheduledCount */);
+                true /* expectsUnicastResponse */, 14 /* scheduledCount */);
         currentTime += (long) (TEST_TTL / 2 * 0.8);
         doReturn(currentTime).when(mockDecoderClock).elapsedRealtime();
         verifyAndSendQuery(13 /* index */, 0 /* timeInMs */,
-                false /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                15 /* scheduledCount */);
+                false /* expectsUnicastResponse */, 15 /* scheduledCount */);
         verifyAndSendQuery(14 /* index */, TIME_BETWEEN_RETRANSMISSION_QUERIES_IN_BURST_MS,
-                false /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                16 /* scheduledCount */);
+                false /* expectsUnicastResponse */, 16 /* scheduledCount */);
     }
 
     @Test
@@ -2553,19 +2545,18 @@ public class MdnsServiceTypeClientTests {
 
         // Verify that the first query has been sent.
         verifyAndSendQuery(0 /* index */, 0 /* timeInMs */, true /* expectsUnicastResponse */,
-                true /* multipleSocketDiscovery */, 1 /* scheduledCount */,
-                1 /* sendMessageCount */, true /* useAccurateDelayCallback */);
+                1 /* scheduledCount */, 1 /* sendMessageCount */,
+                true /* useAccurateDelayCallback */);
 
         // Verify that the second query has been sent
         verifyAndSendQuery(1 /* index */, 0 /* timeInMs */, false /* expectsUnicastResponse */,
-                true /* multipleSocketDiscovery */, 2 /* scheduledCount */,
-                2 /* sendMessageCount */, true /* useAccurateDelayCallback */);
+                2 /* scheduledCount */, 2 /* sendMessageCount */,
+                true /* useAccurateDelayCallback */);
 
         // Verify that the third query has been sent
         verifyAndSendQuery(2 /* index */, TIME_BETWEEN_RETRANSMISSION_QUERIES_IN_BURST_MS,
-                false /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                3 /* scheduledCount */, 3 /* sendMessageCount */,
-                true /* useAccurateDelayCallback */);
+                false /* expectsUnicastResponse */, 3 /* scheduledCount */,
+                3 /* sendMessageCount */, true /* useAccurateDelayCallback */);
 
         // In backoff mode, the current scheduled task will be canceled and reschedule if the
         // 0.8 * smallestRemainingTtl is larger than time to next run.
@@ -2580,8 +2571,7 @@ public class MdnsServiceTypeClientTests {
         verify(mockScheduler, times(6)).removeDelayedMessage(EVENT_START_QUERYTASK);
         assertNotNull(message);
         verifyAndSendQuery(3 /* index */, (long) (TEST_TTL / 2 * 0.8) /* timeInMs */,
-                true /* expectsUnicastResponse */, true /* multipleSocketDiscovery */,
-                5 /* scheduledCount */, 4 /* sendMessageCount */,
+                true /* expectsUnicastResponse */, 5 /* scheduledCount */, 4 /* sendMessageCount */,
                 true /* useAccurateDelayCallback */);
 
         // Stop sending packets.
@@ -3065,20 +3055,17 @@ public class MdnsServiceTypeClientTests {
     // verifies that the right query was enqueued with the right delay, and send query by executing
     // the runnable.
     private void verifyAndSendQuery(int index, long timeInMs, boolean expectsUnicastResponse) {
-        verifyAndSendQuery(index, timeInMs, expectsUnicastResponse,
-                true /* multipleSocketDiscovery */, index + 1 /* scheduledCount */);
+        verifyAndSendQuery(index, timeInMs, expectsUnicastResponse, index + 1 /* scheduledCount */);
     }
 
     private void verifyAndSendQuery(int index, long timeInMs, boolean expectsUnicastResponse,
-            boolean multipleSocketDiscovery, int scheduledCount) {
-        verifyAndSendQuery(index, timeInMs, expectsUnicastResponse,
-                multipleSocketDiscovery, scheduledCount, index + 1 /* sendMessageCount */,
-                false /* useAccurateDelayCallback */);
+            int scheduledCount) {
+        verifyAndSendQuery(index, timeInMs, expectsUnicastResponse, scheduledCount,
+                index + 1 /* sendMessageCount */, false /* useAccurateDelayCallback */);
     }
 
     private void verifyAndSendQuery(int index, long timeInMs, boolean expectsUnicastResponse,
-            boolean multipleSocketDiscovery, int scheduledCount, int sendMessageCount,
-            boolean useAccurateDelayCallback) {
+            int scheduledCount, int sendMessageCount, boolean useAccurateDelayCallback) {
         if (useAccurateDelayCallback && message != null && realHandler != null) {
             dispatchRealtimeSchedulerMessage();
         } else {
@@ -3093,20 +3080,16 @@ public class MdnsServiceTypeClientTests {
             verify(mockSocketClient).sendPacketRequestingUnicastResponse(
                     argThat(pkts -> pkts.get(0).equals(expectedIPv4Packets[index])),
                     eq(socketKey), eq(false));
-            if (multipleSocketDiscovery) {
-                verify(mockSocketClient).sendPacketRequestingUnicastResponse(
-                        argThat(pkts -> pkts.get(0).equals(expectedIPv6Packets[index])),
-                        eq(socketKey), eq(false));
-            }
+            verify(mockSocketClient).sendPacketRequestingUnicastResponse(
+                    argThat(pkts -> pkts.get(0).equals(expectedIPv6Packets[index])),
+                    eq(socketKey), eq(false));
         } else {
             verify(mockSocketClient).sendPacketRequestingMulticastResponse(
                     argThat(pkts -> pkts.get(0).equals(expectedIPv4Packets[index])),
                     eq(socketKey), eq(false));
-            if (multipleSocketDiscovery) {
-                verify(mockSocketClient).sendPacketRequestingMulticastResponse(
-                        argThat(pkts -> pkts.get(0).equals(expectedIPv6Packets[index])),
-                        eq(socketKey), eq(false));
-            }
+            verify(mockSocketClient).sendPacketRequestingMulticastResponse(
+                    argThat(pkts -> pkts.get(0).equals(expectedIPv6Packets[index])),
+                    eq(socketKey), eq(false));
         }
         verify(mockDeps, times(sendMessageCount))
                 .sendMessage(any(Handler.class), any(Message.class));
