@@ -668,7 +668,8 @@ public class MdnsServiceTypeClient {
         if (!(forceEnableBackoff)) {
             mdnsQueryScheduler.cancelScheduledRun();
         }
-        final QueryTaskConfig taskConfig = new QueryTaskConfig(searchOptions.getQueryMode());
+        final QueryTaskConfig taskConfig = new QueryTaskConfig(searchOptions.getQueryMode(),
+                featureFlags.mIsDualQueryForUnicastResponseEnabled);
         final long now = clock.elapsedRealtime();
         if (lastSentTime == 0) {
             lastSentTime = now;

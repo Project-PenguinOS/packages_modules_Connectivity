@@ -197,6 +197,9 @@ public class MdnsFeatureFlags {
     // Thread stats tag for MdnsSocketClient
     public final int mMdnsSocketThreadStatsTag;
 
+    // Flag for dual query for unicast response
+    public final boolean mIsDualQueryForUnicastResponseEnabled;
+
     @Nullable
     private final FlagOverrideProvider mOverrideProvider;
 
@@ -337,6 +340,7 @@ public class MdnsFeatureFlags {
             boolean useNetworkCallbackForLocalNetworks,
             boolean isMdnsScanOffloadEnabled,
             int mdnsSocketThreadStatsTag,
+            boolean isDualQueryForUnicastResponseEnabled,
             @Nullable FlagOverrideProvider overrideProvider) {
         mIsMdnsOffloadFeatureEnabled = isOffloadFeatureEnabled;
         mIncludeInetAddressRecordsInProbing = includeInetAddressRecordsInProbing;
@@ -359,6 +363,7 @@ public class MdnsFeatureFlags {
         mIsSelectiveMdnsResponseOffloadEnabled = isSelectiveMdnsResponseOffloadEnabled;
         mUseNetworkCallbackForLocalNetworks = useNetworkCallbackForLocalNetworks;
         mIsMdnsScanOffloadEnabled = isMdnsScanOffloadEnabled;
+        mIsDualQueryForUnicastResponseEnabled = isDualQueryForUnicastResponseEnabled;
         mOverrideProvider = overrideProvider;
     }
 
@@ -391,6 +396,8 @@ public class MdnsFeatureFlags {
         private static final long FLAG_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS = 1 << 18;
         private static final long FLAG_MDNS_SOCKET_THREAD_STATS_TAG = 1 << 19;
         private static final long FLAG_IS_MDNS_SCAN_OFFLOAD_ENABLED = 1 << 20;
+        private static final long FLAG_IS_DUAL_QUERY_FOR_UNICAST_RESPONSE_ENABLED = 1 << 21;
+
 
         private long mSetFlags;
         private long mExemptFlags;
@@ -415,6 +422,7 @@ public class MdnsFeatureFlags {
         private boolean mUseNetworkCallbackForLocalNetworks;
         private boolean mIsMdnsScanOffloadEnabled;
         private int mMdnsSocketThreadStatsTag;
+        private boolean mIsDualQueryForUnicastResponseEnabled;
         private FlagOverrideProvider mOverrideProvider;
 
         /**
@@ -442,6 +450,7 @@ public class MdnsFeatureFlags {
             mUseNetworkCallbackForLocalNetworks = false;
             mIsMdnsScanOffloadEnabled = false;
             mMdnsSocketThreadStatsTag = MDNS_SOCKET_THREAD_STATS_TAG_NONE;
+            mIsDualQueryForUnicastResponseEnabled = false;
             mOverrideProvider = null;
 
             // Those flags are not used in NsdService.
@@ -473,7 +482,8 @@ public class MdnsFeatureFlags {
                     | FLAG_IS_SELECTIVE_MDNS_RESPONSE_OFFLOAD_ENABLED
                     | FLAG_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS
                     | FLAG_MDNS_SOCKET_THREAD_STATS_TAG
-                    | FLAG_IS_MDNS_SCAN_OFFLOAD_ENABLED;
+                    | FLAG_IS_MDNS_SCAN_OFFLOAD_ENABLED
+                    | FLAG_IS_DUAL_QUERY_FOR_UNICAST_RESPONSE_ENABLED;
             return this;
         }
 
@@ -721,6 +731,16 @@ public class MdnsFeatureFlags {
         }
 
         /**
+         * Set whether to send two queries for unicast response.
+         */
+        public Builder setIsDualQueryForUnicastResponseEnabled(
+                boolean isDualQueryForUnicastResponseEnabled) {
+            mIsDualQueryForUnicastResponseEnabled = isDualQueryForUnicastResponseEnabled;
+            mSetFlags |= FLAG_IS_DUAL_QUERY_FOR_UNICAST_RESPONSE_ENABLED;
+            return this;
+        }
+
+        /**
          * Builds a {@link MdnsFeatureFlags} with the arguments supplied to this builder.
          */
         public MdnsFeatureFlags build() {
@@ -744,7 +764,8 @@ public class MdnsFeatureFlags {
                     | FLAG_IS_SELECTIVE_MDNS_RESPONSE_OFFLOAD_ENABLED
                     | FLAG_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS
                     | FLAG_MDNS_SOCKET_THREAD_STATS_TAG
-                    | FLAG_IS_MDNS_SCAN_OFFLOAD_ENABLED;
+                    | FLAG_IS_MDNS_SCAN_OFFLOAD_ENABLED
+                    | FLAG_IS_DUAL_QUERY_FOR_UNICAST_RESPONSE_ENABLED;
 
             final long requiredFlags = allFlags & ~mExemptFlags;
             final long missingFlags = requiredFlags & ~mSetFlags;
@@ -773,6 +794,7 @@ public class MdnsFeatureFlags {
                     mUseNetworkCallbackForLocalNetworks,
                     mIsMdnsScanOffloadEnabled,
                     mMdnsSocketThreadStatsTag,
+                    mIsDualQueryForUnicastResponseEnabled,
                     mOverrideProvider);
         }
     }

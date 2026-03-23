@@ -28,6 +28,7 @@ import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 import static android.net.NetworkStack.PERMISSION_MAINLINE_NETWORK_STACK;
 import static android.net.connectivity.ConnectivityCompatChanges.ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS;
 import static android.net.connectivity.ConnectivityCompatChanges.RESTRICT_LOCAL_NETWORK;
+import static android.net.connectivity.ConnectivityCompatChanges.USE_NSD_PICKER_WHEN_NO_LOCAL_NET_PERMISSION;
 import static android.net.nsd.AdvertisingRequest.FLAG_OFFLOAD_ONLY;
 import static android.net.nsd.AdvertisingRequest.FLAG_SKIP_PROBING;
 import static android.net.nsd.AdvertisingRequest.FLAG_SKIP_SUBTYPE_ANNOUNCEMENTS;
@@ -42,15 +43,15 @@ import static android.net.nsd.NsdManager.OFFLOAD_ENGINE_SERVICE_INFO_UPDATE;
 import static android.net.nsd.NsdManager.RESOLVE_SERVICE_SUCCEEDED;
 import static android.net.nsd.NsdManager.SUBTYPE_LABEL_REGEX;
 import static android.net.nsd.NsdManager.TYPE_REGEX;
-import static android.os.Process.SYSTEM_UID;
-import static android.permission.PermissionManager.PERMISSION_GRANTED;
-import static android.permission.flags.Flags.accessLocalNetworkPermissionEnabled;
-import static android.provider.DeviceConfig.NAMESPACE_TETHERING;
 import static android.net.nsd.OffloadEngine.OFFLOAD_CAPABILITY_BYPASS_MULTICAST_LOCK;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_FILTER_QUERIES;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_QUERY;
 import static android.net.nsd.OffloadEngine.OFFLOAD_TYPE_REPLY;
+import static android.os.Process.SYSTEM_UID;
+import static android.permission.PermissionManager.PERMISSION_GRANTED;
+import static android.permission.flags.Flags.accessLocalNetworkPermissionEnabled;
+import static android.provider.DeviceConfig.NAMESPACE_TETHERING;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.modules.utils.build.SdkLevel.isAtLeastU;
@@ -1402,6 +1403,51 @@ public class NsdService extends INsdManager.Stub {
         }
     }
 
+    private static class DiscoveryPermissionResult {
+        public final boolean usePicker;
+        public final boolean usingLocalNetPermission;
+
+        DiscoveryPermissionResult(boolean usePicker, boolean usingLocalNetPermission) {
+            this.usePicker = usePicker;
+            this.usingLocalNetPermission = usingLocalNetPermission;
+        }
+    }
+
+    @Nullable
+    private DiscoveryPermissionResult checkDiscoveryPermissionsAndPicker(
+            ClientInfo clientInfo, DiscoveryRequest request, boolean useJavaBackend) {
+        final long flags = request.getFlags();
+        final boolean pickerRequested = (flags & FLAG_SHOW_PICKER) != 0;
+        final boolean approvedOnly = (flags & FLAG_USER_APPROVED_ONLY) != 0;
+        final boolean noPicker = (flags & FLAG_NO_PICKER) != 0;
+
+        final boolean pickerSupported = useJavaBackend && mEnablePicker;
+        if (pickerRequested && !pickerSupported) return null;
+
+        final boolean permissionsRequired = !pickerSupported || (!pickerRequested && !approvedOnly);
+        final boolean hasPermission = !permissionsRequired
+                || checkDataDeliveryPermissions(
+                        clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
+        final boolean usePicker;
+        if (pickerRequested) {
+            usePicker = true;
+        } else if (!hasPermission) {
+            // App lacks permission. Show automatic picker if supported, allowed by flags,
+            // and the compat change is enabled. Otherwise fail the request.
+            if (pickerSupported && !noPicker && mDeps.isPickerAutoUpgradeEnabled(
+                    clientInfo.getUid())) {
+                usePicker = true;
+            } else {
+                return null;
+            }
+        } else {
+            usePicker = false;
+        }
+
+        final boolean usingLocalNetPermission = permissionsRequired && hasPermission;
+        return new DiscoveryPermissionResult(usePicker, usingLocalNetPermission);
+    }
+
     private void handleDiscoverServices(int clientRequestId, DiscoveryArgs discoveryArgs,
             boolean isServiceInfoCallback) {
         if (DBG) Log.d(TAG, "Discover services");
@@ -1420,42 +1466,15 @@ public class NsdService extends INsdManager.Stub {
         final String serviceType = typeAndSubtype == null ? null : typeAndSubtype.first;
         final boolean useJavaBackend = useDiscoveryManager(clientInfo, serviceType);
 
-        final boolean pickerRequested;
-        final boolean permissionsRequired;
-        if (useJavaBackend && mEnablePicker) {
-            pickerRequested = (discoveryRequest.getFlags() & FLAG_SHOW_PICKER) != 0;
-            // Ignore APPROVED_ONLY if SHOW_PICKER is set
-            final boolean approvedOnlyRequested = !pickerRequested
-                    && ((discoveryRequest.getFlags() & FLAG_USER_APPROVED_ONLY) != 0);
-            permissionsRequired = !(approvedOnlyRequested || pickerRequested);
-        } else {
-            pickerRequested = false;
-            // The legacy backend will only be used when running on T (and with target SDK T-),
-            // while checkDataDeliveryPermissions always returns GRANTED before B
-            // (getAttributionSource == null). So permission checks will always be successful when
-            // the legacy backend is used; this is set to true for the mEnablePicker == false case.
-            permissionsRequired = true;
-        }
-
-        final boolean usingLocalNetPermission;
-        // The picker is used if requested (implies no permissions are required), or if required
-        // permissions are missing.
-        final boolean usePicker;
-        if (permissionsRequired) {
-            usingLocalNetPermission = checkDataDeliveryPermissions(
-                    clientInfo.mUid, clientInfo.mPid) == PERMISSION_GRANTED;
-            usePicker = !usingLocalNetPermission;
-        } else {
-            usingLocalNetPermission = false;
-            usePicker = pickerRequested;
-        }
-
-        final boolean noPickerFlag = !pickerRequested
-                && ((discoveryRequest.getFlags() & FLAG_NO_PICKER) != 0);
-        if (usePicker && (noPickerFlag || !mEnablePicker)) {
+        final DiscoveryPermissionResult permResult = checkDiscoveryPermissionsAndPicker(
+                clientInfo, discoveryRequest, useJavaBackend);
+        if (permResult == null) {
             clientInfo.onDiscoverServicesFailedPermissions(clientRequestId);
             return;
         }
+
+        final boolean usePicker = permResult.usePicker;
+        final boolean usingLocalNetPermission = permResult.usingLocalNetPermission;
 
         if (requestLimitReached(clientInfo)) {
             clientInfo.onDiscoverServicesFailedImmediately(clientRequestId,
@@ -2827,13 +2846,13 @@ public class NsdService extends INsdManager.Stub {
                 .setIsAggressiveQueryModeEnabled(mDeps.isFeatureEnabled(
                         mContext, MdnsFeatureFlags.NSD_AGGRESSIVE_QUERY_MODE))
                 .setIsQueryWithKnownAnswerEnabled(mDeps.isAconfigFlagEnabled(
-                        com.android.tethering.flags.Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER))
+                        Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER))
                 // Both accurate_delay_callback and optimized_expired_service_removal features are
                 // tied with query_with_known_answer feature.
                 .setIsAccurateDelayCallbackEnabled(mDeps.isAconfigFlagEnabled(
-                        com.android.tethering.flags.Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER))
+                        Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER))
                 .setIsOptimizedExpiredServiceRemovalEnabled(mDeps.isAconfigFlagEnabled(
-                        com.android.tethering.flags.Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER))
+                        Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER))
                 .setAvoidAdvertisingEmptyTxtRecords(mDeps.isTetheringFeatureNotChickenedOut(
                         mContext, MdnsFeatureFlags.NSD_AVOID_ADVERTISING_EMPTY_TXT_RECORDS))
                 .setIsCachedServicesRemovalEnabled(mDeps.isTetheringFeatureNotChickenedOut(
@@ -2861,7 +2880,9 @@ public class NsdService extends INsdManager.Stub {
                                 && mDeps.isCompatChangeEnabledForSystem(
                                         ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS))
                 .setIsMdnsScanOffloadEnabled(mDeps.isAconfigFlagEnabled(
-                        com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD))
+                        Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD))
+                .setIsDualQueryForUnicastResponseEnabled(mDeps.isAconfigFlagEnabled(
+                        Flags.FLAG_NSD_DUAL_QUERY_FOR_UNICAST_RESPONSE))
                 .setOverrideProvider(new MdnsFeatureFlags.FlagOverrideProvider() {
                     @Override
                     public boolean isForceEnabledForTest(@NonNull String flag) {
@@ -3007,17 +3028,16 @@ public class NsdService extends INsdManager.Stub {
         /** Get whether a feature config is enabled. */
         public boolean isAconfigFlagEnabled(String feature) {
             return switch (feature) {
-                case Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER ->
-                        com.android.tethering.flags.Flags.nsdQueryWithKnownAnswer();
+                case Flags.FLAG_NSD_QUERY_WITH_KNOWN_ANSWER -> Flags.nsdQueryWithKnownAnswer();
                 case Flags.FLAG_NSD_USE_NETWORK_CALLBACK_FOR_LOCAL_NETWORKS ->
                         Flags.nsdUseNetworkCallbackForLocalNetworks();
-                case com.android.tethering.flags.Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD ->
-                        com.android.tethering.flags.Flags.nsdMdnsScanOffload();
-                case FLAG_NSD_SERVICE_PICKER ->
-                        com.android.tethering.flags.Flags.nsdServicePicker();
+                case Flags.FLAG_NSD_MDNS_SCAN_OFFLOAD -> Flags.nsdMdnsScanOffload();
+                case FLAG_NSD_SERVICE_PICKER -> Flags.nsdServicePicker();
                 case com.android.tethering.mainline.beta.Flags
                         .FLAG_TETHERING_AND_P2P_GO_LOCAL_AGENT ->
                         com.android.tethering.mainline.beta.Flags.tetheringAndP2pGoLocalAgent();
+                case Flags.FLAG_NSD_DUAL_QUERY_FOR_UNICAST_RESPONSE ->
+                        Flags.nsdDualQueryForUnicastResponse();
                 default -> throw new IllegalStateException("Unknown flag " + feature);
             };
         }
@@ -3090,6 +3110,13 @@ public class NsdService extends INsdManager.Stub {
          */
         public int getCallingPid() {
             return Binder.getCallingPid();
+        }
+
+        /**
+         * @see CompatChanges#isChangeEnabled(long, int)
+         */
+        public boolean isPickerAutoUpgradeEnabled(int uid) {
+            return CompatChanges.isChangeEnabled(USE_NSD_PICKER_WHEN_NO_LOCAL_NET_PERMISSION, uid);
         }
 
         /**

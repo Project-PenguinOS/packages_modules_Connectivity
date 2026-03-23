@@ -475,6 +475,52 @@ public class MdnsServiceTypeClientTests {
     }
 
     @Test
+    public void sendQueries_dualQuery_passiveScanMode() {
+        featureFlags = MdnsFeatureFlags.newBuilder().setAllFlagsForTesting()
+                .setIsDualQueryForUnicastResponseEnabled(true).build();
+        client = makeMdnsServiceTypeClient(featureFlags, false);
+
+        MdnsSearchOptions searchOptions = MdnsSearchOptions.newBuilder()
+                .addSubtype(SUBTYPE).setQueryMode(PASSIVE_QUERY_MODE).build();
+        startSendAndReceive(mockListenerOne, searchOptions);
+        // Always try to remove the task.
+        verify(mockDeps, times(1)).removeMessages(any(), eq(EVENT_START_QUERYTASK));
+
+        // First burst, first query (Dual query)
+        verifyAndSendQuery(0 /* index */, 0, true /* expectsUnicastResponse */,
+                1 /* scheduledCount */, 1 /* sendMessageCount */,
+                false /* useAccurateDelayCallback */, true /* dualQuery */);
+
+        // First burst, second query (Not dual query)
+        verifyAndSendQuery(2 /* index */, MdnsConfigs.timeBetweenQueriesInBurstMs(),
+                false /* expectsUnicastResponse */, 2 /* scheduledCount */,
+                2 /* sendMessageCount */, false /* useAccurateDelayCallback */,
+                false /* dualQuery */);
+
+        // First burst, third query (Not dual query)
+        verifyAndSendQuery(3 /* index */, MdnsConfigs.timeBetweenQueriesInBurstMs(),
+                false /* expectsUnicastResponse */, 3 /* scheduledCount */,
+                3 /* sendMessageCount */, false /* useAccurateDelayCallback */,
+                false /* dualQuery */);
+
+        // Second burst, first query (Dual query)
+        verifyAndSendQuery(4 /* index */, MdnsConfigs.timeBetweenBurstsMs(),
+                true /* expectsUnicastResponse */, 4 /* scheduledCount */,
+                4 /* sendMessageCount */, false /* useAccurateDelayCallback */,
+                true /* dualQuery */);
+
+        // Third burst, first query (Dual query)
+        verifyAndSendQuery(6 /* index */, MdnsConfigs.timeBetweenBurstsMs(),
+                true /* expectsUnicastResponse */, 5 /* scheduledCount */,
+                5 /* sendMessageCount */, false /* useAccurateDelayCallback */,
+                true /* dualQuery */);
+
+        // Stop sending packets.
+        stopSendAndReceive(mockListenerOne);
+        verify(mockDeps, times(2)).removeMessages(any(), eq(EVENT_START_QUERYTASK));
+    }
+
+    @Test
     public void sendQueries_activeScanWithQueryBackoff() {
         MdnsSearchOptions searchOptions =
                 MdnsSearchOptions.newBuilder()
@@ -631,7 +677,8 @@ public class MdnsServiceTypeClientTests {
         //MdnsConfigsFlagsImpl.alwaysAskForUnicastResponseInEachBurst.override(true);
         MdnsSearchOptions searchOptions = MdnsSearchOptions.newBuilder()
                 .addSubtype(SUBTYPE).setQueryMode(ACTIVE_QUERY_MODE).build();
-        QueryTaskConfig config = new QueryTaskConfig(searchOptions.getQueryMode());
+        QueryTaskConfig config =
+                new QueryTaskConfig(searchOptions.getQueryMode(), false /* isDualQueryEnabled */);
 
         // This is the first query. We will ask for unicast response.
         assertTrue(config.expectUnicastResponse);
@@ -656,7 +703,8 @@ public class MdnsServiceTypeClientTests {
     public void testQueryTaskConfig_askForUnicastInFirstQuery() {
         MdnsSearchOptions searchOptions = MdnsSearchOptions.newBuilder()
                 .addSubtype(SUBTYPE).setQueryMode(ACTIVE_QUERY_MODE).build();
-        QueryTaskConfig config = new QueryTaskConfig(searchOptions.getQueryMode());
+        QueryTaskConfig config =
+                new QueryTaskConfig(searchOptions.getQueryMode(), false /* isDualQueryEnabled */);
 
         // This is the first query. We will ask for unicast response.
         assertTrue(config.expectUnicastResponse);
@@ -674,6 +722,33 @@ public class MdnsServiceTypeClientTests {
         int oldTransactionId = config.getTransactionId();
         config = config.getConfigForNextRun(ACTIVE_QUERY_MODE);
         assertFalse(config.expectUnicastResponse);
+        assertEquals(config.getTransactionId(), oldTransactionId + 1);
+    }
+
+    @Test
+    public void testQueryTaskConfig_dualQueryEnabled_askForUnicastInFirstQueryOfEachBurst() {
+        MdnsSearchOptions searchOptions = MdnsSearchOptions.newBuilder()
+                .addSubtype(SUBTYPE).setQueryMode(ACTIVE_QUERY_MODE).build();
+        QueryTaskConfig config =
+                new QueryTaskConfig(searchOptions.getQueryMode(), true /* isDualQueryEnabled */);
+
+        // This is the first query of the first burst. We will ask for unicast response.
+        assertTrue(config.expectUnicastResponse);
+        assertEquals(config.getTransactionId(), 1);
+
+        // For the rest of queries in this burst, we will NOT ask for unicast response.
+        for (int i = 1; i < MdnsConfigs.queriesPerBurst(); i++) {
+            int oldTransactionId = config.getTransactionId();
+            config = config.getConfigForNextRun(ACTIVE_QUERY_MODE);
+            assertFalse(config.expectUnicastResponse);
+            assertEquals(config.getTransactionId(), oldTransactionId + 1);
+        }
+
+        // This is the first query of a new burst. We WILL ask for unicast response if dual query is
+        // enabled.
+        int oldTransactionId = config.getTransactionId();
+        config = config.getConfigForNextRun(ACTIVE_QUERY_MODE);
+        assertTrue(config.expectUnicastResponse);
         assertEquals(config.getTransactionId(), oldTransactionId + 1);
     }
 
@@ -3066,6 +3141,13 @@ public class MdnsServiceTypeClientTests {
 
     private void verifyAndSendQuery(int index, long timeInMs, boolean expectsUnicastResponse,
             int scheduledCount, int sendMessageCount, boolean useAccurateDelayCallback) {
+        verifyAndSendQuery(index, timeInMs, expectsUnicastResponse, scheduledCount,
+                sendMessageCount, useAccurateDelayCallback, false /* dualQuery */);
+    }
+
+    private void verifyAndSendQuery(int index, long timeInMs, boolean expectsUnicastResponse,
+            int scheduledCount, int sendMessageCount, boolean useAccurateDelayCallback,
+            boolean dualQuery) {
         if (useAccurateDelayCallback && message != null && realHandler != null) {
             dispatchRealtimeSchedulerMessage();
         } else {
@@ -3083,6 +3165,14 @@ public class MdnsServiceTypeClientTests {
             verify(mockSocketClient).sendPacketRequestingUnicastResponse(
                     argThat(pkts -> pkts.get(0).equals(expectedIPv6Packets[index])),
                     eq(socketKey), eq(false));
+            if (dualQuery) {
+                verify(mockSocketClient).sendPacketRequestingMulticastResponse(
+                        argThat(pkts -> pkts.get(0).equals(expectedIPv4Packets[index + 1])),
+                        eq(socketKey), eq(false));
+                verify(mockSocketClient).sendPacketRequestingMulticastResponse(
+                        argThat(pkts -> pkts.get(0).equals(expectedIPv6Packets[index + 1])),
+                        eq(socketKey), eq(false));
+            }
         } else {
             verify(mockSocketClient).sendPacketRequestingMulticastResponse(
                     argThat(pkts -> pkts.get(0).equals(expectedIPv4Packets[index])),
@@ -3090,6 +3180,14 @@ public class MdnsServiceTypeClientTests {
             verify(mockSocketClient).sendPacketRequestingMulticastResponse(
                     argThat(pkts -> pkts.get(0).equals(expectedIPv6Packets[index])),
                     eq(socketKey), eq(false));
+            if (dualQuery) {
+                verify(mockSocketClient).sendPacketRequestingUnicastResponse(
+                        argThat(pkts -> pkts.get(0).equals(expectedIPv4Packets[index + 1])),
+                        eq(socketKey), eq(false));
+                verify(mockSocketClient).sendPacketRequestingUnicastResponse(
+                        argThat(pkts -> pkts.get(0).equals(expectedIPv6Packets[index + 1])),
+                        eq(socketKey), eq(false));
+            }
         }
         verify(mockDeps, times(sendMessageCount))
                 .sendMessage(any(Handler.class), any(Message.class));

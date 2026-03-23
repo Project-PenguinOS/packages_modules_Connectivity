@@ -75,5 +75,7 @@ class ApfV4Test(apf_test_base.ApfTestBase, parameterized.TestCase):
     # Pause packet sending between tests to avoid APF disablement due to high throughput.
     time.sleep(3)
     self.send_packet_and_expect_counter_increased(
-        packet, COUNTER_DROPPED_ETHERTYPE_NOT_ALLOWED
+        packet,
+        COUNTER_DROPPED_ETHERTYPE_NOT_ALLOWED,
+        test_case_name=inspect.currentframe().f_code.co_name,
     )
