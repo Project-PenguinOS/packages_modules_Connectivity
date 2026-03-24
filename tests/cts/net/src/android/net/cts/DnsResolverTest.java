@@ -16,18 +16,17 @@
 
 package android.net.cts;
 
-import static android.Manifest.permission.READ_DEVICE_CONFIG;
 import static android.net.DnsResolver.CLASS_IN;
 import static android.net.DnsResolver.FLAG_EMPTY;
 import static android.net.DnsResolver.FLAG_NO_CACHE_LOOKUP;
 import static android.net.DnsResolver.TYPE_A;
 import static android.net.DnsResolver.TYPE_AAAA;
+import static android.net.DnsResolver.TYPE_ANY;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.provider.DeviceConfig.NAMESPACE_CONNECTIVITY;
 import static android.system.OsConstants.ETIMEDOUT;
 
 import static com.android.testutils.Cleanup.testAndCleanup;
-import static com.android.testutils.TestPermissionUtil.runAsShell;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -43,19 +42,18 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.DnsResolver;
+import android.net.InetAddresses;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.ParseException;
 import android.net.cts.util.CtsNetUtils;
 import android.net.dns.HttpsEndpoint;
-import android.net.dns.HttpsRecord;
 import android.os.Build;
 import android.os.CancellationSignal;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.platform.test.annotations.AppModeFull;
-import android.platform.test.annotations.RequiresFlagsEnabled;
 import android.platform.test.flag.junit.CheckFlagsRule;
 import android.platform.test.flag.junit.DeviceFlagsValueProvider;
 import android.provider.Settings;
@@ -68,7 +66,6 @@ import androidx.test.runner.AndroidJUnit4;
 
 import com.android.net.module.util.DnsPacket;
 import com.android.net.module.util.SdkUtil;
-import com.android.tethering.flags.Flags;
 import com.android.testutils.AutoReleaseNetworkCallbackRule;
 import com.android.testutils.ConnectivityDiagnosticsCollector;
 import com.android.testutils.ConnectivityModuleTest;
@@ -76,9 +73,9 @@ import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.DeviceConfigRule;
 import com.android.testutils.DnsResolverModuleTest;
-import com.android.testutils.TestableNetworkCallback.Event;
 import com.android.testutils.SkipPresubmit;
 import com.android.testutils.TestableNetworkCallback;
+import com.android.testutils.TestableNetworkCallback.Event;
 
 import org.junit.After;
 import org.junit.Before;
@@ -92,6 +89,7 @@ import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -594,19 +592,17 @@ public class DnsResolverTest {
     }
 
     /**
-     * A query callback for InetAddress that ensures that the query is
-     * cancelled and that onAnswer is never called. If the query succeeds
-     * before it is cancelled, needRetry will return true so the
-     * test can retry.
+     * A DNS query callback for testing InetAddress queries. Handles both successful and error
+     * responses with support for optional cancellation verification.
      */
-    class VerifyCancelInetAddressCallback implements DnsResolver.Callback<List<InetAddress>> {
+    class InetAddressCallback implements DnsResolver.Callback<List<InetAddress>> {
         private final CountDownLatch mLatch = new CountDownLatch(1);
         private final String mMsg;
         private final List<InetAddress> mAnswers;
         private final CancellationSignal mCancelSignal;
         private String mErrorMsg = null;
 
-        VerifyCancelInetAddressCallback(@NonNull String msg, @Nullable CancellationSignal cancel) {
+        InetAddressCallback(@NonNull String msg, @Nullable CancellationSignal cancel) {
             this.mMsg = msg;
             this.mCancelSignal = cancel;
             mAnswers = new ArrayList<>();
@@ -716,8 +712,8 @@ public class DnsResolverTest {
     public void doTestQueryForInetAddress(Executor executor) throws InterruptedException {
         final String msg = "Test query for InetAddress " + TEST_DOMAIN;
         for (Network network : getTestableNetworksAndNull()) {
-            final VerifyCancelInetAddressCallback callback =
-                    new VerifyCancelInetAddressCallback(msg, null);
+            final InetAddressCallback callback =
+                    new InetAddressCallback(msg, null);
             mDns.query(network, TEST_DOMAIN, FLAG_NO_CACHE_LOOKUP, executor, null, callback);
 
             assertTrue(msg + " but no answer after " + TIMEOUT_MS + "ms.",
@@ -742,8 +738,8 @@ public class DnsResolverTest {
                 }
                 final CountDownLatch latch = new CountDownLatch(1);
                 final CancellationSignal cancelSignal = new CancellationSignal();
-                final VerifyCancelInetAddressCallback callback =
-                        new VerifyCancelInetAddressCallback(msg, cancelSignal);
+                final InetAddressCallback callback =
+                        new InetAddressCallback(msg, cancelSignal);
                 mDns.query(network, TEST_DOMAIN, FLAG_EMPTY, mExecutor, cancelSignal, callback);
                 mExecutor.execute(() -> {
                     cancelSignal.cancel();
@@ -760,8 +756,8 @@ public class DnsResolverTest {
     public void doTestQueryForInetAddressIpv4(Executor executor) throws InterruptedException {
         final String msg = "Test query for IPv4 InetAddress " + TEST_DOMAIN;
         for (Network network : getTestableNetworksAndNull()) {
-            final VerifyCancelInetAddressCallback callback =
-                    new VerifyCancelInetAddressCallback(msg, null);
+            final InetAddressCallback callback =
+                    new InetAddressCallback(msg, null);
             mDns.query(network, TEST_DOMAIN, TYPE_A, FLAG_NO_CACHE_LOOKUP,
                     executor, null, callback);
 
@@ -776,8 +772,8 @@ public class DnsResolverTest {
     public void doTestQueryForInetAddressIpv6(Executor executor) throws InterruptedException {
         final String msg = "Test query for IPv6 InetAddress " + TEST_DOMAIN;
         for (Network network : getTestableNetworksAndNull()) {
-            final VerifyCancelInetAddressCallback callback =
-                    new VerifyCancelInetAddressCallback(msg, null);
+            final InetAddressCallback callback =
+                    new InetAddressCallback(msg, null);
             mDns.query(network, TEST_DOMAIN, TYPE_AAAA, FLAG_NO_CACHE_LOOKUP,
                     executor, null, callback);
 
@@ -854,7 +850,7 @@ public class DnsResolverTest {
 
         @Override
         public void onError(@NonNull DnsResolver.DnsException error) {
-            mErrorMsg = mMsg + error.getMessage();
+            mErrorMsg = mMsg + " " + error.getMessage();
             mLatch.countDown();
         }
     }
@@ -884,7 +880,6 @@ public class DnsResolverTest {
 
     private void doTestQueryForHttpsRecord(DnsResolver dns, Executor executor) throws Exception {
         final String msg = "Test query for HTTPS record " + TEST_HTTPS_RECORD_DOMAIN;
-        mCtsNetUtils.setPrivateDnsStrictMode(GOOGLE_PRIVATE_DNS_SERVER);
         for (Network network : getTestableNetworksAndNull()) {
             final VerifyCancelHttpsEndpointInfoCallback callback =
                     new VerifyCancelHttpsEndpointInfoCallback(msg, /* cancellationSignal= */ null);
@@ -892,8 +887,11 @@ public class DnsResolverTest {
                     executor, DnsResolver.HTTPS_QUERY_WAIT_UNTIL_TIMEOUT,
                     /* cancellationSignal= */ null, callback);
 
-            assertTrue(msg + " but no answer after " + TIMEOUT_MS + "ms.",
+            // Until we have our own controlled domain, first check that the connection didn't time
+            // out due to lack of response before performing any test assertions.
+            assumeTrue(msg + " but no answer after " + TIMEOUT_MS + "ms.",
                     callback.waitForAnswer());
+
             callback.assertNoError();
             assertFalse(msg + " returned 0 results", callback.isAnswerEmpty());
             callback.assertHasIpAddressAnswer();
@@ -959,8 +957,8 @@ public class DnsResolverTest {
             assertTrue(msg + " invalid server round. No response after " + TIMEOUT_MS + "ms.",
                     latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS));
 
-            final VerifyCancelInetAddressCallback callback =
-                    new VerifyCancelInetAddressCallback(msg, null);
+            final InetAddressCallback callback =
+                    new InetAddressCallback(msg, null);
             // Bypass privateDns, expect query works fine
             mDns.query(network.getPrivateDnsBypassingCopy(),
                     TEST_DOMAIN, FLAG_NO_CACHE_LOOKUP, mExecutor, null, callback);
@@ -973,8 +971,8 @@ public class DnsResolverTest {
             // To ensure private DNS bypass still work even if passing null network.
             // Bind process network with a private DNS bypassable network.
             mCM.bindProcessToNetwork(network.getPrivateDnsBypassingCopy());
-            final VerifyCancelInetAddressCallback callbackWithNullNetwork =
-                    new VerifyCancelInetAddressCallback(msg + " with null network ", null);
+            final InetAddressCallback callbackWithNullNetwork =
+                    new InetAddressCallback(msg + " with null network ", null);
             mDns.query(null,
                     TEST_DOMAIN, FLAG_NO_CACHE_LOOKUP, mExecutor, null, callbackWithNullNetwork);
 
@@ -996,8 +994,8 @@ public class DnsResolverTest {
                 boolean queryV6 = (i % 2 == 0);
                 final String msg = "Test continuous " + QUERY_TIMES + " queries " + TEST_DOMAIN
                         + " on " + network + ", queryV6=" + queryV6;
-                final VerifyCancelInetAddressCallback callback =
-                        new VerifyCancelInetAddressCallback(msg, null);
+                final InetAddressCallback callback =
+                        new InetAddressCallback(msg, null);
                 mDns.query(network, TEST_DOMAIN, queryV6 ? TYPE_AAAA : TYPE_A,
                         FLAG_NO_CACHE_LOOKUP, executor, null, callback);
 
@@ -1029,5 +1027,83 @@ public class DnsResolverTest {
     @Test
     public void testNoRawBinderAccess() {
         assertNull(mContext.getSystemService("dnsresolver"));
+    }
+
+    private void doTestLocalhostQuery(Executor executor) throws Exception {
+        for (Network network : getTestableNetworksAndNull()) {
+            final String msg = "Test query for localhost on " + network;
+            final InetAddressCallback callback = new InetAddressCallback(msg, null);
+            mDns.query(network, "localhost", FLAG_NO_CACHE_LOOKUP, executor, null, callback);
+            assertTrue(msg + " but no answer after " + TIMEOUT_MS + "ms.",
+                    callback.waitForAnswer());
+            callback.assertNoError();
+
+            // Should always return only IPv4 localhost
+            final Set<InetAddress> expectedAddresses = new ArraySet<>();
+            expectedAddresses.add(InetAddresses.parseNumericAddress("127.0.0.1"));
+
+            assertEquals(msg + " expected addresses do not match actual addresses",
+                    expectedAddresses, new ArraySet<>(callback.mAnswers));
+            assertEquals(msg + " expected addresses do not match InetAddress.getAllByName results",
+                    expectedAddresses,
+                    new ArraySet<>(Arrays.asList(InetAddress.getAllByName("localhost"))));
+        }
+    }
+
+    private void verifyLocalhostQuery(Executor executor, String msg, Network network,
+            int queryType, Set<InetAddress> expectedAddresses)
+            throws InterruptedException {
+        final InetAddressCallback callback =
+                new InetAddressCallback(msg, null);
+        mDns.query(network, "localhost", queryType, FLAG_NO_CACHE_LOOKUP, executor, null,
+                callback);
+        assertTrue(msg + " but no answer after " + TIMEOUT_MS + "ms.",
+                callback.waitForAnswer());
+        callback.assertNoError();
+
+        assertEquals(msg, expectedAddresses, new ArraySet<>(callback.mAnswers));
+    }
+
+    private void doTestLocalhostQuerySpecificType(Executor executor) throws Exception {
+        for (Network network : getTestableNetworksAndNull()) {
+            final String msg = "Test query for localhost specific type on " + network;
+
+            // Test TYPE_A - should always return IPv4 localhost
+            final Set<InetAddress> expectedIpv4 = Set.of(
+                    InetAddresses.parseNumericAddress("127.0.0.1"));
+            verifyLocalhostQuery(executor, msg + " TYPE_A", network, TYPE_A, expectedIpv4);
+
+            // Test TYPE_AAAA - should always return IPv6 localhost
+            final Set<InetAddress> expectedIpv6 = Set.of(InetAddresses.parseNumericAddress("::1"));
+            verifyLocalhostQuery(executor, msg + " TYPE_AAAA", network, TYPE_AAAA, expectedIpv6);
+
+            // Test TYPE_ANY - should return empty result
+            final Set<InetAddress> expectedEmpty = new ArraySet<>();
+            verifyLocalhostQuery(executor, msg + " TYPE_ANY", network, TYPE_ANY, expectedEmpty);
+        }
+    }
+
+    @ConnectivityModuleTest
+    @Test
+    public void testLocalhostQuery() throws Exception {
+        doTestLocalhostQuery(mExecutor);
+    }
+
+    @ConnectivityModuleTest
+    @Test
+    public void testLocalhostQuerySpecificType() throws Exception {
+        doTestLocalhostQuerySpecificType(mExecutor);
+    }
+
+    @ConnectivityModuleTest
+    @Test
+    public void testLocalhostQueryInline() throws Exception {
+        doTestLocalhostQuery(mExecutorInline);
+    }
+
+    @ConnectivityModuleTest
+    @Test
+    public void testLocalhostQuerySpecificTypeInline() throws Exception {
+        doTestLocalhostQuerySpecificType(mExecutorInline);
     }
 }

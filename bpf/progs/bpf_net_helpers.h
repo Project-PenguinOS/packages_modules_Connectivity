@@ -62,8 +62,21 @@ struct frag_hdr {
 #define TCP_HLEN sizeof(struct tcphdr)
 #define UDP_HLEN sizeof(struct udphdr)
 
+// copied from //bionic/libc/include/bits/tcphdr.h 'struct tcphdr' but with bitfield replaced with flags16
+struct tcphdr_with_flags16 {
+  uint16_t source;
+  uint16_t dest;
+  uint32_t seq;
+  uint32_t ack_seq;
+  uint16_t flags16;
+  uint16_t window;
+  uint16_t check;
+  uint16_t urg_ptr;
+};
+_Static_assert(sizeof(struct tcphdr_with_flags16) == sizeof(struct tcphdr), "struct tcphdr_with_flags16 ?!?");
+
 // Offsets from beginning of L4 (TCP/UDP) header
-#define TCP_OFFSET(field) offsetof(struct tcphdr, field)
+#define TCP_OFFSET(field) offsetof(struct tcphdr_with_flags16, field)
 #define UDP_OFFSET(field) offsetof(struct udphdr, field)
 
 // Offsets from beginning of L3 (IPv4) header
@@ -132,6 +145,13 @@ static struct bpf_sock *(*bpf_sk_lookup_udp)(
 static int (*bpf_sk_release)(void *sock) = (void *)BPF_FUNC_sk_release;
 
 static int (*bpf_set_retval)(int retval) = (void *)BPF_FUNC_set_retval;
+
+static long (*bpf_sock_ops_cb_flags_set)(struct bpf_sock_ops *skops, int argval)
+    = (void *)BPF_FUNC_sock_ops_cb_flags_set;
+static long (*bpf_reserve_hdr_opt)(struct bpf_sock_ops *skops, __u32 space, __u64 flags)
+    = (void *)BPF_FUNC_reserve_hdr_opt;
+static long (*bpf_store_hdr_opt)(struct bpf_sock_ops *skops, const void *from, __u32 len, __u64 flags)
+    = (void *)BPF_FUNC_store_hdr_opt;
 
 // Android only supports little endian architectures
 #define htons(x) (__builtin_constant_p(x) ? ___constant_swab16(x) : __builtin_bswap16(x))

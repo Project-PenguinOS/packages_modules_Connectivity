@@ -23,11 +23,9 @@ java_library {
         canonical_path_from_root: false,
     },
     sdk_version: "system_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     srcs: ["src/fastpair/*.proto"],
-    apex_available: [
-        "com.android.tethering",
-    ],
+    apex_available: ["com.android.tethering"],
 }
 
 java_library {
@@ -37,9 +35,7 @@ java_library {
         canonical_path_from_root: false,
     },
     sdk_version: "system_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     srcs: ["src/presence/*.proto"],
-    apex_available: [
-        "com.android.tethering",
-    ],
+    apex_available: ["com.android.tethering"],
 }

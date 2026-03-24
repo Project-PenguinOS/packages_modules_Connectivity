@@ -28,6 +28,8 @@ import static android.os.MessageQueue.OnFileDescriptorEventListener.EVENT_ERROR;
 import static android.os.MessageQueue.OnFileDescriptorEventListener.EVENT_INPUT;
 import static android.system.OsConstants.ENONET;
 
+import static com.android.net.module.util.DnsUtils.equalsIgnoreDnsCase;
+
 import android.annotation.CallbackExecutor;
 import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
@@ -35,9 +37,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.TargetApi;
 import android.content.Context;
-import android.net.NetworkUtils;
 import android.net.dns.HttpsEndpoint;
-import android.net.dns.HttpsRecord;
 import android.net.util.HttpsEndpointAccumulator;
 import android.os.Build;
 import android.os.CancellationSignal;
@@ -163,11 +163,18 @@ public final class DnsResolver {
     public static final int HTTPS_QUERY_WAIT_UNTIL_TIMEOUT = -2;
 
     private static final int NETID_UNSET = 0;
+    private static final int RCODE_NOERROR = 0;
 
     private static final DnsResolver sInstance = new DnsResolver();
     private final @Nullable Context mContext;
     private final @Nullable ConnectivityManager mConnectivityManager;
     private final @NonNull Looper mLooper;
+
+    private static final String LOCALHOST = "localhost";
+    private static final InetAddress LOCALHOST_V4 =
+            InetAddresses.parseNumericAddress("127.0.0.1");
+    private static final InetAddress LOCALHOST_V6 =
+            InetAddresses.parseNumericAddress("::1");
 
     /**
      * Get instance for DnsResolver
@@ -206,6 +213,27 @@ public final class DnsResolver {
         mContext = context;
         mLooper = looper == null ? Looper.getMainLooper() : looper;
         mConnectivityManager = context.getSystemService(ConnectivityManager.class);
+    }
+
+    private void handleLocalhostQuery(
+            boolean includeV4,
+            boolean includeV6,
+            @NonNull Executor executor,
+            @Nullable CancellationSignal cancellationSignal,
+            @NonNull Callback<? super List<InetAddress>> callback) {
+        final List<InetAddress> answers = new ArrayList<>();
+        if (includeV6) {
+            answers.add(LOCALHOST_V6);
+        }
+        if (includeV4) {
+            answers.add(LOCALHOST_V4);
+        }
+        new Handler(mLooper).post(() -> {
+            executor.execute(() -> {
+                if (cancellationSignal != null && cancellationSignal.isCanceled()) return;
+                callback.onAnswer(answers, RCODE_NOERROR);
+            });
+        });
     }
 
     /**
@@ -437,6 +465,16 @@ public final class DnsResolver {
             executor.execute(() -> callback.onError(new DnsException(ERROR_SYSTEM, e)));
             return;
         }
+
+        // Follows rfc6761 to handle localhost queries.
+        if (equalsIgnoreDnsCase(LOCALHOST, domain)) {
+            // Only include IPv4 localhost to match the behavior of
+            // InetAddress.getAllByName("localhost").
+            handleLocalhostQuery(true /* includeV4 */, false /* includeV6 */, executor,
+                    cancellationSignal, callback);
+            return;
+        }
+
         final boolean queryIpv6 = haveIpv6(queryNetwork);
         final boolean queryIpv4 = haveIpv4(queryNetwork);
 
@@ -528,6 +566,16 @@ public final class DnsResolver {
         if (cancellationSignal != null && cancellationSignal.isCanceled()) {
             return;
         }
+
+        // Follows rfc6761 to handle localhost queries.
+        if (equalsIgnoreDnsCase(LOCALHOST, domain)) {
+            // TYPE_ANY is not handled here as it is poorly defined.
+            handleLocalhostQuery(nsType == TYPE_A,
+                    nsType == TYPE_AAAA,
+                    executor, cancellationSignal, callback);
+            return;
+        }
+
         final Object lock = new Object();
         final FileDescriptor queryfd;
         final Network queryNetwork;
@@ -642,21 +690,33 @@ public final class DnsResolver {
 
         final LinkProperties linkProperties = mConnectivityManager == null ? null
                 : mConnectivityManager.getLinkProperties(queryNetwork);
-        final HttpsEndpointAccumulator accumulator =
-                new HttpsEndpointAccumulator(queryNetwork, linkProperties, callback, allFds.size(),
-                        httpsTimeoutMillis, queryIpv4, queryIpv6, new Handler(mLooper));
 
         synchronized (lock) {
-            for (FileDescriptor fd : allFds) {
-                registerFDListener(executor, fd, accumulator, cancellationSignal, lock);
+            if (cancellationSignal != null) {
+                cancellationSignal.setOnCancelListener(() -> {
+                    synchronized (lock) {
+                        allFds.forEach(fd -> cancelQuery(fd));
+                    }
+                });
             }
 
-            if (cancellationSignal == null) return;
-            cancellationSignal.setOnCancelListener(() -> {
+            // If more callbacks are needed between the accumulator and DNS resolver, replace this
+            // second CancellationSignal with a listener instead.
+            CancellationSignal queryCancellationSignal = new CancellationSignal();
+            queryCancellationSignal.setOnCancelListener(() -> {
                 synchronized (lock) {
                     allFds.forEach(fd -> cancelQuery(fd));
                 }
             });
+
+            final HttpsEndpointAccumulator accumulator =
+                    new HttpsEndpointAccumulator(queryNetwork, linkProperties, callback,
+                            allFds.size(), httpsTimeoutMillis, queryIpv4, queryIpv6,
+                            new Handler(mLooper), cancellationSignal, queryCancellationSignal);
+
+            for (FileDescriptor fd : allFds) {
+                registerFDListener(executor, fd, accumulator, cancellationSignal, lock);
+            }
         }
     }
 

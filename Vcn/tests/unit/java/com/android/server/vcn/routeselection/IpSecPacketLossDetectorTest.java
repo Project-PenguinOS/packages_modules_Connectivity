@@ -49,6 +49,8 @@ import static org.mockito.Mockito.when;
 import android.content.BroadcastReceiver;
 import android.content.Intent;
 import android.net.IpSecTransformState;
+import android.net.LinkProperties;
+import android.net.NetworkCapabilities;
 import android.os.Message;
 import android.os.OutcomeReceiver;
 import android.os.PowerManager;
@@ -757,13 +759,28 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
     }
 
     @Test
-    public void testOnLinkPropertiesOrCapabilitiesChange() throws Exception {
+    public void testOnLinkPropertiesChanged() throws Exception {
         // Start the monitor; verify the 1st poll is scheduled without delay
         startMonitorAndCaptureStateReceiver();
         verifyPollEventDelayAndScheduleNext(0 /* expectedDelayMs */);
 
         // Verify the 2nd poll is rescheduled without delay
-        mIpSecPacketLossDetector.onLinkPropertiesOrCapabilitiesChanged();
+        mIpSecPacketLossDetector.onLinkPropertiesChanged(new LinkProperties());
+        verifyPollEventDelayAndScheduleNext(0 /* expectedDelayMs */);
+
+        // Verify the 3rd poll is scheduled with configured delay
+        verifyPollEventDelayAndScheduleNext(POLL_IPSEC_STATE_INTERVAL_MS);
+    }
+
+    @Test
+    public void testOnNetworkCapabilitiesChanged() throws Exception {
+        // Start the monitor; verify the 1st poll is scheduled without delay
+        startMonitorAndCaptureStateReceiver();
+        verifyPollEventDelayAndScheduleNext(0 /* expectedDelayMs */);
+
+        // Verify the 2nd poll is rescheduled without delay
+        mIpSecPacketLossDetector.onNetworkCapabilitiesChanged(
+                new NetworkCapabilities.Builder().build());
         verifyPollEventDelayAndScheduleNext(0 /* expectedDelayMs */);
 
         // Verify the 3rd poll is scheduled with configured delay

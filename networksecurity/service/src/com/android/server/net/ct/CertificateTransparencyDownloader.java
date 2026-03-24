@@ -16,6 +16,8 @@
 
 package com.android.server.net.ct;
 
+import static com.android.server.net.ct.Config.TAG;
+
 import android.annotation.RequiresApi;
 import android.app.DownloadManager;
 import android.content.BroadcastReceiver;
@@ -41,11 +43,8 @@ import java.util.Optional;
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 class CertificateTransparencyDownloader extends BroadcastReceiver {
 
-    private static final String TAG = "CertificateTransparencyDownloader";
-
     private static final Intent INSTALL_COMPLETE = new Intent(Config.INSTALL_COMPLETE_ACTION);
 
-    private final Context mContext;
     private final DownloadHelper mDownloadHelper;
     private final SignatureVerifier mSignatureVerifier;
     private final CertificateTransparencyLogger mLogger;
@@ -54,12 +53,10 @@ class CertificateTransparencyDownloader extends BroadcastReceiver {
     private final Map<String, Long> mDownloadIds = new HashMap<>();
 
     CertificateTransparencyDownloader(
-            Context context,
             DownloadHelper downloadHelper,
             SignatureVerifier signatureVerifier,
             CertificateTransparencyLogger logger,
             Collection<CompatibilityVersion> compatVersions) {
-        mContext = context;
         mSignatureVerifier = signatureVerifier;
         mDownloadHelper = downloadHelper;
         mLogger = logger;
@@ -129,7 +126,7 @@ class CertificateTransparencyDownloader extends BroadcastReceiver {
             }
 
             if (getContentDownloadId(compatVersion) == completedId) {
-                handleContentDownloadCompleted(compatVersion, completedId);
+                handleContentDownloadCompleted(context, compatVersion, completedId);
                 return;
             }
         }
@@ -174,7 +171,7 @@ class CertificateTransparencyDownloader extends BroadcastReceiver {
     }
 
     private void handleContentDownloadCompleted(
-            CompatibilityVersion compatVersion, long downloadId) {
+            Context context, CompatibilityVersion compatVersion, long downloadId) {
         DownloadStatus status = mDownloadHelper.getDownloadStatus(downloadId);
         if (!status.isSuccessful()) {
             handleDownloadFailed(status);
@@ -198,7 +195,7 @@ class CertificateTransparencyDownloader extends BroadcastReceiver {
             return;
         }
 
-        try (InputStream inputStream = mContext.getContentResolver().openInputStream(contentUri)) {
+        try (InputStream inputStream = context.getContentResolver().openInputStream(contentUri)) {
             updateStatus = compatVersion.install(inputStream, updateStatus.toBuilder());
         } catch (IOException e) {
             Log.e(TAG, "Could not install new content", e);
@@ -206,7 +203,7 @@ class CertificateTransparencyDownloader extends BroadcastReceiver {
         }
 
         if (updateStatus.isLogListAvailable()) {
-            mContext.sendBroadcast(INSTALL_COMPLETE);
+            context.sendBroadcast(INSTALL_COMPLETE);
         }
 
         mLogger.logCTLogListUpdateStateChangedEvent(updateStatus);

@@ -23,9 +23,9 @@ import static android.net.ConnectivityManager.TYPE_MOBILE_HIPRI;
 import static android.net.ConnectivityManager.TYPE_WIFI;
 import static android.telephony.CarrierConfigManager.KEY_CARRIER_CONFIG_APPLIED_BOOL;
 import static android.telephony.CarrierConfigManager.KEY_REQUIRE_ENTITLEMENT_CHECKS_BOOL;
+import static android.telephony.CarrierConfigManager.KEY_CARRIER_SUPPORTS_TETHERING_BOOL;
 import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
-import static com.android.networkstack.apishim.ConstantsShim.KEY_CARRIER_SUPPORTS_TETHERING_BOOL;
 import static com.android.networkstack.tethering.TetheringConfiguration.OVERRIDE_TETHER_ENABLE_BPF_OFFLOAD;
 import static com.android.networkstack.tethering.TetheringConfiguration.TETHER_ENABLE_LEGACY_DHCP_SERVER;
 import static com.android.networkstack.tethering.TetheringConfiguration.TETHER_FORCE_USB_FUNCTIONS;
@@ -175,12 +175,6 @@ public class TetheringConfigurationTest {
 
             // Use the same mocking strategy as isFeatureEnabled for testing
             return isMockFlagEnabled(name, defaultValue);
-        }
-
-        @Override
-        boolean isTetherForceUpstreamAutomaticFeatureEnabled() {
-            return isMockFlagEnabled(TETHER_FORCE_UPSTREAM_AUTOMATIC_VERSION,
-                    false /* defaultEnabled */);
         }
 
         private boolean isMockFlagEnabled(@NonNull String name, boolean defaultEnabled) {
@@ -598,22 +592,7 @@ public class TetheringConfigurationTest {
         assertChooseUpstreamAutomaticallyIs(true);
     }
 
-    // The flag override only works on R-
-    @Test @IgnoreAfter(Build.VERSION_CODES.R)
-    public void testChooseUpstreamAutomatically_FlagOverride() throws Exception {
-        when(mResources.getBoolean(R.bool.config_tether_upstream_automatic))
-                .thenReturn(false);
-        setTetherForceUpstreamAutomaticFlagEnabled(true);
-        assertChooseUpstreamAutomaticallyIs(true);
-
-        setTetherForceUpstreamAutomaticFlagEnabled(null);
-        assertChooseUpstreamAutomaticallyIs(false);
-
-        setTetherForceUpstreamAutomaticFlagEnabled(false);
-        assertChooseUpstreamAutomaticallyIs(false);
-    }
-
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R) @IgnoreAfter(Build.VERSION_CODES.TIRAMISU)
+    @Test  @IgnoreAfter(Build.VERSION_CODES.TIRAMISU)
     public void testChooseUpstreamAutomatically_FlagOverrideOnSAndT() throws Exception {
         when(mResources.getBoolean(R.bool.config_tether_upstream_automatic))
                 .thenReturn(false);

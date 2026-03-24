@@ -16,13 +16,19 @@
 
 package com.android.connectivity.resources
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.nsd.DiscoveryRequest
 import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import android.os.Bundle
+import android.os.ConditionVariable
 import android.os.IBinder
 import android.view.View
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso.onData
@@ -40,13 +46,18 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import com.android.connectivity.resources.aidl.NsdPickerConnector
 import com.android.connectivity.resources.aidl.NsdServiceReceiver
+import com.android.testutils.AutoCloseTestResourcesRule
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
+import com.android.testutils.com.android.testutils.CloseableGlobalSetting
+import kotlin.test.assertTrue
 import org.hamcrest.Description
 import org.hamcrest.Matcher
 import org.hamcrest.Matchers.not
+import org.junit.After
 import org.junit.Before
 import org.junit.BeforeClass
+import org.junit.ClassRule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
@@ -58,6 +69,7 @@ import org.mockito.Mockito.verifyNoMoreInteractions
 private const val TEST_APP_NAME = "Test App"
 private const val SERVICE_NAME_1 = "Service 1"
 private const val SERVICE_NAME_2 = "Service 2"
+private const val TEST_TIMEOUT_MS = 10_000L
 
 @RunWith(DevSdkIgnoreRunner::class)
 @IgnoreUpTo(Build.VERSION_CODES.S_V2)
@@ -69,12 +81,22 @@ class NsdPickerActivityTest {
     private lateinit var mServiceReceiver: NsdServiceReceiver
 
     companion object {
+        @get:ClassRule
+        val autoCloseRule = AutoCloseTestResourcesRule()
+
         @JvmStatic
         @BeforeClass
         fun setUpClass() {
             val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
             device.wakeUp()
             device.executeShellCommand("wm dismiss-keyguard")
+            // As per Espresso prerequisites, disable animations
+            autoCloseRule.add(
+                CloseableGlobalSetting("transition_animation_scale").apply { setValue("0") })
+            autoCloseRule.add(
+                CloseableGlobalSetting("window_animation_scale").apply { setValue("0") })
+            autoCloseRule.add(
+                CloseableGlobalSetting("animator_duration_scale").apply { setValue("0") })
             device.waitForIdle()
         }
     }
@@ -95,9 +117,12 @@ class NsdPickerActivityTest {
 
     private fun makeStartIntent(connector: NsdPickerConnector, appName: String): Intent {
         val intent = Intent(mContext, NsdPickerActivity::class.java)
+        intent.component = ComponentName(mContext, NsdPickerActivity::class.java)
         val bundle = Bundle()
         bundle.putString(NsdPickerConnector.EXTRA_APP_NAME, appName)
         bundle.putBinder(NsdPickerConnector.EXTRA_CONNECTOR, ForwardingConnector(connector))
+        bundle.putParcelable(NsdPickerConnector.EXTRA_REQUEST,
+            DiscoveryRequest.Builder("_test._tcp").build())
         intent.putExtras(bundle)
         return intent
     }
@@ -111,6 +136,13 @@ class NsdPickerActivityTest {
 
         verify(mMockConnector).setServiceReceiver(receiverCaptor.capture())
         mServiceReceiver = receiverCaptor.value
+    }
+
+    @After
+    fun tearDown() {
+        if (this::mScenario.isInitialized) {
+            mScenario.close()
+        }
     }
 
     @Test
@@ -177,10 +209,61 @@ class NsdPickerActivityTest {
     @Test
     fun testDiscoveryCancelled() {
         onView(withText(R.string.choose_device_title)).check(matches(isDisplayed()))
+
+        assertFinishesActivity {
+            mServiceReceiver.onCancelled()
+        }
+        verifyNoMoreInteractions(mMockConnector)
+    }
+
+    @Test
+    fun testDiscoveryCancelled_whileStopped() {
+        // Send a second intent while the dialog is already shown
+        val otherAppName = "Other Test App"
+        val otherConnector = mock(NsdPickerConnector::class.java)
+        val newIntent = makeStartIntent(otherConnector, otherAppName)
+        mScenario.onActivity { activity ->
+            activity.onNewIntent(newIntent)
+        }
+
+        // Stop the activity (move from RESUMED to CREATED), then cancel the first discovery
+        mScenario.moveToState(Lifecycle.State.CREATED)
         mServiceReceiver.onCancelled()
 
-        onView(withText(R.string.choose_device_title)).check(doesNotExist())
-        verifyNoMoreInteractions(mMockConnector)
+        // Reopen the activity: the new intent should be shown
+        mScenario.moveToState(Lifecycle.State.RESUMED)
+        onDialogView(
+            withText(mContext.getString(R.string.choose_device_summary, otherAppName))
+        )
+            .check(matches(isDisplayed()))
+    }
+
+    @Test
+    fun testDiscoveryCancelled_whileDestroyedAndRecreated() {
+        // Send a second intent while the dialog is already shown
+        val otherAppName = "Other Test App"
+        val otherConnector = mock(NsdPickerConnector::class.java)
+        val newIntent = makeStartIntent(otherConnector, otherAppName)
+        mScenario.onActivity { activity ->
+            activity.onNewIntent(newIntent)
+        }
+
+        // Stop the activity, cancelling the request while it is destroyed, and recreate it before
+        // resuming it.
+        mScenario.moveToState(Lifecycle.State.CREATED)
+        mServiceReceiver.onCancelled()
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        // Do not use mScenario.recreate() as it resumes the activity before recreating it
+        mScenario.onActivity {
+            it.recreate()
+        }
+        mScenario.moveToState(Lifecycle.State.RESUMED)
+
+        // The new intent should be shown on recreation
+        onDialogView(
+            withText(mContext.getString(R.string.choose_device_summary, otherAppName))
+        )
+            .check(matches(isDisplayed()))
     }
 
     @Test
@@ -247,6 +330,19 @@ class NsdPickerActivityTest {
             withText(mContext.getString(R.string.choose_device_summary, otherAppName))
         )
             .check(matches(isDisplayed()))
+    }
+
+    private fun assertFinishesActivity(action: () -> Unit) {
+        val cv = ConditionVariable(false)
+        mScenario.onActivity {
+            it.lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onDestroy(owner: LifecycleOwner) {
+                    cv.open()
+                }
+            })
+        }
+        action()
+        assertTrue(cv.block(TEST_TIMEOUT_MS), "Activity did not finish with $TEST_TIMEOUT_MS ms")
     }
 }
 

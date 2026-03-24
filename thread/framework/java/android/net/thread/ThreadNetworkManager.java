@@ -46,9 +46,6 @@ public final class ThreadNetworkManager {
      * <p>This is needed because at the time this service is created, it needs to support both
      * Android U and V but {@link Context#THREAD_NETWORK_SERVICE} Is only available on the V branch.
      *
-     * <p>Note that this is not added to NetworkStack ConstantsShim because we need this constant in
-     * the framework library while ConstantsShim is only linked against the service library.
-     *
      * @hide
      */
     public static final String SERVICE_NAME = "thread_network";
@@ -59,9 +56,6 @@ public final class ThreadNetworkManager {
      * <p>This is needed because at the time this service is created, it needs to support both
      * Android U and V but {@link PackageManager#FEATURE_THREAD_NETWORK} Is only available on the V
      * branch.
-     *
-     * <p>Note that this is not added to NetworkStack COnstantsShim because we need this constant in
-     * the framework library while ConstantsShim is only linked against the service library.
      *
      * @hide
      */

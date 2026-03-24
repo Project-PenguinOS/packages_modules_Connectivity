@@ -58,7 +58,6 @@ private const val TIMEOUT_MS = 2_000L
 @DevSdkIgnoreRunner.MonitorThreadLeak
 @RunWith(DevSdkIgnoreRunner::class)
 @SmallTest
-@IgnoreUpTo(Build.VERSION_CODES.R)
 class CSCaptivePortalAppTest : CSTest() {
     private val WIFI_IFACE = "wifi0"
     private val ETHERNET_IFACE = "eth0"

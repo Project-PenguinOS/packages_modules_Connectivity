@@ -236,7 +236,6 @@ private val NEXTHOP = InetAddresses.parseNumericAddress("fe80::abcd")
 @DevSdkIgnoreRunner.RestoreDefaultNetwork
 // NetworkAgent is not updatable in R-, so this test does not need to be compatible with older
 // versions. NetworkAgent was also based on AsyncChannel before S so cannot be tested the same way.
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @RunWith(DevSdkIgnoreRunner::class)
 class NetworkAgentTest {
     @get:Rule
@@ -363,9 +362,7 @@ class NetworkAgentTest {
         addCapability(NET_CAPABILITY_NOT_SUSPENDED)
         addCapability(NET_CAPABILITY_NOT_ROAMING)
         if (!transports.contains(TRANSPORT_VPN)) addCapability(NET_CAPABILITY_NOT_VPN)
-        if (SdkLevel.isAtLeastS()) {
-            addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
-        }
+        addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
         if (null != specifier) {
             setNetworkSpecifier(CompatUtil.makeEthernetNetworkSpecifier(specifier))
         }
@@ -924,7 +921,6 @@ class NetworkAgentTest {
             this != null && transports.all { hasTransport(it) }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     fun testSetUnderlyingNetworksAndVpnSpecifier() {
         val mySessionId = "MySession12345"
         val request = NetworkRequest.Builder()
@@ -941,9 +937,7 @@ class NetworkAgentTest {
             addTransportType(TRANSPORT_VPN)
             removeCapability(NET_CAPABILITY_NOT_VPN)
             setTransportInfo(VpnTransportInfo(VpnManager.TYPE_VPN_SERVICE, mySessionId))
-            if (SdkLevel.isAtLeastS()) {
-                addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
-            }
+            addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
         }
         val defaultNetwork = mCM.activeNetwork
         assertNotNull(defaultNetwork)
@@ -1056,7 +1050,6 @@ class NetworkAgentTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     fun testAgentStartsInConnecting() {
         val mockContext = mock(Context::class.java)
         val mockCm = mock(ConnectivityManager::class.java)
@@ -1181,7 +1174,6 @@ class NetworkAgentTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     fun testSetLingerDuration() {
         // This test will create two networks and check that the one with the stronger
         // score wins out for a request that matches them both. And the weaker agent will
@@ -1259,7 +1251,6 @@ class NetworkAgentTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     fun testSetSubscriberId() {
         val imsi = UUID.randomUUID().toString()
         val config = NetworkAgentConfig.Builder().setSubscriberId(imsi).build()
@@ -1274,7 +1265,6 @@ class NetworkAgentTest {
     // TODO: Refactor helper functions to util class and move this test case to
     //  {@link android.net.cts.ConnectivityManagerTest}.
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     fun testRegisterBestMatchingNetworkCallback() {
         // Register best matching network callback with additional condition that will be
         // exercised later. This assumes the test network agent has NOT_VCN_MANAGED in it and

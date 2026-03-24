@@ -37,13 +37,13 @@ aidl_interface {
             apex_available: [
                 "com.android.tethering",
             ],
-            min_sdk_version: "30",
+            min_sdk_version: "31",
         },
         ndk: {
             apex_available: [
                 "com.android.tethering",
             ],
-            min_sdk_version: "30",
+            min_sdk_version: "31",
         },
     },
     versions: ["1"],
@@ -52,7 +52,7 @@ aidl_interface {
 
 cc_library_static {
     name: "connectivity_native_aidl_interface-lateststable-ndk",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     whole_static_libs: [
         "connectivity_native_aidl_interface-V1-ndk",
     ],
@@ -64,20 +64,18 @@ cc_library_static {
 java_library {
     name: "connectivity_native_aidl_interface-lateststable-java",
     sdk_version: "system_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     static_libs: [
         "connectivity_native_aidl_interface-V1-java",
     ],
-    apex_available: [
-        "com.android.tethering",
-    ],
+    apex_available: ["com.android.tethering"],
 }
 
 // The library name match the service-connectivity jarjar rules that put the JNI utils in the
 // android.net.connectivity.com.android.net.module.util package.
 cc_library_shared {
     name: "libandroid_net_connectivity_com_android_net_module_util_jni",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     cflags: [
         "-Wall",
         "-Werror",
@@ -105,7 +103,7 @@ cc_library_shared {
     srcs: [
         "jni/commonconnectivity/onload.cpp",
     ],
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     shared_libs: [
         "libbinder_ndk",
         "liblog",
@@ -127,7 +125,7 @@ cc_library_shared {
 
 cc_library_shared {
     name: "libservice-connectivity",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     cflags: [
         "-Wall",
         "-Werror",
@@ -172,15 +170,7 @@ cc_library_shared {
 java_library {
     name: "service-connectivity-pre-jarjar",
     sdk_version: "system_server_current",
-    min_sdk_version: "30",
-    // NetworkStackApiShimSettingsForCurrentBranch provides the latest available shims depending on
-    // the branch to "service-connectivity".
-    // There are Tethering.apk and TetheringNext.apk variants for the tethering APEX,
-    // which use NetworkStackApiStableShims and NetworkStackApiCurrentShims respectively.
-    // Note that there can be no service-connectivity-next because it would need to be configured in
-    // default_art_config.mk which doesn't support conditionals, hence this scheme of using a
-    // variable here.
-    defaults: ["NetworkStackApiShimSettingsForCurrentBranch"],
+    min_sdk_version: "31",
     srcs: [
         "src/**/*.java",
         ":framework-connectivity-shared-srcs",
@@ -232,9 +222,7 @@ java_library {
         "service-connectivity-stats-protos",
         "jsr305",
     ],
-    apex_available: [
-        "com.android.tethering",
-    ],
+    apex_available: ["com.android.tethering"],
     lint: {
         baseline_filename: "lint-baseline.xml",
 
@@ -253,7 +241,7 @@ java_library {
 java_library {
     name: "service-connectivity-protos",
     sdk_version: "system_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     proto: {
         type: "nano",
     },
@@ -261,9 +249,7 @@ java_library {
         ":system-messages-proto-src",
     ],
     libs: ["libprotobuf-java-nano"],
-    apex_available: [
-        "com.android.tethering",
-    ],
+    apex_available: ["com.android.tethering"],
     lint: {
         strict_updatability_linting: true,
 
@@ -273,7 +259,7 @@ java_library {
 java_defaults {
     name: "service-connectivity-defaults",
     sdk_version: "system_server_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     defaults: [
         "standalone-system-server-module-optimize-defaults",
     ],
@@ -309,9 +295,7 @@ java_defaults {
         "framework-permission-s.stubs.module_lib",
     ],
     jarjar_rules: ":connectivity-jarjar-rules",
-    apex_available: [
-        "com.android.tethering",
-    ],
+    apex_available: ["com.android.tethering"],
     optimize: {
         proguard_flags_files: ["proguard.flags"],
     },
@@ -346,7 +330,7 @@ java_library {
 java_library_static {
     name: "service-connectivity-stats-protos",
     sdk_version: "system_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     proto: {
         type: "lite",
     },
@@ -489,7 +473,7 @@ cc_library_static {
         "-Werror",
     ],
     export_generated_headers: ["statslog_connectivity_sdk30.h"],
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     apex_available: ["com.android.tethering"],
     shared_libs: [
         "libcutils",

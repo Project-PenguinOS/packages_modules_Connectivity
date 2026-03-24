@@ -142,8 +142,6 @@ import com.android.networkstack.tethering.BpfCoordinator.ClientInfo;
 import com.android.networkstack.tethering.BpfCoordinator.Ipv6DownstreamRule;
 import com.android.networkstack.tethering.BpfCoordinator.Ipv6UpstreamRule;
 import com.android.testutils.DevSdkIgnoreRule;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreAfter;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.TestBpfMap;
 import com.android.testutils.TestableNetworkStatsProviderCbBinder;
 import com.android.testutils.com.android.testutils.SetFeatureFlagsRule;
@@ -699,11 +697,7 @@ public class BpfCoordinatorTest {
     }
 
     private void updateStatsEntry(@NonNull TetherStatsParcel stats) throws Exception {
-        if (mDeps.isAtLeastS()) {
-            updateStatsEntryToStatsMap(stats);
-        } else {
-            when(mNetd.tetherOffloadGetStats()).thenReturn(new TetherStatsParcel[] {stats});
-        }
+        updateStatsEntryToStatsMap(stats);
     }
 
     // Update specific tether stats list and wait for the stats cache is updated by polling thread
@@ -712,12 +706,8 @@ public class BpfCoordinatorTest {
     // doesn't store the previous entries.
     private void updateStatsEntriesAndWaitForUpdate(@NonNull TetherStatsParcel[] tetherStatsList)
             throws Exception {
-        if (mDeps.isAtLeastS()) {
-            for (TetherStatsParcel stats : tetherStatsList) {
-                updateStatsEntry(stats);
-            }
-        } else {
-            when(mNetd.tetherOffloadGetStats()).thenReturn(tetherStatsList);
+        for (TetherStatsParcel stats : tetherStatsList) {
+            updateStatsEntry(stats);
         }
 
         mTestLooper.moveTimeForward(DEFAULT_TETHER_OFFLOAD_POLL_INTERVAL_MS);
@@ -732,19 +722,11 @@ public class BpfCoordinatorTest {
     // because it doesn't store the previous entries.
     private void updateStatsEntryForTetherOffloadGetAndClearStats(TetherStatsParcel stats)
             throws Exception {
-        if (mDeps.isAtLeastS()) {
-            updateStatsEntryToStatsMap(stats);
-        } else {
-            when(mNetd.tetherOffloadGetAndClearStats(stats.ifIndex)).thenReturn(stats);
-        }
+        updateStatsEntryToStatsMap(stats);
     }
 
     private void clearStatsInvocations() {
-        if (mDeps.isAtLeastS()) {
-            clearInvocations(mBpfStatsMap);
-        } else {
-            clearInvocations(mNetd);
-        }
+        clearInvocations(mBpfStatsMap);
     }
 
     private <T> T verifyWithOrder(@Nullable InOrder inOrder, @NonNull T t) {
@@ -760,24 +742,15 @@ public class BpfCoordinatorTest {
     }
 
     private void verifyTetherOffloadGetStats() throws Exception {
-        if (mDeps.isAtLeastS()) {
-            verify(mBpfStatsMap).forEach(any());
-        } else {
-            verify(mNetd).tetherOffloadGetStats();
-        }
+        verify(mBpfStatsMap).forEach(any());
     }
 
     private void verifyNeverTetherOffloadGetStats() throws Exception {
-        if (mDeps.isAtLeastS()) {
-            verify(mBpfStatsMap, never()).forEach(any());
-        } else {
-            verify(mNetd, never()).tetherOffloadGetStats();
-        }
+        verify(mBpfStatsMap, never()).forEach(any());
     }
 
     private void verifyStartUpstreamIpv6Forwarding(@Nullable InOrder inOrder, int upstreamIfindex,
             @NonNull Set<IpPrefix> upstreamPrefixes) throws Exception {
-        if (!mDeps.isAtLeastS()) return;
         ArrayMap<TetherUpstream6Key, Tether6Value> expected = new ArrayMap<>();
         for (IpPrefix upstreamPrefix : upstreamPrefixes) {
             final byte[] prefix64 = prefixToIp64(upstreamPrefix);
@@ -804,7 +777,6 @@ public class BpfCoordinatorTest {
 
     private void verifyStopUpstreamIpv6Forwarding(@Nullable InOrder inOrder,
             @NonNull Set<IpPrefix> upstreamPrefixes) throws Exception {
-        if (!mDeps.isAtLeastS()) return;
         Set<TetherUpstream6Key> expected = new ArraySet<>();
         for (IpPrefix upstreamPrefix : upstreamPrefixes) {
             final byte[] prefix64 = prefixToIp64(upstreamPrefix);
@@ -820,7 +792,6 @@ public class BpfCoordinatorTest {
     }
 
     private void verifyNoUpstreamIpv6ForwardingChange(@Nullable InOrder inOrder) throws Exception {
-        if (!mDeps.isAtLeastS()) return;
         if (inOrder != null) {
             inOrder.verify(mBpfUpstream6Map, never()).deleteEntry(any());
             inOrder.verify(mBpfUpstream6Map, never()).insertEntry(any(), any());
@@ -834,14 +805,12 @@ public class BpfCoordinatorTest {
 
     private void verifyAddUpstreamRule(@Nullable InOrder inOrder,
             @NonNull Ipv6UpstreamRule rule) throws Exception {
-        if (!mDeps.isAtLeastS()) return;
         verifyWithOrder(inOrder, mBpfUpstream6Map).insertEntry(
                 rule.makeTetherUpstream6Key(), rule.makeTether6Value());
     }
 
     private void verifyAddUpstreamRules(@Nullable InOrder inOrder,
             @NonNull Set<Ipv6UpstreamRule> rules) throws Exception {
-        if (!mDeps.isAtLeastS()) return;
         ArrayMap<TetherUpstream6Key, Tether6Value> expected = new ArrayMap<>();
         for (Ipv6UpstreamRule rule : rules) {
             expected.put(rule.makeTetherUpstream6Key(), rule.makeTether6Value());
@@ -867,37 +836,26 @@ public class BpfCoordinatorTest {
 
     private void verifyAddDownstreamRule(@Nullable InOrder inOrder,
             @NonNull Ipv6DownstreamRule rule) throws Exception {
-        if (mDeps.isAtLeastS()) {
-            verifyWithOrder(inOrder, mBpfDownstream6Map).updateEntry(
-                    rule.makeTetherDownstream6Key(), rule.makeTether6Value());
-        } else {
-            verifyWithOrder(inOrder, mNetd).tetherOffloadRuleAdd(matches(rule));
-        }
+        verifyWithOrder(inOrder, mBpfDownstream6Map).updateEntry(
+                rule.makeTetherDownstream6Key(), rule.makeTether6Value());
     }
 
     private void verifyNeverAddUpstreamRule() throws Exception {
-        if (!mDeps.isAtLeastS()) return;
         verify(mBpfUpstream6Map, never()).insertEntry(any(), any());
     }
 
     private void verifyNeverAddDownstreamRule() throws Exception {
-        if (mDeps.isAtLeastS()) {
-            verify(mBpfDownstream6Map, never()).updateEntry(any(), any());
-        } else {
-            verify(mNetd, never()).tetherOffloadRuleAdd(any());
-        }
+        verify(mBpfDownstream6Map, never()).updateEntry(any(), any());
     }
 
     private void verifyRemoveUpstreamRule(@Nullable InOrder inOrder,
             @NonNull final Ipv6UpstreamRule rule) throws Exception {
-        if (!mDeps.isAtLeastS()) return;
         verifyWithOrder(inOrder, mBpfUpstream6Map).deleteEntry(
                 rule.makeTetherUpstream6Key());
     }
 
     private void verifyRemoveUpstreamRules(@Nullable InOrder inOrder,
             @NonNull Set<Ipv6UpstreamRule> rules) throws Exception {
-        if (!mDeps.isAtLeastS()) return;
         List<TetherUpstream6Key> expected = new ArrayList<>();
         for (Ipv6UpstreamRule rule : rules) {
             expected.add(rule.makeTetherUpstream6Key());
@@ -916,64 +874,43 @@ public class BpfCoordinatorTest {
 
     private void verifyRemoveDownstreamRule(@Nullable InOrder inOrder,
             @NonNull final Ipv6DownstreamRule rule) throws Exception {
-        if (mDeps.isAtLeastS()) {
-            verifyWithOrder(inOrder, mBpfDownstream6Map).deleteEntry(
-                    rule.makeTetherDownstream6Key());
-        } else {
-            verifyWithOrder(inOrder, mNetd).tetherOffloadRuleRemove(matches(rule));
-        }
+        verifyWithOrder(inOrder, mBpfDownstream6Map).deleteEntry(
+                rule.makeTetherDownstream6Key());
     }
 
     private void verifyNeverRemoveUpstreamRule() throws Exception {
-        if (!mDeps.isAtLeastS()) return;
         verify(mBpfUpstream6Map, never()).deleteEntry(any());
     }
 
     private void verifyNeverRemoveDownstreamRule() throws Exception {
-        if (mDeps.isAtLeastS()) {
-            verify(mBpfDownstream6Map, never()).deleteEntry(any());
-        } else {
-            verify(mNetd, never()).tetherOffloadRuleRemove(any());
-        }
+        verify(mBpfDownstream6Map, never()).deleteEntry(any());
     }
 
     private void verifyTetherOffloadSetInterfaceQuota(@Nullable InOrder inOrder, int ifIndex,
             long quotaBytes, boolean isInit) throws Exception {
-        if (mDeps.isAtLeastS()) {
-            final S32 key = new S32(ifIndex);
-            verifyWithOrder(inOrder, mBpfStatsMap).getValue(key);
-            if (isInit) {
-                verifyWithOrder(inOrder, mBpfStatsMap).insertEntry(key, new TetherStatsValue(
-                        0L /* rxPackets */, 0L /* rxBytes */, 0L /* rxErrors */,
-                        0L /* txPackets */, 0L /* txBytes */, 0L /* txErrors */));
-            }
-            verifyWithOrder(inOrder, mBpfLimitMap).updateEntry(new S32(ifIndex),
-                    new S64(quotaBytes));
-        } else {
-            verifyWithOrder(inOrder, mNetd).tetherOffloadSetInterfaceQuota(ifIndex, quotaBytes);
+        final S32 key = new S32(ifIndex);
+        verifyWithOrder(inOrder, mBpfStatsMap).getValue(key);
+        if (isInit) {
+            verifyWithOrder(inOrder, mBpfStatsMap).insertEntry(key, new TetherStatsValue(
+                    0L /* rxPackets */, 0L /* rxBytes */, 0L /* rxErrors */,
+                    0L /* txPackets */, 0L /* txBytes */, 0L /* txErrors */));
         }
+        verifyWithOrder(inOrder, mBpfLimitMap).updateEntry(new S32(ifIndex),
+                new S64(quotaBytes));
     }
 
     private void verifyNeverTetherOffloadSetInterfaceQuota(@NonNull InOrder inOrder)
             throws Exception {
-        if (mDeps.isAtLeastS()) {
-            inOrder.verify(mBpfStatsMap, never()).getValue(any());
-            inOrder.verify(mBpfStatsMap, never()).insertEntry(any(), any());
-            inOrder.verify(mBpfLimitMap, never()).updateEntry(any(), any());
-        } else {
-            inOrder.verify(mNetd, never()).tetherOffloadSetInterfaceQuota(anyInt(), anyLong());
-        }
+        inOrder.verify(mBpfStatsMap, never()).getValue(any());
+        inOrder.verify(mBpfStatsMap, never()).insertEntry(any(), any());
+        inOrder.verify(mBpfLimitMap, never()).updateEntry(any(), any());
     }
 
     private void verifyTetherOffloadGetAndClearStats(@NonNull InOrder inOrder, int ifIndex)
             throws Exception {
-        if (mDeps.isAtLeastS()) {
-            inOrder.verify(mBpfStatsMap).getValue(new S32(ifIndex));
-            inOrder.verify(mBpfStatsMap).deleteEntry(new S32(ifIndex));
-            inOrder.verify(mBpfLimitMap).deleteEntry(new S32(ifIndex));
-        } else {
-            inOrder.verify(mNetd).tetherOffloadGetAndClearStats(ifIndex);
-        }
+        inOrder.verify(mBpfStatsMap).getValue(new S32(ifIndex));
+        inOrder.verify(mBpfStatsMap).deleteEntry(new S32(ifIndex));
+        inOrder.verify(mBpfLimitMap).deleteEntry(new S32(ifIndex));
     }
 
     // S+ and R api minimum tests.
@@ -982,13 +919,10 @@ public class BpfCoordinatorTest {
     // late stage by manual cherry pick. It is risky if the R code flow has broken and be found at
     // the last minute.
     // TODO: remove once presubmit tests on R even the code is submitted on S.
-    private void checkTetherOffloadRuleAddAndRemove(boolean usingApiS) throws Exception {
+    private void checkTetherOffloadRuleAddAndRemove() throws Exception {
         setupFunctioningNetdInterface();
 
-        // Replace Dependencies#isAtLeastS() for testing R and S+ BPF map apis. Note that |mDeps|
-        // must be mocked before calling #makeBpfCoordinator which use |mDeps| to initialize the
-        // coordinator.
-        doReturn(usingApiS).when(mDeps).isAtLeastS();
+
         final BpfCoordinator coordinator = makeBpfCoordinator();
 
         final String mobileIface = "rmnet_data0";
@@ -1021,23 +955,15 @@ public class BpfCoordinatorTest {
         verifyTetherOffloadGetAndClearStats(inOrder, mobileIfIndex);
     }
 
-    // TODO: remove once presubmit tests on R even the code is submitted on S.
     @Test
-    public void testTetherOffloadRuleAddAndRemoveSdkR() throws Exception {
-        checkTetherOffloadRuleAddAndRemove(false /* R */);
+    public void testTetherOffloadRuleAddAndRemove() throws Exception {
+        checkTetherOffloadRuleAddAndRemove();
     }
 
-    // TODO: remove once presubmit tests on R even the code is submitted on S.
-    @Test
-    public void testTetherOffloadRuleAddAndRemoveAtLeastSdkS() throws Exception {
-        checkTetherOffloadRuleAddAndRemove(true /* S+ */);
-    }
-
-    // TODO: remove once presubmit tests on R even the code is submitted on S.
-    private void checkTetherOffloadGetStats(boolean usingApiS) throws Exception {
+    private void checkTetherOffloadGetStats() throws Exception {
         setupFunctioningNetdInterface();
 
-        doReturn(usingApiS).when(mDeps).isAtLeastS();
+
         final BpfCoordinator coordinator = makeBpfCoordinator();
 
         final String mobileIface = "rmnet_data0";
@@ -1057,16 +983,9 @@ public class BpfCoordinatorTest {
         mTetherStatsProviderCb.expectNotifyStatsUpdated(expectedIfaceStats, expectedUidStats);
     }
 
-    // TODO: remove once presubmit tests on R even the code is submitted on S.
     @Test
-    public void testTetherOffloadGetStatsSdkR() throws Exception {
-        checkTetherOffloadGetStats(false /* R */);
-    }
-
-    // TODO: remove once presubmit tests on R even the code is submitted on S.
-    @Test
-    public void testTetherOffloadGetStatsAtLeastSdkS() throws Exception {
-        checkTetherOffloadGetStats(true /* S+ */);
+    public void testTetherOffloadGetStats() throws Exception {
+        checkTetherOffloadGetStats();
     }
 
     @Test
@@ -1567,7 +1486,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testBpfDisabledbyNoBpfDownstream6Map() throws Exception {
         setupFunctioningNetdInterface();
         doReturn(null).when(mDeps).getBpfDownstream6Map();
@@ -1576,7 +1494,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testBpfDisabledbyNoBpfUpstream6Map() throws Exception {
         setupFunctioningNetdInterface();
         doReturn(null).when(mDeps).getBpfUpstream6Map();
@@ -1585,7 +1502,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testBpfDisabledbyNoBpfDownstream4Map() throws Exception {
         setupFunctioningNetdInterface();
         doReturn(null).when(mDeps).getBpfDownstream4Map();
@@ -1594,7 +1510,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testBpfDisabledbyNoBpfUpstream4Map() throws Exception {
         setupFunctioningNetdInterface();
         doReturn(null).when(mDeps).getBpfUpstream4Map();
@@ -1603,7 +1518,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testBpfDisabledbyNoBpfStatsMap() throws Exception {
         setupFunctioningNetdInterface();
         doReturn(null).when(mDeps).getBpfStatsMap();
@@ -1612,7 +1526,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testBpfDisabledbyNoBpfLimitMap() throws Exception {
         setupFunctioningNetdInterface();
         doReturn(null).when(mDeps).getBpfLimitMap();
@@ -1621,7 +1534,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testBpfMapClear() throws Exception {
         setupFunctioningNetdInterface();
 
@@ -1635,7 +1547,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testAttachDetachBpfProgram() throws Exception {
         setupFunctioningNetdInterface();
 
@@ -1765,7 +1676,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testStartStopConntrackMonitoring() throws Exception {
         setupFunctioningNetdInterface();
 
@@ -1786,23 +1696,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.Q)
-    @IgnoreAfter(Build.VERSION_CODES.R)
-    // Only run this test on Android R.
-    public void testStartStopConntrackMonitoring_R() throws Exception {
-        setupFunctioningNetdInterface();
-
-        final BpfCoordinator coordinator = makeBpfCoordinator(false /* addDefaultIpServer */);
-
-        coordinator.addIpServer(mIpServer);
-        verify(mConntrackMonitor, never()).start();
-
-        coordinator.removeIpServer(mIpServer);
-        verify(mConntrackMonitor, never()).stop();
-    }
-
-    @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testStartStopConntrackMonitoringWithTwoDownstreamIfaces() throws Exception {
         setupFunctioningNetdInterface();
 
@@ -1901,7 +1794,6 @@ public class BpfCoordinatorTest {
     // TODO: Test the IPv4 and IPv6 exist concurrently.
     // TODO: Test the IPv4 rule delete failed.
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testSetDataLimitOnRule4Change() throws Exception {
         final BpfCoordinator coordinator = makeBpfCoordinator();
         initBpfCoordinatorForRule4(coordinator);
@@ -1981,7 +1873,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testAddDevMapRule6() throws Exception {
         final BpfCoordinator coordinator = makeBpfCoordinator();
 
@@ -2005,7 +1896,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testAddDevMapRule4() throws Exception {
         final BpfCoordinator coordinator = makeBpfCoordinator();
         initBpfCoordinatorForRule4(coordinator);
@@ -2029,7 +1919,6 @@ public class BpfCoordinatorTest {
 
     @FeatureFlag(name = TETHER_ACTIVE_SESSIONS_METRICS)
     // BPF IPv4 forwarding only supports on S+.
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     @Test
     public void testMaxConnectionCount_metricsEnabled() throws Exception {
         doTestMaxConnectionCount(true);
@@ -2103,7 +1992,6 @@ public class BpfCoordinatorTest {
 
     @FeatureFlag(name = TETHER_ACTIVE_SESSIONS_METRICS)
     // BPF IPv4 forwarding only supports on S+.
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     @Test
     public void doTestMaxConnectionCount_removeClient_metricsEnabled() throws Exception {
         doTestMaxConnectionCount_removeClient(true);
@@ -2176,7 +2064,6 @@ public class BpfCoordinatorTest {
 
     @FeatureFlag(name = TETHER_ACTIVE_SESSIONS_METRICS)
     // BPF IPv4 forwarding only supports on S+.
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     @Test
     public void testSendActiveSessionsReported_metricsEnabled() throws Exception {
         doTestSendActiveSessionsReported(true);
@@ -2306,7 +2193,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testRefreshConntrackTimeout_Upstream4Map() throws Exception {
         // TODO: Replace the dependencies BPF map with a non-mocked TestBpfMap object.
         final TestBpfMap<Tether4Key, Tether4Value> bpfUpstream4Map =
@@ -2322,7 +2208,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testRefreshConntrackTimeout_Downstream4Map() throws Exception {
         // TODO: Replace the dependencies BPF map with a non-mocked TestBpfMap object.
         final TestBpfMap<Tether4Key, Tether4Value> bpfDownstream4Map =
@@ -2338,7 +2223,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testNotAllowOffloadByConntrackMessageDestinationPort() throws Exception {
         final BpfCoordinator coordinator = makeBpfCoordinator();
         initBpfCoordinatorForRule4(coordinator);
@@ -2520,7 +2404,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testTetherOffloadRule4Clear_RemoveDownstream() throws Exception {
         final BpfCoordinator coordinator = makeBpfCoordinator();
 
@@ -2579,7 +2462,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testTetherOffloadRule4Clear_ChangeOrRemoveUpstream() throws Exception {
         final BpfCoordinator coordinator = makeBpfCoordinator();
 
@@ -2616,7 +2498,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testTetherOffloadClientAddRemove() throws Exception {
         final BpfCoordinator coordinator = makeBpfCoordinator();
 
@@ -2811,28 +2692,24 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testAddTetherOffloadRule4LowMtuFromLinkProperties() throws Exception {
         verifyAddTetherOffloadRule4Mtu(
                 IPV4_MIN_MTU, false /* isKernelMtu */, IPV4_MIN_MTU /* expectedMtu */);
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testAddTetherOffloadRule4LowMtuFromKernel() throws Exception {
         verifyAddTetherOffloadRule4Mtu(
                 IPV4_MIN_MTU, true /* isKernelMtu */, IPV4_MIN_MTU /* expectedMtu */);
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testAddTetherOffloadRule4LessThanIpv4MinMtu() throws Exception {
         verifyAddTetherOffloadRule4Mtu(
                 IPV4_MIN_MTU - 1, false /* isKernelMtu */, IPV4_MIN_MTU /* expectedMtu */);
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testAddTetherOffloadRule4InvalidMtu() throws Exception {
         verifyAddTetherOffloadRule4Mtu(INVALID_MTU, false /* isKernelMtu */,
                 NetworkStackConstants.ETHER_MTU /* expectedMtu */);
@@ -2999,7 +2876,6 @@ public class BpfCoordinatorTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testUpdateUpstreamNetworkState() throws Exception {
         verifyUpdateUpstreamNetworkState();
     }

@@ -91,6 +91,9 @@ public class DnsHttpsRecord extends DnsRecord {
     @VisibleForTesting(visibility = PACKAGE)
     public static final String DEFAULT_HTTPS_ALPN_ID = "http/1.1";
 
+    @VisibleForTesting(visibility = PACKAGE)
+    public static final int ALIAS_MODE_PRIORITY = 0;
+
     public DnsHttpsRecord(@DnsPacket.RecordType int rType, @NonNull ByteBuffer buff)
             throws IllegalStateException, ParseException, BufferUnderflowException {
         super(rType, buff);
@@ -120,6 +123,13 @@ public class DnsHttpsRecord extends DnsRecord {
                             + mTargetName.length());
         }
 
+        // According to RFC 9460 2.4.2, in AliasMode, recipients MUST ignore any SvcParams that are
+        // present.
+        if (mSvcPriority == ALIAS_MODE_PRIORITY) {
+            // Skip processing any SvcParams if the record is in AliasMode.
+            return;
+        }
+
         // Start here as 0 is a valid SvcParamKey value
         int previousKey = -1;
 
@@ -137,6 +147,23 @@ public class DnsHttpsRecord extends DnsRecord {
 
             mSvcParams.put(key, svcParam);
             previousKey = key;
+        }
+    }
+
+    /**
+     * Verifies that all mandatory keys are present in the HTTPS record.
+     *
+     * @throws ParseException if a mandatory key is missing.
+     */
+    public void verifyMandatoryKeys() throws ParseException {
+        // Check if all mandatory keys are present.
+        final short[] mandatoryKeys = getMandatory();
+        for (short key : mandatoryKeys) {
+            final int keyInt = Short.toUnsignedInt(key);
+            if (!mSvcParams.contains(keyInt)) {
+                throw new ParseException("Invalid DnsHttpsRecord: mandatory key " +
+                        SvcParam.toKeyName(keyInt) + " is missing");
+            }
         }
     }
 
@@ -175,9 +202,13 @@ public class DnsHttpsRecord extends DnsRecord {
      *
      * <p>See RFC 9460 8 for more details.
      */
-    public @NonNull List<String> getMandatory() {
-        // TODO(b/454544870): implement this after fixing the return type of SvcParamMandatory
-        return Collections.emptyList();
+    public @NonNull short[] getMandatory() {
+        final SvcParam svcParamMandatory = mSvcParams.get(KEY_MANDATORY);
+        if (svcParamMandatory == null || !(svcParamMandatory instanceof SvcParamMandatory)) {
+            return new short[0];
+        }
+
+        return ((SvcParamMandatory) svcParamMandatory).getValue();
     }
 
     /**

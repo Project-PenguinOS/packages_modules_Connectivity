@@ -112,7 +112,7 @@ public final class PrivateAddressCoordinatorTest {
         when(request.asBinder()).thenReturn(mock(IBinder.class));
         doAnswer(
                         invocation -> {
-                            ipServer.sendMessage(CMD_NOTIFY_PREFIX_CONFLICT);
+                            ipServer.processMessage(CMD_NOTIFY_PREFIX_CONFLICT);
                             return null;
                         })
                 .when(request)
@@ -239,8 +239,8 @@ public final class PrivateAddressCoordinatorTest {
                 new LinkAddress("192.168.88.23/16"), null,
                 makeNetworkCapabilities(TRANSPORT_WIFI));
         updateUpstreamPrefix(wifiUpstream);
-        verify(mHotspotIpServer).sendMessage(IpServer.CMD_NOTIFY_PREFIX_CONFLICT);
-        verify(mUsbIpServer).sendMessage(IpServer.CMD_NOTIFY_PREFIX_CONFLICT);
+        verify(mHotspotIpServer).processMessage(IpServer.CMD_NOTIFY_PREFIX_CONFLICT);
+        verify(mUsbIpServer).processMessage(IpServer.CMD_NOTIFY_PREFIX_CONFLICT);
     }
 
     private UpstreamNetworkState buildUpstreamNetworkState(final Network network,
@@ -289,7 +289,7 @@ public final class PrivateAddressCoordinatorTest {
     }
 
     private void verifyNotifyConflictAndRelease(final IpServer ipServer) throws Exception {
-        verify(ipServer).sendMessage(CMD_NOTIFY_PREFIX_CONFLICT);
+        verify(ipServer).processMessage(CMD_NOTIFY_PREFIX_CONFLICT);
         releaseDownstream(ipServer);
         final int interfaceType = ipServer.interfaceType();
         reset(ipServer);

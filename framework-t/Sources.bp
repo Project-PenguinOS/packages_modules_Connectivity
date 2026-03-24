@@ -27,14 +27,14 @@ filegroup {
 
 cc_library_shared {
     name: "libframework-connectivity-tiramisu-jni",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     cflags: [
         "-Wall",
         "-Werror",
         "-Wno-unused-parameter",
         // Don't warn about S API usage even with
         // min_sdk 30: the library is only loaded
-        // on S+ devices
+        // on T+ devices
         "-Wno-unguarded-availability",
         "-Wthread-safety",
     ],

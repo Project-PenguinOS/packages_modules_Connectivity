@@ -49,5 +49,5 @@ android_test_helper_app {
         "cts-net-utils",
     ],
     platform_apis: true,
-    min_sdk_version: "30", // R
+    min_sdk_version: "31",
 }

@@ -34,7 +34,6 @@ import androidx.test.runner.AndroidJUnit4;
 
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreAfter;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -99,7 +98,7 @@ public class ApfCapabilitiesTest {
         assertEquals(shouldDrop8023Frames, actual);
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     public void testGetApfDrop8023Frames_S() {
         // IpClient does not call getApfDrop8023Frames() since S, so any customization of the return
         // value on S+ is a configuration error as it will not be used by IpClient.
@@ -126,7 +125,7 @@ public class ApfCapabilitiesTest {
         assertTrue(Arrays.equals(blacklistedEtherTypeArray, actual));
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     public void testGetApfEtherTypeBlackList_S() {
         // IpClient does not call getApfEtherTypeBlackList() since S, so any customization of the
         // return value on S+ is a configuration error as it will not be used by IpClient.

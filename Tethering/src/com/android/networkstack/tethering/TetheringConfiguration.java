@@ -22,10 +22,9 @@ import static android.net.ConnectivityManager.TYPE_MOBILE;
 import static android.net.ConnectivityManager.TYPE_MOBILE_DUN;
 import static android.net.ConnectivityManager.TYPE_MOBILE_HIPRI;
 import static android.provider.DeviceConfig.NAMESPACE_CONNECTIVITY;
+import static android.telephony.CarrierConfigManager.KEY_CARRIER_SUPPORTS_TETHERING_BOOL;
 
-import static com.android.networkstack.apishim.ConstantsShim.KEY_CARRIER_SUPPORTS_TETHERING_BOOL;
 import static com.android.networkstack.tethering.TetheringFeatureFlags.TETHER_ENABLE_WEAR_TETHERING;
-import static com.android.networkstack.tethering.TetheringFeatureFlags.TETHER_FORCE_UPSTREAM_AUTOMATIC_VERSION;
 
 import android.content.ContentResolver;
 import android.content.Context;
@@ -173,21 +172,6 @@ public class TetheringConfiguration {
             return DeviceConfig.getBoolean(namespace, name, defaultValue);
         }
 
-        /**
-         * TETHER_FORCE_UPSTREAM_AUTOMATIC_VERSION is used to force enable the feature on specific
-         * R devices. Just checking the flag value is enough since the flag has been pushed to
-         * enable the feature on the old version and any new binary will always have a version
-         * number newer than the flag.
-         * This flag is wrongly configured in the connectivity namespace so this method reads the
-         * flag value from the connectivity namespace. But the tethering module should use the
-         * tethering namespace. This method can be removed after R EOL.
-         */
-        boolean isTetherForceUpstreamAutomaticFeatureEnabled() {
-            final int flagValue = DeviceConfigUtils.getDeviceConfigPropertyInt(
-                    NAMESPACE_CONNECTIVITY, TETHER_FORCE_UPSTREAM_AUTOMATIC_VERSION,
-                    0 /* defaultValue */);
-            return flagValue > 0;
-        }
     }
 
     public TetheringConfiguration(@NonNull Context ctx, @NonNull SharedLog log, int id) {
@@ -221,8 +205,7 @@ public class TetheringConfiguration {
         // implications for Settings and for provisioning checks.
         tetherableWifiRegexs = getResourceStringArray(res, R.array.config_tether_wifi_regexs);
         // TODO: Remove entire wigig code once tethering module no longer support R devices.
-        tetherableWigigRegexs = SdkLevel.isAtLeastS()
-                ? new String[0] : getResourceStringArray(res, R.array.config_tether_wigig_regexs);
+        tetherableWigigRegexs = new String[0];
         tetherableWifiP2pRegexs = getResourceStringArray(
                 res, R.array.config_tether_wifi_p2p_regexs);
         tetherableBluetoothRegexs = getResourceStringArray(
@@ -231,12 +214,9 @@ public class TetheringConfiguration {
         isDunRequired = checkDunRequired(ctx);
 
         // Here is how automatic mode enable/disable support on different Android version:
-        // - R   : can be enabled/disabled by resource config_tether_upstream_automatic.
-        //         but can be force-enabled by flag TETHER_FORCE_UPSTREAM_AUTOMATIC_VERSION.
         // - S, T: can be enabled/disabled by resource config_tether_upstream_automatic.
         // - U+  : automatic mode only.
-        final boolean forceAutomaticUpstream = SdkLevel.isAtLeastU() || (!SdkLevel.isAtLeastS()
-                && mDeps.isTetherForceUpstreamAutomaticFeatureEnabled());
+        final boolean forceAutomaticUpstream = SdkLevel.isAtLeastU();
         chooseUpstreamAutomatically = forceAutomaticUpstream || getResourceBoolean(
                 res, R.bool.config_tether_upstream_automatic, false /** defaultValue */);
         preferredUpstreamIfaceTypes = getUpstreamIfaceTypes(res, isDunRequired);

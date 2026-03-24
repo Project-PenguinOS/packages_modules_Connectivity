@@ -26,7 +26,6 @@ import static android.net.NetworkStats.UID_TETHERING;
 import static android.net.RouteInfo.RTN_UNICAST;
 import static android.provider.Settings.Global.TETHER_OFFLOAD_DISABLED;
 
-import static com.android.modules.utils.build.SdkLevel.isAtLeastS;
 import static com.android.modules.utils.build.SdkLevel.isAtLeastT;
 import static com.android.networkstack.tethering.OffloadController.StatsType.STATS_PER_IFACE;
 import static com.android.networkstack.tethering.OffloadController.StatsType.STATS_PER_UID;
@@ -80,7 +79,6 @@ import com.android.internal.util.test.FakeSettingsProvider;
 import com.android.net.module.util.SharedLog;
 import com.android.networkstack.tethering.OffloadHardwareInterface.OffloadHalCallback;
 import com.android.testutils.DevSdkIgnoreRule;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.TestableNetworkStatsProviderCbBinder;
 
 import org.junit.After;
@@ -667,15 +665,13 @@ public class OffloadControllerTest {
 
         if (isAtLeastT()) {
             mTetherStatsProviderCb.expectNotifyLimitReached();
-        } else if (isAtLeastS()) {
-            mTetherStatsProviderCb.expectNotifyWarningOrLimitReached();
         } else {
-            mTetherStatsProviderCb.expectNotifyLimitReached();
+            mTetherStatsProviderCb.expectNotifyWarningOrLimitReached();
         }
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)  // HAL 1.1 is only supported from S
+      // HAL 1.1 is only supported from S
     public void testDataWarningAndLimitCallback_WarningReached() throws Exception {
         startOffloadController(OFFLOAD_HAL_VERSION_HIDL_1_1, true /*expectStart*/);
         final OffloadHalCallback callback = mOffloadHalCallbackCaptor.getValue();

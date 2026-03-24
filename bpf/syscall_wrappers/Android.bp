@@ -28,14 +28,13 @@ cc_library_headers {
         "-Wall",
         "-Werror",
     ],
-    sdk_version: "30",
-    min_sdk_version: "30",
+    sdk_version: "31",
+    min_sdk_version: "apex_inherit",
     apex_available: [
         "//apex_available:platform",
         "com.android.art.debug",
         "com.android.mediaprovider",
         "com.android.os.statsd",
-        "com.android.resolv",
         "com.android.tethering",
     ],
 }

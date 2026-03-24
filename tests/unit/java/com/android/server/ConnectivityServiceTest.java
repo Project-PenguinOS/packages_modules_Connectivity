@@ -402,10 +402,6 @@ import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.LocationPermissionChecker;
 import com.android.net.module.util.NetworkMonitorUtils;
 import com.android.net.module.util.SdkUtil;
-import com.android.networkstack.apishim.ConstantsShim;
-import com.android.networkstack.apishim.NetworkAgentConfigShimImpl;
-import com.android.networkstack.apishim.common.BroadcastOptionsShim;
-import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
 import com.android.server.ConnectivityService.NetworkRequestInfo;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.DestroySocketsWrapper;
 import com.android.server.ConnectivityServiceTest.ConnectivityServiceDependencies.ReportedInterfaces;
@@ -417,6 +413,7 @@ import com.android.server.connectivity.CarrierPrivilegeAuthenticator;
 import com.android.server.connectivity.ClatCoordinator;
 import com.android.server.connectivity.ConnectivityFlags;
 import com.android.server.connectivity.ConnectivityResources;
+import com.android.server.connectivity.IProxyTracker;
 import com.android.server.connectivity.InterfaceTracker;
 import com.android.server.connectivity.KeepaliveTracker;
 import com.android.server.connectivity.MultinetworkPolicyTracker;
@@ -611,7 +608,7 @@ public class ConnectivityServiceTest {
     private Context mContext;
     private NetworkPolicyCallback mPolicyCallback;
     private WrappedMultinetworkPolicyTracker mPolicyTracker;
-    private ProxyTracker mProxyTracker;
+    private IProxyTracker mProxyTracker;
     private HandlerThread mAlarmManagerThread;
     private TestNetIdManager mNetIdManager;
     private QosCallbackMockHelper mQosCallbackMockHelper;
@@ -651,7 +648,7 @@ public class ConnectivityServiceTest {
     @Mock BpfNetMaps mBpfNetMaps;
     @Mock CarrierPrivilegeAuthenticator mCarrierPrivilegeAuthenticator;
     @Mock TetheringManager mTetheringManager;
-    @Mock BroadcastOptionsShim mBroadcastOptionsShim;
+    @Mock BroadcastOptions mBroadcastOptions;
     @Mock ActivityManager mActivityManager;
     @Mock DestroySocketsWrapper mDestroySocketsWrapper;
     @Mock SubscriptionManager mSubscriptionManager;
@@ -761,7 +758,7 @@ public class ConnectivityServiceTest {
         public ComponentName startService(Intent service) {
             final String action = service.getAction();
             if (!VpnConfig.SERVICE_INTERFACE.equals(action)
-                    && !ConstantsShim.ACTION_VPN_MANAGER_EVENT.equals(action)) {
+                    && !VpnManager.ACTION_VPN_MANAGER_EVENT.equals(action)) {
                 fail("Attempt to start unknown service, action=" + action);
             }
             return new ComponentName(service.getPackage(), "com.android.test.Service");
@@ -920,19 +917,16 @@ public class ConnectivityServiceTest {
         public void sendStickyBroadcast(Intent intent, Bundle options) {
             // Verify that delivery group policy APIs were used on U.
             if (mDeps.isAtLeastU() && CONNECTIVITY_ACTION.equals(intent.getAction())) {
+                assertNotNull(options);
                 final NetworkInfo ni = intent.getParcelableExtra(EXTRA_NETWORK_INFO,
                         NetworkInfo.class);
-                try {
-                    verify(mBroadcastOptionsShim).setDeliveryGroupPolicy(
-                            eq(ConstantsShim.DELIVERY_GROUP_POLICY_MOST_RECENT));
-                    verify(mBroadcastOptionsShim).setDeliveryGroupMatchingKey(
-                            eq(CONNECTIVITY_ACTION),
-                            eq(createDeliveryGroupKeyForConnectivityAction(ni)));
-                    verify(mBroadcastOptionsShim).setDeferralPolicy(
-                            eq(ConstantsShim.DEFERRAL_POLICY_UNTIL_ACTIVE));
-                } catch (UnsupportedApiLevelException e) {
-                    throw new RuntimeException(e);
-                }
+                verify(mBroadcastOptions).setDeliveryGroupPolicy(
+                        eq(BroadcastOptions.DELIVERY_GROUP_POLICY_MOST_RECENT));
+                verify(mBroadcastOptions).setDeliveryGroupMatchingKey(
+                        eq(CONNECTIVITY_ACTION),
+                        eq(createDeliveryGroupKeyForConnectivityAction(ni)));
+                verify(mBroadcastOptions).setDeferralPolicy(
+                        eq(BroadcastOptions.DEFERRAL_POLICY_UNTIL_ACTIVE));
             }
             super.sendStickyBroadcast(intent, options);
         }
@@ -2059,7 +2053,7 @@ public class ConnectivityServiceTest {
         }
 
         @Override
-        public ProxyTracker makeProxyTracker(final Context context, final Handler handler) {
+        public IProxyTracker makeProxyTracker(final Context context, final Handler handler) {
             return mProxyTracker;
         }
 
@@ -2372,9 +2366,9 @@ public class ConnectivityServiceTest {
         }
 
         @Override
-        public BroadcastOptionsShim makeBroadcastOptionsShim(BroadcastOptions options) {
-            reset(mBroadcastOptionsShim);
-            return mBroadcastOptionsShim;
+        public BroadcastOptions getBroadcastOptions(BroadcastOptions options) {
+            reset(mBroadcastOptions);
+            return mBroadcastOptions;
         }
 
         @GuardedBy("this")
@@ -7008,18 +7002,18 @@ public class ConnectivityServiceTest {
             throws PackageManager.NameNotFoundException {
         if (networkSliceResourceId == 0) {
             doThrow(new PackageManager.NameNotFoundException()).when(mPackageManager).getProperty(
-                    ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                    PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                     mContext.getPackageName());
         } else {
             final PackageManager.Property property = new PackageManager.Property(
-                    ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                    PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                     networkSliceResourceId,
                     true /* isResource */,
                     mContext.getPackageName(),
                     "dummyClass"
             );
             doReturn(property).when(mPackageManager).getProperty(
-                    ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                    PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                     mContext.getPackageName());
             doReturn(mContext.getResources()).when(mPackageManager).getResourcesForApplication(
                     mContext.getPackageName());
@@ -7078,7 +7072,7 @@ public class ConnectivityServiceTest {
         final Exception e = assertThrows(SecurityException.class,
                 () -> mCm.requestNetwork(networkRequest, cb));
         assertThat(e.getMessage(),
-                containsString(ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES));
+                containsString(PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES));
     }
 
     @Test
@@ -7124,7 +7118,7 @@ public class ConnectivityServiceTest {
 
         // PackageManager's API only called once because the second call is using cache.
         verify(mPackageManager, times(1)).getProperty(
-                ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                 mContext.getPackageName());
         verify(mPackageManager, times(1)).getResourcesForApplication(
                 mContext.getPackageName());
@@ -9280,8 +9274,8 @@ public class ConnectivityServiceTest {
         // by NetworkMonitor
         assertFalse(NetworkMonitorUtils.isValidationRequired(
                 false /* isDunValidationRequired */,
-                NetworkAgentConfigShimImpl.newInstance(mMockVpn.getNetworkAgentConfig())
-                        .isVpnValidationRequired(),
+                SdkLevel.isAtLeastT()
+                        ? mMockVpn.getNetworkAgentConfig().isVpnValidationRequired() : false,
                 mMockVpn.getAgent().getNetworkCapabilities()));
         mMockVpn.getAgent().setNetworkValid(false /* privateDnsProbeSent */);
 
@@ -9432,8 +9426,8 @@ public class ConnectivityServiceTest {
 
         assertFalse(NetworkMonitorUtils.isValidationRequired(
                 false /* isDunValidationRequired */,
-                NetworkAgentConfigShimImpl.newInstance(mMockVpn.getNetworkAgentConfig())
-                        .isVpnValidationRequired(),
+                SdkLevel.isAtLeastT()
+                        ? mMockVpn.getNetworkAgentConfig().isVpnValidationRequired() : false,
                 mMockVpn.getAgent().getNetworkCapabilities()));
         assertTrue(NetworkMonitorUtils.isPrivateDnsValidationRequired(
                 mMockVpn.getAgent().getNetworkCapabilities()));

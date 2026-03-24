@@ -32,10 +32,6 @@ import android.os.Build;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.filters.SmallTest;
 
-import com.android.testutils.DevSdkIgnoreRule;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
-
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -45,9 +41,6 @@ import java.util.Set;
 @SmallTest
 @RunWith(AndroidJUnit4.class)
 public class UrlQuerySanitizerTest {
-    @Rule
-    public final DevSdkIgnoreRule mIgnoreRule = new DevSdkIgnoreRule();
-
     private static final int ALL_OK = IllegalCharacterValueSanitizer.ALL_OK;
 
     // URL for test.
@@ -233,14 +226,14 @@ public class UrlQuerySanitizerTest {
 
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.Q) // Only fixed in R
+    @Test
     public void testScriptUrlOk_73822755() {
         ValueSanitizer sanitizer = new UrlQuerySanitizer.IllegalCharacterValueSanitizer(
                 UrlQuerySanitizer.IllegalCharacterValueSanitizer.SCRIPT_URL_OK);
         assertEquals("javascript:alert()", sanitizer.sanitize("javascript:alert()"));
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.Q) // Only fixed in R
+    @Test
     public void testScriptUrlBlocked_73822755() {
         ValueSanitizer sanitizer = UrlQuerySanitizer.getUrlAndSpaceLegal();
         assertEquals("", sanitizer.sanitize("javascript:alert()"));

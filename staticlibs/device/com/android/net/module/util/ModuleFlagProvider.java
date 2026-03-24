@@ -16,9 +16,8 @@
 
 package com.android.net.module.util;
 
-import android.annotation.NonNull;
-
-import com.android.internal.annotations.VisibleForTesting;
+import androidx.annotation.NonNull;
+import androidx.annotation.VisibleForTesting;
 
 import java.util.Objects;
 
@@ -35,6 +34,12 @@ import java.util.Objects;
  * @hide
  */
 public final class ModuleFlagProvider {
+
+    /**
+     * Flag to control whether to use timeout values in netlink API calls.
+     */
+    public static final String FLAG_NETLINK_NO_TIMEOUTS = "netlink_no_timeouts";
+
     private static volatile FlagProvider sInstance;
 
     private ModuleFlagProvider() {}

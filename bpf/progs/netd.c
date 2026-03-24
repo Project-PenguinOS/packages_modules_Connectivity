@@ -15,7 +15,7 @@
  */
 
 // The resulting .o needs to load on Android T+
-#define BPFLOADER_MIN_VER BPFLOADER_MAINLINE_T_VERSION
+#define NETBPFLOAD_MINAPI_VER NETBPFLOAD_T_VER
 #define BPF_OBJ_NAME "netd"
 #define DEFAULT_BPF_PIN_SUBDIR "netd_shared"
 
@@ -31,30 +31,36 @@ static const int DROP_UNLESS_DNS = 2;  // internal to our program
 // offsetof(struct iphdr, ihl) -- but that's a bitfield
 #define IPPROTO_IHL_OFF 0
 
-// This is offsetof(struct tcphdr, "32 bit tcp flag field")
-// The tcp flags are after be16 source, dest & be32 seq, ack_seq, hence 12 bytes in.
-//
 // Note that TCP_FLAG_{ACK,PSH,RST,SYN,FIN} are htonl(0x00{10,08,04,02,01}0000)
-// see include/uapi/linux/tcp.h
-#define TCP_FLAG32_OFF 12
+// see include/uapi/linux/tcp.h.
+//
+// Since we only support little endian, that effectively
+// means they're 0x0000{10,08,04,02,01}00 which is the same as 0x{10,08,04,02,01}00,
+// which in turn is the same as htons(0x{10,08,04,02,01})
+//
+// This means they can *also* be used to match against __be16 flags16 field.
 
-#define TCP_FLAG8_OFF (TCP_FLAG32_OFF + 1)
+// This is the offset of the 2nd byte of tcp flags
+#define TCP_FLAG8_OFF (TCP_OFFSET(flags16) + 1)
 #define TCP_FLAG8_SYN 0x02
 
 #define EINVAL  22
 #define EUNATCH 49
 
 // For maps netd does not need to access
-#define DEFINE_BPF_MAP_NO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
-    DEFINE_BPF_MAP_EXT(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries,         \
+#define DEFINE_BPF_MAP_NO_NETD_API(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries, minApi) \
+    DEFINE_BPF_MAP_EXT(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries, \
                        AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR, \
-                       BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, 0)
+                       minApi, MAXAPI, 0)
+
+#define DEFINE_BPF_MAP_NO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
+    DEFINE_BPF_MAP_NO_NETD_API(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries, MINAPI)
 
 // For maps netd only needs read only access to
-#define DEFINE_BPF_MAP_RO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries)  \
-    DEFINE_BPF_MAP_EXT(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries,          \
+#define DEFINE_BPF_MAP_RO_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
+    DEFINE_BPF_MAP_EXT(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries, \
                        AID_ROOT, AID_NET_BW_ACCT, 0460, "netd_readonly", DEFAULT_BPF_PIN_SUBDIR, \
-                       BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, 0)
+                       MINAPI, MAXAPI, 0)
 
 // For maps netd needs to be able to read and write
 #define DEFINE_BPF_MAP_RW_NETD(the_map, TYPE, TypeOfKey, TypeOfValue, num_entries) \
@@ -80,8 +86,9 @@ DEFINE_BPF_MAP_RO_NETD(stats_map_B, HASH, StatsKey, StatsValue, STATS_MAP_SIZE)
 DEFINE_BPF_MAP_NO_NETD(iface_stats_map, HASH, uint32_t, StatsValue, 1000)
 DEFINE_BPF_MAP_RO_NETD(uid_owner_map, HASH, uint32_t, UidOwnerValue, 20000)
 DEFINE_BPF_MAP_RO_NETD(uid_permission_map, HASH, uint32_t, uint8_t, 6000)
-// Support up to 2688 * 400 = 1,075,200 UIDs
-DEFINE_BPF_MAP_RO_NETD(uid_permission_chunk_map, HASH, uint32_t, UidPermissionChunk, -400)
+// Support up to 1152 * 900 = 1,036,800 UIDs
+DEFINE_BPF_MAP_RO_NETD(uid_permission_chunk_map, HASH, uint32_t,
+                       UidPermissionChunk, -900)
 DEFINE_BPF_MAP_NO_NETD(ingress_discard_map, HASH, IngressDiscardKey, IngressDiscardValue, 100)
 
 DEFINE_BPF_MAP_RW_NETD(netd_pid_map, ARRAY, uint32_t, uint32_t, 1)
@@ -96,64 +103,49 @@ DEFINE_BPF_MAP_NO_NETD(iface_index_name_map, HASH, uint32_t, IfaceValue, 1000)
 // A single-element configuration array, packet tracing is enabled when 'true'.
 DEFINE_BPF_MAP_EXT(packet_trace_enabled_map, ARRAY, uint32_t, bool, 1,
                    AID_ROOT, AID_SYSTEM, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_U_VERSION, BPFLOADER_MAX_VER, 0)
+                   U, MAXAPI, 0)
 
 // A ring buffer on which packet information is pushed.
 DEFINE_BPF_RINGBUF_EXT(packet_trace_ringbuf, PacketTrace, 32 * 1024,
                        AID_ROOT, AID_SYSTEM, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                       BPFLOADER_MAINLINE_U_VERSION, BPFLOADER_MAX_VER);
+                       U, MAXAPI);
 
 DEFINE_BPF_MAP_RO_NETD(data_saver_enabled_map, ARRAY, uint32_t, bool, 1)
 
-DEFINE_BPF_MAP_EXT(local_net_access_map, LPM_TRIE, LocalNetAccessKey, bool, 1000,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_access_map, LPM_TRIE, LocalNetAccessKey, bool, 1000, 25Q2)
 
 // not preallocated
-DEFINE_BPF_MAP_EXT(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_blocked_uid_map, HASH, uint32_t, bool, -1000, 25Q2)
 
 // This trie holds exceptions to blocked access listed in local_net_access_map.
 // Although it is a trie, it is only used as a map (all entries use the maximum
 // prefix length). A trie is used because map keys are preallocated, which would
 // be wasteful as the keys are much larger than the values.
-DEFINE_BPF_MAP_EXT(local_net_uid_host_allowlist_map, LPM_TRIE,
-                   LocalNetUidHostAllowlistKey, bool, 1000, AID_ROOT,
-                   AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_uid_host_allowlist_map, LPM_TRIE,
+                           LocalNetUidHostAllowlistKey, bool, 1000, 25Q2)
 
 DEFINE_BPF_MAP_RO_NETD(uid_migration_enabled_map, ARRAY, uint32_t, bool, 1)
 
-DEFINE_BPF_MAP_NO_NETD(permission_propagation_enabled_map, ARRAY, uint32_t,
-                       bool, 1)
+DEFINE_BPF_MAP_NO_NETD(permission_propagation_enabled_map, ARRAY, uint32_t, bool, 1)
 // A ring buffer on which note op event of local network access is pushed.
 DEFINE_BPF_RINGBUF_EXT(local_net_note_op_ringbuf, LocalNetNoteOp, 8 * 512,
                        AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                       BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER);
-DEFINE_BPF_MAP_EXT(local_net_note_op_cache_map, LRU_HASH, uint32_t, uint32_t, 100,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
-DEFINE_BPF_MAP_EXT(local_net_note_op_enabled_map, ARRAY, uint32_t, bool, 1,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAX_VER, 0)
+                       25Q2, MAXAPI);
+DEFINE_BPF_MAP_NO_NETD_API(local_net_note_op_cache_map, LRU_HASH, uint32_t, uint32_t, 100, 25Q2)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_note_op_enabled_map, ARRAY, uint32_t, bool, 1, 25Q2)
 
 // A single-element array holding the current generation ID of the local network
 // cache map. Updated by the system. Even IDs represent a stable cache state.
 // Odd IDs represent an unstable state, during which the cache should not be
 // used.
-DEFINE_BPF_MAP_EXT(local_net_cache_generation_id_map, ARRAY, uint32_t, uint64_t,
-                   1, AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared",
-                   DEFAULT_BPF_PIN_SUBDIR, BPFLOADER_MAINLINE_25Q2_VERSION,
-                   BPFLOADER_MAX_VER, 0)
+DEFINE_BPF_MAP_NO_NETD_API(local_net_cache_generation_id_map, ARRAY, uint32_t, uint64_t, 1, 25Q2)
 
 // A ring buffer on which loopback access events are pushed.
 DEFINE_BPF_RINGBUF_EXT(loopback_access_ringbuf, LoopbackAccessEvent, 16 * 512,
                        AID_ROOT, AID_SYSTEM, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                       BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER);
-DEFINE_BPF_MAP_EXT(loopback_access_cache_map, LRU_HASH, LoopbackAccessEvent, uint64_t, 100,
-                   AID_ROOT, AID_NET_BW_ACCT, 0060, "net_shared", DEFAULT_BPF_PIN_SUBDIR,
-                   BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER, 0)
+                       25Q4, MAXAPI);
+DEFINE_BPF_MAP_NO_NETD_API(loopback_access_cache_map, LRU_HASH, LoopbackAccessEvent, uint64_t, 100,
+                           25Q4)
 DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, bool, 1)
 
 // iptables xt_bpf programs need to be usable by both netd and netutils_wrappers
@@ -163,39 +155,43 @@ DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, boo
 // program (see XT_BPF_MODE_PATH_PINNED) and then the iptables binary (or rather
 // the kernel acting on behalf of it) must be able to retrieve the pinned program
 // for the reload to succeed
-#define DEFINE_XTBPF_PROG(TYPE, NAME, VER) \
-    DEFINE_BPF_PROG(TYPE, NAME, VER, AID_NET_ADMIN)
+#define DEFINE_XTBPF_PROG(TYPE, NAME) \
+    DEFINE_BPF_PROG(TYPE, NAME, AID_NET_ADMIN)
 
 // programs that need to be usable by netd, but not by netutils_wrappers
 // (this is because these are currently attached by the mainline provided libnetd_updatable .so
 // which is loaded into netd and thus runs as netd uid/gid/selinux context)
-#define DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, VER, minKV, maxKV, min_loader, max_loader) \
-    DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, AID_ROOT, AID_ROOT,                               \
-                        minKV, maxKV, min_loader, max_loader, MANDATORY,                   \
+#define DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, VER, minKV, maxKV, min_api, max_api) \
+    DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, AID_ROOT, AID_ROOT,                         \
+                        minKV, maxKV, min_api, max_api, MANDATORY,                   \
                         "netd_readonly", DEFAULT_BPF_PIN_SUBDIR)
 
-#define DEFINE_NETD_BPF_PROG_KVER_RANGE(TYPE, NAME, VER, minKV, maxKV) \
-    DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, VER, minKV, maxKV, BPFLOADER_MIN_VER, BPFLOADER_MAX_VER)
+#define DEFINE_NETD_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, maxKV) \
+    DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, minKV, minKV, maxKV, MINAPI, MAXAPI)
 
-#define DEFINE_NETD_BPF_PROG_KVER(TYPE, NAME, VER, min_kv) \
-    DEFINE_NETD_BPF_PROG_KVER_RANGE(TYPE, NAME, VER, min_kv, INF)
+#define DEFINE_NETD_BPF_PROG_KVER(TYPE, NAME, minKV) \
+    DEFINE_NETD_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, INF)
 
-#define DEFINE_NETD_BPF_PROG(TYPE, NAME, VER) \
-    DEFINE_NETD_BPF_PROG_KVER(TYPE, NAME, VER, 4_9)
+#define DEFINE_NETD_V_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, maxKV) \
+    DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, minKV, minKV, maxKV, V, MAXAPI)
 
-#define DEFINE_NETD_V_BPF_PROG_KVER_RANGE(TYPE, NAME, VER, minKV, maxKV)            \
-    DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, AID_ROOT, AID_ROOT, minKV, maxKV,          \
-                        BPFLOADER_MAINLINE_V_VERSION, BPFLOADER_MAX_VER, MANDATORY, \
-                        "netd_readonly", DEFAULT_BPF_PIN_SUBDIR)
-
-#define DEFINE_NETD_V_BPF_PROG_KVER(TYPE, NAME, VER, minKV) \
-    DEFINE_NETD_V_BPF_PROG_KVER_RANGE(TYPE, NAME, VER, minKV, INF)
+#define DEFINE_NETD_V_BPF_PROG_KVER(TYPE, NAME, minKV) \
+    DEFINE_NETD_V_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, INF)
 
 // programs that only need to be usable by the system server
-#define DEFINE_SYS_BPF_PROG(TYPE, NAME, VER) \
-    DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, AID_ROOT, AID_NET_ADMIN, 4_9, INF, \
-                        BPFLOADER_MIN_VER, BPFLOADER_MAX_VER, MANDATORY,    \
-                        "net_shared", DEFAULT_BPF_PIN_SUBDIR)
+#define DEFINE_SYS_BPF_PROG(TYPE, NAME) \
+    DEFINE_BPF_PROG_EXT(TYPE, NAME, 4_9, AID_ROOT, AID_NET_ADMIN, 4_9, INF, \
+                        MINAPI, MAXAPI, MANDATORY, "net_shared", DEFAULT_BPF_PIN_SUBDIR)
+
+// tcpAccECN maps/programs need to load only on Android 26Q2+
+#undef NETBPFLOAD_MINAPI_VER
+#define NETBPFLOAD_MINAPI_VER NETBPFLOAD_26Q2_VER
+
+#include "tcpAccECN.h"
+
+// reset back to T+ minimum for the rest of the file
+#undef NETBPFLOAD_MINAPI_VER
+#define NETBPFLOAD_MINAPI_VER NETBPFLOAD_T_VER
 
 /*
  * Note: this blindly assumes an MTU of 1500, and that packets > MTU are always TCP,
@@ -274,11 +270,11 @@ DEFINE_UPDATE_STATS(stats_map_A, StatsKey)
 DEFINE_UPDATE_STATS(stats_map_B, StatsKey)
 
 // both of these return 0 on success or -EFAULT on failure (and zero out the buffer)
-static __always_inline inline int bpf_skb_load_bytes_net(const struct __sk_buff* const skb,
-                                                         const int L3_off,
-                                                         void* const to,
-                                                         const int len,
-                                                         const struct kver_uint kver) {
+static __always_inline inline long bpf_skb_load_bytes_net(const struct __sk_buff* const skb,
+                                                          const int L3_off,
+                                                          void* const to,
+                                                          const int len,
+                                                          const struct kver_uint kver) {
     // 'kver' (here and throughout) is the compile time guaranteed minimum kernel version,
     // ie. we're building (a version of) the bpf program for kver (or newer!) kernels.
     //
@@ -691,7 +687,7 @@ static __always_inline inline void do_packet_tracing(
 static __always_inline inline bool skip_owner_match(struct __sk_buff* skb,
                                                     const struct egress_bool egress,
                                                     const struct kver_uint kver) {
-    uint32_t flag = 0;
+    __be16 flags16 = 0;
     if (skb->protocol == htons(ETH_P_IP)) {
         uint8_t proto;
         // no need to check for success, proto will be zeroed if bpf_skb_load_bytes_net() fails
@@ -706,8 +702,8 @@ static __always_inline inline bool skip_owner_match(struct __sk_buff* skb,
         // (we also don't check that ihl in [0x45,0x4F] nor that ipv4 header checksum is correct)
         (void)bpf_skb_load_bytes_net(skb, IPPROTO_IHL_OFF, &ihl, sizeof(ihl), kver);
         // if the read below fails, we'll just assume no TCP flags are set, which is fine.
-        (void)bpf_skb_load_bytes_net(skb, (ihl & 0xF) * 4 + TCP_FLAG32_OFF,
-                                     &flag, sizeof(flag), kver);
+        (void)bpf_skb_load_bytes_net(skb, (ihl & 0xF) * 4 + TCP_OFFSET(flags16),
+                                     &flags16, sizeof(flags16), kver);
     } else if (skb->protocol == htons(ETH_P_IPV6)) {
         uint8_t proto;
         // no need to check for success, proto will be zeroed if bpf_skb_load_bytes_net() fails
@@ -715,13 +711,13 @@ static __always_inline inline bool skip_owner_match(struct __sk_buff* skb,
         if (proto == IPPROTO_ESP) return true;
         if (proto != IPPROTO_TCP) return false;  // handles read failure above
         // if the read below fails, we'll just assume no TCP flags are set, which is fine.
-        (void)bpf_skb_load_bytes_net(skb, sizeof(struct ipv6hdr) + TCP_FLAG32_OFF,
-                                     &flag, sizeof(flag), kver);
+        (void)bpf_skb_load_bytes_net(skb, sizeof(struct ipv6hdr) + TCP_OFFSET(flags16),
+                                     &flags16, sizeof(flags16), kver);
     } else {
         return false;
     }
     // Always allow RST's, and additionally allow ingress FINs
-    return flag & (TCP_FLAG_RST | (egress.egress ? 0 : TCP_FLAG_FIN));  // false on read failure
+    return flags16 & (TCP_FLAG_RST | (egress.egress ? 0 : TCP_FLAG_FIN));  // false on read failure
 }
 
 static __always_inline inline BpfConfig getConfig(uint32_t configKey) {
@@ -936,95 +932,100 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 // ----- ingress/stats -----
 
 // Android 25Q4+ (full featured)
-DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 25q4, 5_10, INF,
-                            BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 25q4, 5_10, INF, 25Q4, MAXAPI)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_25Q4);
 }
 
 // Android 25Q2/25Q3 5.10+ (localnet protection + tracing)
-DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_25q2, 5_10, INF,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_25q2, 5_10, INF, 25Q2, 25Q4)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_25Q2);
 }
 
 // Android 25Q2/25Q3 5.4 (localnet protection)
-DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_4_25q2, 5_4, 5_10,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_4_25q2, 5_4, 5_10, 25Q2, 25Q4)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_4, SDK_LEVEL_25Q2);
 }
 
 // Android U/V 5.10+ (tracing)
-DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_u, 5_10, INF,
-                            BPFLOADER_MAINLINE_U_VERSION, BPFLOADER_MAINLINE_25Q2_VERSION)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_u, 5_10, INF, U, 25Q2)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_U);
 }
 
 // Android T/U/V/25Q2 5.4 & T 5.10/5.15
-DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 5_4, 5_4, INF)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 5_4, INF)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_5_4, SDK_LEVEL_T);
 }
 
 // Android T/U/V 4.19
-DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_19, 4_19, 5_4)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_19, 5_4)
 (struct __sk_buff* skb) {
 return bpf_traffic_account(skb, INGRESS, KVER_4_19, SDK_LEVEL_T);
 }
 
 // Android T 4.9 & T/U 4.14
-DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_9, 4_9, 4_19)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_9, 4_19)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, INGRESS, KVER_4_9, SDK_LEVEL_T);
 }
 
 // ----- egress/stats -----
 
-// Android 25Q4+ (full featured)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 25q4, 5_10, INF,
-                            BPFLOADER_MAINLINE_25Q4_VERSION, BPFLOADER_MAX_VER)
+// Android 26Q2+ 6.1+ (full featured + tcpAccECN)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 6_1_26q2, 6_1, INF, 26Q2, MAXAPI)
+(struct __sk_buff* skb) {
+    // place for tcpAccECN
+    return bpf_traffic_account(skb, EGRESS, KVER_6_1, SDK_LEVEL_26Q2);
+}
+
+// Android 26Q2+ 5.10/5.15 (full featured)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_26q2, 5_10, 6_1, 26Q2, MAXAPI)
+(struct __sk_buff* skb) {
+    return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_26Q2);
+}
+
+// Android 25Q4/26Q1 (full featured)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 25q4, 5_10, INF, 25Q4, 26Q2)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_25Q4);
 }
 
 // Android 25Q2/25Q3 5.10+ (localnet protection + tracing)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_25q2, 5_10, INF,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_25q2, 5_10, INF, 25Q2, 25Q4)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_25Q2);
 }
 
 // Android 25Q2/25Q3 5.4 (localnet protection)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_4_25q2, 5_4, 5_10,
-                            BPFLOADER_MAINLINE_25Q2_VERSION, BPFLOADER_MAINLINE_25Q4_VERSION)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_4_25q2, 5_4, 5_10, 25Q2, 25Q4)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_4, SDK_LEVEL_25Q2);
 }
 
 // Android U/V 5.10+ (tracing)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_u, 5_10, INF,
-                            BPFLOADER_MAINLINE_U_VERSION, BPFLOADER_MAINLINE_25Q2_VERSION)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_u, 5_10, INF, U, 25Q2)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_U);
 }
 
 // Android T/U/V/25Q2 5.4 & T 5.10/5.15
-DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 5_4, 5_4, INF)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 5_4, INF)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_5_4, SDK_LEVEL_T);
 }
 
 // Android T/U/V 4.19
-DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 4_19, 4_19, 5_4)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 4_19, 5_4)
 (struct __sk_buff* skb) {
 return bpf_traffic_account(skb, EGRESS, KVER_4_19, SDK_LEVEL_T);
 }
 
 // Android T 4.9 & T/U 4.14
-DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 4_9, 4_9, 4_19)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 4_9, 4_19)
 (struct __sk_buff* skb) {
     return bpf_traffic_account(skb, EGRESS, KVER_4_9, SDK_LEVEL_T);
 }
@@ -1032,7 +1033,7 @@ DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 4_9, 4_9, 4_19)
 // -----
 
 // WARNING: Android T's non-updatable netd depends on the name of this program.
-DEFINE_XTBPF_PROG(skfilter, egress_xtbpf, )
+DEFINE_XTBPF_PROG(skfilter, egress_xtbpf)
 (struct __sk_buff* skb) {
     // Clat daemon does not generate new traffic, all its traffic is accounted for already
     // on the v4-* interfaces (except for the 20 (or 28) extra bytes of IPv6 vs IPv4 overhead,
@@ -1051,7 +1052,7 @@ DEFINE_XTBPF_PROG(skfilter, egress_xtbpf, )
 }
 
 // WARNING: Android T's non-updatable netd depends on the name of this program.
-DEFINE_XTBPF_PROG(skfilter, ingress_xtbpf, )
+DEFINE_XTBPF_PROG(skfilter, ingress_xtbpf)
 (struct __sk_buff* skb) {
     // Clat daemon traffic is not accounted by virtue of iptables raw prerouting drop rule
     // (in clat_raw_PREROUTING chain), which triggers before this (in bw_raw_PREROUTING chain).
@@ -1063,7 +1064,7 @@ DEFINE_XTBPF_PROG(skfilter, ingress_xtbpf, )
     return XTBPF_MATCH;
 }
 
-DEFINE_SYS_BPF_PROG(schedact, ingress_account, )
+DEFINE_SYS_BPF_PROG(schedact, ingress_account)
 (struct __sk_buff* skb) {
     if (is_received_skb(skb)) {
         // Account for ingress traffic before tc drops it.
@@ -1074,7 +1075,7 @@ DEFINE_SYS_BPF_PROG(schedact, ingress_account, )
 }
 
 // WARNING: Android T's non-updatable netd depends on the name of this program.
-DEFINE_XTBPF_PROG(skfilter, allowlist_xtbpf, )
+DEFINE_XTBPF_PROG(skfilter, allowlist_xtbpf)
 (struct __sk_buff* skb) {
     uint32_t sock_uid = bpf_get_socket_uid(skb);
     if (is_system_uid(sock_uid)) return XTBPF_MATCH;
@@ -1093,7 +1094,7 @@ DEFINE_XTBPF_PROG(skfilter, allowlist_xtbpf, )
 }
 
 // WARNING: Android T's non-updatable netd depends on the name of this program.
-DEFINE_XTBPF_PROG(skfilter, denylist_xtbpf, )
+DEFINE_XTBPF_PROG(skfilter, denylist_xtbpf)
 (struct __sk_buff* skb) {
     uint32_t sock_uid = bpf_get_socket_uid(skb);
     UidOwnerValue* denylistMatch = bpf_uid_owner_map_lookup_elem(&sock_uid);
@@ -1141,17 +1142,17 @@ static __always_inline inline int inet_socket_create(struct bpf_sock* sk,
     }
 }
 
-DEFINE_NETD_BPF_PROG_KVER(cgroupsock, inet_create, 5_10, 5_10)
+DEFINE_NETD_BPF_PROG_KVER(cgroupsock, inet_create, 5_10)
 (struct bpf_sock* sk) {
     return inet_socket_create(sk, KVER_5_10);
 }
 
-DEFINE_NETD_BPF_PROG_KVER_RANGE(cgroupsock, inet_create, 4_14, 4_14, 5_10)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(cgroupsock, inet_create, 4_14, 5_10)
 (struct bpf_sock* sk) {
     return inet_socket_create(sk, KVER_4_14);
 }
 
-DEFINE_NETD_BPF_PROG_KVER(cgroupsockrelease, inet_release, , 5_10)
+DEFINE_NETD_BPF_PROG_KVER(cgroupsockrelease, inet_release, 5_10)
 (struct bpf_sock* sk) {
     uint64_t cookie = bpf_get_sk_cookie(sk);
     if (cookie) bpf_cookie_tag_map_delete_elem(&cookie);
@@ -1215,58 +1216,58 @@ static inline __always_inline int inet_bind(struct bpf_sock_addr *ctx,
     return BPF_ALLOW;
 }
 
-DEFINE_NETD_BPF_PROG_KVER(bind4, inet4_bind, 5_15, 5_15)
+DEFINE_NETD_BPF_PROG_KVER(bind4, inet4_bind, 5_15)
 (struct bpf_sock_addr *ctx) {
     return inet_bind(ctx, KVER_5_15);
 }
 
-DEFINE_NETD_BPF_PROG_KVER_RANGE(bind4, inet4_bind, 4_19, 4_19, 5_15)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(bind4, inet4_bind, 4_19, 5_15)
 (struct bpf_sock_addr *ctx) {
     return inet_bind(ctx, KVER_4_19);
 }
 
-DEFINE_NETD_BPF_PROG_KVER(bind6, inet6_bind, 5_15, 5_15)
+DEFINE_NETD_BPF_PROG_KVER(bind6, inet6_bind, 5_15)
 (struct bpf_sock_addr *ctx) {
     return inet_bind(ctx, KVER_5_15);
 }
 
-DEFINE_NETD_BPF_PROG_KVER_RANGE(bind6, inet6_bind, 4_19, 4_19, 5_15)
+DEFINE_NETD_BPF_PROG_KVER_RANGE(bind6, inet6_bind, 4_19, 5_15)
 (struct bpf_sock_addr *ctx) {
     return inet_bind(ctx, KVER_4_19);
 }
 
 // --- CONNECT CGROUP HOOKS ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, , 4_19)
+DEFINE_NETD_V_BPF_PROG_KVER(connect4, inet4_connect, 4_19)
 (__unused struct bpf_sock_addr *ctx) {
     return BPF_ALLOW;
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, , 4_19)
+DEFINE_NETD_V_BPF_PROG_KVER(connect6, inet6_connect, 4_19)
 (__unused struct bpf_sock_addr *ctx) {
     return BPF_ALLOW;
 }
 
 // --- UDP RECVMSG HOOKS ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(recvmsg4, udp4_recvmsg, , 4_19)
+DEFINE_NETD_V_BPF_PROG_KVER(recvmsg4, udp4_recvmsg, 4_19)
 (__unused struct bpf_sock_addr *ctx) {
     return BPF_ALLOW;
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(recvmsg6, udp6_recvmsg, , 4_19)
+DEFINE_NETD_V_BPF_PROG_KVER(recvmsg6, udp6_recvmsg, 4_19)
 (__unused struct bpf_sock_addr *ctx) {
     return BPF_ALLOW;
 }
 
 // --- UDP SENDMSG HOOKS ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, , 4_19)
+DEFINE_NETD_V_BPF_PROG_KVER(sendmsg4, udp4_sendmsg, 4_19)
 (__unused struct bpf_sock_addr *ctx) {
     return BPF_ALLOW;
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, , 4_19)
+DEFINE_NETD_V_BPF_PROG_KVER(sendmsg6, udp6_sendmsg, 4_19)
 (__unused struct bpf_sock_addr *ctx) {
     return BPF_ALLOW;
 }
@@ -1303,31 +1304,44 @@ static inline __always_inline int inet_getsockopt(struct bpf_sockopt *ctx,
     return BPF_ALLOW;
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, 6_1, 6_1)
+DEFINE_NETD_V_BPF_PROG_KVER(getsockopt, prog, 6_1)
 (struct bpf_sockopt *ctx) {
     return inet_getsockopt(ctx, KVER_6_1);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(getsockopt, prog, 5_10, 5_10, 6_1)
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(getsockopt, prog, 5_10, 6_1)
 (struct bpf_sockopt *ctx) {
     return inet_getsockopt(ctx, KVER_5_10);
 }
 
-DEFINE_NETD_V_BPF_PROG_KVER_RANGE(getsockopt, prog, 5_4, 5_4, 5_10)
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(getsockopt, prog, 5_4, 5_10)
 (struct bpf_sockopt *ctx) {
     return inet_getsockopt(ctx, KVER_5_4);
 }
 
 // --- SETSOCKOPT HOOK ---
 
-DEFINE_NETD_V_BPF_PROG_KVER(setsockopt, prog, , 5_4)
-(struct bpf_sockopt *ctx) {
+static inline __always_inline int inet_setsockopt(struct bpf_sockopt *ctx,
+                                                  __unused const struct kver_uint kver) {
     // Tell kernel to use/process original buffer provided by userspace.
     // This is important if it is larger than PAGE_SIZE (max size this bpf hook can handle).
     ctx->optlen = 0;
     return BPF_ALLOW;
 }
 
-#include "tcpAccECN.c"
+DEFINE_NETD_V_BPF_PROG_KVER(setsockopt, prog, 6_1)
+(struct bpf_sockopt *ctx) {
+    return inet_setsockopt(ctx, KVER_6_1);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(setsockopt, prog, 5_10, 6_1)
+(struct bpf_sockopt *ctx) {
+    return inet_setsockopt(ctx, KVER_5_10);
+}
+
+DEFINE_NETD_V_BPF_PROG_KVER_RANGE(setsockopt, prog, 5_4, 5_10)
+(struct bpf_sockopt *ctx) {
+    return inet_setsockopt(ctx, KVER_5_4);
+}
 
 LICENSE("Apache 2.0");

@@ -78,7 +78,6 @@ import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.HandlerUtils;
 import com.android.networkstack.tethering.UpstreamNetworkState;
-import com.android.tethering.flags.Flags;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -161,12 +160,6 @@ public class TetheringMetrics {
                     context, TETHER_UPSTREAM_DATA_USAGE_METRICS);
         }
 
-        /**
-         * Indicates whether netstats per-query flags is enabled.
-         */
-        public boolean isNetstatsPerQueryFlagsEnabled() {
-            return SdkLevel.isAtLeastT() && Flags.netstatsPerQueryFlags();
-        }
 
         /**
          * @see Handler
@@ -500,7 +493,7 @@ public class TetheringMetrics {
     private DataUsage getCurrentDataUsageForUpstreamType(@NonNull UpstreamType type) {
         final NetworkTemplate template = buildNetworkTemplateForUpstreamType(type);
         final NetworkStats stats;
-        if (mDependencies.isNetstatsPerQueryFlagsEnabled()) {
+        if (SdkLevel.isAtLeastT()) {
             stats = mNetworkStatsManager.queryDetailsForUidTagState(
                     template, Long.MIN_VALUE, Long.MAX_VALUE, UID_TETHERING,
                     TAG_NONE, STATE_ALL, FLAG_POLL_ON_OPEN);

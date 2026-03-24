@@ -20,7 +20,7 @@ package {
 java_defaults {
     name: "CtsHostsideNetworkTestsAllAppDefaults",
     platform_apis: true,
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     // Set target SDK to 10000 so that all the test helper apps are always subject to the most
     // recent (and possibly most restrictive) target SDK behaviour. Also, this matches the target
     // SDK of the tests themselves, and of other tests such as CtsNetTestCases.

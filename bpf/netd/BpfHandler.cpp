@@ -42,6 +42,7 @@ using bpf::isAtLeastT;
 using bpf::isAtLeastU;
 using bpf::isAtLeastV;
 using bpf::isAtLeast25Q2;
+using bpf::isAtLeast26Q2;
 using bpf::isUser;
 using bpf::queryProgram;
 using bpf::retrieveProgram;
@@ -185,6 +186,13 @@ static Status initPrograms(const char* cg2_path) {
         }
     }
 
+    if (isAtLeast26Q2) {
+        if (isAtLeastKernelVersion(6, 1)) {
+            RETURN_IF_NOT_OK(attachProgramToCgroup(L4S_OPTIONS_SOCKOPS_PROG_PATH,
+                                        cg_fd, BPF_CGROUP_SOCK_OPS));
+        }
+    }
+
     if (isAtLeastKernelVersion(4, 19)) {
         RETURN_IF_NOT_OK(attachProgramToCgroup(CGROUP_BIND4_PROG_PATH,
                 cg_fd, BPF_CGROUP_INET4_BIND));
@@ -219,6 +227,12 @@ static Status initPrograms(const char* cg2_path) {
         if (isAtLeastKernelVersion(5, 4)) {
             if (queryProgram(cg_fd, BPF_CGROUP_GETSOCKOPT) <= 0) abort();
             if (queryProgram(cg_fd, BPF_CGROUP_SETSOCKOPT) <= 0) abort();
+        }
+    }
+
+    if (isAtLeast26Q2) {
+        if (isAtLeastKernelVersion(6, 1)) {
+            if (queryProgram(cg_fd, BPF_CGROUP_SOCK_OPS) <= 0) abort();
         }
     }
 

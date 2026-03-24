@@ -44,7 +44,6 @@ import com.android.internal.util.IndentingPrintWriter;
 import com.android.modules.utils.BackgroundThread;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.FrameworkConnectivityStatsLog;
-import com.android.tethering.flags.Flags;
 
 import javax.annotation.CheckReturnValue;
 
@@ -140,13 +139,8 @@ public class SatelliteCoarseUsageMetricsCollector {
         @NonNull
         public MyStatsEntry getSummary(@NonNull NetworkStatsManager nsm, long startTime) {
             final MyStatsEntry ret = new MyStatsEntry();
-            final NetworkStats stats;
-            if (Flags.netstatsPerQueryFlags()) {
-                stats = nsm.querySummary(SATELLITE_TEMPLATE, startTime,
-                        Long.MAX_VALUE, 0 /* explicitly disable FLAG_POLL_ON_OPEN */);
-            } else {
-                stats = nsm.querySummary(SATELLITE_TEMPLATE, startTime, Long.MAX_VALUE);
-            }
+            final NetworkStats stats = nsm.querySummary(SATELLITE_TEMPLATE, startTime,
+                    Long.MAX_VALUE, 0 /* explicitly disable FLAG_POLL_ON_OPEN */);
             // This null check simplifies testing by avoiding the need to mock
             // the complex NetworkStats object. In production, this object
             // is not expected to be null. See ConnectivityServiceIntegrationTest

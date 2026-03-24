@@ -27,8 +27,6 @@ import androidx.test.filters.SmallTest
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.AndroidJUnit4
 import com.android.modules.utils.build.SdkLevel
-import com.android.testutils.DevSdkIgnoreRule
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.NonNullTestUtils
 import kotlin.reflect.jvm.isAccessible
 import kotlin.test.assertFails
@@ -50,8 +48,6 @@ const val LTE_SUBTYPE_NAME = "LTE"
 @SmallTest
 @RunWith(AndroidJUnit4::class)
 class NetworkInfoTest {
-    @Rule @JvmField
-    val ignoreRule = DevSdkIgnoreRule()
 
     @Test
     fun testAccessNetworkInfoProperties() {
@@ -87,7 +83,7 @@ class NetworkInfoTest {
                 DetailedState.CONNECTED == netInfo.getDetailedState())
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.Q)
+    @Test
     fun testConstructor() {
         val networkInfo = NetworkInfo(TYPE_MOBILE, TelephonyManager.NETWORK_TYPE_LTE,
                 MOBILE_TYPE_NAME, LTE_SUBTYPE_NAME)

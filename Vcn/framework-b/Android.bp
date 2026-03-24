@@ -35,7 +35,7 @@ filegroup {
 java_library {
     name: "vcn-utils-framework-ipsec",
     sdk_version: "module_current",
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     srcs: ["src/android/net/vcn/util/PersistableBundleUtils.java"],
     libs: [
         "framework-annotations-lib",

@@ -16,17 +16,15 @@
 
 package android.net.cts
 
+import android.net.ConnectivityFrameworkInitializerTiramisu
 import android.net.nsd.NsdManager
 import android.os.Build
 import androidx.test.platform.app.InstrumentationRegistry
-import com.android.networkstack.apishim.ConnectivityFrameworkInitShimImpl
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertNotNull
-
-private val cfiShim = ConnectivityFrameworkInitShimImpl.newInstance()
 
 @RunWith(DevSdkIgnoreRunner::class)
 // ConnectivityFrameworkInitializerTiramisu was added in T
@@ -42,6 +40,6 @@ class ConnectivityFrameworkInitializerTiramisuTest {
     // registerServiceWrappers can only be called during initialization and should throw otherwise
     @Test(expected = IllegalStateException::class)
     fun testThrows() {
-        cfiShim.registerServiceWrappers()
+        ConnectivityFrameworkInitializerTiramisu.registerServiceWrappers()
     }
 }

@@ -25,8 +25,6 @@ import android.net.NetworkCapabilities.TRANSPORT_CELLULAR
 import android.net.NetworkCapabilities.TRANSPORT_WIFI
 import android.net.ProxyInfo
 import android.net.Uri
-import android.os.Build
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -45,7 +43,6 @@ private const val TIMEOUT_MS = 250L
 private fun lp(proxy: ProxyInfo) = LinkProperties().apply { httpProxy = proxy }
 
 @RunWith(DevSdkIgnoreRunner::class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @DevSdkIgnoreRunner.MonitorThreadLeak
 class ConnectivityServiceProxyTrackerTest : CSTest() {
 
@@ -73,7 +70,7 @@ class ConnectivityServiceProxyTrackerTest : CSTest() {
     @Test
     fun testSetGlobalProxy_DelegatesToProxyTracker() {
         service.setGlobalProxy(directProxy1)
-        verify(proxyTracker).globalProxy = eq(directProxy1)
+        verify(proxyTracker).setGlobalProxy(directProxy1)
     }
 
     @Test
@@ -96,8 +93,11 @@ class ConnectivityServiceProxyTrackerTest : CSTest() {
         val defaultNai = Agent(nc = wifiCaps, lp = lp(pacProxy))
         defaultNai.connect()
 
-        verify(proxyTracker, timeout(TIMEOUT_MS)).setDefaultProxy(pacProxy)
-        verify(proxyTracker).sendProxyBroadcast()
+        verify(proxyTracker, timeout(TIMEOUT_MS)).updateDefaultNetworkState(
+            defaultNai.network,
+            pacProxy
+        )
+        verify(proxyTracker).updateNetworkProxy(defaultNai.network, pacProxy, null)
 
         val pacProxyWithPort =
             ProxyInfo.buildPacProxy(Uri.parse("http://pac.test.com/proxy.pac"), 8080)
@@ -108,7 +108,10 @@ class ConnectivityServiceProxyTrackerTest : CSTest() {
         // configuration  that has the port of the local proxy server set.
         // Verify that the ConnectivityService re-sets the default proxy to the resolved proxy
         // value.
-        verify(proxyTracker, timeout(TIMEOUT_MS)).setDefaultProxy(pacProxyWithPort)
+        verify(proxyTracker, timeout(TIMEOUT_MS)).updateDefaultNetworkState(
+            defaultNai.network,
+            pacProxyWithPort
+        )
 
         // Verify that the ConnectivityService requests the patching of the LinkProperties for the
         // default network.
@@ -123,13 +126,21 @@ class ConnectivityServiceProxyTrackerTest : CSTest() {
         val nai = Agent(lp = lp(directProxy1))
         nai.connect()
 
-        verify(proxyTracker, timeout(TIMEOUT_MS).times(1)).sendProxyBroadcast()
+        verify(proxyTracker, timeout(TIMEOUT_MS).times(1)).updateNetworkProxy(
+            nai.network,
+            directProxy1,
+            null
+        )
 
         val newLp = lp(directProxy2)
         nai.sendLinkProperties(newLp)
 
-        // Verify that a second broadcast is sent because the proxy information has changed.
-        verify(proxyTracker, timeout(TIMEOUT_MS).times(2)).sendProxyBroadcast()
+        // Verify that the proxy was updated.
+        verify(proxyTracker, timeout(TIMEOUT_MS).times(1)).updateNetworkProxy(
+            nai.network,
+            directProxy2,
+            directProxy1
+        )
     }
 
     @Test
@@ -137,13 +148,17 @@ class ConnectivityServiceProxyTrackerTest : CSTest() {
         val nai = Agent(lp = lp(directProxy1))
         nai.connect()
 
-        verify(proxyTracker, times(1)).sendProxyBroadcast()
+        verify(proxyTracker, times(1)).updateNetworkProxy(
+            nai.network,
+            directProxy1,
+            null
+        )
 
         val newLp = lp(directProxy1)
         nai.sendLinkProperties(newLp)
 
-        // Verify that sendProxyBroadcast was still only called once, as the proxy did not change.
-        verify(proxyTracker, times(1)).sendProxyBroadcast()
+        // Verify that the update call was still only called once, as the proxy did not change.
+        verify(proxyTracker, times(1)).updateNetworkProxy(any(), any(), eq(null))
     }
 
     @Test
@@ -165,14 +180,22 @@ class ConnectivityServiceProxyTrackerTest : CSTest() {
         val defaultNai = Agent(nc = cellCaps, lp = lp(directProxy1))
         defaultNai.connect()
 
-        verify(proxyTracker, timeout(TIMEOUT_MS)).setDefaultProxy(proxyInfoCaptor.capture())
+        verify(proxyTracker, timeout(TIMEOUT_MS)).updateDefaultNetworkState(
+            eq(defaultNai.network),
+            proxyInfoCaptor.capture()
+        )
+
         assertEquals(directProxy1, proxyInfoCaptor.value)
 
         // Switch the default network and verify the default proxy is correctly set.
         val newDefaultNai = Agent(nc = wifiCaps, lp = lp(directProxy2))
         newDefaultNai.connect()
 
-        verify(proxyTracker, times(2)).setDefaultProxy(proxyInfoCaptor.capture())
+        verify(proxyTracker, times(1)).updateDefaultNetworkState(
+            eq(newDefaultNai.network),
+            proxyInfoCaptor.capture()
+        )
+
         assertEquals(directProxy2, proxyInfoCaptor.value)
     }
 
@@ -191,15 +214,19 @@ class ConnectivityServiceProxyTrackerTest : CSTest() {
         val vpnNai = Agent(nc = vpnNc, lp = lp(directProxy1))
         vpnNai.connect(expectAvailable = false)
 
-        // Connecting will not trigger a broadcast since there are no apps using the fake VPN
+        // Connecting will not trigger an update since there are no apps using the fake VPN
         // connection.
-        verify(proxyTracker, never()).sendProxyBroadcast()
+        verify(proxyTracker, never()).updateNetworkProxy(any(), any(), any())
 
         vpnNai.disconnect(expectAvailable = false)
-        // Disconnecting from the VPN triggers a system broadcast, as some apps
-        // may need to update their proxy data.
+        // Disconnecting from the VPN triggers an update, as some apps may need to update their
+        // proxy data.
         // TODO(b/122649188): send the broadcast only to VPN users.
-        verify(proxyTracker, timeout(TIMEOUT_MS)).sendProxyBroadcast()
+        verify(proxyTracker, timeout(TIMEOUT_MS)).updateNetworkProxy(
+            vpnNai.network,
+            null,
+            directProxy1
+        )
     }
 
     @Test

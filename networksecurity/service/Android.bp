@@ -47,10 +47,7 @@ java_library {
         "auto_annotation_plugin",
     ],
 
-    // This is included in service-connectivity which is 30+
-    // TODO (b/293613362): allow APEXes to have service jars with higher min_sdk than the APEX
-    // (service-connectivity is only used on 31+) and use 31 here
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     sdk_version: "system_server_current",
     apex_available: ["com.android.tethering"],
 }
@@ -78,7 +75,5 @@ java_library {
 
     sdk_version: "system_server_current",
     min_sdk_version: "31",
-    apex_available: [
-        "com.android.tethering",
-    ],
+    apex_available: ["com.android.tethering"],
 }

@@ -17,7 +17,6 @@
 package com.android.testutils
 
 import android.net.NetworkSpecifier
-import com.android.modules.utils.build.SdkLevel.isAtLeastS
 
 /**
  * Test utility to create [NetworkSpecifier]s on different SDK versions.
@@ -25,10 +24,6 @@ import com.android.modules.utils.build.SdkLevel.isAtLeastS
 object CompatUtil {
     @JvmStatic
     fun makeTestNetworkSpecifier(ifName: String): NetworkSpecifier {
-        // Until R, there was no TestNetworkSpecifier, StringNetworkSpecifier was used instead
-        if (!isAtLeastS()) {
-            return makeNetworkSpecifierInternal("android.net.StringNetworkSpecifier", ifName)
-        }
         // TestNetworkSpecifier is not part of the SDK in some branches using this utility
         // TODO: replace with a direct call to the constructor
         return makeNetworkSpecifierInternal("android.net.TestNetworkSpecifier", ifName)
@@ -36,10 +31,6 @@ object CompatUtil {
 
     @JvmStatic
     fun makeEthernetNetworkSpecifier(ifName: String): NetworkSpecifier {
-        // Until R, there was no EthernetNetworkSpecifier, StringNetworkSpecifier was used instead
-        if (!isAtLeastS()) {
-            return makeNetworkSpecifierInternal("android.net.StringNetworkSpecifier", ifName)
-        }
         // EthernetNetworkSpecifier is not part of the SDK in some branches using this utility
         // TODO: replace with a direct call to the constructor
         return makeNetworkSpecifierInternal("android.net.EthernetNetworkSpecifier", ifName)

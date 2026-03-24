@@ -16,14 +16,11 @@
 
 package com.android.server.net.ct;
 
-import static android.security.Flags.certificateTransparencyConfiguration;
-
-import static com.android.net.ct.flags.Flags.certificateTransparencyService;
 import static com.android.net.ct.flags.Flags.flatbuffersLogList;
+import static com.android.server.net.ct.Config.TAG;
 
 import android.annotation.RequiresApi;
 import android.content.Context;
-import android.net.ct.ICertificateTransparencyManager;
 import android.os.Build;
 import android.provider.DeviceConfig;
 import android.provider.DeviceConfig.Properties;
@@ -37,19 +34,9 @@ import java.util.concurrent.Executors;
 
 /** Implementation of the Certificate Transparency service. */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-public class CertificateTransparencyService extends ICertificateTransparencyManager.Stub
-        implements DeviceConfig.OnPropertiesChangedListener {
-
-    private static final String TAG = "CertificateTransparencyService";
+public class CertificateTransparencyService implements DeviceConfig.OnPropertiesChangedListener {
 
     private final CertificateTransparencyJob mCertificateTransparencyJob;
-
-    /**
-     * @return true if the CertificateTransparency service is enabled.
-     */
-    public static boolean enabled(Context context) {
-        return certificateTransparencyService() && certificateTransparencyConfiguration();
-    }
 
     /** Creates a new {@link CertificateTransparencyService} object. */
     public CertificateTransparencyService(Context context) {
@@ -72,7 +59,6 @@ public class CertificateTransparencyService extends ICertificateTransparencyMana
                 new CertificateTransparencyJob(
                         context,
                         new CertificateTransparencyDownloader(
-                                context,
                                 new DownloadHelper(context),
                                 signatureVerifier,
                                 new CertificateTransparencyLoggerImpl(),

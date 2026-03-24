@@ -34,9 +34,8 @@ import static android.net.NetworkCapabilities.TRANSPORT_VPN;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
 
 import static com.android.testutils.ParcelUtils.assertParcelingIsLossless;
-import static com.google.common.truth.Truth.assertThat;
 
-import static junit.framework.Assert.fail;
+import static com.google.common.truth.Truth.assertThat;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -63,10 +62,6 @@ import android.util.Range;
 import androidx.test.runner.AndroidJUnit4;
 
 import com.android.modules.utils.build.SdkLevel;
-import com.android.networkstack.apishim.ConstantsShim;
-import com.android.networkstack.apishim.NetworkRequestShimImpl;
-import com.android.networkstack.apishim.common.NetworkRequestShim;
-import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
 import com.android.testutils.ConnectivityModuleTest;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreAfter;
@@ -104,7 +99,6 @@ public class NetworkRequestTest {
         }
     }
 
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     @Test
     public void testParceling() {
         NetworkCapabilities nc = new NetworkCapabilities.Builder().build();
@@ -126,7 +120,7 @@ public class NetworkRequestTest {
         verifyNoCapabilities(nr);
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     public void testForbiddenCapabilities() {
         final NetworkRequest.Builder builder = new NetworkRequest.Builder();
         builder.addForbiddenCapability(NET_CAPABILITY_MMS);
@@ -222,7 +216,7 @@ public class NetworkRequestTest {
 
     private void addNotVcnManagedCapability(@NonNull NetworkCapabilities nc) {
         if (SdkLevel.isAtLeastS()) {
-            nc.addCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED);
+            nc.addCapability(NET_CAPABILITY_NOT_VCN_MANAGED);
         }
     }
 
@@ -285,11 +279,9 @@ public class NetworkRequestTest {
         assertTrue(requestCellularInternet.canBeSatisfiedBy(capCellularVpnMmsInternet));
     }
 
-    private void setUids(NetworkRequest.Builder builder, Set<Range<Integer>> ranges)
-            throws UnsupportedApiLevelException {
+    private void setUids(NetworkRequest.Builder builder, Set<Range<Integer>> ranges) {
         if (SdkLevel.isAtLeastS()) {
-            final NetworkRequestShim networkRequestShim = NetworkRequestShimImpl.newInstance();
-            networkRequestShim.setUids(builder, ranges);
+            builder.setUids(ranges);
         }
     }
 
@@ -312,11 +304,7 @@ public class NetworkRequestTest {
         // request contains the current UID both on S and before S.
         final Set<Range<Integer>> ranges = new ArraySet<>();
         ranges.add(new Range<Integer>(uid, uid));
-        try {
-            setUids(nrBuilder, ranges);
-        } catch (UnsupportedApiLevelException e) {
-            // Not supported before API31.
-        }
+        setUids(nrBuilder, ranges);
         final NetworkRequest requestCombination = nrBuilder.build();
 
         final NetworkCapabilities capCell = new NetworkCapabilities.Builder()
@@ -367,18 +355,15 @@ public class NetworkRequestTest {
 
     @Test
     public void testSetIncludeOtherUidNetworks() throws Exception {
-        assumeTrue(TestUtils.shouldTestSApis());
-        final NetworkRequestShim shim = NetworkRequestShimImpl.newInstance();
-
         final NetworkRequest.Builder builder = new NetworkRequest.Builder();
         // NetworkRequests have NET_CAPABILITY_NOT_VCN_MANAGED by default.
-        builder.removeCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED);
-        shim.setIncludeOtherUidNetworks(builder, false);
+        builder.removeCapability(NET_CAPABILITY_NOT_VCN_MANAGED);
+        builder.setIncludeOtherUidNetworks(false);
         final NetworkRequest request = builder.build();
 
         final NetworkRequest.Builder otherUidsBuilder = new NetworkRequest.Builder();
-        otherUidsBuilder.removeCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED);
-        shim.setIncludeOtherUidNetworks(otherUidsBuilder, true);
+        otherUidsBuilder.removeCapability(NET_CAPABILITY_NOT_VCN_MANAGED);
+        otherUidsBuilder.setIncludeOtherUidNetworks(true);
         final NetworkRequest otherUidsRequest = otherUidsBuilder.build();
 
         assertNotEquals(Process.SYSTEM_UID, Process.myUid());
@@ -414,57 +399,57 @@ public class NetworkRequestTest {
 
     // TODO: 1. Refactor test cases with helper method.
     //       2. Test capability that does not yet exist.
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     public void testBypassingVcn() {
         // Make an empty request. Verify the NOT_VCN_MANAGED is added.
         final NetworkRequest emptyRequest = new NetworkRequest.Builder().build();
-        assertTrue(emptyRequest.hasCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+        assertTrue(emptyRequest.hasCapability(NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make a request explicitly add NOT_VCN_MANAGED. Verify the NOT_VCN_MANAGED is preserved.
         final NetworkRequest mmsAddNotVcnRequest = new NetworkRequest.Builder()
                 .addCapability(NET_CAPABILITY_MMS)
-                .addCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED)
+                .addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
                 .build();
         assertTrue(mmsAddNotVcnRequest.hasCapability(
-                ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+                NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Similar to above, but the opposite order.
         final NetworkRequest mmsAddNotVcnRequest2 = new NetworkRequest.Builder()
-                .addCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED)
+                .addCapability(NET_CAPABILITY_NOT_VCN_MANAGED)
                 .addCapability(NET_CAPABILITY_MMS)
                 .build();
         assertTrue(mmsAddNotVcnRequest2.hasCapability(
-                ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+                NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make a request explicitly remove NOT_VCN_MANAGED. Verify the NOT_VCN_MANAGED is removed.
         final NetworkRequest removeNotVcnRequest = new NetworkRequest.Builder()
-                .removeCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED).build();
+                .removeCapability(NET_CAPABILITY_NOT_VCN_MANAGED).build();
         assertFalse(removeNotVcnRequest.hasCapability(
-                ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+                NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make a request add some capability inside VCN supported capabilities.
         // Verify the NOT_VCN_MANAGED is added.
         final NetworkRequest notRoamRequest = new NetworkRequest.Builder()
                 .addCapability(NET_CAPABILITY_NOT_ROAMING).build();
-        assertTrue(notRoamRequest.hasCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+        assertTrue(notRoamRequest.hasCapability(NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make an internet request. Verify the NOT_VCN_MANAGED is added.
         final NetworkRequest internetRequest = new NetworkRequest.Builder()
                 .addCapability(NET_CAPABILITY_INTERNET).build();
-        assertTrue(internetRequest.hasCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+        assertTrue(internetRequest.hasCapability(NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make an internet request which explicitly removed NOT_VCN_MANAGED.
         // Verify the NOT_VCN_MANAGED is removed.
         final NetworkRequest internetRemoveNotVcnRequest = new NetworkRequest.Builder()
                 .addCapability(NET_CAPABILITY_INTERNET)
-                .removeCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED).build();
+                .removeCapability(NET_CAPABILITY_NOT_VCN_MANAGED).build();
         assertFalse(internetRemoveNotVcnRequest.hasCapability(
-                ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+                NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make a normal MMS request. Verify the request could bypass VCN.
         final NetworkRequest mmsRequest =
                 new NetworkRequest.Builder().addCapability(NET_CAPABILITY_MMS).build();
-        assertFalse(mmsRequest.hasCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+        assertFalse(mmsRequest.hasCapability(NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make a SUPL request along with internet. Verify NOT_VCN_MANAGED is not added since
         // SUPL is not in the supported list.
@@ -472,20 +457,20 @@ public class NetworkRequestTest {
                         .addCapability(NET_CAPABILITY_SUPL)
                         .addCapability(NET_CAPABILITY_INTERNET).build();
         assertFalse(suplWithInternetRequest.hasCapability(
-                ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+                NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make a FOTA request with explicitly add NOT_VCN_MANAGED capability. Verify
         // NOT_VCN_MANAGED is preserved.
         final NetworkRequest fotaRequest = new NetworkRequest.Builder()
                         .addCapability(NET_CAPABILITY_FOTA)
-                        .addCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED).build();
-        assertTrue(fotaRequest.hasCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+                        .addCapability(NET_CAPABILITY_NOT_VCN_MANAGED).build();
+        assertTrue(fotaRequest.hasCapability(NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make a DUN request, which is in {@code VCN_SUPPORTED_CAPABILITIES}.
         // Verify NOT_VCN_MANAGED is preserved.
         final NetworkRequest dunRequest = new NetworkRequest.Builder()
                 .addCapability(NET_CAPABILITY_DUN).build();
-        assertTrue(dunRequest.hasCapability(ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+        assertTrue(dunRequest.hasCapability(NET_CAPABILITY_NOT_VCN_MANAGED));
 
         // Make an internet request but with NetworkSpecifier. Verify the NOT_VCN_MANAGED is not
         // added.
@@ -493,20 +478,15 @@ public class NetworkRequestTest {
                 .addTransportType(TRANSPORT_WIFI).addCapability(NET_CAPABILITY_INTERNET)
                 .setNetworkSpecifier(makeTestWifiSpecifier()).build();
         assertFalse(internetWithSpecifierRequest.hasCapability(
-                ConstantsShim.NET_CAPABILITY_NOT_VCN_MANAGED));
+                NET_CAPABILITY_NOT_VCN_MANAGED));
     }
 
     private void verifyEqualRequestBuilt(NetworkRequest orig) {
-        try {
-            final NetworkRequestShim shim = NetworkRequestShimImpl.newInstance();
-            final NetworkRequest copy = shim.newBuilder(orig).build();
-            assertEquals(orig, copy);
-        } catch (UnsupportedApiLevelException e) {
-            fail("NetworkRequestShim.newBuilder should be supported in this SDK version");
-        }
+        final NetworkRequest copy = new NetworkRequest.Builder(orig).build();
+        assertEquals(orig, copy);
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R)
+    @Test
     public void testGetCapabilities() {
         final int[] netCapabilities = new int[] {
                 NET_CAPABILITY_INTERNET,
@@ -524,7 +504,7 @@ public class NetworkRequestTest {
     // Default capabilities and default forbidden capabilities must not be changed on U- because
     // this could cause the system server crash when there is a module rollback (b/313030307)
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R) @IgnoreAfter(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+     @IgnoreAfter(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void testDefaultCapabilities() {
         final NetworkRequest defaultNR = new NetworkRequest.Builder().build();
 
@@ -539,7 +519,6 @@ public class NetworkRequestTest {
 
     @Test
     public void testBuildRequestFromExistingRequestWithBuilder() {
-        assumeTrue(TestUtils.shouldTestSApis());
         final NetworkRequest.Builder builder = new NetworkRequest.Builder();
 
         final NetworkRequest baseRequest = builder.build();
@@ -569,7 +548,6 @@ public class NetworkRequestTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testNetworkReservation() {
         final NetworkCapabilities nc = new NetworkCapabilities();
         final NetworkCapabilities blanketOffer = new NetworkCapabilities(nc);
@@ -597,7 +575,6 @@ public class NetworkRequestTest {
     }
 
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testNetworkRequest_throwsWhenPassingCapsWithReservationId() {
         final NetworkCapabilities capsWithResId = new NetworkCapabilities();
         capsWithResId.setReservationId(42);

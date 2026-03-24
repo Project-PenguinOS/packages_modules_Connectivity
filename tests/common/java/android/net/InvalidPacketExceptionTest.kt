@@ -16,15 +16,12 @@
 
 package android.net
 
-import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.filters.SdkSuppress
 import org.junit.runner.RunWith
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 @RunWith(AndroidJUnit4::class)
-@SdkSuppress(minSdkVersion = Build.VERSION_CODES.S, codeName = "S")
 class InvalidPacketExceptionTest {
     @Test
     fun testConstructor() {

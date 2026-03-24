@@ -15,7 +15,7 @@
  */
 
 // The resulting .o needs to load on Android T+
-#define BPFLOADER_MIN_VER BPFLOADER_MAINLINE_T_VERSION
+#define NETBPFLOAD_MINAPI_VER NETBPFLOAD_T_VER
 #define BPF_OBJ_NAME "dscpPolicy"
 #define DEFAULT_BPF_PIN_SUBDIR "net_shared"
 
@@ -264,10 +264,17 @@ static inline __always_inline void match_policy(struct __sk_buff* skb, const boo
     return;
 }
 
-DEFINE_BPF_PROG_KVER(schedcls, set_dscp_ether, , AID_SYSTEM, 5_15)
+// Unsurprisingly this is attached to 'tc egress' - see DscpPolicyTracker.java's attachProgram()
+// which calls tcFilterAddDevBpf(..., ingress = false, ...)
+//
+// In spite of that skb->pkt_type that we observe here *is* PACKET_HOST (0) and not the expected
+// PACKET_OUTGOING (4).
+//
+// This is likely a Linux kernel bug, as 0 is the default, and PACKET_OUTGOING appears to be
+// set ONLY in dev_queue_xmit_nit() on skb2 post-clone - ie. on ptype delivered packets
+// (ie. AF_PACKET/tcpdump on egress) and not on the core packet itself.
+DEFINE_BPF_PROG_KVER(schedcls, set_dscp_ether, AID_SYSTEM, 5_15)
 (struct __sk_buff* skb) {
-    if (skb->pkt_type != PACKET_HOST) return TC_ACT_PIPE;
-
     if (skb->protocol == htons(ETH_P_IP)) {
         match_policy(skb, true);
     } else if (skb->protocol == htons(ETH_P_IPV6)) {

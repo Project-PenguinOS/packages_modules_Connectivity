@@ -16,6 +16,7 @@
 
 package com.android.networkstack.tethering;
 
+import static android.content.Context.RECEIVER_NOT_EXPORTED;
 import static android.content.pm.PackageManager.GET_ACTIVITIES;
 import static android.net.TetheringConstants.EXTRA_ADD_TETHER_TYPE;
 import static android.net.TetheringConstants.EXTRA_PROVISION_CALLBACK;
@@ -32,11 +33,10 @@ import static android.net.TetheringManager.TETHERING_WIFI;
 import static android.net.TetheringManager.TETHER_ERROR_ENTITLEMENT_UNKNOWN;
 import static android.net.TetheringManager.TETHER_ERROR_NO_ERROR;
 import static android.net.TetheringManager.TETHER_ERROR_PROVISIONING_FAILED;
+import static android.provider.Settings.ACTION_TETHER_UNSUPPORTED_CARRIER_UI;
 import static android.telephony.SubscriptionManager.INVALID_SUBSCRIPTION_ID;
 
 import static com.android.internal.annotations.VisibleForTesting.Visibility.PRIVATE;
-import static com.android.networkstack.apishim.ConstantsShim.ACTION_TETHER_UNSUPPORTED_CARRIER_UI;
-import static com.android.networkstack.apishim.ConstantsShim.RECEIVER_NOT_EXPORTED;
 
 import android.app.ActivityManager;
 import android.app.AlarmManager;
@@ -66,6 +66,7 @@ import androidx.annotation.Nullable;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.FrameworkConnectivityStatsLog;
+import com.android.net.module.util.SdkUtil;
 import com.android.net.module.util.SharedLog;
 import com.android.tethering.flags.Flags;
 
@@ -236,7 +237,10 @@ public class EntitlementManager {
          * @return true if entitlement UI should be shown to requesters, false otherwise.
          */
         protected boolean shouldShowEntitlementUiToRequesters() {
-            return Flags.showEntitlementUiToRequesters();
+            // Guarded the feature by a platform version to prevent breaking changes
+            // on released platforms via mainline updates and to allow further
+            // OEM/carrier testing.
+            return SdkUtil.isAtLeast26Q2() && Flags.showEntitlementUiToRequesters();
         }
 
         /**

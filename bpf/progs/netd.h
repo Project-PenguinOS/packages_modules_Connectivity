@@ -133,6 +133,17 @@ typedef struct {
 } LoopbackAccessEvent;
 STRUCT_SIZE(LoopbackAccessEvent, 4 + 4 + 4);
 
+typedef struct {
+    uint32_t ce_count;
+    uint16_t mss;
+    uint8_t  ce_inited;
+    uint8_t  byte_inited;
+    uint64_t ceb;
+    uint64_t e0b;
+    uint64_t e1b;
+} L4SStorage;
+STRUCT_SIZE(L4SStorage, 4 + 2 + 1 + 1 + 8 + 8 + 8);
+
 #define STATS_MAP_SIZE 5000
 #define CONFIGURATION_MAP_SIZE 2
 
@@ -214,25 +225,16 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define LOOPBACK_ACCESS_METRICS_ENABLED_MAP_NETD_PATH                                         \
     BPF_NETD_PATH "map_netd_loopback_access_metrics_enabled_map"
 
-#define L4S_INGRESS_ETHER_PROG_PATH   BPF_NETD_PATH "prog_netd_schedcls_ingress_accecn_eth"
+#define L4S_INGRESS_PROG_PATH   BPF_NETD_PATH "prog_netd_ingress_accecn_common"
 #define L4S_EGRESS_ETHER_PROG_PATH    BPF_NETD_PATH "prog_netd_schedcls_egress_accecn_eth"
-#define L4S_INGRESS_RAWIP_PROG_PATH   BPF_NETD_PATH "prog_netd_schedcls_ingress_accecn_rawip"
 #define L4S_EGRESS_RAWIP_PROG_PATH    BPF_NETD_PATH "prog_netd_schedcls_egress_accecn_rawip"
 #define L4S_OPTIONS_SOCKOPS_PROG_PATH BPF_NETD_PATH "prog_netd_sockops_accecn_option"
 
-#define L4S_ACCECN_CE_MAP_PATH        BPF_NETD_PATH "map_netd_l4s_accecn_ce_map"
-#define L4S_ACCECN_BYTE_MAP_PATH      BPF_NETD_PATH "map_netd_l4s_accecn_byte_map"
-#define L4S_ACCECN_MSS_MAP_PATH       BPF_NETD_PATH "map_netd_l4s_accecn_mss_map"
+#define L4S_CONN_COUNTER_MAP_PATH        BPF_NETD_PATH "map_netd_l4s_conn_counter"
+#define L4S_SK_STORAGE_MAP_PATH      BPF_NETD_PATH "map_netd_sk_l4s_storage"
 #define L4S_ACCECN_ENABLED_MAP_PATH   BPF_NETD_PATH "map_netd_l4s_accecn_enabled_map"
 
 #endif // __cplusplus
-
-typedef struct {
-    uint64_t ceb;
-    uint64_t e0b;
-    uint64_t e1b;
-} EcnByteCounters;
-STRUCT_SIZE(EcnByteCounters, 3 * 8);  // 24
 
 // LINT.IfChange(match_type)
 enum UidOwnerMatchType : uint32_t {
@@ -304,19 +306,29 @@ typedef struct {
 STRUCT_SIZE(LocalNetUidHostAllowlistKey, 4 + 4 + 4 + 16);  // 28
 
 // LINT.IfChange(uid_permission_chunk_type)
-// Each UID costs 3 bits (3 permissions ACCESS_LOCAL_NETWORK / INTERNET /
-// UPDATE_DEVICE_STATS)
-// One int64 can store up to 21 UIDs (3 * 21 = 63 bits per int64)
-#define PERMISSION_COUNT 3
-#define UIDS_PER_INT64 21
+// Each UID costs 7 bits (permissions ACCESS_LOCAL_NETWORK / INTERNET /
+// UPDATE_DEVICE_STATS or loopback related perms)
+// One int64 can store up to 9 UIDs (7 * 9 = 63 bits per int64)
+#define PERMISSION_COUNT 7
+#define UIDS_PER_INT64 (64 / PERMISSION_COUNT)
 #define CHUNK_INT64_COUNT 128
-// One chunk can store 128 * 21 = 2688 UIDs using 128 int64
-#define CHUNK_UID_COUNT 2688
-#define UID_PERMISSION_MASK 7
+// One chunk can store 128 * 9 = 1152 UIDs using 128 int64
+#define CHUNK_UID_COUNT (CHUNK_INT64_COUNT * UIDS_PER_INT64)
+#define UID_PERMISSION_MASK ((1 << PERMISSION_COUNT) - 1)
 #define PERMISSION_BIT_NONE 0
-#define PERMISSION_BIT_ACCESS_LOCAL_NETWORK 1
-#define PERMISSION_BIT_UPDATE_DEVICE_STATS 2
-#define PERMISSION_BIT_NO_INTERNET 4
+#define PERMISSION_BIT_ACCESS_LOCAL_NETWORK (1 << 0)
+#define PERMISSION_BIT_UPDATE_DEVICE_STATS (1 << 1)
+#define PERMISSION_BIT_NO_INTERNET (1 << 2)
+// Required for an app to interact with other applications via IP packets on the
+// loopback interface.
+#define PERMISSION_BIT_USE_LOOPBACK_INTERFACE (1 << 3)
+// Required to be able to interact with other applications via IP packets on the
+// loopback interface without requiring permissions from the other app
+#define PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE (1 << 4)
+// Permissions below are required to interact across users/profiles via IP
+// packets on the loopback interface.
+#define PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL (1 << 5)
+#define PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES (1 << 6)
 // LINT.ThenChange(../../common/src/com/android/net/module/util/bpf/UidPermissionChunk.java)
 
 typedef struct {

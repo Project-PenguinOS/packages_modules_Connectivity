@@ -16,6 +16,9 @@
 
 package com.android.server;
 
+import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_BANDWIDTH;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_LATENCY;
+import static android.net.NetworkCapabilities.NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS;
 import static android.Manifest.permission.RECEIVE_DATA_ACTIVITY_CHANGE;
 import static android.app.ActivityManager.UidFrozenStateChangedCallback.UID_FROZEN_STATE_FROZEN;
 import static android.content.pm.PackageManager.FEATURE_BLUETOOTH;
@@ -305,6 +308,7 @@ import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.ConditionVariable;
+import android.os.ConfigUpdate;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -391,10 +395,6 @@ import com.android.net.module.util.netlink.NetlinkMessage;
 import com.android.net.module.util.netlink.NetlinkUtils;
 import com.android.net.module.util.netlink.RtNetlinkAddressMessage;
 import com.android.net.module.util.netlink.StructIfaddrMsg;
-import com.android.networkstack.apishim.BroadcastOptionsShimImpl;
-import com.android.networkstack.apishim.ConstantsShim;
-import com.android.networkstack.apishim.common.BroadcastOptionsShim;
-import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
 import com.android.server.connectivity.AppOptInDefaultNetworkController;
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy;
 import com.android.server.connectivity.ApplicationSelfCertifiedNetworkCapabilities;
@@ -411,6 +411,7 @@ import com.android.server.connectivity.DnsManager;
 import com.android.server.connectivity.DnsManager.PrivateDnsValidationUpdate;
 import com.android.server.connectivity.DscpPolicyTracker;
 import com.android.server.connectivity.FullScore;
+import com.android.server.connectivity.IProxyTracker;
 import com.android.server.connectivity.IntegerRangeUtils;
 import com.android.server.connectivity.InterfaceTracker;
 import com.android.server.connectivity.InvalidTagException;
@@ -543,6 +544,17 @@ public class ConnectivityService extends IConnectivityManager.Stub
     // Delimiter used when creating the broadcast delivery group for sending
     // CONNECTIVITY_ACTION broadcast.
     private static final char DELIVERY_GROUP_KEY_DELIMITER = ';';
+
+    // After Dscp priority, see DscpPolicyTracker.PRIO_DSCP
+    @VisibleForTesting
+    static final short PRIO_L4S = 6;
+    private static final String BPF_NETD_PATH = "/sys/fs/bpf/netd_shared/";
+    @VisibleForTesting
+    static final String BPF_L4S_EGRESS_ETH_PROG =
+            BPF_NETD_PATH + "prog_netd_schedcls_egress_accecn_eth";
+    @VisibleForTesting
+    static final String BPF_L4S_EGRESS_RAWIP_PROG =
+            BPF_NETD_PATH + "prog_netd_schedcls_egress_accecn_rawip";
 
     // The maximum value for the blocking validation result, in milliseconds.
     public static final int MAX_VALIDATION_IGNORE_AFTER_ROAM_TIME_MS = 10000;
@@ -1097,7 +1109,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
     // A helper object to track the current default HTTP proxy. ConnectivityService needs to tell
     // the world when it changes.
-    private final ProxyTracker mProxyTracker;
+    private final IProxyTracker mProxyTracker;
 
     final private SettingsObserver mSettingsObserver;
 
@@ -1666,7 +1678,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         /**
          * @see ProxyTracker
          */
-        public ProxyTracker makeProxyTracker(@NonNull Context context,
+        public IProxyTracker makeProxyTracker(@NonNull Context context,
                 @NonNull Handler connServiceHandler) {
             return new ProxyTracker(context, connServiceHandler, EVENT_PAC_PROXY_HAS_CHANGED);
         }
@@ -1956,13 +1968,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         /**
-         * Wraps {@link BroadcastOptionsShimImpl#newInstance(BroadcastOptions)}
+         * Returns the BroadcastOptions object.
          */
-        // TODO: when available in all active branches:
-        //  @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-        @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
-        public BroadcastOptionsShim makeBroadcastOptionsShim(BroadcastOptions options) {
-            return BroadcastOptionsShimImpl.newInstance(options);
+        public BroadcastOptions getBroadcastOptions(BroadcastOptions options) {
+            return options;
         }
 
         /**
@@ -2105,6 +2114,25 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         /**
+         * Wraps {@link TcUtils#tcFilerAddDevBpf}
+         */
+        public void attachBpfProgram(
+                int ifIndex, boolean ingress, short prio, short protocol, String bpfProgPath) {
+            try {
+                TcUtils.tcFilterAddDevBpf(ifIndex, ingress, prio, protocol, bpfProgPath);
+            } catch (IOException e) {
+                Log.e(TAG, "tc filter add dev " + ifIndex + " failure: " + e);
+            }
+        }
+
+        /**
+         * Wraps {@link TcUtils#isEthernet}
+         */
+        public boolean isEthernet(String iface) throws IOException {
+            return TcUtils.isEthernet(iface);
+        }
+
+        /**
          * Retrieves all the network interfaces on the local machine.
          */
         public @Nullable Enumeration<NetworkInterface> getNetworkInterfaces()
@@ -2128,8 +2156,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
          * The flag value can change at runtime via a server push.
          */
         public boolean shouldBluetoothTetheringUseRandomAddress() {
-            return SdkLevel.isAtLeastT() &&
-                    com.android.tethering.mainline.beta.Flags.bluetoothTetheringRandomizedAddress();
+            return SdkLevel.isAtLeastT();
         }
 
         /**
@@ -4477,17 +4504,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // Delivery group policy APIs are only available on U+.
         if (!mDeps.isAtLeastU()) return;
 
-        final BroadcastOptionsShim optsShim = mDeps.makeBroadcastOptionsShim(options);
-        try {
-            // This allows us to discard older broadcasts still waiting to be delivered
-            // which have the same namespace and key.
-            optsShim.setDeliveryGroupPolicy(ConstantsShim.DELIVERY_GROUP_POLICY_MOST_RECENT);
-            optsShim.setDeliveryGroupMatchingKey(ConnectivityManager.CONNECTIVITY_ACTION,
-                    createDeliveryGroupKeyForConnectivityAction(info));
-            optsShim.setDeferralPolicy(ConstantsShim.DEFERRAL_POLICY_UNTIL_ACTIVE);
-        } catch (UnsupportedApiLevelException e) {
-            Log.wtf(TAG, "Using unsupported API" + e);
-        }
+        final BroadcastOptions opts = mDeps.getBroadcastOptions(options);
+        // This allows us to discard older broadcasts still waiting to be delivered
+        // which have the same namespace and key.
+        opts.setDeliveryGroupPolicy(BroadcastOptions.DELIVERY_GROUP_POLICY_MOST_RECENT);
+        opts.setDeliveryGroupMatchingKey(ConnectivityManager.CONNECTIVITY_ACTION,
+                createDeliveryGroupKeyForConnectivityAction(info));
+        opts.setDeferralPolicy(BroadcastOptions.DEFERRAL_POLICY_UNTIL_ACTIVE);
     }
 
     private void maybeClearTcQdiscClsact() {
@@ -4592,7 +4615,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             mAppOptInDefaultNetworkController.start();
         }
 
-        if (mCarrierPrivilegeAuthenticator != null) {
+        if (mCarrierPrivilegeAuthenticator != null && SdkLevel.isAtLeastT()) {
             mCarrierPrivilegeAuthenticator.start();
         }
 
@@ -4892,7 +4915,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             dumpBpfProgramStatus(pw);
         }
 
-        if (null != mCarrierPrivilegeAuthenticator) {
+        if (null != mCarrierPrivilegeAuthenticator && SdkLevel.isAtLeastT()) {
             pw.println();
             mCarrierPrivilegeAuthenticator.dump(pw);
         }
@@ -5097,7 +5120,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
     private void dumpTrafficController(IndentingPrintWriter pw, final FileDescriptor fd,
             boolean verbose) {
         try {
-            mBpfNetMaps.dump(pw, fd, verbose);
+            if (SdkLevel.isAtLeastT()) {
+                mBpfNetMaps.dump(pw, fd, verbose);
+            }
         } catch (ServiceSpecificException e) {
             pw.println(e.getMessage());
         } catch (IOException e) {
@@ -6146,7 +6171,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             // that there is no longer a default proxy.
             // Strictly speaking this is not essential because having a proxy setting when
             // there is no network is harmless, but it's still counter-intuitive so reset to null.
-            mProxyTracker.setDefaultProxy(null);
+            mProxyTracker.updateDefaultNetworkState(null, null);
         }
 
         // Immediate teardown.
@@ -6295,6 +6320,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         for (final String iface: nai.linkProperties.getAllInterfaceNames()) {
+            // attached programs are cleared by removing qdisc clsact
             maybeModifyQdiscClsact(iface, nai, false /* add */);
         }
 
@@ -6355,7 +6381,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
     private boolean hasCarrierPrivilegeForNetworkCaps(final int callingUid,
             @NonNull final NetworkCapabilities caps) {
-        if (mCarrierPrivilegeAuthenticator != null) {
+        if (mCarrierPrivilegeAuthenticator != null && SdkLevel.isAtLeastT()) {
             return mCarrierPrivilegeAuthenticator.isCarrierServiceUidForNetworkCapabilities(
                     callingUid, caps);
         }
@@ -6363,7 +6389,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private int getSubscriptionIdFromNetworkCaps(@NonNull final NetworkCapabilities caps) {
-        if (mCarrierPrivilegeAuthenticator != null) {
+        if (mCarrierPrivilegeAuthenticator != null && SdkLevel.isAtLeastT()) {
             return mCarrierPrivilegeAuthenticator.getSubIdFromNetworkCapabilities(caps);
         }
         return SubscriptionManager.INVALID_SUBSCRIPTION_ID;
@@ -7932,7 +7958,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void handlePacProxyServiceStarted(@Nullable Network net, @Nullable ProxyInfo proxy) {
-        mProxyTracker.setDefaultProxy(proxy);
+        mProxyTracker.updateDefaultNetworkState(net, proxy);
         final NetworkAgentInfo nai = getDefaultNetwork();
         // TODO : this method should check that net == nai.network, unfortunately at this point
         // 'net' is always null in practice (see PacProxyService#sendPacBroadcast). PAC proxy
@@ -7950,12 +7976,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
     // when any network changes proxy.
     // TODO: Remove usage of broadcast extras as they are deprecated and not applicable in a
     // multi-network world where an app might be bound to a non-default network.
-    private void updateProxy(@NonNull LinkProperties newLp, @Nullable LinkProperties oldLp) {
+    private void updateProxy(@NonNull Network network, @NonNull LinkProperties newLp,
+            @Nullable LinkProperties oldLp) {
         ProxyInfo newProxyInfo = newLp.getHttpProxy();
         ProxyInfo oldProxyInfo = oldLp == null ? null : oldLp.getHttpProxy();
 
         if (!ProxyTracker.proxyInfoEqual(newProxyInfo, oldProxyInfo)) {
-            mProxyTracker.sendProxyBroadcast();
+            mProxyTracker.updateNetworkProxy(network, newProxyInfo, oldProxyInfo);
         }
     }
 
@@ -9425,7 +9452,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                             mContext.createContextAsUser(UserHandle.getUserHandleForUid(
                                     callingUid), 0 /* flags */).getPackageManager();
                     final PackageManager.Property networkSliceProperty = packageManager.getProperty(
-                            ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
+                            PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES,
                             callerPackageName
                     );
                     final XmlResourceParser parser = packageManager
@@ -9440,7 +9467,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             }
         } catch (PackageManager.NameNotFoundException ne) {
             throw new SecurityException(
-                    "Cannot find " + ConstantsShim.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES
+                    "Cannot find " + PackageManager.PROPERTY_SELF_CERTIFIED_NETWORK_CAPABILITIES
                             + " property");
         } catch (XmlPullParserException | IOException | InvalidTagException e) {
             throw new SecurityException(e.getMessage());
@@ -9957,6 +9984,18 @@ public class ConnectivityService extends IConnectivityManager.Stub
         return (mDefaultNetworkRequests.contains(nri) && mDefaultRequest != nri);
     }
 
+    /** Whether this network is capable of supporting L4S */
+    public boolean shouldEnableL4s(@NonNull NetworkAgentInfo nai) {
+        if (nai.isVPN()) return false;
+
+        // TODO: add metrics in updateCapabilities to make sure these capabilities are not changed
+        return nai.networkCapabilities.hasCapability(NET_CAPABILITY_INTERNET)
+                || nai.networkCapabilities.hasCapability(NET_CAPABILITY_PRIORITIZE_LATENCY)
+                || nai.networkCapabilities.hasCapability(
+                NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS)
+                || nai.networkCapabilities.hasCapability(NET_CAPABILITY_PRIORITIZE_BANDWIDTH);
+    }
+
     /**
      * Return the default network request currently tracking the given uid.
      * @param uid the uid to check.
@@ -10239,12 +10278,6 @@ public class ConnectivityService extends IConnectivityManager.Stub
         final LinkProperties lpCopy = new LinkProperties(linkProperties);
         // No need to copy |localNetworkConfiguration| as it is immutable.
 
-        if (isAppSpecificNetwork) {
-            // For app specific network, set the app's UID and make network restricted.
-            ncCopy.setSingleUid(uid);
-            ncCopy.removeCapability(NET_CAPABILITY_NOT_RESTRICTED);
-        }
-
         // At this point the capabilities/properties are untrusted and unverified, e.g. checks that
         // the capabilities' access UIDs comply with security limitations. They will be sanitized
         // as the NAI registration finishes, in handleRegisterNetworkAgent(). This is
@@ -10503,9 +10536,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
         mDnsManager.updatePrivateDnsStatus(netId, newLp);
 
         if (isDefaultNetwork(networkAgent)) {
-            mProxyTracker.setDefaultProxy(newLp.getHttpProxy());
+            mProxyTracker.updateDefaultNetworkState(networkAgent.network, newLp.getHttpProxy());
         } else if (networkAgent.everConnected()) {
-            updateProxy(newLp, oldLp);
+            updateProxy(networkAgent.network, newLp, oldLp);
         }
 
         updateWakeOnLan(newLp);
@@ -10633,6 +10666,36 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
     private void applyInitialLinkProperties(@NonNull NetworkAgentInfo nai) {
         updateLinkProperties(nai, new LinkProperties(nai.linkProperties), null);
+    }
+
+    private void maybeAttachL4sEgressProgram(@NonNull String iface, @NonNull NetworkAgentInfo nai) {
+        if (!mDeps.isAtLeast26Q2()) return;
+
+        if (iface.startsWith("v4-")) return;
+        if (!shouldEnableL4s(nai)) return;
+
+        final int ifIndex = mDeps.if_nametoindex(iface);
+        if (ifIndex == 0) {
+            Log.e(TAG, "Failed to get interface index for " + iface);
+            return;
+        }
+
+        try {
+            final String progPath = mDeps.isEthernet(iface)
+                    ? BPF_L4S_EGRESS_ETH_PROG
+                    : BPF_L4S_EGRESS_RAWIP_PROG;
+            // tc filter add dev .. egress prio 6 protocol ip bpf object-pinned /sys/fs/bpf/...
+            // direct-action
+            mDeps.attachBpfProgram(
+                    ifIndex,
+                    false /* ingress */,
+                    PRIO_L4S,
+                    (short) ETH_P_ALL,
+                    progPath);
+        } catch (IOException e) {
+            Log.e(TAG, "TcUtils.isEthernet(" + iface + ") failure" + e);
+            return;
+        }
     }
 
     private void maybeModifyQdiscClsact(
@@ -10770,6 +10833,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 } catch (Exception e) {
                     logw("Exception adding interface: " + e);
                 }
+                maybeAttachL4sEgressProgram(iface, nai);
             }
         }
 
@@ -10782,6 +10846,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 if (DBG) log("Removing iface " + iface + " from network " + netId);
                 wakeupModifyInterface(iface, nai, false);
                 mRoutingCoordinatorService.removeInterfaceFromNetwork(netId, iface);
+                // attached programs are cleared by removing qdisc clsact
                 maybeModifyQdiscClsact(iface, nai, false /* add */);
             } catch (Exception e) {
                 loge("Exception removing interface: " + e);
@@ -11996,7 +12061,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
         final Set<UidRange> newUids = newNc == null ? null : newNc.getUidRanges();
         if (nai.isVPN() && nai.everConnected() && !UidRange.hasSameUids(prevUids, newUids)
                 && (nai.linkProperties.getHttpProxy() != null || isProxySetOnAnyDefaultNetwork())) {
-            mProxyTracker.sendProxyBroadcast();
+            mProxyTracker.updateNetworkProxy(
+                    nai.network,
+                    nai.linkProperties.getHttpProxy(),
+                    nai.linkProperties.getHttpProxy());
         }
     }
 
@@ -12470,8 +12538,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
         mNetworkActivityTracker.updateDefaultNetwork(newDefaultNetwork, oldDefaultNetwork);
         maybeDestroyPendingSockets(newDefaultNetwork, oldDefaultNetwork);
-        mProxyTracker.setDefaultProxy(null != newDefaultNetwork
-                ? newDefaultNetwork.linkProperties.getHttpProxy() : null);
+        mProxyTracker.updateDefaultNetworkState(
+                null != newDefaultNetwork ? newDefaultNetwork.network : null,
+                null != newDefaultNetwork ? newDefaultNetwork.linkProperties.getHttpProxy() : null);
         resetHttpProxyForNonDefaultNetwork(oldDefaultNetwork);
         updateTcpBufferSizes(null != newDefaultNetwork
                 ? newDefaultNetwork.linkProperties.getTcpBufferSizes() : null);
@@ -13306,7 +13375,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 // If something depends on both LinkProperties and connected state, it should be in
                 // this method as well.
                 networkAgent.clatd.update();
-                updateProxy(networkAgent.linkProperties, null);
+                updateProxy(networkAgent.network, networkAgent.linkProperties, null);
             }
 
             // If a rate limit has been configured and is applicable to this network (network
@@ -13408,7 +13477,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 // apps may need to update their proxy data. This is called after disconnecting from
                 // VPN to make sure we do not broadcast the old proxy data.
                 // TODO(b/122649188): send the broadcast only to VPN users.
-                mProxyTracker.sendProxyBroadcast();
+                mProxyTracker.updateNetworkProxy(
+                        networkAgent.network,
+                        null /* newProxyInfo */,
+                        networkAgent.linkProperties.getHttpProxy());
             }
         } else if (networkAgent.isCreated() && (oldInfo.getState() == NetworkInfo.State.SUSPENDED
                 || state == NetworkInfo.State.SUSPENDED)) {
@@ -13972,6 +14044,15 @@ public class ConnectivityService extends IConnectivityManager.Stub
                         }
                         return 0;
                     }
+                    case "log-list-update":
+                        Intent updateIntent =
+                                new Intent(ConfigUpdate.ACTION_UPDATE_CT_LOGS)
+                                        .setPackage(mContext.getPackageName());
+                        if ("delete".equals(getNextArg())) {
+                            updateIntent.putExtra("delete", true);
+                        }
+                        mContext.sendBroadcast(updateIntent);
+                        return 0;
                     case "reevaluate":
                         // Usage : adb shell cmd connectivity reevaluate <netId>
                         // If netId is omitted, then reevaluate the default network
@@ -14054,6 +14135,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
             pw.println("    Set the allow bit in FIREWALL_CHAIN_BACKGROUND for the given uid.");
             pw.println("  get-background-networking-enabled-for-uid [uid]");
             pw.println("    Get the allow bit in FIREWALL_CHAIN_BACKGROUND for the given uid.");
+            pw.println("  log-list-update");
+            pw.println("    Triggers an update of the CT log list.");
             if (Build.isDebuggable()) {
                 pw.println("  set-debug-fallback-network-for-uid [uid] [transport]");
                 pw.println("    Sets [uid] to use [transport] as its default network when there is"

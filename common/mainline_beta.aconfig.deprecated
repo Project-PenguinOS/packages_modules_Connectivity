@@ -6,13 +6,6 @@ container: "com.android.tethering"
 # For module flag, use packages/modules/Connectivity/common/flags.aconfig
 
 flag {
-    name: "bluetooth_tethering_randomized_address"
-    namespace: "com_android_tethering"
-    description: "bluetooth tethering use randomized address"
-    bug: "287177081"
-}
-
-flag {
     name: "queue_network_agent_events_in_system_server"
     namespace: "com_android_tethering"
     description: "Queue NetworkAgent events in system server"

@@ -65,10 +65,7 @@ public class AudioGroupTest extends AndroidTestCase {
         mSocketB.connect(mStreamB.getLocalAddress(), mStreamB.getLocalPort());
         mStreamB.associate(mSocketB.getLocalAddress(), mSocketB.getLocalPort());
 
-        // BuildCompat.isAtLeastR is documented to return false on release SDKs (including R)
-        mGroup = Build.VERSION.SDK_INT > Build.VERSION_CODES.Q || BuildCompat.isAtLeastR()
-                ? new AudioGroup(mContext)
-                : new AudioGroup(); // Constructor with context argument was introduced in R
+        mGroup = new AudioGroup(mContext);
     }
 
     @Override

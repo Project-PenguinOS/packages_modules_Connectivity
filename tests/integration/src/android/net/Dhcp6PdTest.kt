@@ -23,7 +23,6 @@ import android.net.NetworkCapabilities.TRANSPORT_ETHERNET
 import android.net.NetworkCapabilities.TRANSPORT_TEST
 import android.os.Build
 import android.platform.test.annotations.AppModeFull
-import android.platform.test.annotations.RequiresFlagsEnabled
 import android.platform.test.flag.junit.DeviceFlagsValueProvider
 import android.provider.DeviceConfig.NAMESPACE_CONNECTIVITY
 import androidx.test.platform.app.InstrumentationRegistry
@@ -31,7 +30,6 @@ import com.android.net.module.util.dhcp6.Dhcp6AddrRegInformPacket
 import com.android.net.module.util.dhcp6.Dhcp6Packet
 import com.android.net.module.util.dhcp6.Dhcp6RebindPacket
 import com.android.net.module.util.dhcp6.Dhcp6SolicitPacket
-import com.android.networkstack.mainline.beta.Flags
 import com.android.testutils.AutoCloseTestResourcesRule
 import com.android.testutils.AutoCloseableTestNetworkInterface
 import com.android.testutils.DevSdkIgnoreRule
@@ -324,7 +322,6 @@ class Dhcp6PdTest {
     }
 
     @Test
-    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
     fun testAddrReg_startedByOFlag() {
         val prefix = "2001:db8:1::/64"
         val ra = RaPkt(flags = "O")
@@ -345,7 +342,6 @@ class Dhcp6PdTest {
     }
 
     @Test
-    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
     fun testAddrReg_retries() {
         val ra = RaPkt(flags = "O")
             .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")
@@ -360,7 +356,6 @@ class Dhcp6PdTest {
     }
 
     @Test
-    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
     fun testAddrReg_supportTimeout() {
         run {
             val ra = RaPkt(flags = "M")
@@ -393,7 +388,6 @@ class Dhcp6PdTest {
     }
 
     @Test
-    @RequiresFlagsEnabled(Flags.FLAG_DHCPV6_ADDRESS_REGISTRATION)
     fun testAddrReg_success() {
         val ra = RaPkt(flags = "MO")
             .addPioOption(prefix = "2001:db8:1::/64", flags = "LA")

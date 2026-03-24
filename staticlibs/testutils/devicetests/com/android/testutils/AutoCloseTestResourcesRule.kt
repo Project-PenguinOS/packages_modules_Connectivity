@@ -18,6 +18,7 @@ package com.android.testutils
 
 import android.Manifest.permission.MANAGE_TEST_NETWORKS
 import android.content.Context
+import android.net.LinkAddress
 import android.net.TestNetworkInterface
 import android.net.TestNetworkManager
 import android.net.TestNetworkManager.TestInterfaceRequest
@@ -41,6 +42,17 @@ class AutoCloseableTestNetworkInterface(
             val iface = runAsShell(MANAGE_TEST_NETWORKS) {
                 val tnm = context.getSystemService(TestNetworkManager::class.java)!!
                 tnm.createTapInterface()
+            }
+            return AutoCloseableTestNetworkInterface(iface)
+        }
+
+        fun createTun(
+            context: Context,
+            linkAddresses: List<LinkAddress>
+        ): AutoCloseableTestNetworkInterface {
+            val iface = runAsShell(MANAGE_TEST_NETWORKS) {
+                val tnm = context.getSystemService(TestNetworkManager::class.java)!!
+                tnm.createTunInterface(linkAddresses)
             }
             return AutoCloseableTestNetworkInterface(iface)
         }

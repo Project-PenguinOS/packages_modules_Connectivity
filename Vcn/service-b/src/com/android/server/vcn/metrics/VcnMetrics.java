@@ -37,6 +37,8 @@ import java.lang.annotation.RetentionPolicy;
 
 /** Utility class for logging VCN metrics. */
 public class VcnMetrics {
+    private final int mGatewayConnectionId;
+
     /** @hide */
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(
@@ -73,6 +75,10 @@ public class VcnMetrics {
             })
     public @interface ValidationStatus {}
 
+    public VcnMetrics(int gatewayConnectionId) {
+        mGatewayConnectionId = gatewayConnectionId;
+    }
+
     public static final int GATEWAY_TEARDOWN_REASON_NONE =
             VCN_GATEWAY_CONNECTION_STATE_CHANGED__GW_TEARDOWN_REASON__GATEWAY_TEARDOWN_REASON_NONE;
     public static final int GATEWAY_TEARDOWN_REASON_INTERNAL_ERROR =
@@ -101,19 +107,19 @@ public class VcnMetrics {
             VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_NOT_VALID;
 
     /** Log an atom when a VcnGatewayConnection has entered safe mode. */
-    public void logEnterSafeMode(int gatewayConnectionId) {
+    public void logEnterSafeMode() {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED,
-                gatewayConnectionId,
+                mGatewayConnectionId,
                 GATEWAY_TEARDOWN_REASON_NONE,
                 true /* isInSafeMode */);
     }
 
     /** Log an atom when a VcnGatewayConnection has exited safe mode. */
-    public void logExitSafeMode(int gatewayConnectionId) {
+    public void logExitSafeMode() {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED,
-                gatewayConnectionId,
+                mGatewayConnectionId,
                 GATEWAY_TEARDOWN_REASON_NONE,
                 false /* isInSafeMode */);
     }
@@ -122,19 +128,19 @@ public class VcnMetrics {
      * Log an atom when a VcnGatewayConnection has been torn down with reason. It will also reset
      * other VcnGatewayConnection related states i.e. safemode.
      */
-    public void logVcnGatewayTeardown(int gatewayConnectionId, @GatewayTeardownReason int reason) {
+    public void logVcnGatewayTeardown(@GatewayTeardownReason int reason) {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_GATEWAY_CONNECTION_STATE_CHANGED,
-                gatewayConnectionId,
+                mGatewayConnectionId,
                 reason,
                 false /* isInSafeMode */);
     }
 
     /** Log an atom when VCN network is connected. */
-    public void logVcnNetworkConnected(int gatewayConnectionId, int networkId) {
+    public void logVcnNetworkConnected(int networkId) {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_NETWORK_STATE_CHANGED,
-                gatewayConnectionId,
+                mGatewayConnectionId,
                 networkId,
                 true /* isConnected */,
                 false /* isValidated */);
@@ -144,30 +150,30 @@ public class VcnMetrics {
      * Log an atom when VCN network is being torn down. It will also reset other state related to
      * the network i.e. validated.
      */
-    public void logVcnNetworkNotConnected(int gatewayConnectionId, int networkId) {
+    public void logVcnNetworkNotConnected(int networkId) {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_NETWORK_STATE_CHANGED,
-                gatewayConnectionId,
+                mGatewayConnectionId,
                 networkId,
                 false /* isConnected */,
                 false /* isValidated */);
     }
 
     /** Log an atom when VCN network has been validated. */
-    public void logVcnNetworkValidated(int gatewayConnectionId, int networkId) {
+    public void logVcnNetworkValidated(int networkId) {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_NETWORK_STATE_CHANGED,
-                gatewayConnectionId,
+                mGatewayConnectionId,
                 networkId,
                 true /* isConnected */,
                 true /* isValidated */);
     }
 
     /** Log an atom when VCN network has been not validated. */
-    public void logVcnNetworkNotValidated(int gatewayConnectionId, int networkId) {
+    public void logVcnNetworkNotValidated(int networkId) {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_NETWORK_STATE_CHANGED,
-                gatewayConnectionId,
+                mGatewayConnectionId,
                 networkId,
                 true /* isConnected */,
                 false /* isValidated */);
@@ -175,13 +181,12 @@ public class VcnMetrics {
 
     /** Log an atom when VCN network validation status changes. */
     public void logVcnNetworkValidationStatus(
-            int gatewayConnectionId,
             int networkId,
             @ValidationStatus int oldStatus,
             @ValidationStatus int newStatus) {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_NETWORK_VALIDATION_STATUS_REPORTED,
-                gatewayConnectionId,
+                mGatewayConnectionId,
                 networkId,
                 oldStatus,
                 newStatus);
@@ -190,19 +195,18 @@ public class VcnMetrics {
     /**
      * Log an atom about number of validated underlying network available for VCN network selection.
      */
-    public void logValidatedUnderlyingNetworkCount(int gatewayConnectionId, int count) {
+    public void logValidatedUnderlyingNetworkCount(int count) {
         VcnStatsLog.write(
-                VcnStatsLog.VCN_UNDERLYING_NETWORKS_STATE_CHANGED, gatewayConnectionId, count);
+                VcnStatsLog.VCN_UNDERLYING_NETWORKS_STATE_CHANGED, mGatewayConnectionId, count);
     }
 
     /** Log an atom whenever we switch VCN's underlying network. */
     public void logUnderlyingNetworkSwitched(
-            int gatewayConnectionId,
             @TransportMask int oldNetworkType,
             @TransportMask int newNetworkType) {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED,
-                gatewayConnectionId,
+                mGatewayConnectionId,
                 oldNetworkType,
                 newNetworkType);
     }

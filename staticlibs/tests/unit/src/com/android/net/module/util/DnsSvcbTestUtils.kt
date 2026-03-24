@@ -55,6 +55,10 @@ class DnsSvcbTestUtils {
         @JvmField
         val TEST_MALFORMED_SVC_PARAM = byteArrayOf(0x00, 0x01, 0x02)
 
+        // mandatory=alpn
+        @JvmField
+        val TEST_SVC_PARAM_MANDATORY_ALPN = byteArrayOf(0x00, 0x00, 0x00, 0x02, 0x00, 0x01)
+
         // mandatory=ipv4hint,alpn,key333
         @JvmField
         val TEST_SVC_PARAM_MANDATORY = byteArrayOf(

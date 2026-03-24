@@ -28,7 +28,6 @@ import android.os.Build;
 import androidx.test.filters.SmallTest;
 
 import com.android.testutils.ConnectivityModuleTest;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.DevSdkIgnoreRunner;
 
 import org.junit.Test;
@@ -36,7 +35,6 @@ import org.junit.runner.RunWith;
 
 import java.util.Map;
 
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @RunWith(DevSdkIgnoreRunner.class)
 @SmallTest
 @ConnectivityModuleTest

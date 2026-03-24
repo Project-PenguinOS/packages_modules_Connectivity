@@ -73,6 +73,10 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_USE_LOOPBACK_INTERFACE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
 import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET;
@@ -1291,7 +1295,7 @@ public final class BpfNetMapsTest {
     @IgnoreUpTo(Build.VERSION_CODES.TIRAMISU)
     @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
     public void testGetChunkPermForUid_uidMigrationEnabled() throws Exception {
-        mUidPermissionMap.deleteEntry(new S32(getChunkId(TEST_UID_2)));
+        mUidPermissionChunkMap.deleteEntry(new S32(getChunkId(TEST_UID_2)));
         assertEquals(PERMISSION_BIT_NONE, mBpfNetMaps.getChunkPermForUid(TEST_UID_2));
         SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(TEST_UID_2, PERMISSION_BIT_NO_INTERNET);
@@ -2231,6 +2235,26 @@ public final class BpfNetMapsTest {
         assertDumpContains(
             getDump(),
             TEST_UID + " PERMISSION_NONE");
+
+        permissionsUids = new SparseIntArray();
+        permissionsUids.put(TEST_UID, PERMISSION_BIT_NO_INTERNET
+                | PERMISSION_BIT_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES);
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+        assertDumpContains(
+                getDump(),
+                TEST_UID + " PERMISSION_USE_LOOPBACK_INTERFACE"
+                        + " PERMISSION_INTERACT_ACROSS_USERS_OR_PROFILES");
+
+        permissionsUids = new SparseIntArray();
+        permissionsUids.put(TEST_UID, PERMISSION_BIT_NO_INTERNET
+                | PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE
+                | PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL);
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+        assertDumpContains(
+                getDump(),
+                TEST_UID + " PERMISSION_FORCE_USE_LOOPBACK_INTERFACE"
+                        + " PERMISSION_INTERACT_ACROSS_USERS_FULL");
     }
 
     @Test
@@ -2297,5 +2321,43 @@ public final class BpfNetMapsTest {
     public void testRemoveAppIdFromUidPermissionChunkMap_uidMigrationDisabled() throws Exception {
         assertThrows(UnsupportedOperationException.class,
                 () -> mBpfNetMaps.removePermissionsForAppId(TEST_APP_ID_1));
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    public void testSetChunkPermListForUids_GrantsLoopbackPermission() throws Exception {
+
+        SparseIntArray permissionsUids = new SparseIntArray();
+        permissionsUids.put(TEST_UID, PERMISSION_BIT_USE_LOOPBACK_INTERFACE);
+        permissionsUids.put(TEST_UID_1, PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE);
+
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+
+        assertEquals(
+                PERMISSION_BIT_USE_LOOPBACK_INTERFACE,
+                mBpfNetMaps.getChunkPermForUid(TEST_UID));
+        assertEquals(
+                PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE,
+                mBpfNetMaps.getChunkPermForUid(TEST_UID_1));
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    public void testSetChunkPermListForUids_GrantsCrossUserProfilePermission() throws Exception {
+
+        SparseIntArray permissionsUids = new SparseIntArray();
+        permissionsUids.put(TEST_UID, PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL);
+        permissionsUids.put(TEST_UID_1, PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES);
+
+        mBpfNetMaps.setChunkPermListForUids(permissionsUids);
+
+        assertEquals(
+                PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL,
+                mBpfNetMaps.getChunkPermForUid(TEST_UID));
+        assertEquals(
+                PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES,
+                mBpfNetMaps.getChunkPermForUid(TEST_UID_1));
     }
 }

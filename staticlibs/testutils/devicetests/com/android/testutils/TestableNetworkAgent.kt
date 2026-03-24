@@ -40,7 +40,6 @@ import android.system.OsConstants.ENETUNREACH
 import android.system.OsConstants.ENONET
 import android.system.OsConstants.IPPROTO_UDP
 import android.system.OsConstants.SOCK_DGRAM
-import com.android.modules.utils.build.SdkLevel.isAtLeastS
 import com.android.net.module.util.Expectable
 import com.android.net.module.util.TestableCallback
 import com.android.net.module.util.assertNo
@@ -161,10 +160,9 @@ open class TestableNetworkAgent(
             )
             val network = agent.register()
             agent.markConnected()
-            if (isAtLeastS()) {
-                // OnNetworkCreated was added in S
-                agent.eventuallyExpect<OnNetworkCreated>()
-            }
+
+            // OnNetworkCreated was added in S
+            agent.eventuallyExpect<OnNetworkCreated>()
 
             // Wait until the link-local address can be used. Address flags are not available
             // without elevated permissions, so check that bindSocket works.
@@ -191,14 +189,7 @@ open class TestableNetworkAgent(
                         }
                         false
                     }.catch<SocketException> {
-                        // OnNetworkCreated does not exist on R, so a SocketException caused by ENONET
-                        // may be seen before the network is created
-                        if (isAtLeastS()) throw it
-                        val cause = it.cause as? ErrnoException ?: throw it
-                        if (cause.errno != ENONET) {
-                            throw it
-                        }
-                        false
+                        throw it
                     } cleanup {
                         Os.close(sock)
                     }

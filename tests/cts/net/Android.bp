@@ -79,12 +79,11 @@ java_defaults {
         "modules-utils-build",
         "net-tests-utils",
         "net-utils-framework-common",
-        "NetworkStackApiCurrentShims",
         "truth",
         "TetheringIntegrationTestsBaseLib",
     ],
 
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     per_testcase_directory: true,
     host_required: ["net-tests-utils-host-common"],
     host_common_data: [":net-tests-utils-host-common"],
@@ -229,7 +228,7 @@ android_test_helper_app {
     package_name: "android.net.cts.carrierservicepackage",
     manifest: "carrierservicepackage/AndroidManifest.xml",
     srcs: ["carrierservicepackage/src/**/*.java"],
-    min_sdk_version: "30",
+    min_sdk_version: "31",
     // Tag this module as a cts test artifact
     test_suites: [
         "automotive-general-tests",

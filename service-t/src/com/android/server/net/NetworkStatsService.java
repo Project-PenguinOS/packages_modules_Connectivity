@@ -191,16 +191,13 @@ import com.android.net.module.util.PermissionUtils;
 import com.android.net.module.util.SharedLog;
 import com.android.net.module.util.SkDestroyListener;
 import com.android.net.module.util.Struct;
-import com.android.net.module.util.TerribleErrorLog;
 import com.android.net.module.util.Struct.S32;
 import com.android.net.module.util.Struct.S64;
 import com.android.net.module.util.Struct.U8;
+import com.android.net.module.util.TerribleErrorLog;
 import com.android.net.module.util.bpf.CookieTagMapValue;
 import com.android.net.module.util.netlink.InetDiagMessage;
 import com.android.net.module.util.netlink.StructInetDiagSockId;
-import com.android.networkstack.apishim.BroadcastOptionsShimImpl;
-import com.android.networkstack.apishim.ConstantsShim;
-import com.android.networkstack.apishim.common.UnsupportedApiLevelException;
 import com.android.server.ConnectivityStatsLog;
 import com.android.server.connectivity.ConnectivityResources;
 
@@ -615,19 +612,14 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                     updatedIntent.setFlags(Intent.FLAG_RECEIVER_REGISTERED_ONLY);
                     Bundle opts = null;
                     if (SdkLevel.isAtLeastU()) {
-                        try {
-                            // This allows us to discard older broadcasts still waiting to
-                            // be delivered.
-                            opts = BroadcastOptionsShimImpl.newInstance(
-                                    BroadcastOptions.makeBasic())
-                                    .setDeliveryGroupPolicy(
-                                            ConstantsShim.DELIVERY_GROUP_POLICY_MOST_RECENT)
-                                    .setDeferralPolicy(
-                                            ConstantsShim.DEFERRAL_POLICY_UNTIL_ACTIVE)
-                                    .toBundle();
-                        } catch (UnsupportedApiLevelException e) {
-                            Log.wtf(TAG, "Using unsupported API" + e);
-                        }
+                        final BroadcastOptions bOptions = BroadcastOptions.makeBasic();
+                        // This allows us to discard older broadcasts still waiting to
+                        // be delivered.
+                        bOptions.setDeliveryGroupPolicy(
+                                BroadcastOptions.DELIVERY_GROUP_POLICY_MOST_RECENT);
+                        bOptions.setDeferralPolicy(
+                                BroadcastOptions.DEFERRAL_POLICY_UNTIL_ACTIVE);
+                        opts = bOptions.toBundle();
                     }
                     mContext.sendBroadcastAsUser(updatedIntent, UserHandle.ALL,
                             READ_NETWORK_USAGE_HISTORY, opts);

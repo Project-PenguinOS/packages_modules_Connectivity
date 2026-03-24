@@ -47,7 +47,6 @@ import androidx.test.runner.AndroidJUnit4;
 
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.Struct;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 
 import libcore.io.IoUtils;
 
@@ -210,7 +209,7 @@ public class NetlinkUtilsTest {
         }
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R) // getsockoptInt requires > R
+    @Test  // getsockoptInt requires > R
     public void testNetlinkSocketForProto_defaultBufferSize() throws Exception {
         final FileDescriptor fd = NetlinkUtils.netlinkSocketForProto(NETLINK_ROUTE);
         final int bufferSize = Os.getsockoptInt(fd, SOL_SOCKET, SO_RCVBUF) / 2;
@@ -219,7 +218,7 @@ public class NetlinkUtilsTest {
         SocketUtils.closeSocket(fd);
     }
 
-    @Test @IgnoreUpTo(Build.VERSION_CODES.R) // getsockoptInt requires > R
+    @Test  // getsockoptInt requires > R
     public void testNetlinkSocketForProto_setBufferSize() throws Exception {
         final FileDescriptor fd = NetlinkUtils.netlinkSocketForProto(NETLINK_ROUTE,
                 8000);

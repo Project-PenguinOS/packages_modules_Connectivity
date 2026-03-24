@@ -15,7 +15,7 @@
  */
 
 // The resulting .o needs to load on Android S+
-#define BPFLOADER_MIN_VER BPFLOADER_MAINLINE_S_VERSION
+#define NETBPFLOAD_MINAPI_VER NETBPFLOAD_S_VER
 #define BPF_OBJ_NAME "test"
 #define DEFAULT_BPF_PIN_SUBDIR "tethering"
 

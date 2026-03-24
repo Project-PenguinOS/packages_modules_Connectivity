@@ -70,7 +70,8 @@ class Slice {
 // Return slice representation of ref which must be a POD type
 template <typename T>
 inline const Slice makeSlice(const T& ref) {
-    static_assert(std::is_pod<T>::value, "value must be a POD type");
+    static_assert(std::is_trivial<T>::value && std::is_standard_layout<T>::value,
+                  "value must be a POD type");
     static_assert(!std::is_pointer<T>::value, "value must not be a pointer type");
     return {const_cast<T*>(&ref), sizeof(ref)};
 }

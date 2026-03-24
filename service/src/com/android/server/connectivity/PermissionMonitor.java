@@ -19,10 +19,15 @@ package com.android.server.connectivity;
 import static android.Manifest.permission.ACCESS_LOCAL_NETWORK;
 import static android.Manifest.permission.CHANGE_NETWORK_STATE;
 import static android.Manifest.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS;
+import static android.Manifest.permission.FORCE_USE_LOOPBACK_INTERFACE;
 import static android.Manifest.permission.INTERNET;
 import static android.Manifest.permission.NEARBY_WIFI_DEVICES;
 import static android.Manifest.permission.NETWORK_STACK;
+import static android.Manifest.permission.INTERACT_ACROSS_PROFILES;
+import static android.Manifest.permission.INTERACT_ACROSS_USERS;
+import static android.Manifest.permission.INTERACT_ACROSS_USERS_FULL;
 import static android.Manifest.permission.UPDATE_DEVICE_STATS;
+import static android.Manifest.permission.USE_LOOPBACK_INTERFACE;
 import static android.content.pm.PackageInfo.REQUESTED_PERMISSION_GRANTED;
 import static android.content.pm.PackageManager.GET_PERMISSIONS;
 import static android.net.ConnectivitySettingsManager.UIDS_ALLOWED_ON_RESTRICTED_NETWORKS;
@@ -38,6 +43,10 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_USE_LOOPBACK_INTERFACE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
 import static com.android.server.ConnectivityStatsLog.CONNECTIVITY_PERMISSION_CHANGE_LISTENER_LATENCY_REPORTED;
 import static com.android.server.connectivity.ConnectivityFlags.USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR;
 import static com.android.server.connectivity.NetworkPermissions.PERMISSION_NETWORK;
@@ -91,8 +100,6 @@ import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.SharedLog;
-import com.android.networkstack.apishim.ProcessShimImpl;
-import com.android.networkstack.apishim.common.ProcessShim;
 import com.android.server.BpfNetMaps;
 import com.android.server.ConnectivityStatsLog;
 import com.android.server.LocalManagerRegistry;
@@ -127,7 +134,6 @@ public class PermissionMonitor {
     private final BpfNetMaps mBpfNetMaps;
     private final HandlerThread mThread;
 
-    private static final ProcessShim sProcessShim = ProcessShimImpl.newInstance();
 
     @GuardedBy("this")
     private final Set<UserHandle> mUsers = new HashSet<>();
@@ -192,6 +198,7 @@ public class PermissionMonitor {
     private static final int MAX_PERMISSION_UPDATE_LOGS = 40;
     private final SharedLog mPermissionUpdateLogs = new SharedLog(MAX_PERMISSION_UPDATE_LOGS, TAG);
     private final boolean mUseBroadcastReceiveHelper;
+    private final boolean mIsLoopbackPermissionEnabled;
 
     private final BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
         @Override
@@ -240,17 +247,27 @@ public class PermissionMonitor {
         }
     };
 
-    // Bits in the bitmap of PermissionBpfMap are in the same order as this list. Use this
-    // list in PermissionManagerLocal#registerBpfMap().
+    // Use this list in PermissionManagerLocal#registerBpfMap().
     public static final List<String> PERMISSIONS = List.of(
-        ACCESS_LOCAL_NETWORK,
-        UPDATE_DEVICE_STATS,
-        INTERNET
+            ACCESS_LOCAL_NETWORK,
+            UPDATE_DEVICE_STATS,
+            INTERNET,
+            USE_LOOPBACK_INTERFACE,
+            FORCE_USE_LOOPBACK_INTERFACE,
+            INTERACT_ACROSS_USERS_FULL,
+            INTERACT_ACROSS_PROFILES,
+            INTERACT_ACROSS_USERS
     );
 
-    public static final int PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK = 1;
-    public static final int PERMISSION_BPF_MAP_BIT_UPDATE_DEVICE_STATS = 2;
-    public static final int PERMISSION_BPF_MAP_BIT_INTERNET = 4;
+    // The perm bitmask expected from PermissionManagerLocal when calling setUidsPermissionBits
+    public static final int PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK = 1 << 0;
+    public static final int PERMISSION_BPF_MAP_BIT_UPDATE_DEVICE_STATS = 1 << 1;
+    public static final int PERMISSION_BPF_MAP_BIT_INTERNET = 1 << 2;
+    public static final int PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE = 1 << 3;
+    public static final int PERMISSION_BPF_MAP_BIT_FORCE_USE_LOOPBACK_INTERFACE = 1 << 4;
+    public static final int PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS_FULL = 1 << 5;
+    public static final int PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_PROFILES = 1 << 6;
+    public static final int PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS = 1 << 7;
 
     private int convertToChunkPermissionBits(int permissionBits) {
         int chunkPermissions = PERMISSION_BIT_NONE;
@@ -262,6 +279,25 @@ public class PermissionMonitor {
         }
         if ((permissionBits & PERMISSION_BPF_MAP_BIT_INTERNET) == 0) {
             chunkPermissions |= PERMISSION_BIT_NO_INTERNET;
+        }
+        if (!mIsLoopbackPermissionEnabled) {
+            return chunkPermissions;
+        }
+
+        if ((permissionBits & PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE) != 0) {
+            chunkPermissions |= PERMISSION_BIT_USE_LOOPBACK_INTERFACE;
+        }
+        if ((permissionBits & PERMISSION_BPF_MAP_BIT_FORCE_USE_LOOPBACK_INTERFACE) != 0) {
+            chunkPermissions |= PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE;
+        }
+        if ((permissionBits & PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS_FULL) != 0) {
+            chunkPermissions |= PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
+        }
+        // INTERACT_ACROSS_PROFILES and INTERACT_ACROSS_USERS are passed down to the ebpf map as a
+        // single OR bit
+        if ((permissionBits & PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_PROFILES) != 0
+                || (permissionBits & PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS) != 0) {
+            chunkPermissions |= PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
         }
         return chunkPermissions;
     }
@@ -324,6 +360,15 @@ public class PermissionMonitor {
          */
         public boolean isLnpDeveloperOptInEnabled() {
             return com.android.tethering.mainline.beta.Flags.lnpDeveloperOptIn();
+        }
+
+        /**
+         * Wrapper to get the process stable flag and to allow injection for unit testing.
+         *
+         * @see android.permission.flags.Flags#useLoopbackInterfacePermissionEnabled()
+         */
+        public boolean isLoopbackPermissionEnabled() {
+            return android.permission.flags.Flags.useLoopbackInterfacePermissionEnabled();
         }
 
         /**
@@ -420,6 +465,7 @@ public class PermissionMonitor {
         mContext = context;
         mBpfNetMaps = bpfNetMaps;
         mThread = thread;
+        mIsLoopbackPermissionEnabled = mDeps.isLoopbackPermissionEnabled();
         if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
             // Local net restrictions is supported as a developer opt-in starting in Android B.
             // This listener should finish registration by the time the system has completed
@@ -430,7 +476,7 @@ public class PermissionMonitor {
 
         if (mBpfNetMaps.isPermissionPropagationEnabled()) {
             mDeps.registerBpfMap(
-                    (SparseIntArray uidsPermissionBits) -> {
+                    (SparseIntArray uidsPermissionBits) -> { /* setUidsPermissionBits */
                         long startTimeNanos = SystemClock.elapsedRealtimeNanos();
                         try {
                             SparseIntArray allUidsPermissionBits = new SparseIntArray();
@@ -440,7 +486,7 @@ public class PermissionMonitor {
                                         uidsPermissionBits.valueAt(i));
                                 allUidsPermissionBits.put(uid, chunkPermissions);
                                 if (hasSdkSandbox(uid)) {
-                                    allUidsPermissionBits.put(sProcessShim.toSdkSandboxUid(uid),
+                                    allUidsPermissionBits.put(Process.toSdkSandboxUid(uid),
                                             chunkPermissions);
                                 }
                             }
@@ -459,14 +505,14 @@ public class PermissionMonitor {
                             mDeps.logPermissionChangeListenerLatency(durationMicros);
                         }
                     },
-                    (Integer appId) -> {
+                    (Integer appId) -> { /* removeAppId */
                         mBpfNetMaps.removePermissionsForAppId(appId);
                         if (hasSdkSandbox(appId)) {
-                            int sdkSandboxAppId = sProcessShim.toSdkSandboxUid(appId);
+                            int sdkSandboxAppId = Process.toSdkSandboxUid(appId);
                             mBpfNetMaps.removePermissionsForAppId(sdkSandboxAppId);
                         }
                     },
-                    (Integer userId) -> {
+                    (Integer userId) -> { /* removeUser */
                         mBpfNetMaps.removePermissionsForUserId(userId);
                     },
                     PERMISSIONS
@@ -502,7 +548,7 @@ public class PermissionMonitor {
         }
         if (hasSdkSandbox(uid)){
             // SDKs in the SDK RT cannot hold runtime permissions
-            final int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+            final int sdkSandboxUid = Process.toSdkSandboxUid(uid);
             mBpfNetMaps.addUidToLocalNetBlockMap(sdkSandboxUid);
         }
     }
@@ -559,7 +605,7 @@ public class PermissionMonitor {
             if (isHigherNetworkPermission(permission, uidsPerm.get(uid, PERMISSION_NONE))) {
                 uidsPerm.put(uid, permission);
                 if (hasSdkSandbox(uid)) {
-                    int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                    int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                     uidsPerm.put(sdkSandboxUid, permission);
                 }
             }
@@ -585,7 +631,7 @@ public class PermissionMonitor {
             trafficPerm.put(id, permission);
             // TODO(454320180): add sdkSandboxUids before calling BpfNetMaps
             if (hasSdkSandbox(id)) {
-                trafficPerm.put(sProcessShim.toSdkSandboxUid(id), permission);
+                trafficPerm.put(Process.toSdkSandboxUid(id), permission);
             }
         }
         return trafficPerm;
@@ -633,7 +679,7 @@ public class PermissionMonitor {
             final int permission = trafficPerm.get(id) | TRAFFIC_PERMISSION_INTERNET;
             trafficPerm.put(id, permission);
             if (hasSdkSandbox(id)) {
-                trafficPerm.put(sProcessShim.toSdkSandboxUid(id), permission);
+                trafficPerm.put(Process.toSdkSandboxUid(id), permission);
             }
         }
         for (final int uid : mSystemConfigManager.getSystemPermissionUids(UPDATE_DEVICE_STATS)) {
@@ -641,7 +687,7 @@ public class PermissionMonitor {
             final int permission = trafficPerm.get(id) | TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
             trafficPerm.put(id, permission);
             if (hasSdkSandbox(id)) {
-                trafficPerm.put(sProcessShim.toSdkSandboxUid(id), permission);
+                trafficPerm.put(Process.toSdkSandboxUid(id), permission);
             }
         }
         return trafficPerm;
@@ -924,7 +970,7 @@ public class PermissionMonitor {
                         && !mBpfNetMaps.isPermissionPropagationEnabled()) {
                     mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
                     if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
-                            sProcessShim.toSdkSandboxUid(uid));
+                            Process.toSdkSandboxUid(uid));
                 }
                 removedUids.put(uid, allUids.valueAt(i));
             }
@@ -1186,7 +1232,7 @@ public class PermissionMonitor {
             apps.put(uid, permission);
 
             if (hasSdkSandbox(uid)) {
-                int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                 mUidToNetworkPerm.put(sdkSandboxUid, permission);
                 apps.put(sdkSandboxUid, permission);
             }
@@ -1257,7 +1303,7 @@ public class PermissionMonitor {
         if (isAtLeastB() && !mBpfNetMaps.isPermissionPropagationEnabled()) {
             mBpfNetMaps.removeUidFromLocalNetBlockMap(uid);
             if (hasSdkSandbox(uid)) mBpfNetMaps.removeUidFromLocalNetBlockMap(
-                    sProcessShim.toSdkSandboxUid(uid));
+                    Process.toSdkSandboxUid(uid));
         }
 
         // If the newly-removed package falls within some VPN's uid range, update Netd with it.
@@ -1283,7 +1329,7 @@ public class PermissionMonitor {
             final SparseIntArray apps = new SparseIntArray();
             int sdkSandboxUid = -1;
             if (hasSdkSandbox(uid)) {
-                sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                sdkSandboxUid = Process.toSdkSandboxUid(uid);
             }
             if (permission == PERMISSION_NONE) {
                 mUidToNetworkPerm.delete(uid);
@@ -1532,7 +1578,7 @@ public class PermissionMonitor {
         final SparseIntArray permissionsUids = new SparseIntArray();
         permissionsUids.put(uid, permissions);
         if (hasSdkSandbox(uid)) {
-            int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+            int sdkSandboxUid = Process.toSdkSandboxUid(uid);
             permissionsUids.put(sdkSandboxUid, permissions);
         }
         sendUidsTrafficPermission(permissionsUids);
@@ -1549,7 +1595,7 @@ public class PermissionMonitor {
         SparseIntArray netdPermissionsAppIds = new SparseIntArray();
         netdPermissionsAppIds.put(appId, permissions);
         if (hasSdkSandbox(appId)) {
-            int sdkSandboxAppId = sProcessShim.toSdkSandboxUid(appId);
+            int sdkSandboxAppId = Process.toSdkSandboxUid(appId);
             netdPermissionsAppIds.put(sdkSandboxAppId, permissions);
         }
         sendAppIdsTrafficPermission(netdPermissionsAppIds);
@@ -1656,7 +1702,7 @@ public class PermissionMonitor {
                 removedUids.put(uid, PERMISSION_NETWORK);
                 mUidToNetworkPerm.delete(uid);
                 if (hasSdkSandbox(uid)) {
-                    int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                    int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                     removedUids.put(sdkSandboxUid, PERMISSION_NETWORK);
                     mUidToNetworkPerm.delete(sdkSandboxUid);
                 }
@@ -1664,7 +1710,7 @@ public class PermissionMonitor {
                 updatedUids.put(uid, permission);
                 mUidToNetworkPerm.put(uid, permission);
                 if (hasSdkSandbox(uid)) {
-                    int sdkSandboxUid = sProcessShim.toSdkSandboxUid(uid);
+                    int sdkSandboxUid = Process.toSdkSandboxUid(uid);
                     updatedUids.put(sdkSandboxUid, permission);
                     mUidToNetworkPerm.put(sdkSandboxUid, permission);
                 }

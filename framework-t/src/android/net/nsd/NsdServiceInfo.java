@@ -202,8 +202,11 @@ public final class NsdServiceInfo implements Parcelable {
      *
      * <p>When a service is resolved through {@link NsdManager#resolveService} or
      * {@link NsdManager#registerServiceInfoCallback}, this returns the hostname of the resolved
-     * service. In all other cases, this will be null. The top level domain ".local." is omitted.
-     * For example, this returns "MyHost" when the service's hostname is "MyHost.local.".
+     * service. Starting from T SDK extension 22, when received from
+     * {@link NsdManager.RegistrationListener#onServiceRegistered}, this returns the hostname
+     * used for advertising. In all other cases, this will be null. The top level domain ".local."
+     * is omitted. For example, this returns "MyHost" when the service's hostname is
+     * "MyHost.local.".
      */
     @FlaggedApi(Flags.FLAG_IPV6_OVER_BLE)
     @Nullable

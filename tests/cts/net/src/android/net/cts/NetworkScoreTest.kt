@@ -33,7 +33,6 @@ import android.os.HandlerThread
 import android.util.Log
 import androidx.test.InstrumentationRegistry
 import com.android.compatibility.common.util.SystemUtil.runWithShellPermissionIdentity
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
 import com.android.testutils.TestableNetworkCallback
 import com.android.testutils.TestableNetworkCallback.Event
@@ -63,7 +62,6 @@ private fun score(exiting: Boolean = false, primary: Boolean = false) =
                 .setKeepConnectedReason(NetworkScore.KEEP_CONNECTED_FOR_HANDOVER)
                 .build()
 
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @RunWith(DevSdkIgnoreRunner::class)
 class NetworkScoreTest {
     private val TAG = javaClass.simpleName

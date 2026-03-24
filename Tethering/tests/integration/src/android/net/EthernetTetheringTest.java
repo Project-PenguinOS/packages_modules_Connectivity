@@ -629,9 +629,7 @@ public class EthernetTetheringTest extends EthernetTetheringTestBase {
         // TODO: test CLAT bpf maps.
     }
 
-    // TODO: support R device. See b/234727688.
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testTetherClatUdp() throws Exception {
         runClatUdpTest();
     }
@@ -665,9 +663,7 @@ public class EthernetTetheringTest extends EthernetTetheringTestBase {
         });
     }
 
-    // TODO: support R device. See b/234727688.
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testTetherClatIcmp() throws Exception {
         // CLAT only starts on IPv6 only network.
         final TetheringTester tester = initTetheringTester(toList(TEST_IP6_ADDR),
@@ -816,9 +812,7 @@ public class EthernetTetheringTest extends EthernetTetheringTestBase {
                 tester, false /* isClat */);
     }
 
-    // TODO: support R device. See b/234727688.
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testTetherClatTcp() throws Exception {
         // CLAT only starts on IPv6 only network.
         final TetheringTester tester = initTetheringTester(toList(TEST_IP6_ADDR),
@@ -1079,7 +1073,6 @@ public class EthernetTetheringTest extends EthernetTetheringTestBase {
      * TODO: consider enabling the test even tethering config disables BPF offload. See b/238288883
      */
     @Test
-    @IgnoreUpTo(Build.VERSION_CODES.R)
     public void testTetherBpfOffloadUdpV4() throws Exception {
         assumeTrue("Tethering config disabled BPF offload", isTetherConfigBpfOffloadEnabled());
         assumeKernelSupportBpfOffloadUdpV4();

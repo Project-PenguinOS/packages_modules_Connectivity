@@ -138,8 +138,8 @@ public class PresenceDiscoveryResult {
         return false;
     }
 
-    @VisibleForTesting
     /** Gets presence {@link DataElement}s of the discovery result. */
+    @VisibleForTesting
     public List<DataElement> getExtendedProperties() {
         return mExtendedProperties;
     }

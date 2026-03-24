@@ -23,7 +23,9 @@ import android.annotation.NonNull;
 import android.annotation.TargetApi;
 import android.net.IpSecTransform;
 import android.net.IpSecTransformState;
+import android.net.LinkProperties;
 import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.vcn.Flags;
 import android.os.Build;
 import android.os.Handler;
@@ -278,8 +280,13 @@ public abstract class NetworkMetricMonitor implements AutoCloseable {
         validate();
     }
 
-    /** Called when LinkProperties or NetworkCapabilities have changed */
-    public void onLinkPropertiesOrCapabilitiesChanged() {
+    /** Called when LinkProperties have changed */
+    public void onLinkPropertiesChanged(@NonNull LinkProperties lp) {
+        // Subclasses MUST override it if they care
+    }
+
+    /** Called when NetworkCapabilities have changed */
+    public void onNetworkCapabilitiesChanged(@NonNull NetworkCapabilities nc) {
         // Subclasses MUST override it if they care
     }
 

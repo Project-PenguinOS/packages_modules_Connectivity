@@ -31,12 +31,11 @@ cc_library_headers {
         "-Werror",
     ],
     sdk_version: "current",
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
     apex_available: [
         "//apex_available:platform",
         "com.android.art.debug",
         "com.android.os.statsd",
-        "com.android.resolv",
         "com.android.tethering",
     ],
 }
@@ -63,5 +62,5 @@ cc_test {
     ],
     require_root: true,
     test_suites: ["general-tests"],
-    min_sdk_version: "30",
+    min_sdk_version: "apex_inherit",
 }

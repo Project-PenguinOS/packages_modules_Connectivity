@@ -44,7 +44,6 @@ import android.util.Range;
 import androidx.test.InstrumentationRegistry;
 
 import com.android.compatibility.common.util.RequiredFeatureRule;
-import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.DevSdkIgnoreRunner;
 import com.android.testutils.TestHttpServer;
 
@@ -63,7 +62,6 @@ import java.util.concurrent.TimeUnit;
 
 import fi.iki.elonen.NanoHTTPD.Response.Status;
 
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @RunWith(DevSdkIgnoreRunner.class)
 public final class PacProxyManagerTest {
     private static final String TAG = PacProxyManagerTest.class.getSimpleName();

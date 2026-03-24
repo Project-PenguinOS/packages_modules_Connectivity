@@ -416,8 +416,10 @@ public class MdnsUtils {
      * Creates an {@link OffloadServiceInfo} object from a
      * {@link MdnsServiceTypeClient.DiscoveryOffloadInfo} instance.
      *
-     * This method facilitates the conversion of filtering criteria into a service information
+     * <p>This method facilitates the conversion of filtering criteria into a service information
      * object suitable for offloading mechanisms.
+     *
+     * <p>This method also removes the ".local" suffix from the service type if it exists.
      *
      * @param info The {@link MdnsServiceTypeClient.DiscoveryOffloadInfo} containing the filtering
      *             criteria.
@@ -429,8 +431,20 @@ public class MdnsUtils {
     public static OffloadServiceInfo createOffloadServiceInfoFromDiscoveryOffload(
             @NonNull MdnsServiceTypeClient.DiscoveryOffloadInfo info,
             long offloadType) {
+        String serviceType = info.serviceType;
+        // NsdService adds a ".local" suffix to the service type for discovery, but this suffix
+        // should not be part of the OffloadServiceInfo.Key. This is aligned the API document for
+        // OffloadServiceInfo#Key#getServiceType(). To prevent a duplicated suffix
+        // (e.g., "_my-service._tcp.local.local"), remove it here.
+        final String suffix = "." + LOCAL_TLD;
+        if (!serviceType.endsWith(suffix)) {
+            // Throw an exception because the service type in DiscoveryOffloadInfo must have the
+            // ".local" suffix.
+            throw new IllegalArgumentException("serviceType must end with " + suffix);
+        }
+        serviceType = serviceType.substring(0, serviceType.length() - suffix.length());
         return new OffloadServiceInfo(
-                new OffloadServiceInfo.Key(info.serviceName, info.serviceType),
+                new OffloadServiceInfo.Key(info.serviceName, serviceType),
                 new ArrayList<>(info.subtypes),
                 info.hostname,
                 null /* offloadPayload */,

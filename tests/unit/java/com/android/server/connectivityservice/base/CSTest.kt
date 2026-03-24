@@ -79,13 +79,13 @@ import com.android.modules.utils.build.SdkLevel
 import com.android.net.module.util.ArrayTrackRecord
 import com.android.net.module.util.SharedLog
 import com.android.net.module.util.netlink.NetlinkMessage
-import com.android.networkstack.apishim.common.UnsupportedApiLevelException
 import com.android.server.connectivity.AppOptInDefaultNetworkController
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.server.connectivity.AutomaticOnOffKeepaliveTracker
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator
 import com.android.server.connectivity.ClatCoordinator
 import com.android.server.connectivity.ConnectivityFlags
+import com.android.server.connectivity.IProxyTracker
 import com.android.server.connectivity.InterfaceTracker
 import com.android.server.connectivity.MulticastRoutingCoordinatorService
 import com.android.server.connectivity.MultinetworkPolicyTracker
@@ -93,7 +93,6 @@ import com.android.server.connectivity.MultinetworkPolicyTrackerTestDependencies
 import com.android.server.connectivity.NetworkAgentInfo
 import com.android.server.connectivity.NetworkRequestStateStatsMetrics
 import com.android.server.connectivity.PermissionMonitor
-import com.android.server.connectivity.ProxyTracker
 import com.android.server.connectivity.QuicConnectionCloser
 import com.android.testutils.ContentResolverWithFakeSettingsProvider
 import com.android.testutils.visibleOnHandlerThread
@@ -132,7 +131,6 @@ internal val LOCAL_IPV4_ADDRESS = InetAddresses.parseNumericAddress("192.0.2.1")
 open class FromS<Type>(val value: Type)
 
 internal const val VERSION_UNMOCKED = -1
-internal const val VERSION_R = 1
 internal const val VERSION_S = 2
 internal const val VERSION_T = 3
 internal const val VERSION_U = 4
@@ -168,15 +166,6 @@ open class CSTest {
 
     companion object {
         val CSTestExecutor = Executors.newSingleThreadExecutor()
-    }
-
-    init {
-        if (!SdkLevel.isAtLeastS()) {
-            throw UnsupportedApiLevelException(
-                "CSTest subclasses must be annotated to only " +
-                    "run on S+, e.g. @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.R)"
-            )
-        }
     }
 
     val instrumentationContext =
@@ -240,7 +229,7 @@ open class CSTest {
     }
     val clatCoordinator = mock<ClatCoordinator>()
     val networkRequestStateStatsMetrics = mock<NetworkRequestStateStatsMetrics>()
-    val proxyTracker = mock<ProxyTracker>()
+    val proxyTracker = mock<IProxyTracker>()
     val systemConfigManager = makeMockSystemConfigManager()
     val batteryStats = mock<IBatteryStats>()
     val batteryManager = BatteryStatsManager(batteryStats)
@@ -338,6 +327,13 @@ open class CSTest {
             permission: Int
         ) {}
     }
+
+    data class BpfProgramAttachInfo(
+            val ifIndex: Int,
+            val ingress: Boolean,
+            val prio: Short,
+            val protocol: Short
+    )
 
     inner class CSDeps : ConnectivityService.Dependencies() {
         override fun getResources(ctx: Context) = connResources
@@ -593,7 +589,7 @@ open class CSTest {
 
         internal val ifnameToIndexMap = HashMap<String, Int>()
         override fun if_nametoindex(ifname: String): Int =
-            ifnameToIndexMap[ifname]!!
+            ifnameToIndexMap.getOrDefault(ifname, 0)
 
         override fun getNetworkInterfaces(): Enumeration<NetworkInterface?>? {
             return null
@@ -602,12 +598,20 @@ open class CSTest {
         internal var orderedRtmQdiscClsactHistory =
             ArrayTrackRecord<Pair<Int, Boolean>>().newReadHead()
 
+        internal var orderedL4sEgressProgramHistory =
+            ArrayTrackRecord<Pair<BpfProgramAttachInfo, String>>().newReadHead()
+
         override fun sendNewRtmQdiscClsactRequest(ifIndex: Int): Boolean {
             return orderedRtmQdiscClsactHistory.add(Pair(ifIndex, true))
         }
 
         override fun sendDelRtmQdiscClsactRequest(ifIndex: Int): Boolean {
             return orderedRtmQdiscClsactHistory.add(Pair(ifIndex, false))
+        }
+
+        internal val ethIntfIfname = HashSet<String>()
+        override fun isEthernet(iface: String?): Boolean {
+            return ethIntfIfname.contains(iface)
         }
 
         fun expectRtmQdiscClsactRequest(
@@ -624,6 +628,38 @@ open class CSTest {
         fun expectNoRtmQdiscClsactRequest(timeoutMs: Long = HANDLER_SHORT_TIMEOUT_MS) {
             assertNull(orderedRtmQdiscClsactHistory.poll(timeoutMs))
         }
+
+        override fun attachBpfProgram(
+            ifIndex: Int,
+            ingress: Boolean,
+            prio: Short,
+            protocol: Short,
+            bpfProgPath: String
+        ) {
+            orderedL4sEgressProgramHistory.add(
+                Pair(BpfProgramAttachInfo(ifIndex, ingress, prio, protocol), bpfProgPath)
+            )
+        }
+
+        fun expectAttachBpfProgram(
+            ifIndex: Int,
+            ingress: Boolean,
+            prio: Short,
+            protocol: Short,
+            bpfProgPath: String,
+            timeoutMs: Long = HANDLER_TIMEOUT_MS
+        ) {
+            val attachInfo = BpfProgramAttachInfo(ifIndex, ingress, prio, protocol)
+            assertNotNull(
+                orderedL4sEgressProgramHistory.poll(timeoutMs)
+                { it.first == attachInfo && it.second == bpfProgPath }
+            )
+        }
+
+        fun expectNoAttachBpfProgram(timeoutMs: Long = HANDLER_SHORT_TIMEOUT_MS) {
+            assertNull(orderedL4sEgressProgramHistory.poll(timeoutMs))
+        }
+
         override fun isLnpDeveloperOptInEnabled() = true
     }
 

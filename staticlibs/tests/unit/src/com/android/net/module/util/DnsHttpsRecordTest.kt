@@ -18,6 +18,7 @@ package com.android.net.module.util
 
 import com.android.net.module.util.DnsPacket.ParseException
 import com.android.net.module.util.DnsSvcbTestUtils.FakeDnsRecord
+import com.android.net.module.util.SvcParam
 
 import android.net.DnsResolver.TYPE_A
 import android.net.InetAddresses
@@ -128,6 +129,16 @@ class DnsHttpsRecordTest {
     }
 
     @Test
+    fun verifyMandatoryKeys_whenFalse_throwsParseException() {
+        val recordBytes = DnsSvcbTestUtils.toByteBuffer(
+            FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_MANDATORY_ALPN)))
+
+        assertFailsWith<ParseException>("Invalid DnsHttpsRecord: mandatory key alpn is missing") {
+            DnsHttpsRecord(DnsPacket.ANSECTION, recordBytes).verifyMandatoryKeys()
+        }
+    }
+
+    @Test
     fun getPriority_returnsCorrectValue() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
@@ -135,6 +146,23 @@ class DnsHttpsRecordTest {
         )
 
         assertEquals(1234, record.priority)
+    }
+
+    // Special scenario, see RFC 9460 2.4.2.
+    @Test
+    fun getPriority_whenAliasMode_returnsNoSvcParamsEvenIfPresent() {
+        val record = DnsHttpsRecord(
+            DnsPacket.ANSECTION,
+            DnsSvcbTestUtils.toByteBuffer(FakeDnsRecord(
+                svcPriority = DnsHttpsRecord.ALIAS_MODE_PRIORITY.toShort(),
+                svcParams = listOf(
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_ALPN_DOQ,
+                    DnsSvcbTestUtils.TEST_SVC_PARAM_NO_DEFAULT_ALPN)))
+        )
+
+        assertEquals(DnsHttpsRecord.ALIAS_MODE_PRIORITY, record.priority)
+        // Verify that the SvcParams are ignored in AliasMode.
+        assertTrue(record.alpnIds.isEmpty())
     }
 
     // Special scenario, see RFC 9460 2.5
@@ -169,14 +197,37 @@ class DnsHttpsRecordTest {
     }
 
     @Test
-    fun getMandatory_returnsEmptyList() {
+    fun getMandatory_whenAbsent_returnsEmptyList() {
+        val record = DnsHttpsRecord(
+            DnsPacket.ANSECTION,
+            DnsSvcbTestUtils.toByteBuffer(FakeDnsRecord()))
+
+        assertTrue(record.mandatory.isEmpty())
+    }
+
+    @Test
+    fun getMandatory_whenSingleValue_returnsSingleKey() {
+        val record = DnsHttpsRecord(
+            DnsPacket.ANSECTION,
+            DnsSvcbTestUtils.toByteBuffer(
+                FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_MANDATORY_ALPN))))
+
+        assertContentEquals(shortArrayOf(SvcParam.KEY_ALPN.toShort()), record.mandatory)
+    }
+
+    @Test
+    fun getMandatory_whenMultipleValues_returnsMultipleKeys() {
         val record = DnsHttpsRecord(
             DnsPacket.ANSECTION,
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(svcParams = listOf(DnsSvcbTestUtils.TEST_SVC_PARAM_MANDATORY))))
-        // TODO(b/454544870): update this test once SvcParamMandatory is fixed
 
-        assertTrue(record.mandatory.isEmpty())
+        assertContentEquals(
+            shortArrayOf(
+                SvcParam.KEY_IPV4HINT.toShort(),
+                SvcParam.KEY_ALPN.toShort(),
+                333.toShort()),
+            record.mandatory)
     }
 
     @Test
@@ -398,7 +449,12 @@ class DnsHttpsRecordTest {
             DnsSvcbTestUtils.toByteBuffer(
                 FakeDnsRecord(svcParams = svcParams)))
 
-        assertTrue(record.mandatory.isEmpty())
+        assertContentEquals(
+            shortArrayOf(
+                SvcParam.KEY_IPV4HINT.toShort(),
+                SvcParam.KEY_ALPN.toShort(),
+                333.toShort()),
+            record.mandatory)
         assertEquals(listOf("h2", "http/1.1"), record.alpnIds)
         assertEquals(5353, record.port)
         assertEquals(listOf(InetAddresses.parseNumericAddress("4.3.2.1")), record.ipv4Hints)

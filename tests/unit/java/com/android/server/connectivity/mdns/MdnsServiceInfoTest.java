@@ -20,6 +20,7 @@ import static com.android.server.connectivity.mdns.MdnsConstants.INTERFACE_INDEX
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.mock;
 import android.net.Network;
 import android.os.Build;
 import android.os.Parcel;
+import android.os.PatternMatcher;
 
 import com.android.server.connectivity.mdns.MdnsServiceInfo.TextEntry;
 import com.android.testutils.DevSdkIgnoreRule;
@@ -288,5 +290,46 @@ public class MdnsServiceInfoTest {
 
         assertEquals("AA", entry.getKey());
         assertArrayEquals(new byte[] {}, entry.getValue());
+    }
+
+    @Test
+    public void testAttributeMatches() {
+        final MdnsServiceInfo info = new MdnsServiceInfo(
+                "my-service",
+                new String[] {"_test", "_tcp"},
+                List.of(),
+                new String[] {"my-host", "local"},
+                12345,
+                "192.0.2.1",
+                "2001:db8::1",
+                List.of(
+                        TextEntry.fromString("key1=value1"),
+                        TextEntry.fromString("key2="),
+                        TextEntry.fromString("key3"),
+                        new TextEntry("key4", new byte[] {(byte) 0x12, (byte) 0xAB})),
+                INTERFACE_INDEX_UNSPECIFIED);
+
+        assertTrue(info.attributeMatches("key1",
+                new PatternMatcher("value1", PatternMatcher.PATTERN_LITERAL)));
+        assertFalse(info.attributeMatches("key1",
+                new PatternMatcher("value2", PatternMatcher.PATTERN_LITERAL)));
+
+        assertTrue(info.attributeMatches("key2",
+                new PatternMatcher("", PatternMatcher.PATTERN_LITERAL)));
+        assertFalse(info.attributeMatches("key2", null));
+
+        assertTrue(info.attributeMatches("key3", null));
+        assertFalse(info.attributeMatches("key3",
+                new PatternMatcher("", PatternMatcher.PATTERN_LITERAL)));
+
+        assertTrue(info.attributeMatches("key4",
+                new PatternMatcher("0x12AB", PatternMatcher.PATTERN_LITERAL)));
+        assertFalse(info.attributeMatches("key4",
+                new PatternMatcher("0x12AC", PatternMatcher.PATTERN_LITERAL)));
+        assertFalse(info.attributeMatches("key4",
+                new PatternMatcher("12AB", PatternMatcher.PATTERN_LITERAL)));
+
+        assertFalse(info.attributeMatches("unknown", null));
+        assertFalse(info.attributeMatches(null, null));
     }
 }

@@ -185,18 +185,15 @@ static const set<string> MAINLINE_FOR_25Q4_PLUS = {
 
 // Provided by *current* mainline module for 26Q2+ devices
 static const set<string> MAINLINE_FOR_26Q2_PLUS = {
-    NETD "map_netd_l4s_accecn_byte_map",
-    NETD "map_netd_l4s_accecn_ce_map",
-    NETD "map_netd_l4s_accecn_mss_map",
     NETD "map_netd_l4s_accecn_enabled_map",
+    NETD "map_netd_l4s_conn_counter",
 };
 
 // Provided by *current* mainline module for 26Q2+ devices with 6.1+ kernels
 static const set<string> MAINLINE_FOR_26Q2_6_1_PLUS = {
+    NETD "prog_netd_ingress_accecn_common",
     NETD "prog_netd_schedcls_egress_accecn_eth",
     NETD "prog_netd_schedcls_egress_accecn_rawip",
-    NETD "prog_netd_schedcls_ingress_accecn_eth",
-    NETD "prog_netd_schedcls_ingress_accecn_rawip",
     NETD "prog_netd_sockops_accecn_option",
 };
 

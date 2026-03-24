@@ -131,7 +131,11 @@ public class BleBroadcastProvider extends AdvertiseCallback {
                         mInjector.getBluetoothAdapter().getBluetoothLeAdvertiser();
                 if (bluetoothLeAdvertiser != null) {
                     bluetoothLeAdvertiser.stopAdvertising(this);
-                    bluetoothLeAdvertiser.stopAdvertisingSet(mAdvertisingSetCallback);
+                    // only call stopAdvertisingSet() when startAdvertisingSet()
+                    // is called in start(), i.e. mAdvertisingSetCallback is not null.
+                    if (mAdvertisingSetCallback != null) {
+                        bluetoothLeAdvertiser.stopAdvertisingSet(mAdvertisingSetCallback);
+                    }
                 }
             }
             mBroadcastListener = null;

@@ -235,7 +235,7 @@ class MdnsUtilsTest {
         )
 
         assertEquals(discoveryOffloadInfo.hostname, result.hostname)
-        assertEquals(discoveryOffloadInfo.serviceType, result.key.serviceType)
+        assertEquals("_googlecast._tcp", result.key.serviceType)
         assertEquals(discoveryOffloadInfo.serviceName, result.key.serviceName)
         assertSameElements(discoveryOffloadInfo.subtypes, result.subtypes)
         assertThat(offloadType).isEqualTo(result.offloadType)

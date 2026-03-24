@@ -16,6 +16,8 @@
 
 package android.net.cts;
 
+import static android.Manifest.permission.NETWORK_SETTINGS;
+import static android.Manifest.permission.QUERY_ALL_PACKAGES;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET;
 import static android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED;
 import static android.net.NetworkCapabilities.TRANSPORT_VPN;
@@ -24,7 +26,10 @@ import static android.net.cts.util.CtsNetUtils.TestNetworkCallback;
 import static com.android.compatibility.common.util.SystemUtil.runWithShellPermissionIdentity;
 import static com.android.modules.utils.build.SdkLevel.isAtLeastT;
 import static com.android.modules.utils.build.SdkLevel.isAtLeastU;
+import static com.android.testutils.TestPermissionUtil.runAsShell;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -38,8 +43,12 @@ import static org.junit.Assume.assumeTrue;
 
 import android.Manifest;
 import android.annotation.NonNull;
+import android.annotation.Nullable;
+import android.annotation.UserIdInt;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.net.Ikev2VpnProfile;
@@ -48,26 +57,30 @@ import android.net.Network;
 import android.net.NetworkRequest;
 import android.net.ProxyInfo;
 import android.net.TestNetworkInterface;
+import android.net.UidRange;
 import android.net.VpnManager;
+import android.net.VpnProfileState;
 import android.net.cts.util.CtsNetUtils;
 import android.net.cts.util.IkeSessionTestUtils;
 import android.net.ipsec.ike.IkeTunnelConnectionParams;
 import android.os.Build;
 import android.os.Process;
+import android.os.UserHandle;
+import android.os.UserManager;
 import android.platform.test.annotations.AppModeFull;
 import android.platform.test.annotations.RequiresFlagsEnabled;
 import android.platform.test.flag.junit.CheckFlagsRule;
 import android.platform.test.flag.junit.DeviceFlagsValueProvider;
 import android.provider.Flags;
 import android.text.TextUtils;
+import android.util.ArraySet;
+import android.util.Range;
 
-import androidx.test.InstrumentationRegistry;
+import androidx.test.platform.app.InstrumentationRegistry;
 
+import com.android.net.module.util.CollectionUtils;
 import com.android.net.module.util.HexDump;
-import com.android.networkstack.apishim.ConstantsShim;
-import com.android.networkstack.apishim.VpnManagerShimImpl;
-import com.android.networkstack.apishim.common.VpnManagerShim;
-import com.android.networkstack.apishim.common.VpnProfileStateShim;
+import com.android.net.module.util.SdkUtil;
 import com.android.testutils.DevSdkIgnoreRule;
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo;
 import com.android.testutils.DevSdkIgnoreRunner;
@@ -89,14 +102,21 @@ import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.security.auth.x500.X500Principal;
 
 @RunWith(DevSdkIgnoreRunner.class)
-@IgnoreUpTo(Build.VERSION_CODES.Q)
 @AppModeFull(reason = "Appops state changes disallowed for instant apps (OP_ACTIVATE_PLATFORM_VPN)")
 public class Ikev2VpnTest {
     private static final String TAG = Ikev2VpnTest.class.getSimpleName();
@@ -193,17 +213,19 @@ public class Ikev2VpnTest {
     private static final String TEST_PASSWORD = "pa55w0rd";
 
     // Static state to reduce setup/teardown
-    private static final Context sContext = InstrumentationRegistry.getContext();
+    private static final Context sContext =
+            InstrumentationRegistry.getInstrumentation().getContext();
     private static boolean sIsWatch =
                 sContext.getPackageManager().hasSystemFeature(PackageManager.FEATURE_WATCH);
     private static final ConnectivityManager sCM =
             (ConnectivityManager) sContext.getSystemService(Context.CONNECTIVITY_SERVICE);
     private static final VpnManager sVpnMgr =
             (VpnManager) sContext.getSystemService(Context.VPN_MANAGEMENT_SERVICE);
+    private static final PackageManager sPackageMgr = sContext.getPackageManager();
+    private static final UserManager sUserManager = sContext.getSystemService(UserManager.class);
     private static final CtsNetUtils mCtsNetUtils = new CtsNetUtils(sContext);
     private static final long TIMEOUT_MS = 15_000;
-
-    private VpnManagerShim mVmShim = VpnManagerShimImpl.newInstance(sContext);
+    private static final List<String> NO_EXCLUDED_PKGS = List.of();
 
     private final X509Certificate mServerRootCa;
     private final CertificateAndKey mUserCertKey;
@@ -224,6 +246,12 @@ public class Ikev2VpnTest {
     public void tearDown() {
         if (sIsWatch) {
             return; // Tests are skipped for watches.
+        }
+
+        // The functionality to get/set App exclusion list will expose from release 26Q2
+        // Which we need to check before calling it.
+        if (SdkUtil.isAtLeast26Q2()) {
+            setAppExclusionList(NO_EXCLUDED_PKGS);
         }
 
         for (TestableNetworkCallback callback : mCallbacksToUnregister) {
@@ -528,7 +556,7 @@ public class Ikev2VpnTest {
 
     private void checkStartStopVpnProfileBuildsNetworks(@NonNull IkeTunUtils tunUtils,
             boolean testIpv6, boolean requiresValidation, boolean testSessionKey,
-            boolean testIkeTunConnParams)
+            boolean testIkeTunConnParams, List<String> excludedPkgNames)
             throws Exception {
         String serverAddr = testIpv6 ? TEST_SERVER_ADDR_V6 : TEST_SERVER_ADDR_V4;
         String initResp = testIpv6 ? SUCCESSFUL_IKE_INIT_RESP_V6 : SUCCESSFUL_IKE_INIT_RESP_V4;
@@ -553,11 +581,11 @@ public class Ikev2VpnTest {
         if (testSessionKey) {
             // testSessionKey will never be true if running on <T
             // startProvisionedVpnProfileSession() should return a non-null & non-empty random UUID.
-            final String sessionId = mVmShim.startProvisionedVpnProfileSession();
+            final String sessionId = sVpnMgr.startProvisionedVpnProfileSession();
             assertFalse(TextUtils.isEmpty(sessionId));
-            final VpnProfileStateShim profileState = mVmShim.getProvisionedVpnProfileState();
+            final VpnProfileState profileState = sVpnMgr.getProvisionedVpnProfileState();
             assertNotNull(profileState);
-            assertEquals(ConstantsShim.VPN_PROFILE_STATE_CONNECTING, profileState.getState());
+            assertEquals(VpnProfileState.STATE_CONNECTING, profileState.getState());
             assertEquals(sessionId, profileState.getSessionId());
             assertFalse(profileState.isAlwaysOn());
             assertFalse(profileState.isLockdownEnabled());
@@ -576,17 +604,21 @@ public class Ikev2VpnTest {
         final Network vpnNetwork = cb.expect(Event.AVAILABLE).getNetwork();
 
         if (testSessionKey) {
-            final VpnProfileStateShim profileState = mVmShim.getProvisionedVpnProfileState();
+            final VpnProfileState profileState = sVpnMgr.getProvisionedVpnProfileState();
             assertNotNull(profileState);
-            assertEquals(ConstantsShim.VPN_PROFILE_STATE_CONNECTED, profileState.getState());
+            assertEquals(VpnProfileState.STATE_CONNECTED, profileState.getState());
             assertFalse(profileState.isAlwaysOn());
             assertFalse(profileState.isLockdownEnabled());
         }
 
-        cb.expectCaps(vpnNetwork, TIMEOUT_MS, c -> c.hasTransport(TRANSPORT_VPN)
-                && c.hasCapability(NET_CAPABILITY_INTERNET)
-                && !c.hasCapability(NET_CAPABILITY_VALIDATED)
-                && Process.myUid() == c.getOwnerUid());
+        Set<Range<Integer>> expectedRanges =
+                createUserAndRestrictedProfilesRanges(UserHandle.myUserId(), excludedPkgNames);
+        cb.expectCaps(vpnNetwork, TIMEOUT_MS, c ->
+                c.hasTransport(TRANSPORT_VPN)
+                        && c.hasCapability(NET_CAPABILITY_INTERNET)
+                        && !c.hasCapability(NET_CAPABILITY_VALIDATED)
+                        && Process.myUid() == c.getOwnerUid()
+                        && Objects.equals(c.getUids(), expectedRanges));
         cb.expect(Event.LINK_PROPERTIES_CHANGED, vpnNetwork);
         cb.expect(Event.BLOCKED_STATUS, vpnNetwork);
 
@@ -622,6 +654,7 @@ public class Ikev2VpnTest {
         private final boolean mRequiresValidation;
         private final boolean mTestSessionKey;
         private final boolean mTestIkeTunConnParams;
+        private final List<String> mExcludedPkgNames;
 
         /**
          * Constructs the test
@@ -629,13 +662,16 @@ public class Ikev2VpnTest {
          * @param testIpv6Only if true, builds a IPv6-only test; otherwise builds a IPv4-only test
          * @param requiresValidation whether this VPN should request platform validation
          * @param testSessionKey if true, start VPN by calling startProvisionedVpnProfileSession()
+         * @param excludedPkgNames list of excluded package name
          */
         VerifyStartStopVpnProfileTest(boolean testIpv6Only, boolean requiresValidation,
-                boolean testSessionKey, boolean testIkeTunConnParams) {
+                boolean testSessionKey, boolean testIkeTunConnParams,
+                List<String> excludedPkgNames) {
             mTestIpv6Only = testIpv6Only;
             mRequiresValidation = requiresValidation;
             mTestSessionKey = testSessionKey;
             mTestIkeTunConnParams = testIkeTunConnParams;
+            mExcludedPkgNames = excludedPkgNames;
         }
 
         @Override
@@ -644,7 +680,7 @@ public class Ikev2VpnTest {
             final IkeTunUtils tunUtils = new IkeTunUtils(testIface.getFileDescriptor());
 
             checkStartStopVpnProfileBuildsNetworks(tunUtils, mTestIpv6Only, mRequiresValidation,
-                    mTestSessionKey, mTestIkeTunConnParams);
+                    mTestSessionKey, mTestIkeTunConnParams, mExcludedPkgNames);
         }
 
         @Override
@@ -663,74 +699,168 @@ public class Ikev2VpnTest {
     }
 
     private void doTestStartStopVpnProfile(boolean testIpv6Only, boolean requiresValidation,
-            boolean testSessionKey, boolean testIkeTunConnParams) throws Exception {
+            boolean testSessionKey, boolean testIkeTunConnParams, List<String> excludedPkgNames)
+            throws Exception {
         assumeTrue(mCtsNetUtils.hasIpsecTunnelsFeature());
         // Requires shell permission to update appops.
         runWithShellPermissionIdentity(
                 new TestNetworkRunnable(new VerifyStartStopVpnProfileTest(
-                        testIpv6Only, requiresValidation, testSessionKey , testIkeTunConnParams)));
+                        testIpv6Only, requiresValidation, testSessionKey , testIkeTunConnParams,
+                        excludedPkgNames)));
+    }
+
+    private Set<Range<Integer>> createUserAndRestrictedProfilesRanges(@UserIdInt int userId,
+            @NonNull List<String> excludedPkgNames) {
+        final Set<Range<Integer>> ranges = new ArraySet<>();
+        final SortedSet<Integer> excludedUids = getSortedAppUids(excludedPkgNames, userId);
+        final UidRange userUidRange = UidRange.createForUser(UserHandle.of(userId));
+        addUidsToRanges(ranges, userUidRange, excludedUids);
+
+        for (UserHandle profile : sUserManager.getUserHandles(true)) {
+            // Check if this specific profile is a restricted one
+            if (sUserManager.isRestrictedProfile(profile)) {
+                UserHandle parent = sUserManager.getProfileParent(profile);
+                if (parent != null && parent.getIdentifier() == userId) {
+                    SortedSet<Integer> excludedUidsForRestrictedProfile =
+                            getSortedAppUids(excludedPkgNames, profile.getIdentifier());
+                    UidRange restrictedProfileUidRange =
+                            UidRange.createForUser(UserHandle.of(profile.getIdentifier()));
+                    addUidsToRanges(ranges, restrictedProfileUidRange,
+                            excludedUidsForRestrictedProfile);
+                }
+            }
+        }
+        return ranges;
+    }
+
+    /**
+     * Splits a {@code UidRange} into multiple sub-ranges by excluding specific UIDs.
+     * * <p>This method iterates through the excluded UIDs and creates new ranges for the
+     * gaps between them, provided those gaps fall within the bounds of the original
+     * {@code uidRange}. The resulting ranges are added to the provided {@code ranges} set.
+     *
+     * @param ranges The set where the calculated sub-ranges will be added.
+     * @param uidRange The initial UID range to be processed.
+     * @param excludedUids A sorted set of individual UIDs to be removed from the range.
+     */
+    private void addUidsToRanges(@NonNull Set<Range<Integer>> ranges, @NonNull UidRange uidRange,
+            @NonNull SortedSet<Integer> excludedUids) {
+        int start = uidRange.start;
+        for (int uid : excludedUids) {
+            if (uid == start) {
+                start++;
+            } else {
+                ranges.add(new Range<Integer>(start, uid - 1));
+                start = uid + 1;
+            }
+        }
+        if (start <= uidRange.stop) {
+            ranges.add(new Range<Integer>(start, uidRange.stop));
+        }
+    }
+
+    /**
+     * Retrieves and sorts the UIDs for the given package names and user ID.
+     * Includes SDK sandbox UIDs where applicable.
+     *
+     * @param packageNames The list of package names to look up.
+     * @param userId The user ID.
+     * @return A SortedSet of UIDs.
+     * @throws RuntimeException if any package name is not found.
+     */
+    private SortedSet<Integer> getSortedAppUids(List<String> packageNames, int userId) {
+        SortedSet<Integer> uids = new TreeSet<>();
+        for (String pkgName : packageNames) {
+            int uid = Process.INVALID_UID;
+            try {
+                uid = sPackageMgr.getPackageUidAsUser(pkgName,
+                        PackageManager.PackageInfoFlags.of(0), userId);
+            } catch (PackageManager.NameNotFoundException ignored) {
+                // uid not found for pkgName, using INVALID_UID and continue
+            }
+
+            // Package does not exist or disable in this user ID. Don't add it to the exclude list.
+            if (uid != Process.INVALID_UID) {
+                uids.add(uid);
+            }
+
+            if (Process.isApplicationUid(uid)) {
+                uids.add(Process.toSdkSandboxUid(uid));
+            }
+        }
+        return uids;
     }
 
     @Test @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testStartStopVpnProfileV4() throws Exception {
         doTestStartStopVpnProfile(false /* testIpv6Only */, false /* requiresValidation */,
-                false /* testSessionKey */, false /* testIkeTunConnParams */);
+                false /* testSessionKey */, false /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @Test @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testStartStopVpnProfileV4WithValidation() throws Exception {
         doTestStartStopVpnProfile(false /* testIpv6Only */, true /* requiresValidation */,
-                false /* testSessionKey */, false /* testIkeTunConnParams */);
+                false /* testSessionKey */, false /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @Test @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testStartStopVpnProfileV6() throws Exception {
         doTestStartStopVpnProfile(true /* testIpv6Only */, false /* requiresValidation */,
-                false /* testSessionKey */, false /* testIkeTunConnParams */);
+                false /* testSessionKey */, false /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @Test @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testStartStopVpnProfileV6WithValidation() throws Exception {
         doTestStartStopVpnProfile(true /* testIpv6Only */, true /* requiresValidation */,
-                false /* testSessionKey */, false /* testIkeTunConnParams */);
+                false /* testSessionKey */, false /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @Test @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testStartStopVpnProfileIkeTunConnParamsV4() throws Exception {
         doTestStartStopVpnProfile(false /* testIpv6Only */, false /* requiresValidation */,
-                false /* testSessionKey */, true /* testIkeTunConnParams */);
+                false /* testSessionKey */, true /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @Test @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testStartStopVpnProfileIkeTunConnParamsV4WithValidation() throws Exception {
         doTestStartStopVpnProfile(false /* testIpv6Only */, true /* requiresValidation */,
-                false /* testSessionKey */, true /* testIkeTunConnParams */);
+                false /* testSessionKey */, true /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @Test @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testStartStopVpnProfileIkeTunConnParamsV6() throws Exception {
         doTestStartStopVpnProfile(true /* testIpv6Only */, false /* requiresValidation */,
-                false /* testSessionKey */, true /* testIkeTunConnParams */);
+                false /* testSessionKey */, true /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @Test @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     public void testStartStopVpnProfileIkeTunConnParamsV6WithValidation() throws Exception {
         doTestStartStopVpnProfile(true /* testIpv6Only */, true /* requiresValidation */,
-                false /* testSessionKey */, true /* testIkeTunConnParams */);
+                false /* testSessionKey */, true /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @Test
     public void testStartProvisionedVpnV4ProfileSession() throws Exception {
         doTestStartStopVpnProfile(false /* testIpv6Only */, false /* requiresValidation */,
-                true /* testSessionKey */, false /* testIkeTunConnParams */);
+                true /* testSessionKey */, false /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)
     @Test
     public void testStartProvisionedVpnV6ProfileSession() throws Exception {
         doTestStartStopVpnProfile(true /* testIpv6Only */, false /* requiresValidation */,
-                true /* testSessionKey */, false /* testIkeTunConnParams */);
+                true /* testSessionKey */, false /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
     }
 
     @IgnoreUpTo(Build.VERSION_CODES.TIRAMISU)
@@ -777,7 +907,7 @@ public class Ikev2VpnTest {
                 SecurityException.class,
                 () ->
                         sVpnMgr.getAppExclusionList(
-                                sContext.getUser(), sContext.getPackageName()));
+                                sContext.getUser(), sContext.getOpPackageName()));
     }
 
     @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
@@ -788,7 +918,192 @@ public class Ikev2VpnTest {
                 SecurityException.class,
                 () ->
                         sVpnMgr.setAppExclusionList(
-                                sContext.getUser(), sContext.getPackageName(), List.of()));
+                                sContext.getUser(), sContext.getOpPackageName(), NO_EXCLUDED_PKGS));
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    @RequiresFlagsEnabled(Flags.FLAG_EXPOSE_VPN_APP_EXCLUSION_SETTINGS)
+    public void testStartStopVpnProfile_defaultDenyList() throws Exception {
+        assertExclusionListEmpty();
+
+        doTestStartStopVpnProfile(false /* testIpv6Only */, false /* requiresValidation */,
+                false /* testSessionKey */, false /* testIkeTunConnParams */,
+                NO_EXCLUDED_PKGS /* excludedPkgNames */);
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    @RequiresFlagsEnabled(Flags.FLAG_EXPOSE_VPN_APP_EXCLUSION_SETTINGS)
+    public void testStartStopVpnProfile_addOneExcludedApp() throws Exception {
+        // Set excluded app list
+        List<String> excludedPkgNames = new ArrayList<>();
+        String pkgName = getAnyNonSystemPackageExcept(sContext.getOpPackageName());
+        assertNotNull("Cannot find any installed app", pkgName);
+
+        setAppExclusionList(excludedPkgNames);
+        assertExclusionListMatches(excludedPkgNames);
+
+        // Verify selected app be excluded from VPN
+        doTestStartStopVpnProfile(false /* testIpv6Only */, false /* requiresValidation */,
+                false /* testSessionKey */, false /* testIkeTunConnParams */,
+                excludedPkgNames /* excludedPkgNames */);
+
+        // Clean excluded app list
+        excludedPkgNames.clear();
+        setAppExclusionList(excludedPkgNames);
+        assertExclusionListEmpty();
+
+        // Verify VPN's excluded app list is default
+        doTestStartStopVpnProfile(false /* testIpv6Only */, false /* requiresValidation */,
+                false /* testSessionKey */, false /* testIkeTunConnParams */,
+                excludedPkgNames /* excludedPkgNames */);
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    public void addUserToRanges_emptyExclusions() {
+        runAddUserToRangesTest(
+                Collections.emptyList(),
+                createExpectedSet(new Range<>(0, 99999))
+        );
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    public void addUserToRanges_excludeSingleUid() {
+        int excludedUid = 50;
+        runAddUserToRangesTest(
+                Collections.singletonList(excludedUid),
+                createExpectedSet(
+                        new Range<>(0, 49),
+                        new Range<>(51, 99999)
+                )
+        );
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    public void addUserToRanges_excludeStartBoundary() {
+        int excludedUid = 0;
+        runAddUserToRangesTest(
+                Collections.singletonList(excludedUid),
+                createExpectedSet(new Range<>(1, 99999))
+        );
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    public void addUserToRanges_excludeEndBoundary() {
+        int excludedUid = 99999;
+        runAddUserToRangesTest(
+                Collections.singletonList(excludedUid),
+                createExpectedSet(new Range<>(0, 99998))
+        );
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    public void addUserToRanges_excludeConsecutive() {
+        int excludedUid1 = 50;
+        int excludedUid2 = 51;
+        runAddUserToRangesTest(
+                Arrays.asList(excludedUid1, excludedUid2),
+                createExpectedSet(
+                        new Range<>(0, 49),
+                        new Range<>(52, 99999)
+                )
+        );
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    public void addUserToRanges_excludeMultipleNonConsecutive() {
+        int excludedUid1 = 50;
+        int excludedUid2 = 60;
+        runAddUserToRangesTest(
+                Arrays.asList(excludedUid1, excludedUid2),
+                createExpectedSet(
+                        new Range<>(0, 49),
+                        new Range<>(51, 59),
+                        new Range<>(61, 99999)
+                )
+        );
+    }
+
+    @Test @IgnoreUpTo(Build.VERSION_CODES_FULL.BAKLAVA_1)
+    public void addUserToRanges_allUidsExcluded() {
+        List<Integer> allUids = new ArrayList<>();
+        for (int i = 0; i <= 99999; i++) {
+            allUids.add(i);
+        }
+        runAddUserToRangesTest(allUids, Collections.emptySet());
+    }
+
+    @SafeVarargs
+    private Set<Range<Integer>> createExpectedSet(Range<Integer>... ranges) {
+        return new HashSet<>(Arrays.asList(ranges));
+    }
+
+    private void runAddUserToRangesTest(List<Integer> excludedUids,
+            Set<Range<Integer>> expectedRanges) {
+        SortedSet<Integer> excludedUidSet = new TreeSet<>(excludedUids);
+        Set<Range<Integer>> actualRanges = new ArraySet<>();
+
+        addUidsToRanges(actualRanges, new UidRange(0, 99999), excludedUidSet);
+
+        assertEquals(expectedRanges, actualRanges);
+    }
+
+    /**
+     * Return any installed application's package name which is not a system app.
+     * @param excludedPkgName pkg names needs to be filter out.
+     *
+     * @return any matched application's package name
+     */
+    @Nullable
+    private String getAnyNonSystemPackageExcept(String excludedPkgName) {
+        final AtomicReference<String> result = new AtomicReference<>();
+        runAsShell(QUERY_ALL_PACKAGES, () -> {
+            List<PackageInfo> packages =
+                    sPackageMgr.getInstalledPackages(PackageManager.GET_META_DATA);
+
+            Optional<String> firstMatch = packages.stream()
+                    .filter(pkgInfo -> pkgInfo.applicationInfo != null)
+                    .filter(pkgInfo ->
+                            (pkgInfo.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0)
+                    .filter(pkgInfo -> !excludedPkgName.equals(pkgInfo.packageName))
+                    .map(pkgInfo -> pkgInfo.packageName)
+                    .findAny();
+
+            result.set(firstMatch.orElse(null));
+        });
+
+        return result.get();
+    }
+
+    private void assertExclusionListMatches(List<String> expectedExcludedPkgNames) {
+        List<String> exclusionList = getAppExclusionList();
+        assertNotNull(exclusionList);
+        assertThat(exclusionList, containsInAnyOrder(expectedExcludedPkgNames.toArray()));
+    }
+
+    private void assertExclusionListEmpty() {
+        assumeTrue(CollectionUtils.isEmpty(getAppExclusionList()));
+    }
+
+    private void setAppExclusionList(List<String> excludedPkgNames) {
+        runAsShell(NETWORK_SETTINGS, () -> {
+            sVpnMgr.setAppExclusionList(
+                    sContext.getUser(),
+                    sContext.getOpPackageName(),
+                    excludedPkgNames
+            );
+        });
+    }
+
+    private List<String> getAppExclusionList() {
+        final List<String> exclusionList = new ArrayList<>();
+        runAsShell(NETWORK_SETTINGS, () -> {
+            List<String> result =
+                    sVpnMgr.getAppExclusionList(sContext.getUser(), sContext.getOpPackageName());
+            if (result != null) {
+                exclusionList.addAll(result);
+            }
+        });
+        return exclusionList;
     }
 
     private static class CertificateAndKey {

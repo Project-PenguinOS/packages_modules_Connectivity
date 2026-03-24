@@ -15,6 +15,8 @@
  */
 package com.android.server.net.ct;
 
+import static com.android.server.net.ct.Config.TAG;
+
 import android.annotation.RequiresApi;
 import android.app.AlarmManager;
 import android.app.DownloadManager;
@@ -28,13 +30,15 @@ import android.os.ConfigUpdate;
 import android.os.SystemClock;
 import android.util.Log;
 
+import java.io.File;
 import java.util.Collection;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /** Implementation of the Certificate Transparency job */
 @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 public class CertificateTransparencyJob extends BroadcastReceiver {
-
-    private static final String TAG = "CertificateTransparencyJob";
 
     private final Context mContext;
     private final CertificateTransparencyDownloader mCertificateTransparencyDownloader;
@@ -42,6 +46,8 @@ public class CertificateTransparencyJob extends BroadcastReceiver {
     private final Collection<CompatibilityVersion> mCompatVersions;
     private final AlarmManager mAlarmManager;
     private final PendingIntent mPendingIntent;
+    private final IntentFilter mUpdateLogsIntentFilter;
+    private final ExecutorService mExecutorService = Executors.newSingleThreadExecutor();
 
     private boolean mScheduled = false;
     private boolean mDependenciesReady = false;
@@ -62,15 +68,17 @@ public class CertificateTransparencyJob extends BroadcastReceiver {
                 PendingIntent.getBroadcast(
                         mContext,
                         /* requestCode= */ 0,
-                        new Intent(ConfigUpdate.ACTION_UPDATE_CT_LOGS),
+                        new Intent(ConfigUpdate.ACTION_UPDATE_CT_LOGS)
+                                .setPackage(mContext.getPackageName()),
                         PendingIntent.FLAG_IMMUTABLE);
+        mUpdateLogsIntentFilter = new IntentFilter(ConfigUpdate.ACTION_UPDATE_CT_LOGS);
     }
 
     void schedule() {
         if (!mScheduled) {
             mContext.registerReceiver(
                     this,
-                    new IntentFilter(ConfigUpdate.ACTION_UPDATE_CT_LOGS),
+                    mUpdateLogsIntentFilter,
                     Context.RECEIVER_EXPORTED);
             mAlarmManager.setInexactRepeating(
                     AlarmManager.ELAPSED_REALTIME,
@@ -88,8 +96,8 @@ public class CertificateTransparencyJob extends BroadcastReceiver {
 
     void cancel() {
         if (mScheduled) {
-            mContext.unregisterReceiver(this);
             mAlarmManager.cancel(mPendingIntent);
+            mContext.unregisterReceiver(this);
         }
         mScheduled = false;
 
@@ -109,10 +117,18 @@ public class CertificateTransparencyJob extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!ConfigUpdate.ACTION_UPDATE_CT_LOGS.equals(intent.getAction())) {
+        if (!mUpdateLogsIntentFilter.hasAction(intent.getAction())) {
             Log.w(TAG, "Received unexpected broadcast with action " + intent);
             return;
         }
+        Future<?> unused =
+                mExecutorService.submit(
+                        intent.getBooleanExtra("delete", false)
+                                ? this::deleteLogListDirectory
+                                : this::startJob);
+    }
+
+    private void startJob() {
         if (Config.DEBUG) {
             Log.d(TAG, "Starting CT daily job.");
         }
@@ -126,6 +142,11 @@ public class CertificateTransparencyJob extends BroadcastReceiver {
         } else if (Config.DEBUG) {
             Log.d(TAG, "Public key download started successfully.");
         }
+    }
+
+    private void deleteLogListDirectory() {
+        Log.i(TAG, "Deleting log list directory.");
+        DirectoryUtils.removeDir(new File(Config.CT_ROOT_DIRECTORY_PATH));
     }
 
     private void startDependencies() {

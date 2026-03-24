@@ -55,7 +55,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.android.compatibility.common.util.SystemUtil
 import com.android.connectivity.resources.R
 import com.android.net.module.util.BpfUtils
-import com.android.networkstack.apishim.TelephonyManagerShimImpl
 import com.android.server.BpfNetMaps
 import com.android.server.ConnectivityService
 import com.android.server.NetworkAgentWrapper
@@ -298,7 +297,6 @@ class ConnectivityServiceIntegrationTest {
                                 super.makeHandlerThread().also { handlerThreads.add(it) }
                     },
                     tm,
-                TelephonyManagerShimImpl.newInstance(tm),
                     requestRestrictedWifiEnabled,
                 listener,
                 handler
@@ -455,10 +453,6 @@ class ConnectivityServiceIntegrationTest {
             assertNotNull(capportData)
             assertTrue(capportData.isCaptive)
             assertEquals(Uri.parse("https://login.capport.android.com"), capportData.userPortalUrl)
-            assertEquals(
-                Uri.parse("https://venueinfo.capport.android.com"),
-                capportData.venueInfoUrl
-            )
             assertEquals(
                 if (expectedOptIn == OPT_IN) {
                     CAPTIVE_PORTAL_DATA_SOURCE_CAPPORT_WITH_CUSTOM_TABS_OPTIN

@@ -25,13 +25,13 @@
 #include <errno.h>
 #include <error.h>
 #include <fcntl.h>
-#include <fstream>
 #include <inttypes.h>
 #include <iostream>
 #include <linux/unistd.h>
 #include <log/log.h>
 #include <net/if.h>
 #include <optional>
+#include <span>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,9 +77,8 @@ using android::base::Split;
 using android::base::StartsWith;
 using android::base::Tokenize;
 using android::base::unique_fd;
-using std::ifstream;
-using std::ios;
 using std::optional;
+using std::span;
 using std::string;
 using std::vector;
 using std::chrono::duration_cast;
@@ -102,11 +101,11 @@ static_assert(useLibBpf == com::android::tethering::readonly::flags::use_libbpf(
 // will return FutureApiLevel which results in
 // __ANDROID_API__ == __ANDROID_MIN_SDK_VERSION__ == 10000
 //
-// Normally __ANDROID_API__ is 'min_sdk_version = 30' from Android.bp
+// Normally __ANDROID_API__ is 'min_sdk_version = 31' from Android.bp
 #if defined(__riscv)
 static_assert(__ANDROID_API__ == 10000, "TODO: add proper mainline riscv support");
 #else
-static_assert(__ANDROID_API__ == 30, "NetBpfLoad must be compiled for 30/R");
+static_assert(__ANDROID_API__ == 31, "NetBpfLoad must be compiled for 31/S");
 #endif
 
 #ifndef __ANDROID_APEX__
@@ -130,176 +129,162 @@ typedef struct {
     unique_fd prog_fd; // fd after loading
 } codeSection;
 
-struct ElfObject {
-    const char * path;
-    ifstream file;
+class ElfObject {
+    void* base;
+    size_t size;
+    const Elf64_Ehdr* eh;
+    span<const char> bytes;
+    span<const Elf64_Shdr> sh;
+    span<const char> strtab;
 
-    ElfObject(const char* elfPath) : path(elfPath), file(path, ios::in | ios::binary) {
-        if (!file.is_open()) abort();
+  public:
+    const char * const path;
+
+    ElfObject(const char* elfPath) : base(MAP_FAILED), size(0), eh(nullptr), path(elfPath) {
+        unique_fd fd(open(path, O_RDONLY | O_CLOEXEC));
+        if (fd < 0) {
+            ALOGE("open(%s) failed: %s", path, strerror(errno));
+            abort();
+        }
+        struct stat st;
+        if (fstat(fd, &st) < 0) {
+            ALOGE("fstat(%s) failed: %s", path, strerror(errno));
+            abort();
+        }
+
+        static const dev_t self_dev = []() {
+            struct stat self_st;
+            if (stat("/proc/self/exe", &self_st) < 0) {
+                ALOGE("stat(/proc/self/exe) failed: %s", strerror(errno));
+                abort();
+            }
+            return self_st.st_dev;
+        }();
+
+        if (st.st_dev != self_dev) {
+            ALOGE("file %s is on device %llu, while we are on device %llu",
+                  path, (unsigned long long)st.st_dev, (unsigned long long)self_dev);
+            abort();
+        }
+
+        size = static_cast<size_t>(st.st_size);
+        if (size < sizeof(Elf64_Ehdr)) {
+            ALOGE("file %s too small: %zu", path, size);
+            abort();
+        }
+        base = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (base == MAP_FAILED) {
+            ALOGE("mmap(%s) failed: %s", path, strerror(errno));
+            abort();
+        }
+        eh = (const Elf64_Ehdr*)base;
+        bytes = {(const char*)base, size};
+
+        if (eh->e_shoff + eh->e_shnum * eh->e_shentsize > size) {
+            ALOGE("file %s shdr table beyond file size", path);
+            abort();
+        }
+        if (eh->e_shentsize != sizeof(Elf64_Shdr)) {
+            ALOGE("file %s shdr entry size mismatch", path);
+            abort();
+        }
+        sh = {(const Elf64_Shdr*)((char*)base + eh->e_shoff), eh->e_shnum};
+        strtab = getSectionByIdx(eh->e_shstrndx);
     }
 
-    int readElfHeader(Elf64_Ehdr* eh) {
-        file.seekg(0);
-        if (file.fail()) return -1;
-
-        if (!file.read((char*)eh, sizeof(*eh))) return -1;
-
-        return 0;
+    ~ElfObject() {
+        if (base != MAP_FAILED) munmap(base, size);
     }
 
-    // Reads all section header tables into an Shdr array
-    int readSectionHeadersAll(vector<Elf64_Shdr>& shTable) {
-        Elf64_Ehdr eh;
-        int ret = 0;
+    const Elf64_Ehdr & EH() const { return *eh; }
 
-        ret = readElfHeader(&eh);
-        if (ret) return ret;
+    auto SHsize() const { return sh.size(); }
 
-        file.seekg(eh.e_shoff);
-        if (file.fail()) return -1;
+    // UB if idx > SHsize()
+    const Elf64_Shdr & SH(unsigned idx) const { return sh[idx]; }
 
-        // Read shdr table entries
-        shTable.resize(eh.e_shnum);
-
-        if (!file.read((char*)shTable.data(), (eh.e_shnum * eh.e_shentsize))) return -ENOMEM;
-
-        return 0;
+    // Get a span pointing to a section by its index
+    template <typename T = char>
+    span<const T> getSectionByIdx(unsigned id) const {
+        if (id >= sh.size()) return {};
+        const auto& s = sh[id];
+        if (s.sh_offset > size || s.sh_size > size - s.sh_offset) return {};
+        if (s.sh_size % sizeof(T)) abort();
+        return {reinterpret_cast<const T*>(bytes.data() + s.sh_offset),
+                static_cast<size_t>(s.sh_size / sizeof(T))};
     }
 
-    // Read a section by its index - for ex to get sec hdr strtab blob
-    int readSectionByIdx(int id, vector<char>& sec) {
-        vector<Elf64_Shdr> shTable;
-        int ret = readSectionHeadersAll(shTable);
-        if (ret) return ret;
-
-        file.seekg(shTable[id].sh_offset);
-        if (file.fail()) return -1;
-
-        sec.resize(shTable[id].sh_size);
-        if (!file.read(sec.data(), shTable[id].sh_size)) return -1;
-
-        return 0;
-    }
-
-    // Read whole section header string table
-    int readSectionHeaderStrtab(vector<char>& strtab) {
-        Elf64_Ehdr eh;
-        int ret = readElfHeader(&eh);
-        if (ret) return ret;
-
-        ret = readSectionByIdx(eh.e_shstrndx, strtab);
-        if (ret) return ret;
-
-        return 0;
-    }
-
-    // Get name from offset in strtab
-    int getSymName(int nameOff, string& name) {
-        int ret;
-        vector<char> secStrTab;
-
-        ret = readSectionHeaderStrtab(secStrTab);
-        if (ret) return ret;
-
-        if (nameOff >= (int)secStrTab.size()) return -1;
-
-        name = string((char*)secStrTab.data() + nameOff);
-        return 0;
+    // Get string from offset in strtab.
+    // This is safe because ELF string tables are null-terminated, and we have
+    // verified above that the ELF file is a trusted file from our own filesystem.
+    const char* getStr(unsigned off) const {
+        if (off >= strtab.size()) return nullptr;
+        return strtab.data() + off;
     }
 
     // Reads a full section by name - example to get the GPL license
     template <typename T>
-    int readSectionByName(const char* name, vector<T>& data) {
-        vector<char> secStrTab;
-        vector<Elf64_Shdr> shTable;
-        int ret;
-
-        ret = readSectionHeadersAll(shTable);
-        if (ret) return ret;
-
-        ret = readSectionHeaderStrtab(secStrTab);
-        if (ret) return ret;
-
-        for (int i = 0; i < (int)shTable.size(); i++) {
-            char* secname = secStrTab.data() + shTable[i].sh_name;
+    int readSectionByName(const char* name, span<const T>& data) const {
+        for (unsigned i = 0; i < sh.size(); i++) {
+            const char* secname = getStr(sh[i].sh_name);
             if (!secname) continue;
 
             if (!strcmp(secname, name)) {
-                file.seekg(shTable[i].sh_offset);
-                if (file.fail()) return -1;
-
-                if (shTable[i].sh_size % sizeof(T)) return -1;
-                data.resize(shTable[i].sh_size / sizeof(T));
-                if (!file.read(reinterpret_cast<char*>(data.data()), shTable[i].sh_size))
-                    return -1;
-
+                data = getSectionByIdx<T>(i);
+                if (data.empty() && sh[i].sh_size > 0) return -1;
                 return 0;
             }
         }
         return -2;
     }
 
-    int readSectionByType(int type, vector<char>& data) {
-        int ret;
-        vector<Elf64_Shdr> shTable;
+    template <typename T>
+    int readSectionByType(unsigned type, span<const T>& data) const {
+        for (unsigned i = 0; i < sh.size(); i++) {
+            if (sh[i].sh_type != type) continue;
 
-        ret = readSectionHeadersAll(shTable);
-        if (ret) return ret;
-
-        for (int i = 0; i < (int)shTable.size(); i++) {
-            if ((int)shTable[i].sh_type != type) continue;
-
-            file.seekg(shTable[i].sh_offset);
-            if (file.fail()) return -1;
-
-            data.resize(shTable[i].sh_size);
-            if (!file.read(data.data(), shTable[i].sh_size)) return -1;
-
+            data = getSectionByIdx<T>(i);
+            if (data.empty() && sh[i].sh_size > 0) return -1;
             return 0;
         }
         return -2;
+    }
+
+    int getSymTab(span<const Elf64_Sym>& data) const {
+        return readSectionByType(SHT_SYMTAB, data);
     }
 
     static bool symCompare(Elf64_Sym a, Elf64_Sym b) {
         return (a.st_value < b.st_value);
     }
 
-    int readSymTab(int sort, vector<Elf64_Sym>& data) {
-        int ret, numElems;
-        Elf64_Sym* buf;
-        vector<char> secData;
+    int readSortedSymTab(vector<Elf64_Sym>& data) const {
+        span<const Elf64_Sym> symtab;
 
-        ret = readSectionByType(SHT_SYMTAB, secData);
+        int ret = getSymTab(symtab);
         if (ret) return ret;
 
-        buf = (Elf64_Sym*)secData.data();
-        numElems = (secData.size() / sizeof(Elf64_Sym));
-        data.assign(buf, buf + numElems);
+        data.assign(symtab.begin(), symtab.end());
 
-        if (sort) std::sort(data.begin(), data.end(), symCompare);
+        std::sort(data.begin(), data.end(), symCompare);
         return 0;
     }
 
     int getSectionSymNames(const string& sectionName, vector<string>& names,
-                           optional<unsigned> symbolType = std::nullopt) {
+                           optional<unsigned> symbolType = std::nullopt) const {
         int ret;
-        string name;
         vector<Elf64_Sym> symtab;
-        vector<Elf64_Shdr> shTable;
 
-        ret = readSymTab(1 /* sort */, symtab);
+        ret = readSortedSymTab(symtab);
         if (ret) return ret;
 
         // Get index of section
-        ret = readSectionHeadersAll(shTable);
-        if (ret) return ret;
-
         int sec_idx = -1;
-        for (int i = 0; i < (int)shTable.size(); i++) {
-            ret = getSymName(shTable[i].sh_name, name);
-            if (ret) return ret;
+        for (unsigned i = 0; i < sh.size(); i++) {
+            const char* name = getStr(sh[i].sh_name);
+            if (!name) return -1;
 
-            if (!name.compare(sectionName)) {
+            if (!sectionName.compare(name)) {
                 sec_idx = i;
                 break;
             }
@@ -311,13 +296,12 @@ struct ElfObject {
             return -1;
         }
 
-        for (int i = 0; i < (int)symtab.size(); i++) {
+        for (unsigned i = 0; i < symtab.size(); i++) {
             if (symbolType.has_value() && ELF_ST_TYPE(symtab[i].st_info) != symbolType) continue;
 
             if (symtab[i].st_shndx == sec_idx) {
-                string s;
-                ret = getSymName(symtab[i].st_name, s);
-                if (ret) return ret;
+                const char* s = getStr(symtab[i].st_name);
+                if (!s) return -1;
                 names.push_back(s);
             }
         }
@@ -325,28 +309,30 @@ struct ElfObject {
         return 0;
     }
 
-    int getSymNameByIdx(int index, string& name) {
-        vector<Elf64_Sym> symtab;
+    int getSymNameByIdx(unsigned index, string& name) const {
+        span<const Elf64_Sym> symtab;
         int ret = 0;
 
-        ret = readSymTab(0 /* !sort */, symtab);
+        ret = getSymTab(symtab);
         if (ret) return ret;
 
-        if (index >= (int)symtab.size()) return -1;
+        if (index >= symtab.size()) return -1;
 
-        return getSymName(symtab[index].st_name, name);
+        const char* s = getStr(symtab[index].st_name);
+        if (!s) return -1;
+        name = s;
+        return 0;
     }
 
-    int getSymOffsetByName(const char *name, int *off) {
-        vector<Elf64_Sym> symtab;
-        int ret = readSymTab(1 /* sort */, symtab);
+    int getSymOffsetByName(const char *name, int *off) const {
+        span<const Elf64_Sym> symtab;
+        int ret = getSymTab(symtab);
         if (ret) return ret;
-        for (int i = 0; i < (int)symtab.size(); i++) {
-            string s;
-            ret = getSymName(symtab[i].st_name, s);
-            if (ret) continue;
-            if (!strcmp(s.c_str(), name)) {
-                *off = symtab[i].st_value;
+        for (const auto& sym : symtab) {
+            const char* s = getStr(sym.st_name);
+            if (!s) continue;
+            if (!strcmp(s, name)) {
+                *off = sym.st_value;
                 return 0;
             }
         }
@@ -355,15 +341,11 @@ struct ElfObject {
 };
 
 // Read a section by its index - for ex to get sec hdr strtab blob
-int readCodeSections(ElfObject& elfObj, vector<codeSection>& cs) {
-    vector<Elf64_Shdr> shTable;
-    int entries, ret = 0;
+int readCodeSections(const ElfObject& elfObj, vector<codeSection>& cs) {
+    int entries = elfObj.SHsize();
+    int ret = 0;
 
-    ret = elfObj.readSectionHeadersAll(shTable);
-    if (ret) return ret;
-    entries = shTable.size();
-
-    vector<struct bpf_prog_def> pd;
+    span<const struct bpf_prog_def> pd;
     ret = elfObj.readSectionByName(".android_progs", pd);
     if (ret) return ret;
     vector<string> progDefNames;
@@ -371,11 +353,8 @@ int readCodeSections(ElfObject& elfObj, vector<codeSection>& cs) {
     if (!pd.empty() && ret) return ret;
 
     for (int i = 0; i < entries; i++) {
-        string name;
-        codeSection cs_temp;
-
-        ret = elfObj.getSymName(shTable[i].sh_name, name);
-        if (ret) return ret;
+        const char* name = elfObj.getStr(elfObj.SH(i).sh_name);
+        if (!name) return -1;
 
         // all we want to process is sections FOO/BAR, but:
         // - section 0 has an empty name (experimentally observed)
@@ -384,19 +363,22 @@ int readCodeSections(ElfObject& elfObj, vector<codeSection>& cs) {
         if (name[0] == '.') continue;
 
         // Find the first slash
-        size_t first_slash_pos = name.find('/');
+        const char* first_slash = strchr(name, '/');
 
         // Ignore sections without a /  (basically 'license' section)
-        if (first_slash_pos == std::string::npos) continue;
+        if (!first_slash) continue;
 
         string oldName = name;
-        name[first_slash_pos] = '_';
+        string sanitizedName = name;
+        sanitizedName[first_slash - name] = '_';
 
-        if (name.find('/') != std::string::npos) abort(); // There should only be one!
+        if (strchr(sanitizedName.c_str(), '/')) abort(); // There should only be one!
 
-        ret = elfObj.readSectionByIdx(i, cs_temp.data);
-        if (ret) return ret;
-        ALOGV("Loaded code section %d (%s)", i, name.c_str());
+        auto s = elfObj.getSectionByIdx(i);
+        if (s.empty() && elfObj.SH(i).sh_size > 0) return -1;
+        codeSection cs_temp;
+        cs_temp.data.assign(s.begin(), s.end());
+        ALOGV("Loaded code section %d (%s)", i, sanitizedName.c_str());
 
         vector<string> csSymNames;
         ret = elfObj.getSectionSymNames(oldName, csSymNames, STT_FUNC);
@@ -412,14 +394,15 @@ int readCodeSections(ElfObject& elfObj, vector<codeSection>& cs) {
         if (!cs_temp.prog_def) abort();
 
         // Check for rel section
-        if (cs_temp.data.size() > 0 && i < entries) {
-            ret = elfObj.getSymName(shTable[i + 1].sh_name, name);
-            if (ret) return ret;
+        if (cs_temp.data.size() > 0 && i + 1 < entries) {
+            const char* next_name = elfObj.getStr(elfObj.SH(i + 1).sh_name);
+            if (!next_name) return -1;
 
-            if (name == (".rel" + oldName)) {
-                ret = elfObj.readSectionByIdx(i + 1, cs_temp.rel_data);
-                if (ret) return ret;
-                ALOGV("Loaded relo section %d (%s)", i, name.c_str());
+            if (!strcmp(next_name, (".rel" + oldName).c_str())) {
+                auto rel_s = elfObj.getSectionByIdx(i + 1);
+                if (rel_s.empty() && elfObj.SH(i + 1).sh_size > 0) return -1;
+                cs_temp.rel_data.assign(rel_s.begin(), rel_s.end());
+                ALOGV("Loaded relo section %d (%s)", i, next_name);
             }
         }
 
@@ -493,7 +476,7 @@ static bool mapMatchesExpectations(const unique_fd& fd,
     return false;
 }
 
-static int setBtfDatasecSize(ElfObject &elfObj, struct btf *btf,
+static int setBtfDatasecSize(const ElfObject &elfObj, struct btf *btf,
                              struct btf_type *bt) {
     const char *name = btf__name_by_offset(btf, bt->name_off);
     if (!name) {
@@ -501,7 +484,7 @@ static int setBtfDatasecSize(ElfObject &elfObj, struct btf *btf,
         return -errno;
     }
 
-    vector<char> data;
+    span<const char> data;
     int ret = elfObj.readSectionByName(name, data);
     if (ret) {
         ALOGE("Couldn't read section %s, ret: %d", name, ret);
@@ -511,7 +494,7 @@ static int setBtfDatasecSize(ElfObject &elfObj, struct btf *btf,
     return 0;
 }
 
-static int setBtfVarOffset(ElfObject &elfObj, struct btf *btf,
+static int setBtfVarOffset(const ElfObject &elfObj, struct btf *btf,
                            struct btf_type *datasecBt) {
     int i, vars = btf_vlen(datasecBt);
     struct btf_var_secinfo *vsi;
@@ -524,7 +507,7 @@ static int setBtfVarOffset(ElfObject &elfObj, struct btf *btf,
     for (i = 0, vsi = btf_var_secinfos(datasecBt); i < vars; i++, vsi++) {
         const struct btf_type *varBt = btf__type_by_id(btf, vsi->type);
         if (!varBt || !btf_is_var(varBt)) {
-            ALOGE("Found non VAR kind btf_type, section: %s id: %d", datasecName,
+            ALOGE("Found non VAR kind btf_type, section: %s id: %u", datasecName,
                   vsi->type);
             return -1;
         }
@@ -611,7 +594,7 @@ static int sanitizeBtf(struct btf *btf) {
     return 0;
 }
 
-static int loadBtf(ElfObject &elfObj, struct btf *btf) {
+static int loadBtf(const ElfObject &elfObj, struct btf *btf) {
     int ret;
     for (unsigned int i = 1; i < btf__type_cnt(btf); ++i) {
         struct btf_type *bt = (struct btf_type *)btf__type_by_id(btf, i);
@@ -676,12 +659,12 @@ int getKeyValueTids(const struct btf *btf, const char *mapName,
 
     kvBt = btf__type_by_id(btf, kvId);
     if (!kvBt) {
-        ALOGE("Couldn't find BTF type, map: %s id: %u", mapName, kvId);
+        ALOGE("Couldn't find BTF type, map: %s id: %d", mapName, kvId);
         return -1;
     }
 
     if (!btf_is_struct(kvBt) || btf_vlen(kvBt) < 2) {
-        ALOGE("Non Struct kind or invalid vlen, map: %s id: %u", mapName, kvId);
+        ALOGE("Non Struct kind or invalid vlen, map: %s id: %d", mapName, kvId);
         return -1;
     }
 
@@ -701,10 +684,10 @@ int getKeyValueTids(const struct btf *btf, const char *mapName,
     }
 
     if (expectedKeySize != keySize || expectedValueSize != valueSize) {
-        ALOGE("Key value size mismatch, map: %s key size: %d expected key size: "
-              "%d value size: %d expected value size: %d",
-              mapName, (uint32_t)keySize, expectedKeySize, (uint32_t)valueSize,
-              expectedValueSize);
+        ALOGE("Key value size mismatch, map: %s"
+              " key size: %" PRId64 " expected key size: %u"
+              " value size: %" PRId64 " expected value size: %u",
+              mapName, keySize, expectedKeySize, valueSize, expectedValueSize);
         return -1;
     }
 
@@ -817,9 +800,10 @@ static enum bpf_map_type sanitizeMapType(enum bpf_map_type type) {
     return type;
 }
 
-static int createMaps(ElfObject& elfObj, vector<struct bpf_map_def>& md, vector<unique_fd>& mapFds) {
+static int createMaps(const ElfObject& elfObj, const span<const struct bpf_map_def> md,
+                      vector<unique_fd>& mapFds) {
     int ret = 0;
-    vector<char> btfData;
+    span<const char> btfData;
     struct btf *btf = NULL;
     auto btfGuard = base::make_scope_guard([&btf] { if (btf) btf__free(btf); });
     if (isAtLeastKernelVersion(4, 19)) {
@@ -840,16 +824,16 @@ static int createMaps(ElfObject& elfObj, vector<struct bpf_map_def>& md, vector<
     }
 
     for (unsigned i = 0; i < md.size(); i++) {
-        if (api_level_full < md[i].bpfloader_min_ver) {
-            ALOGD("skipping map %s which requires bpfloader min ver 0x%05x", md[i].name(),
-                  md[i].bpfloader_min_ver);
+        if (api_level_full < md[i].min_api_level_full) {
+            ALOGD("skipping map %s which requires api >= %d", md[i].name(),
+                  md[i].min_api_level_full);
             mapFds.push_back(unique_fd());
             continue;
         }
 
-        if (api_level_full >= md[i].bpfloader_max_ver) {
-            ALOGD("skipping map %s which requires bpfloader max ver 0x%05x", md[i].name(),
-                  md[i].bpfloader_max_ver);
+        if (api_level_full >= md[i].max_api_level_full) {
+            ALOGD("skipping map %s which requires api < %d", md[i].name(),
+                  md[i].max_api_level_full);
             mapFds.push_back(unique_fd());
             continue;
         }
@@ -965,7 +949,7 @@ static void applyRelo(void* insnsPtr, Elf64_Addr offset, int fd) {
     insn->src_reg = BPF_PSEUDO_MAP_FD;
 }
 
-static void applyMapRelo(ElfObject& elfObj, const vector<struct bpf_map_def>& md,
+static void applyMapRelo(const ElfObject& elfObj, const span<const struct bpf_map_def> md,
                          vector<unique_fd> &mapFds, vector<codeSection>& cs) {
     for (unsigned k = 0; k < cs.size(); k++) {
         Elf64_Rel* rel = (Elf64_Rel*)(cs[k].rel_data.data());
@@ -1022,7 +1006,7 @@ static int pinProg(const borrowed_fd& fd, const struct bpf_prog_def& progDef) {
     if (chown(progDef.pin_location, (uid_t)progDef.uid,
               (gid_t)progDef.gid)) {
         const int err = errno;
-        ALOGE("chown %s %d %d -> [%d:%s]", progDef.pin_location, progDef.uid,
+        ALOGE("chown %s %u %u -> [%d:%s]", progDef.pin_location, progDef.uid,
               progDef.gid, err, strerror(err));
         return -err;
     }
@@ -1055,7 +1039,7 @@ static int validateProg(const borrowed_fd& fd, const char* const progPinLoc) {
     }
     ALOGI("prog %s id %d len jit:%d xlat:%d", progPinLoc, progId, jitLen, xlatLen);
 
-    if (!jitLen && api_level_full >= BPFLOADER_MAINLINE_25Q2_VERSION) {
+    if (!jitLen && api_level_full >= NETBPFLOAD_25Q2_VER) {
         ALOGE("Kernel eBPF JIT failure for %s", progPinLoc);
         return -ENOTSUP;
     }
@@ -1070,25 +1054,25 @@ static enum bpf_attach_type fixup_attach(enum bpf_prog_type prog_type, enum bpf_
     return expected_attach_type;
 }
 
-static int loadCodeSections(ElfObject& elfObj, vector<codeSection>& cs, const string& license) {
-    for (int i = 0; i < (int)cs.size(); i++) {
+static int loadCodeSections(const ElfObject& elfObj, vector<codeSection>& cs, const string& license) {
+    for (unsigned i = 0; i < cs.size(); i++) {
         unique_fd& fd = cs[i].prog_fd;
         int ret;
 
         if (!cs[i].prog_def.has_value()) {
-            ALOGE("[%d] missing program definition! bad bpf.o build?", i);
+            ALOGE("[%u] missing program definition! bad bpf.o build?", i);
             return -EINVAL;
         }
 
-        ALOGD("cs[%d].name:%s kver in [%x,%x) bpfloader ver in [0x%05x,0x%05x)",
+        ALOGD("cs[%u].name:%s kver in [%x,%x) api level in [%d,%d)",
               i, cs[i].prog_def->name(),
               cs[i].prog_def->min_kver, cs[i].prog_def->max_kver,
-              cs[i].prog_def->bpfloader_min_ver, cs[i].prog_def->bpfloader_max_ver);
+              cs[i].prog_def->min_api_level_full, cs[i].prog_def->max_api_level_full);
 
         if (kernelVer < cs[i].prog_def->min_kver) continue;
         if (kernelVer >= cs[i].prog_def->max_kver) continue;
-        if (api_level_full < cs[i].prog_def->bpfloader_min_ver) continue;
-        if (api_level_full >= cs[i].prog_def->bpfloader_max_ver) continue;
+        if (api_level_full < cs[i].prog_def->min_api_level_full) continue;
+        if (api_level_full >= cs[i].prog_def->max_api_level_full) continue;
 
         bool reuse = false;
         if (access(cs[i].prog_def->pin_location, F_OK) == 0) {
@@ -1172,7 +1156,7 @@ static int loadCodeSections(ElfObject& elfObj, vector<codeSection>& cs, const st
     return 0;
 }
 
-static int prepareLoadMaps(const struct bpf_object* obj, const vector<struct bpf_map_def>& md) {
+static int prepareLoadMaps(const struct bpf_object* obj, const span<const struct bpf_map_def> md) {
     for (unsigned i = 0; i < md.size(); i++) {
         struct bpf_map* m = bpf_object__find_map_by_name(obj, md[i].name());
         if (!m) {
@@ -1180,10 +1164,11 @@ static int prepareLoadMaps(const struct bpf_object* obj, const vector<struct bpf
             return -1;
         }
 
-        if (api_level_full < md[i].bpfloader_min_ver || api_level_full >= md[i].bpfloader_max_ver) {
-            ALOGD("skipping map %s: bpfloader 0x%05x is outside required range [0x%05x, 0x%05x)",
+        if (api_level_full < md[i].min_api_level_full ||
+            api_level_full >= md[i].max_api_level_full) {
+            ALOGD("skipping map %s: api %d is outside required range [%d, %d)",
                   md[i].name(), api_level_full,
-                  md[i].bpfloader_min_ver, md[i].bpfloader_max_ver);
+                  md[i].min_api_level_full, md[i].max_api_level_full);
             bpf_map__set_autocreate(m, false);
             continue;
         }
@@ -1208,9 +1193,9 @@ static int prepareLoadMaps(const struct bpf_object* obj, const vector<struct bpf
 }
 
 static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSection>& cs) {
-    for (int i = 0; i < (int)cs.size(); i++) {
+    for (unsigned i = 0; i < cs.size(); i++) {
         if (!cs[i].prog_def.has_value()) {
-            ALOGE("[%d] missing program definition! bad bpf.o build?", i);
+            ALOGE("[%u] missing program definition! bad bpf.o build?", i);
             return -EINVAL;
         }
         string program_name = cs[i].program_name;
@@ -1229,11 +1214,11 @@ static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSecti
             continue;
         }
 
-        int bpfMinVer = cs[i].prog_def->bpfloader_min_ver;
-        int bpfMaxVer = cs[i].prog_def->bpfloader_max_ver;
-        if (api_level_full < bpfMinVer || api_level_full >= bpfMaxVer) {
-            ALOGD("skipping prog %s: bpfloader 0x%05x is outside required range [0x%05x, 0x%05x)",
-                  cs[i].prog_def->name(), api_level_full, bpfMinVer, bpfMaxVer);
+        if (api_level_full < cs[i].prog_def->min_api_level_full ||
+            api_level_full >= cs[i].prog_def->max_api_level_full) {
+            ALOGD("skipping prog %s: api %d is outside required range [%d, %d)",
+                  cs[i].prog_def->name(), api_level_full,
+                  cs[i].prog_def->min_api_level_full, cs[i].prog_def->max_api_level_full);
             bpf_program__set_autoload(prog, false);
             continue;
         }
@@ -1250,7 +1235,7 @@ static int prepareLoadProgs(const struct bpf_object* obj, const vector<codeSecti
     return 0;
 }
 
-static int pinMaps(const struct bpf_object* obj, const vector<struct bpf_map_def>& md) {
+static int pinMaps(const struct bpf_object* obj, const span<const struct bpf_map_def> md) {
     for (unsigned i = 0; i < md.size(); i++) {
         struct bpf_map* m = bpf_object__find_map_by_name(obj, md[i].name());
         if (!m) {
@@ -1275,7 +1260,7 @@ static int pinProgs(const struct bpf_object * obj,
                     const vector<codeSection>& cs) {
     int ret;
 
-    for (int i = 0; i < (int)cs.size(); i++) {
+    for (unsigned i = 0; i < cs.size(); i++) {
         string program_name = cs[i].program_name;
         struct bpf_program* prog = bpf_object__find_program_by_name(obj, program_name.c_str());
         if (!prog) {
@@ -1302,7 +1287,7 @@ static int pinProgs(const struct bpf_object * obj,
 
 static int loadProgByLibbpf(const char* const elfPath) {
     ElfObject elfObj(elfPath);
-    vector<struct bpf_map_def> md;
+    span<const struct bpf_map_def> md;
     vector<codeSection> cs;
     int ret;
 
@@ -1341,9 +1326,9 @@ static int loadProgByLibbpf(const char* const elfPath) {
 
 int loadProg(const char* const elfPath) {
     ElfObject elfObj(elfPath);
-    vector<char> license;
+    span<const char> license;
     vector<codeSection> cs;
-    vector<struct bpf_map_def> md;
+    span<const struct bpf_map_def> md;
     vector<unique_fd> mapFds;
     int ret;
 
@@ -1369,7 +1354,7 @@ int loadProg(const char* const elfPath) {
     }
 
     for (unsigned i = 0; i < mapFds.size(); i++)
-        ALOGV("map_fd found at %d is %d in %s", i, mapFds[i].get(), elfPath);
+        ALOGV("map_fd found at %u is %d in %s", i, mapFds[i].get(), elfPath);
 
     ret = readCodeSections(elfObj, cs);
     if (ret == -ENOENT) return 0;
@@ -1380,7 +1365,7 @@ int loadProg(const char* const elfPath) {
 
     applyMapRelo(elfObj, md, mapFds, cs);
 
-    ret = loadCodeSections(elfObj, cs, string(license.data()));
+    ret = loadCodeSections(elfObj, cs, string(license.data(), license.size()));
     if (ret) ALOGE("Failed to load programs, loadCodeSections ret=%d", ret);
 
     return ret;
@@ -1421,7 +1406,7 @@ static bool createDir(const char* const dir) {
 
     if (mkdir(dir, S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO) && errno != EEXIST) {
         umask(prevUmask); // cannot fail
-        ALOGE("Failed to create directory: %s, ret: %s", dir, std::strerror(errno));
+        ALOGE("Failed to create directory: %s, err: %s", dir, std::strerror(errno));
         return false;
     }
 
@@ -1457,6 +1442,14 @@ const char *const uprobestatsBpfLoader =
     "/apex/com.android.uprobestats/bin/uprobestatsbpfload";
 
 static int logTetheringApexVersion(void) {
+    char src_apex[16] = {};
+    if (!isUser) {
+        // man readlink: Upon success, readlink() returns count of bytes placed in the buffer.
+        // Otherwise, it shall return a value of -1, leave buffer unchanged, and set errno.
+        int res = readlink("/system/etc/source_apex_version", src_apex, sizeof(src_apex) - 1);
+        src_apex[res >= 0 ? res : 0] = 0; // forcibly NUL terminate, safe since sizeof-1 above
+    }
+
     char * found_blockdev = NULL;
     FILE * f = NULL;
     char buf[4096];
@@ -1501,7 +1494,11 @@ static int logTetheringApexVersion(void) {
         char * at = strchr(mntpath, '@');
         if (!at) continue;
         char * ver = at + 1;
-        ALOGI("Tethering APEX version %s", ver);
+        if (isUser) {
+            ALOGI("Tethering APEX version %s", ver);
+        } else {
+            ALOGI("Tethering APEX version %s (system: %s)", ver, src_apex);
+        }
     }
     fclose(f);
     free(found_blockdev);
@@ -1598,7 +1595,7 @@ static int doLoad(char** argv, char * const envp[]) {
     // first in U QPR2 beta~2
     const bool has_platform_netbpfload_rc = exists("/system/etc/init/netbpfload.rc");
 
-    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%d rc:%d%d user:%d%d%d",
+    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%u rc:%d%d user:%d%d%d",
           argv[0], android_get_device_api_level(), api_level_full,
           kernelVer, describeArch(), page_size >> 10,
           libbpf_major_version(), libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
@@ -1881,7 +1878,7 @@ static int doLoad(char** argv, char * const envp[]) {
             // We should fail here on Xiaomi S 4.14.180 due to kernel uapi bug,
             // which causes bpfGetNextMapId to behave as bpfGetNextProgId,
             // and thus it should return 0 with errno == ENOENT.
-            ALOGE("bpfGetNextMapId(final %d) returned %d errno %d", mapId, next, errno);
+            ALOGE("bpfGetNextMapId(final %u) returned %u errno %d", mapId, next, errno);
             if (next || errno != ENOENT) return 35;
             if (isAtLeastT || isAtLeastKernelVersion(4, 20)) return 36;
             // implies Android S with 4.14 or 4.19 kernel

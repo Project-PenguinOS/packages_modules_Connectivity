@@ -37,7 +37,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 @RunWith(DevSdkIgnoreRunner.class)
-@IgnoreUpTo(Build.VERSION_CODES.R)
 @ConnectivityModuleTest
 public class QosCallbackExceptionTest {
     private static final String ERROR_MESSAGE = "Test Error Message";

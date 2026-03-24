@@ -69,8 +69,7 @@ public class NetworkMonitorUtils {
      * @param nc Network capabilities of the network to test.
      */
     public static boolean isPrivateDnsValidationRequired(@NonNull final NetworkCapabilities nc) {
-        final boolean isVcnManaged = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                && !nc.hasCapability(NET_CAPABILITY_NOT_VCN_MANAGED);
+        final boolean isVcnManaged = !nc.hasCapability(NET_CAPABILITY_NOT_VCN_MANAGED);
         final boolean isOemPaid = nc.hasCapability(NET_CAPABILITY_OEM_PAID)
                 && nc.hasCapability(NET_CAPABILITY_TRUSTED);
         final boolean isDefaultCapable = nc.hasCapability(NET_CAPABILITY_NOT_RESTRICTED)
