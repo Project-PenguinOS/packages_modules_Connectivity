@@ -1082,6 +1082,34 @@ public class PermissionMonitorTest {
     }
 
     @Test
+    public void testVpnAppUidIsFilteredFromVpnUidRanges() throws Exception {
+        final String ifName = "tun0";
+        final List<PackageInfo> pkgs = List.of(
+                buildPackageInfo(MOCK_PACKAGE1, MOCK_UID11),
+                buildPackageInfo(MOCK_PACKAGE2, MOCK_UID12),
+                buildPackageInfo(SYSTEM_PACKAGE2, VPN_UID));
+        initialize();
+        onUserAddedWithInstalledPackageList(MOCK_USER1, pkgs);
+
+        // VPN range includes the VPN app UID itself.
+        final Set<UidRange> vpnRange = Set.of(UidRange.createForUser(MOCK_USER1));
+
+        // When VPN is connected, expect a rule to be set up for MOCK_UID11 but NOT for VPN_UID.
+        mPermissionMonitor.onVpnUidRangesAdded(ifName, vpnRange, VPN_UID, Set.of(MOCK_UID12));
+        verify(mBpfNetMaps).addUidInterfaceRules(eq(ifName), aryEq(new int[]{MOCK_UID11}));
+        verify(mBpfNetMaps, never()).addUidInterfaceRules(eq(ifName), aryEq(new int[]{VPN_UID}));
+        verify(mBpfNetMaps, never()).addUidInterfaceRules(eq(ifName), aryEq(new int[]{MOCK_UID12}));
+
+        // When the VPN app package is uninstalled and reinstalled, expect NO BPF rules to be
+        // added or removed for it because it's a bypassing UID.
+        onPackageRemoved(SYSTEM_PACKAGE2, VPN_UID);
+        verify(mBpfNetMaps, never()).removeUidInterfaceRules(any());
+
+        onPackageAdded(SYSTEM_PACKAGE2, VPN_UID);
+        verify(mBpfNetMaps, never()).addUidInterfaceRules(eq(ifName), aryEq(new int[]{VPN_UID}));
+    }
+
+    @Test
     public void testUidFilteringWithDelegatedBypassUids() throws Exception {
         final String ifName = "tun0";
         final int delegatedUid = MOCK_UID12;

@@ -1389,6 +1389,33 @@ public class PermissionMonitor {
         }
     }
 
+    private static Set<UidRange> getFilteredUidRanges(Set<UidRange> ranges, int vpnAppUid,
+            Set<Integer> delegateBypassUids) {
+        // UIDs with the restricted network permission are not included here because they are not
+        // filtered from the stored VPN interface ranges. Filtering them from the stored ranges
+        // is unnecessary because:
+        // - When a VPN connects, removeBypassingUids removes those UIDs from the list of UIDs to
+        //   which it applies IIF_MATCH rules.
+        // - If an app that can use restricted networks is installed and gets a UID in the range
+        //   of a currently-connected VPN, updateVpnUid will ignore it.
+        //
+        // If this code did include these UIDs, the code would need to ensure that
+        // onVpnUidRangesRemoved correctly removed the IIF_MATCH rule and the entry in
+        // mVpnInterfaceUidRanges for a UID that did not have the permission when the VPN
+        // connected and acquired the permission after the VPN connected.
+        //
+        // TODO: IIF_MATCH rules are not correctly updated when an app is added to or removed
+        // from  mUidsAllowedOnRestrictedNetworks.
+        final Set<Integer> bypassingUids = new ArraySet<>(delegateBypassUids);
+        bypassingUids.add(vpnAppUid);
+
+        final Set<UidRange> uidRanges = new ArraySet<>();
+        for (UidRange range : ranges) {
+            uidRanges.addAll(UidRangeUtils.removeUidsFromUidRange(range, bypassingUids));
+        }
+        return uidRanges;
+    }
+
     /**
      * Called when a new set of UID ranges are added to an active VPN network
      *
@@ -1405,12 +1432,14 @@ public class PermissionMonitor {
         // but that's safe: if an app is not installed, it cannot receive any packets, so dropping
         // packets to that UID is fine.
         final Set<Integer> changedUids = intersectUids(rangesToAdd, mAllApps);
+        final Set<UidRange> filteredRangesToAdd = getFilteredUidRanges(
+                rangesToAdd, vpnAppUid, delegatedBypassUids);
         removeBypassingUids(changedUids, vpnAppUid, delegatedBypassUids);
         updateVpnUidsInterfaceRules(iface, changedUids, true /* add */);
         if (mVpnInterfaceUidRanges.containsKey(iface)) {
-            mVpnInterfaceUidRanges.get(iface).addAll(rangesToAdd);
+            mVpnInterfaceUidRanges.get(iface).addAll(filteredRangesToAdd);
         } else {
-            mVpnInterfaceUidRanges.put(iface, new HashSet<UidRange>(rangesToAdd));
+            mVpnInterfaceUidRanges.put(iface, new HashSet<UidRange>(filteredRangesToAdd));
         }
     }
 
@@ -1427,6 +1456,8 @@ public class PermissionMonitor {
         // Calculate the list of app uids that are no longer under the VPN due to the removed UID
         // ranges and update Netd about them.
         final Set<Integer> changedUids = intersectUids(rangesToRemove, mAllApps);
+        final Set<UidRange> filteredRangesToRemove = getFilteredUidRanges(
+                rangesToRemove, vpnAppUid, delegatedBypassUids);
         removeBypassingUids(changedUids, vpnAppUid, delegatedBypassUids);
         updateVpnUidsInterfaceRules(iface, changedUids, false /* add */);
         Set<UidRange> existingRanges = mVpnInterfaceUidRanges.getOrDefault(iface, null);
@@ -1434,7 +1465,7 @@ public class PermissionMonitor {
             loge("Attempt to remove unknown vpn uid Range iface = " + iface);
             return;
         }
-        existingRanges.removeAll(rangesToRemove);
+        existingRanges.removeAll(filteredRangesToRemove);
         if (existingRanges.size() == 0) {
             mVpnInterfaceUidRanges.remove(iface);
         }
