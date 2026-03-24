@@ -17,9 +17,9 @@ use crate::jnames::{SEND_REQUEST_MNAME, SEND_REQUEST_MSIG};
 use crate::unique_jvm;
 use anyhow::anyhow;
 use jni::errors::Error as JNIError;
-use jni::objects::{GlobalRef, JMethodID, JObject, JValue};
+use jni::objects::{GlobalRef, JByteArray, JMethodID, JObject, JValue};
 use jni::signature::TypeSignature;
-use jni::sys::{jbyteArray, jint, jlong, jvalue};
+use jni::sys::{jint, jlong};
 use jni::{JNIEnv, JavaVM};
 use log::{debug, error, info};
 use std::collections::HashMap;
@@ -121,8 +121,8 @@ impl JavaPlatform {
         vm: &'static Arc<JavaVM>,
         java_platform_native: JObject,
     ) -> Result<JavaPlatform, JNIError> {
-        vm.attach_current_thread().and_then(|env| {
-            let platform_class = env.get_object_class(java_platform_native)?;
+        vm.attach_current_thread().and_then(|mut env| {
+            let platform_class = env.get_object_class(&java_platform_native)?;
             let platform_native_obj = env.new_global_ref(java_platform_native)?;
             let send_request_method: JMethodID =
                 env.get_method_id(platform_class, SEND_REQUEST_MNAME, SEND_REQUEST_MSIG)?;
@@ -154,22 +154,26 @@ impl Platform for JavaPlatform {
         self.map_futures.lock().unwrap().insert(response_handle, callback);
         self.vm
             .attach_current_thread()
-            .and_then(|env| {
+            .and_then(|mut env| {
                 let request_jbytearray = env.byte_array_from_slice(request)?;
-                // Safety: request_jbytearray is safely instantiated above.
-                let request_jobject = unsafe { JObject::from_raw(request_jbytearray) };
+                let request_jobject = JObject::from(request_jbytearray);
 
-                let _ = env.call_method_unchecked(
-                    self.platform_native_obj.as_obj(),
-                    self.send_request_method_id,
-                    type_signature.ret,
-                    &[
-                        jvalue::from(JValue::Int(connection_id)),
-                        jvalue::from(JValue::Object(request_jobject)),
-                        jvalue::from(JValue::Long(response_handle)),
-                        jvalue::from(JValue::Long(self.platform_handle)),
-                    ],
-                );
+                // SAFETY: We know the type signature of `send_request_method_id` is the same as
+                // the type signature we are calling at, and the arguments provided match that type
+                // signature.
+                let _ = unsafe {
+                    env.call_method_unchecked(
+                        self.platform_native_obj.as_obj(),
+                        self.send_request_method_id,
+                        type_signature.ret,
+                        &[
+                            JValue::Int(connection_id).as_jni(),
+                            JValue::Object(&request_jobject).as_jni(),
+                            JValue::Long(response_handle).as_jni(),
+                            JValue::Long(self.platform_handle).as_jni(),
+                        ],
+                    )
+                };
                 Ok(info!(
                     "{} successfully sent-message, waiting for response {}:{}",
                     function_name!(),
@@ -228,7 +232,7 @@ impl JavaPlatform {
 pub extern "system" fn Java_com_android_server_remoteauth_jni_NativeRemoteAuthJavaPlatform_native_on_send_request_success(
     env: JNIEnv,
     _: JObject,
-    app_response: jbyteArray,
+    app_response: JByteArray,
     platform_handle: jlong,
     response_handle: jlong,
 ) {
@@ -237,8 +241,8 @@ pub extern "system" fn Java_com_android_server_remoteauth_jni_NativeRemoteAuthJa
 }
 
 fn native_on_send_request_success(
-    env: JNIEnv<'_>,
-    app_response: jbyteArray,
+    mut env: JNIEnv<'_>,
+    app_response: JByteArray,
     platform_handle: jlong,
     response_handle: jlong,
 ) {
@@ -269,7 +273,7 @@ pub extern "system" fn Java_com_android_server_remoteauth_jni_NativeRemoteAuthJa
 }
 
 fn native_on_send_request_error(
-    env: JNIEnv<'_>,
+    mut env: JNIEnv<'_>,
     error_code: jint,
     platform_handle: jlong,
     response_handle: jlong,

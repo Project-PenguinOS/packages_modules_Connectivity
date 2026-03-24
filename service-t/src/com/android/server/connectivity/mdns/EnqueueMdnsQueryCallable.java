@@ -141,11 +141,27 @@ public class EnqueueMdnsQueryCallable implements Callable<QuerySentResult> {
                 return QuerySentResult.createFailedQueryResult(taskArgs);
             }
 
+            // Dual query feature
+            final boolean expectDualQuery = expectUnicastResponse
+                    && featureFlags.mIsDualQueryForUnicastResponseEnabled;
+            final Pair<MdnsPacket, List<MdnsResponse>> dualQueryResult = expectDualQuery
+                    ? buildPacket(false /* expectUnicastResponse */, transactionId) : null;
+            final MdnsPacket dualQueryPacket =
+                    dualQueryResult != null ? dualQueryResult.first : null;
+
             sendPacketToIpv4AndIpv6(
                     requestSender, MdnsConstants.MDNS_PORT, queryPacket, expectUnicastResponse);
+            if (dualQueryPacket != null) {
+                sendPacketToIpv4AndIpv6(requestSender, MdnsConstants.MDNS_PORT, dualQueryPacket,
+                        false /* expectUnicastResponse */);
+            }
             for (Integer emulatorPort : castShellEmulatorMdnsPorts) {
                 sendPacketToIpv4AndIpv6(
                         requestSender, emulatorPort, queryPacket, expectUnicastResponse);
+                if (dualQueryPacket != null) {
+                    sendPacketToIpv4AndIpv6(requestSender, emulatorPort, dualQueryPacket,
+                            false /* expectUnicastResponse */);
+                }
             }
             return new QuerySentResult(
                     transactionId, subtypes, taskArgs, sendDiscoveryQueries, resolvedServices);

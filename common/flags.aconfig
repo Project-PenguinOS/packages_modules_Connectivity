@@ -105,3 +105,10 @@ flag {
     description: "Disable timeout for netlink API calls."
     bug: "455999579"
 }
+
+flag {
+  name: "nsd_dual_query_for_unicast_response"
+  namespace: "com_android_tethering"
+  description: "A flag to control whether to send both unicast and multicast query packets."
+  bug: "452299542"
+}

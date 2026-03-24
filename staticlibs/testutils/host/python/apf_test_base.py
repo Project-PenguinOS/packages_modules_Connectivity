@@ -154,73 +154,103 @@ class ApfTestBase(multi_devices_test_base.MultiDevicesTestBase):
         'Client does not have IPv6 address, fail the test.',
     )
 
+  def _check_counter_and_packet(
+      self,
+      counter_name: str,
+      count_before: int,
+      expected_reply_packet: str,
+      results: dict[str, int],
+  ) -> bool:
+    results['last_apf_counter_value'] = apf_utils.get_apf_counter(
+        self.clientDevice, self.client_iface_name, counter_name
+    )
+    if expected_reply_packet:
+      results['last_matched_receive_pkt_count'] = (
+          apf_utils.get_matched_packet_counts(
+              self.serverDevice, self.server_iface_name, expected_reply_packet
+          )
+      )
+
+    is_counter_increased = results['last_apf_counter_value'] > count_before
+    is_reply_packet_received = not expected_reply_packet or (
+        results['last_matched_receive_pkt_count'] > 0
+    )
+    return is_counter_increased and is_reply_packet_received
+
   def send_packet_and_expect_counter_increased(
-      self, packet: str, counter_name: str
+      self,
+      packet: str,
+      counter_name: str,
+      expected_reply_packet: str = None,
+      test_case_name: str = '',
+      max_retries: int = 10,
+      retry_interval_sec: int = 3,
   ) -> None:
-    count_before_test = apf_utils.get_apf_counter(
-        self.clientDevice,
-        self.client_iface_name,
-        counter_name,
-    )
-    apf_utils.send_raw_packet_downstream(
-        self.serverDevice, self.server_iface_name, packet
-    )
+    """Sends a packet and expects the APF counter to increase.
 
-    assert_utils.expect_with_retry(
-        lambda: apf_utils.get_apf_counter(
-            self.clientDevice,
-            self.client_iface_name,
-            counter_name,
-        )
-        > count_before_test
-    )
+    If expected_reply_packet is not None, the method will also check if the
+    reply
+    packet is received along with checking the counter.
+    """
+    results = {'last_apf_counter_value': 0, 'last_matched_receive_pkt_count': 0}
+    count_before_test = 0
 
-  def _send_packet_and_expect_reply_received(
-      self, send_packet: str, counter_name: str, receive_packet: str
-  ) -> None:
     try:
-      apf_utils.start_capture_packets(self.serverDevice, self.server_iface_name)
+      if expected_reply_packet:
+        apf_utils.start_capture_packets(
+            self.serverDevice, self.server_iface_name
+        )
 
       count_before_test = apf_utils.get_apf_counter(
-          self.clientDevice,
-          self.client_iface_name,
-          counter_name,
+          self.clientDevice, self.client_iface_name, counter_name
       )
+      results['last_apf_counter_value'] = count_before_test
 
-      matched_pkt_count_before_test = apf_utils.get_matched_packet_counts(
-          self.serverDevice, self.server_iface_name, receive_packet
+      apf_utils.send_raw_packet_downstream(
+          self.serverDevice, self.server_iface_name, packet
       )
-
-      # send 3 packets to prevent flaky test result
-      for _ in range(3):
-        # Sleep for 3 seconds to give the firmware a time buffer to turn on the APF.
-        time.sleep(3)
-        apf_utils.send_raw_packet_downstream(
-            self.serverDevice, self.server_iface_name, send_packet
-        )
 
       assert_utils.expect_with_retry(
-          lambda: apf_utils.get_matched_packet_counts(
-              self.serverDevice, self.server_iface_name, receive_packet
-          )
-          > matched_pkt_count_before_test,
-          # ensure the server device capturing the offload packet on the handler thread
-          retry_interval_sec=3,
+          predicate=lambda: self._check_counter_and_packet(
+              counter_name,
+              count_before_test,
+              expected_reply_packet,
+              results,
+          ),
+          retry_action=lambda: apf_utils.send_raw_packet_downstream(
+              self.serverDevice, self.server_iface_name, packet
+          ),
+          max_retries=max_retries,
+          retry_interval_sec=retry_interval_sec,
       )
 
-      # TODO: re-enable once the test passes reliably.
-      if False:
-        assert_utils.expect_with_retry(
-            lambda: apf_utils.get_apf_counter(
-                self.clientDevice,
-                self.client_iface_name,
-                counter_name,
-            )
-            > count_before_test
+    except (assert_utils.UnexpectedBehaviorError, Exception) as e:
+      is_counter_increased = (
+          results['last_apf_counter_value'] > count_before_test
+      )
+      is_reply_packet_received = not expected_reply_packet or (
+          results['last_matched_receive_pkt_count'] > 0
+      )
+      errors = []
+      if not is_counter_increased:
+        errors.append(
+            f'APF counter "{counter_name}" did not increase.'
+            f' (before: {count_before_test}, last: {results["last_count"]})'
+        )
+      if expected_reply_packet and not is_reply_packet_received:
+        errors.append(
+            f'Expected reply packet not received: {expected_reply_packet}.'
+            f' (last: {results["last_matched_receive_pkt_count"]})'
         )
 
+      msg = f'{test_case_name} failed: {" ".join(errors)}'
+      asserts.fail(f'{msg} Original error: {e}')
+
     finally:
-      apf_utils.stop_capture_packets(self.serverDevice, self.server_iface_name)
+      if expected_reply_packet:
+        apf_utils.stop_capture_packets(
+            self.serverDevice, self.server_iface_name
+        )
 
   def expect_apf_offload_enabled(self, offload: str):
     assert_utils.expect_with_retry(

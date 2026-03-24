@@ -32,15 +32,17 @@ public class QueryTaskConfig {
     final boolean expectUnicastResponse;
     final int queryIndex;
     final int queryMode;
+    private final boolean isDualQueryEnabled;
 
-    QueryTaskConfig(int queryMode, int queryIndex) {
+    QueryTaskConfig(int queryMode, int queryIndex, boolean isDualQueryEnabled) {
         this.queryMode = queryMode;
         this.queryIndex = queryIndex;
+        this.isDualQueryEnabled = isDualQueryEnabled;
         this.expectUnicastResponse = getExpectUnicastResponse();
     }
 
-    QueryTaskConfig(int queryMode) {
-        this(queryMode, 0);
+    QueryTaskConfig(int queryMode, boolean isDualQueryEnabled) {
+        this(queryMode, 0, isDualQueryEnabled);
     }
 
     /**
@@ -48,7 +50,7 @@ public class QueryTaskConfig {
      */
     public QueryTaskConfig getConfigForNextRun(int queryMode) {
         final int newQueryIndex = queryIndex + 1;
-        return new QueryTaskConfig(queryMode, newQueryIndex);
+        return new QueryTaskConfig(queryMode, newQueryIndex, isDualQueryEnabled);
     }
 
     public int getTransactionId() {
@@ -56,6 +58,9 @@ public class QueryTaskConfig {
     }
 
     private boolean getExpectUnicastResponse() {
+        if (isDualQueryEnabled && MdnsQueryScheduler.isFirstQueryInBurst(queryIndex, queryMode)) {
+            return true;
+        }
         if (queryMode == AGGRESSIVE_QUERY_MODE) {
             if (MdnsQueryScheduler.isFirstQueryInBurst(queryIndex, queryMode)) {
                 return true;
