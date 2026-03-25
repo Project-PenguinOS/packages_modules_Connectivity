@@ -476,9 +476,11 @@ public class MdnsSocketProvider {
     private void maybeUpdateTetheringSocketAddress(int ifaceIndex,
             @NonNull final List<LinkAddress> updatedAddresses) {
         for (int i = 0; i < mTetherInterfaceSockets.size(); ++i) {
-            final SocketInfo socketInfo = mTetherInterfaceSockets.valueAt(i);
-            if (socketInfo.mSocketKey.getInterfaceIndex() == ifaceIndex) {
-                updateSocketInfoAddress(null /* network */, socketInfo, updatedAddresses);
+            String tetheringInterfaceName = mTetherInterfaceSockets.keyAt(i);
+            if (mDependencies.getNetworkInterfaceIndexByName(tetheringInterfaceName, mSharedLog)
+                    == ifaceIndex) {
+                updateSocketInfoAddress(null /* network */,
+                        mTetherInterfaceSockets.valueAt(i), updatedAddresses);
                 return;
             }
         }

@@ -37,7 +37,6 @@ cc_library_headers {
         "com.android.art.debug",
         "com.android.os.statsd",
         "com.android.tethering",
-        "com.android.uprobestats",
     ],
 }
 

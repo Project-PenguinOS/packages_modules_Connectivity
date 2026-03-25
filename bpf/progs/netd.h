@@ -103,17 +103,6 @@ typedef struct {
 STRUCT_SIZE(LocalNetAccessKey, 4 + 4 + 16 + 2 + 2); // 28
 
 typedef struct {
-    uint32_t ce_count;
-    uint16_t mss;
-    uint8_t  ce_inited;
-    uint8_t  byte_inited;
-    uint64_t ceb;
-    uint64_t e0b;
-    uint64_t e1b;
-} L4SStorage;
-STRUCT_SIZE(L4SStorage, 4 + 2 + 1 + 1 + 8 + 8 + 8); // 32
-
-typedef struct {
     uint64_t cookie;
     // Store gid and uid to make them available outside the program types that
     // support `bpf_get_socket_uid`
@@ -129,9 +118,8 @@ typedef struct {
     // The cached result of LNP permission checks for the lnpTrieLookupKey
     bool lnpResult;
     uint8_t padding[2];
-    L4SStorage l4s;
 } SkStorageValue;
-STRUCT_SIZE(SkStorageValue, 8 + 4 + 4 + 8 + 8 + 28 + 1 + 1 + 2 + 32); // 96
+STRUCT_SIZE(SkStorageValue, 8 + 4 + 4 + 8 + 8 + 28 + 1 + 1 + 2); // 64
 
 enum LoopbackAccessResult : uint32_t {
   LOOPBACK_ACCESS_ALLOWED = 0,
@@ -144,6 +132,17 @@ typedef struct {
   enum LoopbackAccessResult result;
 } LoopbackAccessEvent;
 STRUCT_SIZE(LoopbackAccessEvent, 4 + 4 + 4);
+
+typedef struct {
+    uint32_t ce_count;
+    uint16_t mss;
+    uint8_t  ce_inited;
+    uint8_t  byte_inited;
+    uint64_t ceb;
+    uint64_t e0b;
+    uint64_t e1b;
+} L4SStorage;
+STRUCT_SIZE(L4SStorage, 4 + 2 + 1 + 1 + 8 + 8 + 8);
 
 #define STATS_MAP_SIZE 5000
 #define CONFIGURATION_MAP_SIZE 2
@@ -233,6 +232,7 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define L4S_OPTIONS_SOCKOPS_PROG_PATH BPF_NETD_PATH "prog_netd_sockops_accecn_option"
 
 #define L4S_CONN_COUNTER_MAP_PATH        BPF_NETD_PATH "map_netd_l4s_conn_counter"
+#define L4S_SK_STORAGE_MAP_PATH      BPF_NETD_PATH "map_netd_sk_l4s_storage"
 #define L4S_ACCECN_ENABLED_MAP_PATH   BPF_NETD_PATH "map_netd_l4s_accecn_enabled_map"
 
 #endif // __cplusplus
@@ -383,8 +383,4 @@ static inline bool is_system_uid(uint32_t uid) {
     // MIN_SYSTEM_UID is AID_ROOT == 0, so uint32_t is *always* >= 0
     // MAX_SYSTEM_UID is AID_NOBODY == 9999, while AID_APP_START == 10000
     return ((uid % AID_USER_OFFSET) < AID_APP_START);
-}
-
-static inline bool is_system_or_root(uint32_t uid) {
-    return (uid == AID_SYSTEM) || (uid == AID_ROOT);
 }

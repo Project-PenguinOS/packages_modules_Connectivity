@@ -63,10 +63,10 @@ DEFINE_BPF_MAP_GRW(tether_downstream64_map, HASH, TetherDownstream64Key, TetherD
 DEFINE_BPF_MAP_GRW(tether_upstream6_map, HASH, TetherUpstream6Key, Tether6Value, 64,
                    AID_NETWORK_STACK)
 
-function int do_forward6(struct __sk_buff* skb,
-                         const struct rawip_bool rawip,
-                         const struct stream_bool stream,
-                         __unused const struct kver_uint kver) {
+static inline __always_inline int do_forward6(struct __sk_buff* skb,
+                                              const struct rawip_bool rawip,
+                                              const struct stream_bool stream,
+                                              __unused const struct kver_uint kver) {
     const bool is_ethernet = !rawip.rawip;
 
     // Must be meta-ethernet IPv6 frame
@@ -330,17 +330,11 @@ DEFINE_BPF_MAP_GRW(tether_downstream4_map, HASH, Tether4Key, Tether4Value, 1024,
 
 DEFINE_BPF_MAP_GRW(tether_upstream4_map, HASH, Tether4Key, Tether4Value, 1024, AID_NETWORK_STACK)
 
-function int do_forward4_bottom(struct __sk_buff* skb,
-                                const int l2_header_size,
-                                void* data,
-                                const void* data_end,
-                                struct ethhdr* eth,
-                                struct iphdr* ip,
-                                const struct rawip_bool rawip,
-                                const struct stream_bool stream,
-                                const struct updatetime_bool updatetime,
-                                const bool is_tcp,
-                                __unused const struct kver_uint kver) {
+static inline __always_inline int do_forward4_bottom(struct __sk_buff* skb,
+        const int l2_header_size, void* data, const void* data_end,
+        struct ethhdr* eth, struct iphdr* ip, const struct rawip_bool rawip,
+        const struct stream_bool stream, const struct updatetime_bool updatetime,
+        const bool is_tcp, __unused const struct kver_uint kver) {
     const bool is_ethernet = !rawip.rawip;
     struct tcphdr* tcph = is_tcp ? (void*)(ip + 1) : NULL;
     struct udphdr* udph = is_tcp ? NULL : (void*)(ip + 1);
@@ -537,11 +531,11 @@ function int do_forward4_bottom(struct __sk_buff* skb,
     return bpf_redirect(v->oif, 0 /* this is effectively BPF_F_EGRESS */);
 }
 
-function int do_forward4(struct __sk_buff* skb,
-                         const struct rawip_bool rawip,
-                         const struct stream_bool stream,
-                         const struct updatetime_bool updatetime,
-                         const struct kver_uint kver) {
+static inline __always_inline int do_forward4(struct __sk_buff* skb,
+                                              const struct rawip_bool rawip,
+                                              const struct stream_bool stream,
+                                              const struct updatetime_bool updatetime,
+                                              const struct kver_uint kver) {
     const bool is_ethernet = !rawip.rawip;
 
     // Require ethernet dst mac address to be our unicast address.

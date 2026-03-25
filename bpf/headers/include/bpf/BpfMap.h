@@ -323,20 +323,6 @@ class BpfMapRO {
         return key.error();
     }
 
-    Result<uint32_t> count() const {
-        uint32_t i = 0;
-        auto res = forAll([&i](const Key&) { i++; });
-        if (!res.ok()) return res.error();
-        return i;
-    }
-
-    // Note: this requires kernel 4.14+
-    Result<uint32_t> maxEntries() const {
-        int v = bpfGetFdMaxEntries(mMapFd);
-        if (v < 0) return ERROR_FROM_ERRNO("maxEntries");
-        return (uint32_t)v;
-    }
-
   protected:
     unique_fd mMapFd;
 };

@@ -86,7 +86,6 @@ import static com.android.server.net.NetworkStatsEventLogger.POLL_REASON_REG_CAL
 import static com.android.server.net.NetworkStatsEventLogger.POLL_REASON_REMOVE_UIDS;
 import static com.android.server.net.NetworkStatsEventLogger.POLL_REASON_UPSTREAM_CHANGED;
 import static com.android.server.net.NetworkStatsEventLogger.PollEvent;
-import static com.android.tethering.flags.Flags.FLAG_NETSTATS_USE_SINCE_BOOT_COLLECTION;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -201,7 +200,6 @@ import com.android.net.module.util.netlink.InetDiagMessage;
 import com.android.net.module.util.netlink.StructInetDiagSockId;
 import com.android.server.ConnectivityStatsLog;
 import com.android.server.connectivity.ConnectivityResources;
-import com.android.tethering.flags.Flags;
 
 import java.io.File;
 import java.io.FileDescriptor;
@@ -226,7 +224,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 /**
  * Collect and persist detailed network statistics, and provide this data to
@@ -963,17 +960,6 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         }
 
         /**
-         * @see Flags
-         */
-        public boolean isAconfigFlagEnabled(@NonNull String flag) {
-            switch (flag) {
-                case FLAG_NETSTATS_USE_SINCE_BOOT_COLLECTION:
-                    return Flags.netstatsUseSinceBootCollection();
-            }
-            throw new IllegalArgumentException("Unknown flag: " + flag);
-        }
-
-        /**
          * Get client side traffic stats rate-limit cache config.
          *
          * This method should only be called once in the constructor,
@@ -1002,18 +988,6 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
          */
         public boolean isChangeEnabled(final long changeId, final int uid) {
             return CompatChanges.isChangeEnabled(changeId, uid);
-        }
-
-        /**
-         * Create a {@link NetworkStatsRecorder} instance.
-         */
-        public NetworkStatsRecorder makeRecorder(FileRotator fileRotator,
-                NonMonotonicObserver<String> observer, DropBoxManager dropBox, String cookie,
-                long bucketDuration, boolean onlyTags, boolean wipeOnError,
-                boolean useFastDataInput, boolean storeTransportTypes, @Nullable File statsDir) {
-            return new NetworkStatsRecorder(fileRotator,
-                    observer, dropBox, cookie, bucketDuration, onlyTags,
-                    wipeOnError, useFastDataInput, storeTransportTypes, statsDir);
         }
 
         /**
@@ -1144,7 +1118,7 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             File baseDir, boolean wipeOnError, boolean useFastDataInput) {
         final DropBoxManager dropBox = (DropBoxManager) mContext.getSystemService(
                 Context.DROPBOX_SERVICE);
-        return mDeps.makeRecorder(new FileRotator(
+        return new NetworkStatsRecorder(new FileRotator(
                 baseDir, prefix, config.rotateAgeMillis, config.deleteAgeMillis),
                 mNonMonotonicObserver, dropBox, prefix, config.bucketDuration, includeTags,
                 wipeOnError, useFastDataInput, mStoreTransportTypes, baseDir);
@@ -1685,9 +1659,6 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
             private final String mCallingPackage = callingPackage;
             private final @NetworkStatsAccess.Level int mAccessLevel = checkAccessLevel(
                     callingPackage);
-            // READ_DEVICE_CONFIG is necessary to read flags on T-
-            private final boolean mUseSinceBootCollection = BinderUtils.withCleanCallingIdentity(
-                    () -> mDeps.isAconfigFlagEnabled(FLAG_NETSTATS_USE_SINCE_BOOT_COLLECTION));
 
             private NetworkStatsCollection mUidComplete;
             private NetworkStatsCollection mUidTagComplete;
@@ -1701,24 +1672,6 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                 }
             }
 
-            private <T> T getFromUidSince(long start, Function<NetworkStatsCollection, T> func) {
-                if (!mUseSinceBootCollection) {
-                    return func.apply(getUidComplete());
-                }
-                final NetworkStatsCollection collection;
-                synchronized (mStatsLock) {
-                    if (mUidComplete != null) {
-                        collection = mUidComplete;
-                    } else if (mUidRecorder.getSinceBoot().getStartMillis() <= start) {
-                        // Need to hold the lock while reading the SinceBoot collection
-                        return func.apply(mUidRecorder.getSinceBoot());
-                    } else {
-                        collection = getUidComplete();
-                    }
-                }
-                return func.apply(collection);
-            }
-
             private NetworkStatsCollection getUidTagComplete() {
                 synchronized (mStatsLock) {
                     if (mUidTagComplete == null) {
@@ -1726,24 +1679,6 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                     }
                     return mUidTagComplete;
                 }
-            }
-
-            private <T> T getFromUidTagSince(long start, Function<NetworkStatsCollection, T> func) {
-                if (!mUseSinceBootCollection) {
-                    return func.apply(getUidTagComplete());
-                }
-                final NetworkStatsCollection collection;
-                synchronized (mStatsLock) {
-                    if (mUidTagComplete != null) {
-                        collection = mUidTagComplete;
-                    } else if (mUidTagRecorder.getSinceBoot().getStartMillis() <= start) {
-                        // Need to hold the lock while reading the SinceBoot collection
-                        return func.apply(mUidTagRecorder.getSinceBoot());
-                    } else {
-                        collection = getUidTagComplete();
-                    }
-                }
-                return func.apply(collection);
             }
 
             @Override
@@ -1790,11 +1725,11 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                     NetworkTemplate template, long start, long end, boolean includeTags) {
                 enforceTemplatePermissions(template, callingPackage);
                 try {
-                    final NetworkStats stats = getFromUidSince(start, s ->
-                            s.getSummary(template, start, end, mAccessLevel, mCallingUid));
+                    final NetworkStats stats = getUidComplete()
+                            .getSummary(template, start, end, mAccessLevel, mCallingUid);
                     if (includeTags) {
-                        final NetworkStats tagStats = getFromUidTagSince(start, s ->
-                                s.getSummary(template, start, end, mAccessLevel, mCallingUid));
+                        final NetworkStats tagStats = getUidTagComplete()
+                                .getSummary(template, start, end, mAccessLevel, mCallingUid);
                         stats.combineAllValues(tagStats);
                     }
                     return stats;
@@ -1808,8 +1743,9 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                     NetworkTemplate template, long start, long end) {
                 enforceTemplatePermissions(template, callingPackage);
                 try {
-                    return getFromUidTagSince(start, s ->
-                            s.getSummary(template, start, end, mAccessLevel, mCallingUid));
+                    final NetworkStats tagStats = getUidTagComplete()
+                            .getSummary(template, start, end, mAccessLevel, mCallingUid);
+                    return tagStats;
                 } catch (NullPointerException e) {
                     throw e;
                 }
@@ -1838,11 +1774,11 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
                 //  sensitive but the caller is not privileged.
                 // NOTE: We don't augment UID-level statistics
                 if (tag == TAG_NONE) {
-                    return getFromUidSince(start, s -> s.getHistory(template, null, uid, set, tag,
-                            fields, start, end, mAccessLevel, mCallingUid));
+                    return getUidComplete().getHistory(template, null, uid, set, tag, fields,
+                            start, end, mAccessLevel, mCallingUid);
                 } else if (uid == Binder.getCallingUid()) {
-                    return getFromUidTagSince(start, s -> s.getHistory(template, null, uid, set,
-                            tag, fields, start, end, mAccessLevel, mCallingUid));
+                    return getUidTagComplete().getHistory(template, null, uid, set, tag, fields,
+                            start, end, mAccessLevel, mCallingUid);
                 } else {
                     throw new SecurityException("Calling package " + mCallingPackage
                             + " cannot access tag information from a different uid");
@@ -1949,6 +1885,17 @@ public class NetworkStatsService extends INetworkStatsService.Stub {
         return internalGetSummaryForNetwork(template,
                 NetworkStatsManager.FLAG_AUGMENT_WITH_SUBSCRIPTION_PLAN, start, end,
                 NetworkStatsAccess.Level.DEVICE, Binder.getCallingUid()).getTotalBytes();
+    }
+
+    private NetworkStats getNetworkUidBytes(NetworkTemplate template, long start, long end) {
+        assertSystemReady();
+
+        final NetworkStatsCollection uidComplete;
+        synchronized (mStatsLock) {
+            uidComplete = mUidRecorder.getOrLoadCompleteLocked();
+        }
+        return uidComplete.getSummary(template, start, end, NetworkStatsAccess.Level.DEVICE,
+                android.os.Process.SYSTEM_UID);
     }
 
     @Override

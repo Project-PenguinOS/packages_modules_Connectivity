@@ -112,18 +112,3 @@ flag {
   description: "A flag to control whether to send both unicast and multicast query packets."
   bug: "452299542"
 }
-
-flag {
-  name: "enable_multi_proxy_system"
-  is_exported: true
-  namespace: "com_android_tethering"
-  description: "Enables the new multi-network proxy system."
-  bug: "463367733"
-}
-
-flag {
-    name: "netstats_use_since_boot_collection"
-    namespace: "com_android_tethering"
-    description: "Use the 'since boot' collection for network stats queries within the current boot"
-    bug: "430990457"
-}

@@ -19,7 +19,7 @@
 #include "BpfHandler.h"
 
 #include <android-base/logging.h>
-#include <android-base/result.h>
+#include <netdutils/Status.h>
 
 #include "NetdUpdatablePublic.h"
 
@@ -29,9 +29,9 @@ int libnetd_updatable_init(const char* cg2_path) {
     android::base::InitLogging(/*argv=*/nullptr);
     LOG(INFO) << __func__ << ": Initializing";
 
-    android::base::Result<void> ret = sBpfHandler.init(cg2_path);
-    if (!ret.ok()) {
-        LOG(ERROR) << __func__ << ": Failed: " << ret.error().message();
+    android::netdutils::Status ret = sBpfHandler.init(cg2_path);
+    if (!android::netdutils::isOk(ret)) {
+        LOG(ERROR) << __func__ << ": Failed: (" << ret.code() << ") " << ret.msg();
         abort();
     }
     return 0;

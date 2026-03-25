@@ -159,14 +159,14 @@ static long (*bpf_store_hdr_opt)(struct bpf_sock_ops *skops, const void *from, _
 #define ntohs(x) htons(x)
 #define ntohl(x) htonl(x)
 
-function __unused bool is_received_skb(struct __sk_buff* skb) {
+static inline __always_inline __unused bool is_received_skb(struct __sk_buff* skb) {
     return skb->pkt_type == PACKET_HOST || skb->pkt_type == PACKET_BROADCAST ||
            skb->pkt_type == PACKET_MULTICAST;
 }
 
 // try to make the first 'len' header bytes readable/writable via direct packet access
 // (note: AFAIK there is no way to ask for only direct packet read without also getting write)
-function void try_make_writable(struct __sk_buff* skb, unsigned len) {
+static inline __always_inline void try_make_writable(struct __sk_buff* skb, unsigned len) {
     if (len > skb->len) len = skb->len;
     if (skb->data_end - skb->data < len) bpf_skb_pull_data(skb, len);
 }

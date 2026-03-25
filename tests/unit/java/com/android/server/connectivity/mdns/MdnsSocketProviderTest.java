@@ -165,9 +165,6 @@ public class MdnsSocketProviderTest {
         doReturn(true).when(mTestNetworkIfaceWrapper).supportsMulticast();
         doReturn(true).when(mLocalOnlyIfaceWrapper).supportsMulticast();
         doReturn(true).when(mTetheredIfaceWrapper).supportsMulticast();
-        doReturn(123).when(mTestNetworkIfaceWrapper).getIndex();
-        doReturn(456).when(mLocalOnlyIfaceWrapper).getIndex();
-        doReturn(TETHERED_IFACE_IDX).when(mTetheredIfaceWrapper).getIndex();
         doReturn(mLocalOnlyIfaceWrapper).when(mDeps)
                 .getNetworkInterfaceByName(LOCAL_ONLY_IFACE_NAME);
         doReturn(mLocalOnlyIfaceWrapper).when(mDeps)
@@ -518,7 +515,6 @@ public class MdnsSocketProviderTest {
         runOnHandler(
                 () -> mTestSocketNetLinkMonitor.processNetlinkMessage(addIpv4AddrMsg,
                         0 /* whenMs */));
-        testCallbackAll.expectedNoCallback();
 
         // Interface is created.
         runOnHandler(() -> mTetheringEventCallback.onTetheredInterfacesChanged(

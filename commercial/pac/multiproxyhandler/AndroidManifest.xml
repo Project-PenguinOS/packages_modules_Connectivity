@@ -8,12 +8,7 @@
         android:directBootAware="true">
 
         <service android:name="com.android.multiproxyhandler.MultiProxyService"
-                 android:permission="android.permission.MAINLINE_NETWORK_STACK"
-                 android:exported="true">
-            <!-- This intent is only used to find this service via PackageManager. -->
-            <intent-filter>
-                <action android:name="com.android.server.connectivity.intent.service.MULTI_PROXY_SERVICE" />
-            </intent-filter>
+                 android:permission="android.permission.MAINLINE_NETWORK_STACK">
         </service>
     </application>
 </manifest>

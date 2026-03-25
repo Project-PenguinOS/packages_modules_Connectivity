@@ -32,7 +32,7 @@ import java.util.Objects;
  * @hide
  */
 // TODO(b/295407748) Change to use @DataClass
-// Remains hidden; plan to expose as SystemApi was abandoned. See b/290092977 for context.
+// TODO(b/290092977): Add back after M-2023-11 release - @SystemApi(client = MODULE_LIBRARIES)
 public final class RemoteDevice implements Parcelable {
     /** The remote device is not registered as remote authenticator. */
     public static final int STATE_NOT_REGISTERED = 0;

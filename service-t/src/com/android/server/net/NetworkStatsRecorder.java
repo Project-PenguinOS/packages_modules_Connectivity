@@ -260,7 +260,7 @@ public class NetworkStatsRecorder {
      */
     public void recordSnapshotLocked(NetworkStats snapshot,
             Map<String, NetworkIdentitySet> ifaceIdent, long currentTimeMillis) {
-        final HashSet<String> unknownIfaces = LOGV ? new HashSet<>() : null;
+        final HashSet<String> unknownIfaces = new HashSet<>();
 
         // skip recording when snapshot missing
         if (snapshot == null) return;
@@ -297,9 +297,7 @@ public class NetworkStatsRecorder {
 
             final NetworkIdentitySet ident = ifaceIdent.get(entry.iface);
             if (ident == null) {
-                if (unknownIfaces != null) {
-                    unknownIfaces.add(entry.iface);
-                }
+                unknownIfaces.add(entry.iface);
                 continue;
             }
 
@@ -326,7 +324,7 @@ public class NetworkStatsRecorder {
 
         mLastSnapshot = snapshot;
 
-        if (LOGV && unknownIfaces != null && !unknownIfaces.isEmpty()) {
+        if (LOGV && unknownIfaces.size() > 0) {
             Log.w(TAG, "unknown interfaces " + unknownIfaces + ", ignoring those stats");
         }
     }

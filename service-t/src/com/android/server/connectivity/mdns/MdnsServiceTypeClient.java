@@ -927,11 +927,14 @@ public class MdnsServiceTypeClient {
             boolean after = response.isComplete();
             serviceBecomesComplete = !before && after;
         }
+        sharedLog.i(String.format(
+                "Handling response from service: %s, newInCache: %b, serviceBecomesComplete:"
+                        + " %b, responseIsComplete: %b",
+                serviceInstanceName, newInCache, serviceBecomesComplete,
+                response.isComplete()));
         final MdnsServiceInfo serviceInfo = buildMdnsServiceInfoFromResponse(
                 response, serviceTypeLabels, clock.elapsedRealtime(), socketKey);
-        int nameDiscoveredCbCount = 0;
-        int foundCbCount = 0;
-        int updatedCbCount = 0;
+
         for (int i = 0; i < listeners.size(); i++) {
             // If a service stops matching the options (currently can only happen if it loses a
             // subtype), service lost callbacks should also be sent; this is not done today as
@@ -946,16 +949,16 @@ public class MdnsServiceTypeClient {
             final ListenerInfo listenerInfo = listeners.valueAt(i);
             final boolean newServiceFound = listenerInfo.setServiceDiscovered(serviceInstanceName);
             if (newServiceFound) {
-                nameDiscoveredCbCount++;
+                sharedLog.log("onServiceNameDiscovered: " + serviceInfo);
                 listener.onServiceNameDiscovered(serviceInfo, false /* isServiceFromCache */);
             }
 
             if (response.isComplete()) {
                 if (newServiceFound || serviceBecomesComplete) {
-                    foundCbCount++;
+                    sharedLog.log("onServiceFound: " + serviceInfo);
                     listener.onServiceFound(serviceInfo, false /* isServiceFromCache */);
                 } else {
-                    updatedCbCount++;
+                    sharedLog.log("onServiceUpdated: " + serviceInfo);
                     listener.onServiceUpdated(serviceInfo);
                 }
                 listenerInfo.updateDiscoveryOffloadHostname(MdnsRecord.labelsToString(
@@ -965,13 +968,6 @@ public class MdnsServiceTypeClient {
                         listenerInfo.mDiscoveryOffloadInfo);
             }
         }
-        sharedLog.i(String.format(
-                "Handled response; newInCache: %b, serviceBecomesComplete: %b, "
-                        + "responseIsComplete: %b, nameDiscoveredCb: %d, foundCb: %d, "
-                        + "updatedCb: %d, listeners: %d, serviceInfo: %s",
-                newInCache, serviceBecomesComplete,
-                response.isComplete(), nameDiscoveredCbCount, foundCbCount, updatedCbCount,
-                listeners.size(), serviceInfo.toShortString()));
     }
 
     private void onGoodbyeReceived(@Nullable String serviceInstanceName) {

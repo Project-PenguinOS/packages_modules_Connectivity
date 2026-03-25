@@ -19467,82 +19467,32 @@ public class ConnectivityServiceTest {
     }
 
     @Test
-    public void testDisconnectSuspendedOrDestroyedNetworkStopsClatd() throws Exception {
-        final TestNetworkCallback callback = new TestNetworkCallback();
+    public void testDisconnectSuspendedNetworkStopClatd() throws Exception {
+        final TestNetworkCallback networkCallback = new TestNetworkCallback();
         final NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NET_CAPABILITY_DUN)
                 .build();
+        mCm.requestNetwork(networkRequest, networkCallback);
+
         final IpPrefix nat64Prefix = new IpPrefix(InetAddress.getByName("64:ff9b::"), 96);
         NetworkCapabilities nc = new NetworkCapabilities().addCapability(NET_CAPABILITY_DUN);
         final LinkProperties lp = new LinkProperties();
         lp.setInterfaceName(MOBILE_IFNAME);
         lp.addLinkAddress(new LinkAddress("2001:db8:1::1/64"));
         lp.setNat64Prefix(nat64Prefix);
-
-        mCm.requestNetwork(networkRequest, callback);
         mCellAgent = new TestNetworkAgentWrapper(TRANSPORT_CELLULAR, lp, nc);
         mCellAgent.connect(true /* validated */, false /* hasInternet */,
                 false /* privateDnsProbeSent */);
 
-        InOrder inOrder = inOrder(mClatCoordinator, mMockNetd);
-
-        callback.expectAvailableThenValidatedCallbacks(mCellAgent);
-        verifyClatdStart(inOrder, MOBILE_IFNAME, mCellAgent.getNetwork().netId,
+        verifyClatdStart(null /* inOrder */, MOBILE_IFNAME, mCellAgent.getNetwork().netId,
                 nat64Prefix.toString());
-        if (mDeps.isAtLeastV()) { // U- only configures idletimers on the default network.
-            inOrder.verify(mMockNetd).idletimerAddInterface(eq(MOBILE_IFNAME), anyInt(),
-                    anyString());
-        }
 
         mCellAgent.suspend();
-        callback.expectCaps(mCellAgent, c -> !c.hasCapability(NET_CAPABILITY_NOT_SUSPENDED));
-        callback.expect(SUSPENDED, mCellAgent);
-
-        mCm.unregisterNetworkCallback(callback);
+        mCm.unregisterNetworkCallback(networkCallback);
         mCellAgent.expectDisconnected();
         waitForIdle();
 
-        if (mDeps.isAtLeastV()) {
-            inOrder.verify(mMockNetd).idletimerRemoveInterface(eq(MOBILE_IFNAME), anyInt(),
-                    anyString());
-        }
-        verifyClatdStop(inOrder, MOBILE_IFNAME);
-
-        mCm.requestNetwork(networkRequest, callback);
-        mCellAgent = new TestNetworkAgentWrapper(TRANSPORT_CELLULAR, lp, nc);
-        mCellAgent.connect(true /* validated */, false /* hasInternet */,
-                false /* privateDnsProbeSent */);
-        callback.expectAvailableThenValidatedCallbacks(mCellAgent);
-        verifyClatdStart(inOrder, MOBILE_IFNAME, mCellAgent.getNetwork().netId,
-                nat64Prefix.toString());
-        if (mDeps.isAtLeastV()) {
-            inOrder.verify(mMockNetd).idletimerAddInterface(eq(MOBILE_IFNAME), anyInt(),
-                    anyString());
-        }
-
-        mCellAgent.unregisterAfterReplacement(5_000);
-        waitForIdle();
-
-        // BUG: clatd should be stopped, because the network was destroyed.
-        verifyNeverClatdStop(inOrder, MOBILE_IFNAME);
-        // BUG: idletimer should be removed.
-        if (mDeps.isAtLeastV()) {
-            inOrder.verify(mMockNetd, never()).idletimerRemoveInterface(eq(MOBILE_IFNAME), anyInt(),
-                    anyString());
-        }
-
-        inOrder.verify(mMockNetd).networkDestroy(mCellAgent.getNetwork().netId);
-        callback.assertNoCallback();
-
-        mCellAgent.disconnect();
-        callback.expect(LOST, mCellAgent);
-        waitForIdle();
-        // BUG: idletimer should already have been removed.
-        if (mDeps.isAtLeastV()) {
-            inOrder.verify(mMockNetd).idletimerRemoveInterface(eq(MOBILE_IFNAME), anyInt(),
-                    anyString());
-        }
-        verifyClatdStop(inOrder, MOBILE_IFNAME);
+        verifyClatdStop(null /* inOrder */, MOBILE_IFNAME);
     }
 
     // TODO(yuyanghuang): reduce this number after move all CaptivePortal related tests to CSTest.

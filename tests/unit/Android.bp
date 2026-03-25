@@ -178,5 +178,4 @@ android_test {
         "libandroid_net_connectivity_com_android_net_module_util_jni_CommonConnectivityJni",
         "libservice-connectivity",
     ],
-    platform_apis: true,
 }

@@ -732,7 +732,7 @@ static int pinMap(const borrowed_fd& fd, const struct bpf_map_def& mapDef) {
                 ALOGE("bpfGetFdMapId failed, errno: %d", err);
                 return -err;
             }
-            if (!isUser) ALOGD("map %s id %d", mapDef.pin_location, mapId);
+            ALOGI("map %s id %d", mapDef.pin_location, mapId);
         }
         return 0;
 }
@@ -1003,7 +1003,7 @@ static int validateProg(const borrowed_fd& fd, const char* const progPinLoc) {
         ALOGE("bpfGetFdXlatProgLen failed, ret: %d", err);
         return -err;
     }
-    if (!isUser) ALOGD("prog %s id %d len jit:%d xlat:%d", progPinLoc, progId, jitLen, xlatLen);
+    ALOGI("prog %s id %d len jit:%d xlat:%d", progPinLoc, progId, jitLen, xlatLen);
 
     if (!jitLen && api_level_full >= NETBPFLOAD_25Q2_VER) {
         ALOGE("Kernel eBPF JIT failure for %s", progPinLoc);
@@ -1339,7 +1339,7 @@ static bool exists(const char* const path) {
     abort();  // can only hit this if permissions (likely selinux) are screwed up
 }
 
-static bool loadObject(const char* const progPath, const bool useLibbpf = true) {
+static bool loadObject(const char* const progPath, const bool useLibbpf = false) {
     if (useLibbpf ? loadProgByLibbpf(progPath) : loadProg(progPath)) {
         ALOGE("Failed to load object: %s, libbpf: %d", progPath, useLibbpf);
         return false;
@@ -1352,20 +1352,12 @@ static bool loadObject(const char* const progPath, const bool useLibbpf = true) 
 #define BPFROOT APEXROOT "/etc/bpf/mainline/"
 
 static bool loadAllObjects() {
-    // Enable on kernels that have the BPF CFI backports, see: b/488034908
-    // b/494690861: funcs may trigger Real-time Kernel Protection (RKP)
-    bool funcs = isAtLeast26Q2 && isAtLeastKernelVersion(6, 6, 118);
-
-    if (!loadObject(BPFROOT "offload.o", /*libbpf*/false)) return false;
-    if (!loadObject(BPFROOT "test.o")) return false;
-    if (!loadObject(BPFROOT "clatd.o")) return false;
-    if (funcs) {
-        if (!loadObject(BPFROOT "dscpPolicy@funcs.o")) return false;
-        if (!loadObject(BPFROOT "netd@funcs.o")) return false;
-    } else {
-        if (!loadObject(BPFROOT "dscpPolicy.o")) return false;
-        if (!loadObject(BPFROOT "netd.o")) return false;
-    }
+    bool libbpf = true;
+    if (!loadObject(BPFROOT "offload.o")) return false;
+    if (!loadObject(BPFROOT "test.o", true)) return false;
+    if (!loadObject(BPFROOT "clatd.o", libbpf)) return false;
+    if (!loadObject(BPFROOT "dscpPolicy.o", true)) return false;
+    if (!loadObject(BPFROOT "netd.o", libbpf)) return false;
     return true;
 }
 
@@ -1563,7 +1555,7 @@ static int doLoad(char** argv, char * const envp[]) {
     // first in U QPR2 beta~2
     const bool has_platform_netbpfload_rc = exists("/system/etc/init/netbpfload.rc");
 
-    ALOGI("%s api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%u rc:%d%d user:%d%d%d",
+    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%u rc:%d%d user:%d%d%d",
           argv[0], android_get_device_api_level(), api_level_full,
           kernelVer, describeArch(), page_size >> 10,
           libbpf_major_version(), libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
