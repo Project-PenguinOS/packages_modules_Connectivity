@@ -287,6 +287,11 @@ public class VpnTest {
         mConnectUtil = new ConnectUtil(mTestContext);
         mPackageManager = mTestContext.getPackageManager();
         assumeTrue(supportedHardware());
+        // Ensure Wi-Fi and cell networks are requested even on devices with mobile_data_always_on
+        // disabled, or possibly ethernet connected. This is a requirement for
+        // CtsNetUtils#getTestableNetworks().
+        mNetworkCallbackRule.requestWifiIfSupported();
+        mNetworkCallbackRule.requestCellIfSupported();
     }
 
     @After

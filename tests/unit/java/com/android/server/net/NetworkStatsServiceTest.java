@@ -80,6 +80,7 @@ import static com.android.server.net.NetworkStatsService.NETSTATS_IMPORT_ATTEMPT
 import static com.android.server.net.NetworkStatsService.NETSTATS_IMPORT_FALLBACKS_COUNTER_NAME;
 import static com.android.server.net.NetworkStatsService.NETSTATS_IMPORT_SUCCESSES_COUNTER_NAME;
 import static com.android.server.net.NetworkStatsService.TRAFFICSTATS_CLIENT_RATE_LIMIT_CACHE_ENABLED_FLAG;
+import static com.android.tethering.flags.Flags.FLAG_NETSTATS_USE_SINCE_BOOT_COLLECTION;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -87,6 +88,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -96,6 +98,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
@@ -190,6 +193,7 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -480,6 +484,7 @@ public class NetworkStatsServiceTest extends NetworkStatsBaseTest {
     class TestDependencies extends NetworkStatsService.Dependencies {
         private int mCompareStatsInvocation = 0;
         private NetworkStats.Entry mMockedTrafficStatsNativeStat = null;
+        private final Map<String, NetworkStatsRecorder> mRecorders = new HashMap<>();
 
         @Override
         public File getLegacyStatsDir() {
@@ -624,6 +629,15 @@ public class NetworkStatsServiceTest extends NetworkStatsBaseTest {
         }
 
         @Override
+        public boolean isAconfigFlagEnabled(@NonNull String flag) {
+            if (flag.equals(FLAG_NETSTATS_USE_SINCE_BOOT_COLLECTION)) {
+                return true;
+            }
+            fail("Flag not mocked: " + flag);
+            return false;
+        }
+
+        @Override
         public boolean enabledBroadcastNetworkStatsUpdatedRateLimiting(Context ctx) {
             return mFeatureFlags.getOrDefault(
                     BROADCAST_NETWORK_STATS_UPDATED_RATE_LIMIT_ENABLED_FLAG, true);
@@ -650,6 +664,26 @@ public class NetworkStatsServiceTest extends NetworkStatsBaseTest {
         public void setChangeEnabled(long changeId, boolean enabled) {
             mCompatChanges.put(changeId, enabled);
         }
+
+        @Override
+        public NetworkStatsRecorder makeRecorder(FileRotator fileRotator,
+                NetworkStats.NonMonotonicObserver<String> observer, DropBoxManager dropBox,
+                String cookie, long bucketDuration, boolean onlyTags, boolean wipeOnError,
+                boolean useFastDataInput, boolean storeTransportTypes, @Nullable File statsDir) {
+            final NetworkStatsRecorder recorder = spy(super.makeRecorder(fileRotator, observer,
+                    dropBox, cookie, bucketDuration, onlyTags, wipeOnError, useFastDataInput,
+                    storeTransportTypes, statsDir));
+            // Exclude recorders created to migrate legacy data
+            if (statsDir != null && statsDir.equals(mStatsDir)) {
+                mRecorders.put(cookie, recorder);
+            }
+            return recorder;
+        }
+
+        public NetworkStatsRecorder getRecorder(String cookie) {
+            return mRecorders.get(cookie);
+        }
+
         @Nullable
         @Override
         public NetworkStats.Entry nativeGetTotalStat() {
@@ -3201,5 +3235,62 @@ public class NetworkStatsServiceTest extends NetworkStatsBaseTest {
             receiver.assertBroadcastIntentReceived();
         }
         receiver.assertNoBroadcastIntentReceived();
+    }
+
+    @Test
+    public void testReturnStatsFromSnapshotSinceBoot() throws Exception {
+        final NetworkStatsRecorder uidRecorder = mDeps.getRecorder(PREFIX_UID);
+        final NetworkStatsRecorder uidTagRecorder = mDeps.getRecorder(PREFIX_UID_TAG);
+        final InOrder inOrder = inOrder(uidRecorder, uidTagRecorder);
+
+        // Device boots at t=TEST_START
+        mockDefaultSettings();
+        NetworkStateSnapshot[] states = new NetworkStateSnapshot[] {buildWifiState()};
+        mockNetworkStatsSummary(buildEmptyStats());
+        mockNetworkStatsUidDetail(buildEmptyStats());
+        mService.notifyNetworkStatus(NETWORKS_WIFI, states, getActiveIface(states),
+                new UnderlyingNetworkInfo[0]);
+        forcePollAndWaitForIdle();
+
+        // Add some data at t=TEST_START+1000
+        incrementCurrentTime(1000L);
+        mockNetworkStatsUidDetail(new NetworkStats(getElapsedRealtime(), 2)
+                .insertEntry(TEST_IFACE, UID_RED, SET_DEFAULT, TAG_NONE, 3000L, 30L, 6000L, 60L, 0L)
+                .insertEntry(TEST_IFACE, UID_RED, SET_DEFAULT, 0xF00D, 1000L, 10L, 1000L, 10L, 0L));
+        forcePollAndWaitForIdle();
+
+        // Query within the "since boot" snapshot duration.
+        final long queryStart = TEST_START;
+        final long queryEnd = Long.MAX_VALUE;
+        NetworkStats stats = mSession.getSummaryForAllUid(sTemplateWifi, queryStart, queryEnd,
+                /* includeTags= */true);
+        assertEquals(2, stats.size());
+        assertValues(stats, IFACE_ALL, UID_RED, SET_DEFAULT, TAG_NONE, METERED_NO, ROAMING_NO,
+                DEFAULT_NETWORK_YES, 3000L, 30L, 6000L, 60L, 0);
+        assertValues(stats, IFACE_ALL, UID_RED, SET_DEFAULT, 0xF00D, METERED_NO, ROAMING_NO,
+                DEFAULT_NETWORK_YES, 1000L, 10L, 1000L, 10L, 0);
+
+        // No load from disk should have happened
+        inOrder.verify(uidRecorder, never()).getOrLoadCompleteLocked();
+        inOrder.verify(uidTagRecorder, never()).getOrLoadCompleteLocked();
+
+        // Then query a period starting before boot, the whole collection should be loaded
+        final long earlyStart = TEST_START - 1L;
+        stats = mSession.getSummaryForAllUid(sTemplateWifi, earlyStart, queryEnd, true);
+        inOrder.verify(uidRecorder, times(1)).getOrLoadCompleteLocked();
+        inOrder.verify(uidTagRecorder, times(1)).getOrLoadCompleteLocked();
+        assertEquals(2, stats.size());
+        assertValues(stats, IFACE_ALL, UID_RED, SET_DEFAULT, TAG_NONE, METERED_NO, ROAMING_NO,
+                DEFAULT_NETWORK_YES, 3000L, 30L, 6000L, 60L, 0);
+        assertValues(stats, IFACE_ALL, UID_RED, SET_DEFAULT, 0xF00D, METERED_NO, ROAMING_NO,
+                DEFAULT_NETWORK_YES, 1000L, 10L, 1000L, 10L, 0);
+
+        // Even if data rotates, already queried data should still be returned without reloading
+        incrementCurrentTime(mSettings.getUidConfig().deleteAgeMillis + 1);
+        uidTagRecorder.maybePersistLocked(currentTimeMillis());
+        stats = mSession.getSummaryForAllUid(sTemplateWifi, queryStart, queryEnd, true);
+        assertEquals(2, stats.size());
+        inOrder.verify(uidRecorder, never()).getOrLoadCompleteLocked();
+        inOrder.verify(uidTagRecorder, never()).getOrLoadCompleteLocked();
     }
 }

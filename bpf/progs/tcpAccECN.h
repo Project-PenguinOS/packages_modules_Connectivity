@@ -19,12 +19,10 @@
  *              Includes separate handling for Ethernet and raw IP packets.
  */
 
-DEFINE_BPF_MAP(l4s_conn_counter, ARRAY, uint32_t, uint32_t, 1)
-DEFINE_BPF_SK_STORAGE(sk_l4s_storage, L4SStorage)
+DEFINE_BPF_MAP_NO_NETD(l4s_conn_counter, ARRAY, uint32_t, uint32_t, 1)
 DEFINE_BPF_MAP_NO_NETD(l4s_accecn_enabled_map, ARRAY, uint32_t, bool, 1)
 
-static inline __attribute__((always_inline)) int
-find_accecn_options_offset(struct __sk_buff *skb, uint8_t offset) {
+function int find_accecn_options_offset(struct __sk_buff *skb, uint8_t offset) {
     int ret;
     uint8_t opt_off;
     struct tcphdr tcp_header = {0};
@@ -60,8 +58,7 @@ find_accecn_options_offset(struct __sk_buff *skb, uint8_t offset) {
     return -1;
 }
 
-static inline __attribute__((always_inline)) int
-parse_tcp_mss_option(struct __sk_buff *skb, uint8_t offset) {
+function int parse_tcp_mss_option(struct __sk_buff *skb, uint8_t offset) {
     int ret;
     uint8_t opt_off;
     struct tcphdr tcp_header = {0};
@@ -99,14 +96,31 @@ parse_tcp_mss_option(struct __sk_buff *skb, uint8_t offset) {
     return -1;
 }
 
-static inline __attribute__((always_inline)) int
-is_l4s_enabled() {
+function int is_l4s_enabled() {
     uint32_t status_key = 0;
     bool *l4s_status_ptr = bpf_l4s_accecn_enabled_map_lookup_elem(&status_key);
     return l4s_status_ptr && *l4s_status_ptr;
 }
 
-DEFINE_BPF_PROG_KVER(sockops, accecn_option, AID_SYSTEM, 6_1)
+typedef struct {
+    __u8 u8[3];
+} be24;
+STRUCT_SIZE(be24, 3);
+
+function void assign_be24(be24 * const v, unsigned x) {
+    v->u8[2] = x; x >>= 8;
+    v->u8[1] = x; x >>= 8;
+    v->u8[0] = x;
+}
+
+typedef struct {
+    __u8 kind;
+    __u8 length;
+    be24 e1b, ceb, e0b;
+} tcp_accecn_option;
+STRUCT_SIZE(tcp_accecn_option, 1 + 1 + 3 * 3); // 11
+
+DEFINE_BPF_PROG_KVER_RANGE(sockops, accecn_option, AID_SYSTEM, 6_1, 6_18)
 (struct bpf_sock_ops *skops) {
     if (!is_l4s_enabled()) return 1;
     if (!skops->sk) {
@@ -123,47 +137,30 @@ DEFINE_BPF_PROG_KVER(sockops, accecn_option, AID_SYSTEM, 6_1)
             break;
         case BPF_SOCK_OPS_HDR_OPT_LEN_CB:
         {
-            if (skops->skb_tcp_flags & TCP_FLAG8_SYN) {
-                break;
-            }
+            if (skops->skb_tcp_flags & TCP_FLAG8_SYN) break;
 
-            L4SStorage* st = bpf_sk_l4s_storage_get(skops->sk, 0, 0);
-            if (!st || !st->byte_inited) {
-                break;
-            }
-            bpf_reserve_hdr_opt(skops, 11, 0);
+            SkStorageValue* sks = bpf_sk_storage_get(skops->sk, 0, 0);
+            if (!sks || !sks->l4s.byte_inited) break;
+            bpf_reserve_hdr_opt(skops, sizeof(tcp_accecn_option), 0);
             break;
         }
         case BPF_SOCK_OPS_WRITE_HDR_OPT_CB:
         {
-            if (skops->skb_tcp_flags & TCP_FLAG8_SYN) {
-                break;
-            }
+            if (skops->skb_tcp_flags & TCP_FLAG8_SYN) break;
 
-            L4SStorage* st = bpf_sk_l4s_storage_get(skops->sk, 0, 0);
-            if (!st || !st->byte_inited) {
-                break;
-            }
+            SkStorageValue* sks = bpf_sk_storage_get(skops->sk, 0, 0);
+            if (!sks || !sks->l4s.byte_inited) break;
 
-            struct {
-                __u8 kind;
-                __u8 length;
-                __u8 data[9];
-            } __attribute__((packed)) tcp_accecn_option = {
+            tcp_accecn_option opt = {
                 .kind = 174,
-                .length = 11,
-                .data = {0},
+                .length = sizeof(opt),
             };
 
-            __u32 e0b_val = htonl((__u32)(st->e0b & 0x0000000000FFFFFF)) >> 8;
-            __u32 ceb_val = htonl((__u32)(st->ceb & 0x0000000000FFFFFF)) >> 8;
-            __u32 e1b_val = htonl((__u32)(st->e1b & 0x0000000000FFFFFF)) >> 8;
+            assign_be24(&opt.e1b, sks->l4s.e1b);
+            assign_be24(&opt.ceb, sks->l4s.ceb);
+            assign_be24(&opt.e0b, sks->l4s.e0b);
 
-            __builtin_memcpy(&tcp_accecn_option.data[0], &e1b_val, 3);
-            __builtin_memcpy(&tcp_accecn_option.data[3], &ceb_val, 3);
-            __builtin_memcpy(&tcp_accecn_option.data[6], &e0b_val, 3);
-
-            bpf_store_hdr_opt(skops, &tcp_accecn_option, sizeof tcp_accecn_option, 0);
+            bpf_store_hdr_opt(skops, &opt, sizeof(opt), 0);
             break;
         }
         default:
@@ -172,7 +169,7 @@ DEFINE_BPF_PROG_KVER(sockops, accecn_option, AID_SYSTEM, 6_1)
     return 1;
 }
 
-DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, AID_SYSTEM, 6_1)
+DEFINE_BPF_PROG_KVER_RANGE(schedcls, egress_accecn_eth, AID_SYSTEM, 6_1, 6_18)
 (struct __sk_buff* skb) {
     if (!is_l4s_enabled()) return TC_ACT_PIPE;
 
@@ -241,11 +238,11 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, AID_SYSTEM, 6_1)
         return TC_ACT_PIPE;
     }
 
-    L4SStorage* st = bpf_sk_l4s_storage_get(sk, 0 , 0);
-    if (st) {
-        if (st->ce_inited) {
+    SkStorageValue* sks = bpf_sk_storage_get(sk, 0 , 0);
+    if (sks) {
+        if (sks->l4s.ce_inited) {
             __u16 cur_flags = load_half(skb, tcp_flags_offset);
-            __u16 new_flags = htons((cur_flags & 0xfe3f) | ((st->ce_count & 7) << 6));
+            __u16 new_flags = htons((cur_flags & 0xfe3f) | ((sks->l4s.ce_count & 7) << 6));
 
             bpf_l4_csum_replace(skb, tcp_csum_offset, htons(cur_flags), new_flags, 2);
             bpf_skb_store_bytes(skb, tcp_flags_offset, &new_flags, sizeof(new_flags), 0);
@@ -263,7 +260,7 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_eth, AID_SYSTEM, 6_1)
     return TC_ACT_PIPE;
 }
 
-static __always_inline inline int update_accecn_counter(struct __sk_buff* skb) {
+procedure int update_accecn_counter(struct __sk_buff* skb) {
     if (!is_l4s_enabled()) return 1;
     if (!skb->sk) {
         return 1;
@@ -336,16 +333,14 @@ static __always_inline inline int update_accecn_counter(struct __sk_buff* skb) {
         __u16 ace = (ntohs(flags) & 0x01c0) >> 6;
 
         if (ace == 0b010 || ace == 0b011 || ace == 0b100 || ace == 0b110) {
-            L4SStorage* st = bpf_sk_l4s_storage_get(sk, 0, BPF_SK_STORAGE_GET_F_CREATE);
-            if (!st) {
-                return 1;
-            }
+            SkStorageValue* sks = bpf_sk_storage_get(sk, 0, 0);
+            if (!sks) return 1;
 
-            st->ce_count = (ip_ecn == 0b11) ? 0b110 : 0b101;
-            st->ce_inited = 1;
+            sks->l4s.ce_count = (ip_ecn == 0b11) ? 0b110 : 0b101;
+            sks->l4s.ce_inited = 1;
 
             int mss_value = parse_tcp_mss_option(skb, hdr_len);
-            if (mss_value > 0) st->mss = (__u16)mss_value;
+            if (mss_value > 0) sks->l4s.mss = (__u16)mss_value;
 
             uint32_t conn_key = 0;
             uint32_t* conn_count = bpf_l4s_conn_counter_lookup_elem(&conn_key);
@@ -356,13 +351,13 @@ static __always_inline inline int update_accecn_counter(struct __sk_buff* skb) {
                 __sync_fetch_and_add(conn_count, oneConnection);
             }
 
-            if (!st->byte_inited) {
+            if (!sks->l4s.byte_inited) {
                 int is_accecn = find_accecn_options_offset(skb, hdr_len);
                 if (is_accecn != -1) {
-                    st->byte_inited = 1;
-                    st->e0b = 1;
-                    st->e1b = 1;
-                    st->ceb = 0;
+                    sks->l4s.byte_inited = 1;
+                    sks->l4s.e0b = 1;
+                    sks->l4s.e1b = 1;
+                    sks->l4s.ceb = 0;
                 }
             }
 
@@ -372,40 +367,35 @@ static __always_inline inline int update_accecn_counter(struct __sk_buff* skb) {
         return 1;
     }
 
-    L4SStorage* st = bpf_sk_l4s_storage_get(sk, 0, 0);
-    if (!st) {
-        return 1;
-    }
+    SkStorageValue* sks = bpf_sk_storage_get(sk, 0, 0);
+    if (!sks) return 1;
 
-    if (tcph->fin || tcph->rst) {
-        bpf_sk_l4s_storage_delete(sk);
-        return 1;
-    }
+    if (tcph->fin || tcph->rst) return 1;
 
     if (ip_ecn == 0b11) {
         __u32 ce_packets = 1;
-        __u16 mss = st->mss;
+        __u16 mss = sks->l4s.mss;
         if (mss && mss != 0xFFFF) {
             ce_packets = (__u32)(payload_size / mss) + 1;
         }
-        __sync_fetch_and_add(&st->ce_count, ce_packets);
+        __sync_fetch_and_add(&sks->l4s.ce_count, ce_packets);
     }
 
-    if (st->byte_inited) {
+    if (sks->l4s.byte_inited) {
         if (ip_ecn == 0b11) {
-            __sync_fetch_and_add(&st->ceb, payload_size);
+            __sync_fetch_and_add(&sks->l4s.ceb, payload_size);
         }
         else if (ip_ecn == 0b10) {
-           __sync_fetch_and_add(&st->e0b, payload_size);
+           __sync_fetch_and_add(&sks->l4s.e0b, payload_size);
         }
         else if (ip_ecn == 0b01) {
-           __sync_fetch_and_add(&st->e1b, payload_size);
+           __sync_fetch_and_add(&sks->l4s.e1b, payload_size);
         }
     }
     return 1;
 }
 
-DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, AID_SYSTEM, 6_1)
+DEFINE_BPF_PROG_KVER_RANGE(schedcls, egress_accecn_rawip, AID_SYSTEM, 6_1, 6_18)
 (struct __sk_buff* skb) {
     if (!is_l4s_enabled()) return TC_ACT_PIPE;
 
@@ -474,11 +464,11 @@ DEFINE_BPF_PROG_KVER(schedcls, egress_accecn_rawip, AID_SYSTEM, 6_1)
         return TC_ACT_PIPE;
     }
 
-    L4SStorage* st = bpf_sk_l4s_storage_get(sk, 0 , 0);
-    if (st) {
-        if (st->ce_inited) {
+    SkStorageValue* sks = bpf_sk_storage_get(sk, 0 , 0);
+    if (sks) {
+        if (sks->l4s.ce_inited) {
             __u16 cur_flags = load_half(skb, tcp_flags_offset);
-            __u16 new_flags = htons((cur_flags & 0xfe3f) | ((st->ce_count & 7) << 6));
+            __u16 new_flags = htons((cur_flags & 0xfe3f) | ((sks->l4s.ce_count & 7) << 6));
 
             bpf_l4_csum_replace(skb, tcp_csum_offset, htons(cur_flags), new_flags, 2);
             bpf_skb_store_bytes(skb, tcp_flags_offset, &new_flags, sizeof(new_flags), 0);

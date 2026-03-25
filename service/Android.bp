@@ -221,6 +221,9 @@ java_library {
         "service-connectivity-resources-aidl",
         "service-connectivity-stats-protos",
         "jsr305",
+        "commercial-common",
+        "MultiPacProcessor-api",
+        "MultiProxyHandler-api",
     ],
     apex_available: ["com.android.tethering"],
     lint: {

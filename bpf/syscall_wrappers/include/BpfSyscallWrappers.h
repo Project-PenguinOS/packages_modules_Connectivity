@@ -40,7 +40,7 @@ enum class BuildType {
 };
 
 static inline BuildType getBuildType() {
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.build.type", value) < 1)
         return BuildType::UNKNOWN;
     if (!strcmp(value, "eng")) return BuildType::ENG;
@@ -210,7 +210,7 @@ inline int bpfFdGet(const char* pathname, uint32_t flag) {
 int bpfGetFdMapId(const borrowed_fd& map_fd);
 
 static inline bool is_cuttlefish() {
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.product.board", value) < 1) return false;
     return !strcmp(value, "cutf");
 }

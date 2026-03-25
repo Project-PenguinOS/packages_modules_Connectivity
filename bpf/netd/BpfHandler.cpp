@@ -21,10 +21,10 @@
 #include <linux/bpf.h>
 #include <inttypes.h>
 
+#include <android-base/result.h>
 #include <android-base/unique_fd.h>
 #include <bpf/WaitForProgsLoaded.h>
 #include <log/log.h>
-#include <netdutils/UidConstants.h>
 #include <private/android_filesystem_config.h>
 
 #include "BpfSyscallWrappers.h"
@@ -34,6 +34,8 @@
 namespace android {
 namespace net {
 
+using base::Error;
+using base::Result;
 using base::unique_fd;
 using base::WaitForProperty;
 using bpf::getSocketCookie;
@@ -46,8 +48,6 @@ using bpf::isAtLeast26Q2;
 using bpf::isUser;
 using bpf::queryProgram;
 using bpf::retrieveProgram;
-using netdutils::Status;
-using netdutils::statusFromErrno;
 
 constexpr int PER_UID_STATS_ENTRIES_LIMIT = 500;
 // At most 90% of the stats map may be used by tagged traffic entries. This ensures
@@ -59,24 +59,27 @@ constexpr int TOTAL_UID_STATS_ENTRIES_LIMIT = STATS_MAP_SIZE * 0.9;
 static_assert(STATS_MAP_SIZE - TOTAL_UID_STATS_ENTRIES_LIMIT > 100,
               "The limit for stats map is to high, stats data may be lost due to overflow");
 
-static Status attachProgramToCgroup(const char* programPath, const unique_fd& cgroupFd,
-                                    bpf_attach_type type) {
+#define RETURN_IF_NOT_OK(expr) \
+    if (auto _res = (expr); !_res.ok()) return _res.error();
+
+static Result<void> attachProgramToCgroup(const char* programPath, const unique_fd& cgroupFd,
+                                          bpf_attach_type type) {
     unique_fd cgroupProg(retrieveProgram(programPath));
     if (!cgroupProg.ok()) {
-        return statusFromErrno(errno, fmt::format("Failed to get program from {}", programPath));
+        return Error(errno) << "Failed to get program from " << programPath;
     }
     if (bpf::attachProgram(type, cgroupProg, cgroupFd)) {
-        return statusFromErrno(errno, fmt::format("Program {} attach failed", programPath));
+        return Error(errno) << "Program " << programPath << " attach failed";
     }
-    return netdutils::status::ok;
+    return {};
 }
 
-static Status checkProgramAccessible(const char* programPath) {
+static Result<void> checkProgramAccessible(const char* programPath) {
     unique_fd prog(retrieveProgram(programPath));
     if (!prog.ok()) {
-        return statusFromErrno(errno, fmt::format("Failed to get program from {}", programPath));
+        return Error(errno) << "Failed to get program from " << programPath;
     }
-    return netdutils::status::ok;
+    return {};
 }
 
 static void getsockoptTest() {
@@ -103,39 +106,39 @@ static void getsockoptTest() {
     if (errno != expected) abort();
 }
 
-static Status initPrograms(const char* cg2_path) {
-    if (!cg2_path) return Status("cg2_path is NULL");
+static Result<void> initPrograms(const char* cg2_path) {
+    if (!cg2_path) return Error() << "cg2_path is NULL";
 
     // This code was mainlined in T, so this should be trivially satisfied.
-    if (!isAtLeastT) return Status("S- platform is unsupported");
+    if (!isAtLeastT) return Error() << "S- platform is unsupported";
 
     // S requires eBPF support which was only added in 4.9, so this should be satisfied.
     if (!isAtLeastKernelVersion(4, 9)) {
-        return Status("kernel version < 4.9.0 is unsupported");
+        return Error() << "kernel version < 4.9.0 is unsupported";
     }
 
     // U bumps the kernel requirement up to 4.14
     if (isAtLeastU && !isAtLeastKernelVersion(4, 14)) {
-        return Status("U+ platform with kernel version < 4.14.0 is unsupported");
+        return Error() << "U+ platform with kernel version < 4.14.0 is unsupported";
     }
 
     // U mandates this mount point (though it should also be the case on T)
     if (isAtLeastU && !!strcmp(cg2_path, "/sys/fs/cgroup")) {
-        return Status("U+ platform with cg2_path != /sys/fs/cgroup is unsupported");
+        return Error() << "U+ platform with cg2_path != /sys/fs/cgroup is unsupported";
     }
 
     // V bumps the kernel requirement up to 4.19
     if (isAtLeastV && !isAtLeastKernelVersion(4, 19)) {
-        return Status("V+ platform with kernel version < 4.19.0 is unsupported");
+        return Error() << "V+ platform with kernel version < 4.19.0 is unsupported";
     }
 
     // 25Q2 bumps the kernel requirement up to 5.4
     if (isAtLeast25Q2 && !isAtLeastKernelVersion(5, 4)) {
-        return Status("25Q2+ platform with kernel version < 5.4.0 is unsupported");
+        return Error() << "25Q2+ platform with kernel version < 5.4.0 is unsupported";
     }
 
     unique_fd cg_fd(open(cg2_path, O_DIRECTORY | O_RDONLY | O_CLOEXEC));
-    if (!cg_fd.ok()) return statusFromErrno(errno, "Opening cgroup dir failed");
+    if (!cg_fd.ok()) return Error(errno) << "Opening cgroup dir failed";
 
     RETURN_IF_NOT_OK(checkProgramAccessible(XT_BPF_ALLOWLIST_PROG_PATH));
     RETURN_IF_NOT_OK(checkProgramAccessible(XT_BPF_DENYLIST_PROG_PATH));
@@ -187,7 +190,7 @@ static Status initPrograms(const char* cg2_path) {
     }
 
     if (isAtLeast26Q2) {
-        if (isAtLeastKernelVersion(6, 1)) {
+        if (isAtLeastKernelVersion(6, 1) && !isAtLeastKernelVersion(6, 18)) {
             RETURN_IF_NOT_OK(attachProgramToCgroup(L4S_OPTIONS_SOCKOPS_PROG_PATH,
                                         cg_fd, BPF_CGROUP_SOCK_OPS));
         }
@@ -231,12 +234,12 @@ static Status initPrograms(const char* cg2_path) {
     }
 
     if (isAtLeast26Q2) {
-        if (isAtLeastKernelVersion(6, 1)) {
+        if (isAtLeastKernelVersion(6, 1) && !isAtLeastKernelVersion(6, 18)) {
             if (queryProgram(cg_fd, BPF_CGROUP_SOCK_OPS) <= 0) abort();
         }
     }
 
-    return netdutils::status::ok;
+    return {};
 }
 
 BpfHandler::BpfHandler()
@@ -299,7 +302,7 @@ static inline void waitForBpf() {
     ALOGI("BPF programs are loaded");
 }
 
-Status BpfHandler::init(const char* cg2_path) {
+Result<void> BpfHandler::init(const char* cg2_path) {
     // This wait is effectively a no-op on U QPR3+ devices (as netd starts
     // *after* the synchronous 'exec_start bpfloader' which calls NetBpfLoad)
     // but checking for U QPR3 is hard.
@@ -324,18 +327,18 @@ Status BpfHandler::init(const char* cg2_path) {
         // so this should be a no-op, and thus just succeed.
         // make sure it isn't lowered in platform netd.rc...
         if (setrlimit(RLIMIT_MEMLOCK, &limit))
-            return statusFromErrno(errno, "Failed to set 1GiB RLIMIT_MEMLOCK");
+            return Error(errno) << "Failed to set 1GiB RLIMIT_MEMLOCK";
 
         // Make sure netd can create & write maps.  sepolicy is V+, but enough to enforce on 25Q2+
         int key = 1;
         int value = 123;
         unique_fd map(bpf::createMap(BPF_MAP_TYPE_ARRAY, sizeof(key), sizeof(value), 2, 0));
-        if (!map.ok()) return statusFromErrno(errno, fmt::format("map create failed"));
+        if (!map.ok()) return Error(errno) << "map create failed";
         int rv = bpf::writeToMapEntry(map, &key, &value, BPF_ANY);
-        if (rv) return statusFromErrno(errno, fmt::format("map write failed (rv={})", rv));
+        if (rv) return Error(errno) << "map write failed (rv=" << rv << ")";
     }
 
-    return netdutils::status::ok;
+    return {};
 }
 
 static void mapLockTest(void) {
@@ -359,7 +362,7 @@ static void mapLockTest(void) {
     unique_fd fd9(bpf::mapRetrieveWO(m1));          if (!fd9.ok()) abort();  // grabs exclusive lock
 }
 
-Status BpfHandler::initMaps() {
+Result<void> BpfHandler::initMaps() {
     // bpfLock() requires bpfGetFdMapId which is only available on 4.14+ kernels.
     if (bpf::lockingEnabled && isAtLeastKernelVersion(4, 14)) mapLockTest();
 
@@ -377,13 +380,13 @@ Status BpfHandler::initMaps() {
     const uint32_t my_pid = getpid();
     RETURN_IF_NOT_OK(mNetdPidMap.writeValue(zero, my_pid, BPF_ANY));
 
-    return netdutils::status::ok;
+    return {};
 }
 
 bool BpfHandler::hasUpdateDeviceStatsPermission(uid_t uid) {
     // This implementation is the same logic as method ActivityManager#checkComponentPermission.
-    // It implies that the real uid can never be the same as PER_USER_RANGE.
-    uint32_t appId = uid % PER_USER_RANGE;
+    // It implies that real uid can never be same as AID_USER_OFFSET == PER_USER_RANGE == 100000
+    uint32_t appId = uid % AID_USER_OFFSET;
     uint32_t mapKey = 0;
     auto isUidMigrationEnabled = mUidMigrationEnabledMap.readValue(mapKey);
     if (isUidMigrationEnabled.ok() && isUidMigrationEnabled.value()) {
@@ -458,7 +461,7 @@ int BpfHandler::tagSocket(int sockFd, uint32_t tag, uid_t chargeUid, uid_t realU
     auto configuration = mConfigurationMap.readValue(CURRENT_STATS_MAP_CONFIGURATION_KEY);
     if (!configuration.ok()) {
         ALOGE("Failed to get current configuration: %s",
-              strerror(configuration.error().code()));
+              configuration.error().message().c_str());
         return -configuration.error().code();
     }
     if (configuration.value() != SELECT_MAP_A && configuration.value() != SELECT_MAP_B) {
@@ -476,7 +479,7 @@ int BpfHandler::tagSocket(int sockFd, uint32_t tag, uid_t chargeUid, uid_t realU
     // the request to prevent the map from overflow. Note though that it isn't really
     // safe here to iterate over the map since it might be modified by the system server,
     // which might toggle the live stats map and clean it.
-    base::Result<void> res = currentMap.forAll(
+    Result<void> res = currentMap.forAll(
         [chargeUid, &totalEntryCount, &perUidEntryCount](const StatsKey& key) {
             if (key.uid == chargeUid) perUidEntryCount++;
             totalEntryCount++;
@@ -484,7 +487,7 @@ int BpfHandler::tagSocket(int sockFd, uint32_t tag, uid_t chargeUid, uid_t realU
     );
     if (!res.ok()) {
         ALOGE("Failed to count the stats entry in map: %s",
-              strerror(res.error().code()));
+              res.error().message().c_str());
         return -res.error().code();
     }
 
@@ -503,7 +506,7 @@ int BpfHandler::tagSocket(int sockFd, uint32_t tag, uid_t chargeUid, uid_t realU
     UidTagValue newKey = {.uid = (uint32_t)chargeUid, .tag = tag};
     res = mCookieTagMap.writeValue(sock_cookie, newKey, BPF_ANY);
     if (!res.ok()) {
-        ALOGE("Failed to tag the socket: %s", strerror(res.error().code()));
+        ALOGE("Failed to tag the socket: %s", res.error().message().c_str());
         return -res.error().code();
     }
     ALOGV("Socket with cookie %" PRIu64 " tagged successfully with tag %" PRIu32 " uid %u "
@@ -516,10 +519,10 @@ int BpfHandler::untagSocket(int sockFd) {
     if (!sock_cookie) return -errno;
 
     if (!mCookieTagMap.isValid()) return -EPERM;
-    base::Result<void> res = mCookieTagMap.deleteValue(sock_cookie);
+    Result<void> res = mCookieTagMap.deleteValue(sock_cookie);
     if (!res.ok()) {
         const int err = res.error().code();
-        if (err != ENOENT) ALOGE("Failed to untag socket: %s", strerror(err));
+        if (err != ENOENT) ALOGE("Failed to untag socket: %s", res.error().message().c_str());
         return -err;
     }
     ALOGV("Socket with cookie %" PRIu64 " untagged successfully.", sock_cookie);

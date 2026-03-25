@@ -377,6 +377,21 @@ public class MdnsServiceInfo implements Parcelable {
                 + ", capabilities: " + mCreationCapabilitiesBits;
     }
 
+    /**
+     * Shorter toString method to use for logging in ServiceTypeClient.
+     *
+     * <p>Per-ServiceTypeClient attributes (service type, network, interface,
+     * creation capabilities of the socket) are not logged, and TXT entries are omitted.
+     */
+    public String toShortString() {
+        return serviceInstanceName
+                + ", sub: " + TextUtils.join(",", subtypes)
+                + ", ip4: " + ipv4Addresses
+                + ", ip6: " + ipv6Addresses
+                + ", port: " + port
+                + ", exp: " + expirationTime;
+    }
+
 
     /** Represents a DNS TXT key-value pair defined by RFC 6763. */
     public static final class TextEntry implements Parcelable {
