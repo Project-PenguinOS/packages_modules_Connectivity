@@ -18,7 +18,10 @@ package com.android.server.connectivity;
 
 import static android.os.Process.INVALID_UID;
 
-import static com.android.server.connectivity.ConnectivityFlags.CONSTRAINED_DATA_SATELLITE_OPTIN;
+import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_NONE;
+import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_OTT;
+import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_OPT_IN;
+import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_ROLE_SMS;
 
 import android.Manifest;
 import android.annotation.NonNull;
@@ -38,10 +41,10 @@ import android.text.TextUtils;
 import android.util.ArraySet;
 import android.util.SparseArray;
 import android.util.SparseLongArray;
+
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.net.module.util.CollectionUtils;
-import com.android.net.module.util.DeviceConfigUtils;
 import com.android.net.module.util.HandlerUtils;
 import com.android.net.module.util.SharedLog;
 import com.android.server.ConnectivityStatsLog;
@@ -53,11 +56,6 @@ import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 import javax.annotation.CheckReturnValue;
-
-import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_NONE;
-import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_ROLE_SMS;
-import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_OPT_IN;
-import static com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_OTT;
 
 
 /**
@@ -85,7 +83,6 @@ public class AppOptInDefaultNetworkController {
     // The callback is a Consumer that accepts a List of AppOptInDefaultNetworkPolicy objects.
     private final Consumer<List<AppOptInDefaultNetworkPolicy>> mCallback;
     private final Handler mConnectivityServiceHandler;
-    private final boolean mSupportConstrainedDataSatelliteOptIn;
     private final SharedLog mLog = new SharedLog(MAX_LOG_ENTRIES, TAG);
 
     // At this sparseArray, Key is userId and values are uids of SMS apps that are allowed
@@ -167,12 +164,6 @@ public class AppOptInDefaultNetworkController {
             mRoleManager.addOnRoleHoldersChangedListenerAsUser(executor, listener, user);
         }
 
-        /** Return whether constrained data satellite opt-in is supported. */
-        public boolean supportConstrainedDataSatelliteOptIn(Context context) {
-            return DeviceConfigUtils.isTetheringFeatureNotChickenedOut(context,
-                    CONSTRAINED_DATA_SATELLITE_OPTIN);
-        }
-
         /**
          * Returns the current elapsed real time in milliseconds.
          */
@@ -201,7 +192,6 @@ public class AppOptInDefaultNetworkController {
         mDefaultMessageRoleListener = new DefaultMessageRoleListener();
         mCallback = callback;
         mConnectivityServiceHandler = connectivityServiceInternalHandler;
-        mSupportConstrainedDataSatelliteOptIn = mDeps.supportConstrainedDataSatelliteOptIn(c);
     }
 
     @NonNull
@@ -370,15 +360,13 @@ public class AppOptInDefaultNetworkController {
         final boolean roleSmsUidsChanged = updateSatelliteRoleSmsUids(userHandle);
 
         boolean optInUidsChanged = false;
-        if (mSupportConstrainedDataSatelliteOptIn) {
-            final Set<Integer> satelliteDataOptInUidsForUser =
-                    getSatelliteDataOptInUidsForUser(pmForUser, apps);
-            if (satelliteDataOptInUidsForUser.size() > 0) {
-                mLog.i("Add SatelliteDataOptInUids for user " + userHandle + ": "
-                        + satelliteDataOptInUidsForUser);
-                mSatelliteDataOptInUids.addAll(satelliteDataOptInUidsForUser);
-                optInUidsChanged = true;
-            }
+        final Set<Integer> satelliteDataOptInUidsForUser =
+                getSatelliteDataOptInUidsForUser(pmForUser, apps);
+        if (satelliteDataOptInUidsForUser.size() > 0) {
+            mLog.i("Add SatelliteDataOptInUids for user " + userHandle + ": "
+                    + satelliteDataOptInUidsForUser);
+            mSatelliteDataOptInUids.addAll(satelliteDataOptInUidsForUser);
+            optInUidsChanged = true;
         }
         if (roleSmsUidsChanged || optInUidsChanged) {
             reportAppOptInDefaultNetworkPolicies();
@@ -394,13 +382,8 @@ public class AppOptInDefaultNetworkController {
         HandlerUtils.ensureRunningOnHandlerThread(mConnectivityServiceHandler);
         final boolean smsRoleUidsChanged =
                 updateSatelliteRoleSmsUidListOnUserRemoval(userHandle.getIdentifier());
-        final boolean satelliteOptInUidsChanged;
-        if (mSupportConstrainedDataSatelliteOptIn) {
-            satelliteOptInUidsChanged =
-                    removeSatelliteDataOptInUidsForUser(userHandle.getIdentifier());
-        } else {
-            satelliteOptInUidsChanged = false;
-        }
+        final boolean satelliteOptInUidsChanged =
+                removeSatelliteDataOptInUidsForUser(userHandle.getIdentifier());
         if (smsRoleUidsChanged || satelliteOptInUidsChanged) {
             reportAppOptInDefaultNetworkPolicies();
         }
@@ -414,7 +397,6 @@ public class AppOptInDefaultNetworkController {
      */
     public void onPackageAdded(@NonNull final String packageName, final int uid) {
         HandlerUtils.ensureRunningOnHandlerThread(mConnectivityServiceHandler);
-        if (!mSupportConstrainedDataSatelliteOptIn) return;
         if (addSatelliteDataOptInUid(getPackageManagerForUid(uid), packageName, uid)) {
             reportAppOptInDefaultNetworkPolicies();
         }
@@ -423,8 +405,7 @@ public class AppOptInDefaultNetworkController {
     @CheckReturnValue
     private boolean addSatelliteDataOptInUid(@NonNull final PackageManager pm,
             @NonNull final String packageName, final int uid) {
-        if (mSupportConstrainedDataSatelliteOptIn
-                && isSatelliteDataOptimizedApp(pm, packageName)) {
+        if (isSatelliteDataOptimizedApp(pm, packageName)) {
             mSatelliteDataOptInUids.add(uid);
             return true;
         }
@@ -438,7 +419,6 @@ public class AppOptInDefaultNetworkController {
      */
     public void onExternalApplicationsAvailable(String[] pkgList) {
         HandlerUtils.ensureRunningOnHandlerThread(mConnectivityServiceHandler);
-        if (!mSupportConstrainedDataSatelliteOptIn) return;
         if (CollectionUtils.isEmpty(pkgList)) {
             mLog.e("No available external application.");
             return;
@@ -478,7 +458,6 @@ public class AppOptInDefaultNetworkController {
      */
     public void onPackageRemoved(@NonNull final String packageName, final int uid) {
         HandlerUtils.ensureRunningOnHandlerThread(mConnectivityServiceHandler);
-        if (!mSupportConstrainedDataSatelliteOptIn) return;
 
         // Scan for all apps sharing the same uid.
         final PackageManager pmForUser = getPackageManagerForUid(uid);
@@ -605,8 +584,6 @@ public class AppOptInDefaultNetworkController {
         HandlerUtils.ensureRunningOnHandlerThread(mConnectivityServiceHandler);
         pw.println("AppOptInDefaultNetworkController:");
         pw.increaseIndent();
-        pw.println("SupportConstrainedDataSatelliteOptIn: "
-                + mSupportConstrainedDataSatelliteOptIn);
         pw.print("Role-Sms Uids: ");
         pw.print(mSatelliteRoleSmsUids);
         pw.println();

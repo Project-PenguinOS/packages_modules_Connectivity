@@ -366,6 +366,10 @@ public class NetworkAgentWrapper implements TestableNetworkCallback.HasNetwork {
         mNetworkAgent.unregister();
     }
 
+    public void unregisterAfterReplacement(int timeoutMs) {
+        mNetworkAgent.unregisterAfterReplacement(timeoutMs);
+    }
+
     /**
      * Destroy the network agent and stop its looper.
      *

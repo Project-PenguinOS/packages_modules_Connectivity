@@ -1,4 +1,5 @@
-// Copyright (C) 2021 The Android Open Source Project
+//
+// Copyright (C) 2026 The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,31 +12,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
 
 package {
     default_team: "trendy_team_fwk_core_networking",
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-cc_library_headers {
-    name: "bpf_syscall_wrappers",
-    vendor_available: true,
-    recovery_available: true,
-    host_supported: true,
-    native_bridge_supported: true,
-    export_include_dirs: ["include"],
-    cflags: [
-        "-Wall",
-        "-Werror",
+java_library {
+    name: "commercial-common",
+    min_sdk_version: "31",
+    sdk_version: "module_current",
+    srcs: [
+        "src/com/android/commercial/PacKey.aidl",
+        "src/com/android/commercial/PacKey.java",
     ],
-    sdk_version: "31",
-    min_sdk_version: "apex_inherit",
-    apex_available: [
-        "//apex_available:platform",
-        "com.android.art.debug",
-        "com.android.mediaprovider",
-        "com.android.os.statsd",
-        "com.android.tethering",
-        "com.android.uprobestats",
-    ],
+    static_libs: ["framework-annotations-lib"],
+    visibility: ["//packages/modules/Connectivity:__subpackages__"],
+    apex_available: ["com.android.tethering"],
 }

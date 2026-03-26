@@ -249,6 +249,14 @@ static long (*bpf_sk_storage_delete_unsafe) (const void* sk_storage,
         __uint(max_entries, ABSOLUTE(num_entries));  \
     } the_map SECTION(".maps");
 
+#define function static inline __always_inline
+
+#ifdef BPF_USE_FUNCS
+  #define procedure static
+#else
+  #define procedure static inline __always_inline
+#endif
+
 // Type safe macro to declare a ring buffer and related output functions.
 // Compatibility:
 // * BPF ring buffers are only available kernels 5.8 and above. Any program
@@ -268,23 +276,20 @@ static long (*bpf_sk_storage_delete_unsafe) (const void* sk_storage,
     _Static_assert(((size_bytes) & ((size_bytes) - 1)) == 0,                   \
                    "ring buffer size must be a power of two");                 \
                                                                                \
-    static inline __always_inline __unused long bpf_##the_map##_output(        \
-            const ValueType* v) {                                              \
+    function __unused long bpf_##the_map##_output(const ValueType* v) {        \
         return bpf_ringbuf_output_unsafe(&the_map, v, sizeof(*v), 0);          \
     }                                                                          \
                                                                                \
-    static inline __always_inline __unused                                     \
+    function __unused                                                          \
             ValueType* bpf_##the_map##_reserve() {                             \
         return bpf_ringbuf_reserve_unsafe(&the_map, sizeof(ValueType), 0);     \
     }                                                                          \
                                                                                \
-    static inline __always_inline __unused void bpf_##the_map##_discard(       \
-            const ValueType* v) {                                              \
+    function __unused void bpf_##the_map##_discard(const ValueType* v) {       \
         return bpf_ringbuf_discard_unsafe(v, 0);                               \
     }                                                                          \
                                                                                \
-    static inline __always_inline __unused void bpf_##the_map##_submit(        \
-            const ValueType* v) {                                              \
+    function __unused void bpf_##the_map##_submit(const ValueType* v) {        \
         bpf_ringbuf_submit_unsafe(v, 0);                                       \
     }
 
@@ -304,13 +309,12 @@ static long (*bpf_sk_storage_delete_unsafe) (const void* sk_storage,
     DEFINE_LIBBPF_MAP(the_map, SK_STORAGE, uint32_t, ValueType, 0, mapFlags);           \
     BPF_ANNOTATE_KV_PAIR(the_map, uint32_t, ValueType);                                 \
                                                                                         \
-    static inline __always_inline __unused ValueType* bpf_##the_map##_get(              \
+    function __unused ValueType* bpf_##the_map##_get(                                   \
             const struct bpf_sock* sk, const ValueType* v, unsigned long flags) {       \
         return bpf_sk_storage_get_unsafe(&the_map, sk, v, flags);                       \
     };                                                                                  \
                                                                                         \
-    static inline __always_inline __unused long bpf_##the_map##_delete(                 \
-            const struct bpf_sock* sk) {                                                \
+    function __unused long bpf_##the_map##_delete(const struct bpf_sock* sk) {          \
         return bpf_sk_storage_delete_unsafe(&the_map, sk);                              \
     };
 
@@ -348,24 +352,23 @@ static long (*bpf_sk_storage_delete_unsafe) (const void* sk_storage,
     _Static_assert(sizeof(ValueType) < 65536, "aosp/2370288 requires < 65536 byte values");      \
     BPF_ANNOTATE_KV_PAIR(the_map, KeyType, ValueType);                                           \
                                                                                                  \
-    static inline __always_inline __unused ValueType* bpf_##the_map##_lookup_elem(               \
-            const KeyType* k) {                                                                  \
+    function __unused ValueType* bpf_##the_map##_lookup_elem(const KeyType* k) {                 \
         return bpf_map_lookup_elem_unsafe(&the_map, k);                                          \
     };                                                                                           \
                                                                                                  \
-    static inline __always_inline __unused long bpf_##the_map##_update_elem(                     \
+    function __unused long bpf_##the_map##_update_elem(                                          \
             const KeyType* k, const ValueType* v, unsigned long flags) {                         \
         return bpf_map_update_elem_unsafe(&the_map, k, v, flags);                                \
     };                                                                                           \
                                                                                                  \
-    static inline __always_inline __unused long bpf_##the_map##_delete_elem(const KeyType* k) {  \
+    function __unused long bpf_##the_map##_delete_elem(const KeyType* k) {                       \
         return bpf_map_delete_elem_unsafe(&the_map, k);                                          \
     };                                                                                           \
                                                                                                  \
     typedef long (for_each_##the_map##_callback)(                                                \
         const void *map, const KeyType *k, ValueType *v, void *ctx);                             \
                                                                                                  \
-    static inline __always_inline __unused long bpf_for_each_##the_map##_elem(                   \
+    function __unused long bpf_for_each_##the_map##_elem(                                        \
             for_each_##the_map##_callback fn, void *ctx) {                                       \
         return bpf_for_each_map_elem_unsafe(&the_map, (callback)fn, ctx, 0);                     \
     };

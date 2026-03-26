@@ -36,7 +36,7 @@ namespace android {
 namespace bpf {
 
 static inline bool getIsCuttlefish() {
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.product.board", value) < 1) return false;
     return !strcmp(value, "cutf");
 }
@@ -44,7 +44,7 @@ static inline bool getIsCuttlefish() {
 const bool isCuttlefish = getIsCuttlefish();
 
 static inline bool getIsDesktop() {
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.boot.hardware", value) < 1) return false;
     return !strcmp(value, "android-desktop");
 }
@@ -58,7 +58,7 @@ static inline int get_api_level_full() {
     if (api_level < 36) return api_level * 100;  // 3x -> 3x00
 
     // Fetch and parse the 'sdk_full' system property.
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.build.version.sdk_full", value) < 1) abort();
     int major, minor;
     if (sscanf(value, "%d.%d", &major, &minor) != 2) abort();
