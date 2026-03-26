@@ -35,6 +35,7 @@ import android.os.ConditionVariable
 import android.os.OutcomeReceiver
 import android.os.ServiceSpecificException
 import androidx.test.filters.SmallTest
+import com.android.modules.utils.build.SdkLevel
 import com.android.testutils.DevSdkIgnoreRule
 import com.android.testutils.DevSdkIgnoreRule.IgnoreAfter
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
@@ -43,10 +44,13 @@ import com.android.testutils.TestableNetworkCallback
 import kotlin.test.DefaultAsserter.assertTrue
 import kotlin.test.assertEquals
 import kotlin.test.fail
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.anyInt
+import org.mockito.ArgumentMatchers.eq
+import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
@@ -64,6 +68,13 @@ class CSCaptivePortalAppTest : CSTest() {
     private val TEST_REDIRECT_URL = "http://example.com/firstPath"
 
     @get:Rule val ignoreRule = DevSdkIgnoreRule()
+
+    @Before
+    override fun setUp() {
+        super.setUp()
+        doReturn(100).`when`(interfaceTracker).removeInterface(eq(WIFI_IFACE))
+        doReturn(101).`when`(interfaceTracker).removeInterface(eq(ETHERNET_IFACE))
+    }
 
     private class FakeOutcomeReceiver<R, E : Throwable> : OutcomeReceiver<R, E> {
         private val mCv = ConditionVariable()
@@ -135,7 +146,7 @@ class CSCaptivePortalAppTest : CSTest() {
     @IgnoreUpTo(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun testCaptivePortalApp_SetDelegateUidForVAndAbove() {
         val (wifiAgent, captivePortal) = connectToWifiWithPortal()
-        val inOrder = inOrder(netd)
+        val inOrder = inOrder(netd, bpfNetMaps)
 
         // Add the UID and check that it's added to the bypass list.
         captivePortal.setDelegateUidAndAwait(APP2_UID)
@@ -144,6 +155,9 @@ class CSCaptivePortalAppTest : CSTest() {
             APP2_UID,
             wifiAgent.network.netId
         )
+        if (SdkLevel.isAtLeastB()) {
+            inOrder.verify(bpfNetMaps).addLocalNetUidAccess(eq(APP2_UID), eq(WIFI_IFACE))
+        }
 
         // Remove the UID and check that it's removed from the list.
         captivePortal.setDelegateUidAndAwait(android.os.Process.INVALID_UID)
@@ -152,6 +166,9 @@ class CSCaptivePortalAppTest : CSTest() {
             APP2_UID,
             wifiAgent.network.netId
         )
+        if (SdkLevel.isAtLeastB()) {
+            inOrder.verify(bpfNetMaps).removeLocalNetUidAccess(eq(APP2_UID), eq(WIFI_IFACE))
+        }
 
         // Add the UID again.
         captivePortal.setDelegateUidAndAwait(APP2_UID)
@@ -160,6 +177,9 @@ class CSCaptivePortalAppTest : CSTest() {
             APP2_UID,
             wifiAgent.network.netId
         )
+        if (SdkLevel.isAtLeastB()) {
+            inOrder.verify(bpfNetMaps).addLocalNetUidAccess(eq(APP2_UID), eq(WIFI_IFACE))
+        }
 
         // Add the UID again. Nothing should change.
         captivePortal.setDelegateUidAndAwait(APP2_UID)
@@ -173,6 +193,10 @@ class CSCaptivePortalAppTest : CSTest() {
             APP2_UID,
             wifiAgent.network.netId
         )
+        if (SdkLevel.isAtLeastB()) {
+            inOrder.verify(bpfNetMaps, never()).addLocalNetUidAccess(anyInt(), eq(WIFI_IFACE))
+            inOrder.verify(bpfNetMaps, never()).removeLocalNetUidAccess(anyInt(), eq(WIFI_IFACE))
+        }
 
         // Add another UID again. The old UID should be removed and the new one added.
         captivePortal.setDelegateUidAndAwait(APP1_UID)
@@ -186,8 +210,18 @@ class CSCaptivePortalAppTest : CSTest() {
             APP1_UID,
             wifiAgent.network.netId
         )
+        if (SdkLevel.isAtLeastB()) {
+            inOrder.verify(bpfNetMaps).removeLocalNetUidAccess(eq(APP2_UID), eq(WIFI_IFACE))
+            inOrder.verify(bpfNetMaps).addLocalNetUidAccess(eq(APP1_UID), eq(WIFI_IFACE))
+        }
 
         wifiAgent.disconnect()
+        waitForIdle()
+        if (SdkLevel.isAtLeastB()) {
+            inOrder.verify(bpfNetMaps).removeLocalNetHostAllowlistForInterface(eq(100))
+        } else {
+            verify(bpfNetMaps, never()).removeLocalNetHostAllowlistForInterface(anyInt())
+        }
     }
 
     @Test

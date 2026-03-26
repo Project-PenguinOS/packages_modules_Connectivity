@@ -7086,6 +7086,23 @@ public class ConnectivityService extends IConnectivityManager.Stub
         });
     }
 
+    private void updateLocalNetUidAllowlist(@NonNull NetworkAgentInfo nai,
+            @NonNull Set<Integer> oldUids, @NonNull Set<Integer> newUids) {
+        if (!mDeps.isAtLeastB()) return;
+        // Stacked interfaces are not supported, as they are only for clat at the moment and there
+        // are no local prefixes on clat.
+        final String ifName = nai.linkProperties.getInterfaceName();
+        if (ifName == null) return;
+
+        final CompareResult<Integer> compareResult = new CompareResult<>(oldUids, newUids);
+        for (int uid : compareResult.removed) {
+            mBpfNetMaps.removeLocalNetUidAccess(uid, ifName);
+        }
+        for (int uid : compareResult.added) {
+            mBpfNetMaps.addLocalNetUidAccess(uid, ifName);
+        }
+    }
+
     private int updateGlobalAllowBypassVpn(@NonNull Set<Integer> oldDelegateBypassUids,
             @NonNull Set<Integer> newDelegateBypassUids) {
         // this method is for U- and V+ must use per network VPN bypass.
@@ -7190,11 +7207,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
             if (nai == null) return ENOENT; // network does not exist anymore.
             if (nai.isDestroyed()) return ENOENT; // network has already been destroyed.
 
+            final Set<Integer> oldUids = nai.getCaptivePortalDelegateUids();
             final Set<Integer> oldDelegateBypassUids = getAllCaptivePortalDelegateUids();
             int ret = updateDelegateUid(nai, uid);
             // updateDelegateUid() updates mCaptivePortalDelegateUids even if it returns non-zero
             // value. Therefore, we need to call updateAllVpnForDelegateUid regardless of the
             // returned value.
+            final Set<Integer> newUids = nai.getCaptivePortalDelegateUids();
             final Set<Integer> newDelegateBypassUids = getAllCaptivePortalDelegateUids();
             if (!mDeps.isAtLeastV()) {
                 // Before V, we need to update protect VPN rules globally instead of per network.
@@ -7202,6 +7221,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 ret = updateGlobalAllowBypassVpn(oldDelegateBypassUids, newDelegateBypassUids);
             }
             updateAllVpnForDelegateUid(oldDelegateBypassUids, newDelegateBypassUids);
+            updateLocalNetUidAllowlist(nai, oldUids, newUids);
             return ret;
         }
 
@@ -10893,6 +10913,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private void updateLocalNetUidAccessForInterfaceAdded(final @NonNull String ifName,
+            final @NonNull NetworkAgentInfo nai) {
+        for (int uid : nai.getCaptivePortalDelegateUids()) {
+            mBpfNetMaps.addLocalNetUidAccess(uid, ifName);
+        }
+    }
+
     private void updateInterfaces(final @NonNull LinkProperties newLp,
             final @Nullable LinkProperties oldLp, final int netId,
             final @NonNull NetworkAgentInfo nai) {
@@ -10907,11 +10935,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
                     wakeupModifyInterface(iface, nai, true);
                     mDeps.reportNetworkInterfaceForTransports(mContext, iface,
                             nai.networkCapabilities.getTransportTypes());
-                    mInterfaceTracker.addInterface(iface);
                 } catch (Exception e) {
                     logw("Exception adding interface: " + e);
                 }
+                mInterfaceTracker.addInterface(iface);
                 maybeAttachL4sEgressProgram(iface, nai);
+                if (mDeps.isAtLeastB()) {
+                    updateLocalNetUidAccessForInterfaceAdded(iface, nai);
+                }
             }
         }
 
