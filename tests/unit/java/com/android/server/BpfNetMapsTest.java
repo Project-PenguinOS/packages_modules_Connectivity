@@ -598,6 +598,36 @@ public final class BpfNetMapsTest {
 
     @Test
     @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testAddLocalNetUidAccessAfterV() throws Exception {
+        assertTrue(mLocalNetUidHostAllowlistMap.isEmpty());
+        long oldGenId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
+        mBpfNetMaps.addLocalNetUidAccess(TEST_UID, TEST_IF_NAME);
+
+        final Bool value = mLocalNetUidHostAllowlistMap.getValue(
+                new LocalNetUidHostAllowlistKey(TEST_UID, TEST_IF_INDEX));
+        assertNotNull(value);
+        assertTrue(value.val);
+        long genId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
+        assertEquals(oldGenId + 2, genId);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testRemoveLocalNetUidAccessAfterV() throws Exception {
+        mBpfNetMaps.addLocalNetUidAccess(TEST_UID, TEST_IF_NAME);
+        assertNotNull(mLocalNetUidHostAllowlistMap.getValue(
+                new LocalNetUidHostAllowlistKey(TEST_UID, TEST_IF_INDEX)));
+
+        long oldGenId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
+        mBpfNetMaps.removeLocalNetUidAccess(TEST_UID, TEST_IF_NAME);
+        assertNull(mLocalNetUidHostAllowlistMap.getValue(
+                new LocalNetUidHostAllowlistKey(TEST_UID, TEST_IF_INDEX)));
+        long genId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
+        assertEquals(oldGenId + 2, genId);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void testAddLocalNetUidHostAccessAfterV() throws Exception {
         assertTrue(mLocalNetUidHostAllowlistMap.isEmpty()); // Necessary ?
         long oldGenId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
