@@ -1,4 +1,5 @@
-// Signature format: 2.0
+// Signature format: 6.0
+// - style=java
 package android.net {
 
   @FlaggedApi("android.net.vcn.mainline_vcn_module_api") public final class ConnectivityFrameworkInitializerBaklava {

@@ -1,4 +1,6 @@
-// Signature format: 2.0
+// Signature format: 6.0
+// - style=java
+// - flagged-api-inheritance=none
 package android.net {
 
   public class CaptivePortal implements android.os.Parcelable {
@@ -78,8 +80,8 @@ package android.net {
     method @Nullable @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public android.net.LinkProperties getLinkProperties(@Nullable android.net.Network);
     method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public int getMultipathPreference(@Nullable android.net.Network);
     method @Nullable @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public android.net.NetworkCapabilities getNetworkCapabilities(@Nullable android.net.Network);
-    method @Deprecated @Nullable @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public android.net.NetworkInfo getNetworkInfo(int);
     method @Deprecated @Nullable @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public android.net.NetworkInfo getNetworkInfo(@Nullable android.net.Network);
+    method @Deprecated @Nullable @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public android.net.NetworkInfo getNetworkInfo(int);
     method @Deprecated @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public int getNetworkPreference();
     method @Nullable public byte[] getNetworkWatchlistConfigHash();
     method @Deprecated @Nullable public static android.net.Network getProcessDefaultNetwork();
@@ -90,24 +92,24 @@ package android.net {
     method public void registerBestMatchingNetworkCallback(@NonNull android.net.NetworkRequest, @NonNull android.net.ConnectivityManager.NetworkCallback, @NonNull android.os.Handler);
     method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void registerDefaultNetworkCallback(@NonNull android.net.ConnectivityManager.NetworkCallback);
     method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void registerDefaultNetworkCallback(@NonNull android.net.ConnectivityManager.NetworkCallback, @NonNull android.os.Handler);
+    method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void registerNetworkCallback(@NonNull android.net.NetworkRequest, @NonNull android.app.PendingIntent);
     method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void registerNetworkCallback(@NonNull android.net.NetworkRequest, @NonNull android.net.ConnectivityManager.NetworkCallback);
     method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void registerNetworkCallback(@NonNull android.net.NetworkRequest, @NonNull android.net.ConnectivityManager.NetworkCallback, @NonNull android.os.Handler);
-    method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void registerNetworkCallback(@NonNull android.net.NetworkRequest, @NonNull android.app.PendingIntent);
     method public void releaseNetworkRequest(@NonNull android.app.PendingIntent);
     method public void removeDefaultNetworkActiveListener(@NonNull android.net.ConnectivityManager.OnNetworkActiveListener);
     method @Deprecated public void reportBadNetwork(@Nullable android.net.Network);
     method public void reportNetworkConnectivity(@Nullable android.net.Network, boolean);
     method public boolean requestBandwidthUpdate(@NonNull android.net.Network);
+    method public void requestNetwork(@NonNull android.net.NetworkRequest, @NonNull android.app.PendingIntent);
     method public void requestNetwork(@NonNull android.net.NetworkRequest, @NonNull android.net.ConnectivityManager.NetworkCallback);
     method public void requestNetwork(@NonNull android.net.NetworkRequest, @NonNull android.net.ConnectivityManager.NetworkCallback, @NonNull android.os.Handler);
-    method public void requestNetwork(@NonNull android.net.NetworkRequest, @NonNull android.net.ConnectivityManager.NetworkCallback, int);
     method public void requestNetwork(@NonNull android.net.NetworkRequest, @NonNull android.net.ConnectivityManager.NetworkCallback, @NonNull android.os.Handler, int);
-    method public void requestNetwork(@NonNull android.net.NetworkRequest, @NonNull android.app.PendingIntent);
+    method public void requestNetwork(@NonNull android.net.NetworkRequest, @NonNull android.net.ConnectivityManager.NetworkCallback, int);
     method @FlaggedApi("com.android.net.flags.ipv6_over_ble") public void reserveNetwork(@NonNull android.net.NetworkRequest, @NonNull android.os.Handler, @NonNull android.net.ConnectivityManager.NetworkCallback);
     method @Deprecated public void setNetworkPreference(int);
     method @Deprecated public static boolean setProcessDefaultNetwork(@Nullable android.net.Network);
-    method public void unregisterNetworkCallback(@NonNull android.net.ConnectivityManager.NetworkCallback);
     method public void unregisterNetworkCallback(@NonNull android.app.PendingIntent);
+    method public void unregisterNetworkCallback(@NonNull android.net.ConnectivityManager.NetworkCallback);
     field @Deprecated public static final String ACTION_BACKGROUND_DATA_SETTING_CHANGED = "android.net.conn.BACKGROUND_DATA_SETTING_CHANGED";
     field public static final String ACTION_CAPTIVE_PORTAL_SIGN_IN = "android.net.conn.CAPTIVE_PORTAL";
     field public static final String ACTION_RESTRICT_BACKGROUND_CHANGED = "android.net.conn.RESTRICT_BACKGROUND_CHANGED";
@@ -178,8 +180,8 @@ package android.net {
   public final class DnsResolver {
     ctor @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public DnsResolver(@NonNull android.content.Context, @Nullable android.os.Looper);
     method @Deprecated @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") @NonNull public static android.net.DnsResolver getInstance();
-    method public void query(@Nullable android.net.Network, @NonNull String, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super java.util.List<java.net.InetAddress>>);
     method public void query(@Nullable android.net.Network, @NonNull String, int, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super java.util.List<java.net.InetAddress>>);
+    method public void query(@Nullable android.net.Network, @NonNull String, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super java.util.List<java.net.InetAddress>>);
     method @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public void query(@Nullable android.net.Network, @NonNull String, int, @NonNull java.util.concurrent.Executor, int, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<android.net.dns.HttpsEndpoint>);
     method public void rawQuery(@Nullable android.net.Network, @NonNull byte[], int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super byte[]>);
     method public void rawQuery(@Nullable android.net.Network, @NonNull String, int, int, int, @NonNull java.util.concurrent.Executor, @Nullable android.os.CancellationSignal, @NonNull android.net.DnsResolver.Callback<? super byte[]>);
@@ -203,7 +205,7 @@ package android.net {
     method public void onError(@NonNull android.net.DnsResolver.DnsException);
   }
 
-  public static class DnsResolver.DnsException extends java.lang.Exception {
+  public static class DnsResolver.DnsException extends Exception {
     ctor public DnsResolver.DnsException(int, @Nullable Throwable);
     field public final int code;
   }
@@ -323,9 +325,9 @@ package android.net {
   }
 
   public class Network implements android.os.Parcelable {
+    method public void bindSocket(java.io.FileDescriptor) throws java.io.IOException;
     method public void bindSocket(java.net.DatagramSocket) throws java.io.IOException;
     method public void bindSocket(java.net.Socket) throws java.io.IOException;
-    method public void bindSocket(java.io.FileDescriptor) throws java.io.IOException;
     method public int describeContents();
     method public static android.net.Network fromNetworkHandle(long);
     method public java.net.InetAddress[] getAllByName(String) throws java.net.UnknownHostException;
@@ -349,7 +351,7 @@ package android.net {
     method @Nullable public android.net.NetworkSpecifier getNetworkSpecifier();
     method public int getOwnerUid();
     method public int getSignalStrength();
-    method @FlaggedApi("com.android.net.flags.request_restricted_wifi") @NonNull public java.util.Set<java.lang.Integer> getSubscriptionIds();
+    method @FlaggedApi("com.android.net.flags.request_restricted_wifi") @NonNull public java.util.Set<Integer> getSubscriptionIds();
     method @Nullable public android.net.TransportInfo getTransportInfo();
     method public boolean hasCapability(int);
     method public boolean hasEnterpriseId(int);
@@ -457,7 +459,7 @@ package android.net {
     method public int describeContents();
     method @NonNull public int[] getCapabilities();
     method @Nullable public android.net.NetworkSpecifier getNetworkSpecifier();
-    method @FlaggedApi("com.android.net.flags.request_restricted_wifi") @NonNull public java.util.Set<java.lang.Integer> getSubscriptionIds();
+    method @FlaggedApi("com.android.net.flags.request_restricted_wifi") @NonNull public java.util.Set<Integer> getSubscriptionIds();
     method @NonNull public int[] getTransportTypes();
     method public boolean hasCapability(int);
     method public boolean hasTransport(int);
@@ -475,12 +477,12 @@ package android.net {
     method public android.net.NetworkRequest.Builder removeCapability(int);
     method public android.net.NetworkRequest.Builder removeTransportType(int);
     method @NonNull public android.net.NetworkRequest.Builder setIncludeOtherUidNetworks(boolean);
-    method @Deprecated public android.net.NetworkRequest.Builder setNetworkSpecifier(String);
     method public android.net.NetworkRequest.Builder setNetworkSpecifier(android.net.NetworkSpecifier);
-    method @FlaggedApi("com.android.net.flags.request_restricted_wifi") @NonNull public android.net.NetworkRequest.Builder setSubscriptionIds(@NonNull java.util.Set<java.lang.Integer>);
+    method @Deprecated public android.net.NetworkRequest.Builder setNetworkSpecifier(String);
+    method @FlaggedApi("com.android.net.flags.request_restricted_wifi") @NonNull public android.net.NetworkRequest.Builder setSubscriptionIds(@NonNull java.util.Set<Integer>);
   }
 
-  public class ParseException extends java.lang.RuntimeException {
+  public class ParseException extends RuntimeException {
     ctor public ParseException(@NonNull String);
     ctor public ParseException(@NonNull String, @NonNull Throwable);
     field public String response;
@@ -489,7 +491,7 @@ package android.net {
   public class ProxyInfo implements android.os.Parcelable {
     ctor public ProxyInfo(@Nullable android.net.ProxyInfo);
     method public static android.net.ProxyInfo buildDirectProxy(String, int);
-    method public static android.net.ProxyInfo buildDirectProxy(String, int, java.util.List<java.lang.String>);
+    method public static android.net.ProxyInfo buildDirectProxy(String, int, java.util.List<String>);
     method public static android.net.ProxyInfo buildPacProxy(android.net.Uri);
     method @NonNull public static android.net.ProxyInfo buildPacProxy(@NonNull android.net.Uri, int);
     method public int describeContents();
@@ -518,7 +520,7 @@ package android.net {
     field public static final int RTN_UNREACHABLE = 7; // 0x7
   }
 
-  public abstract class SocketKeepalive implements java.lang.AutoCloseable {
+  public abstract class SocketKeepalive implements AutoCloseable {
     method public final void close();
     method public final void start(@IntRange(from=0xa, to=0xe10) int);
     method public final void stop();
@@ -574,7 +576,7 @@ package android.net.dns {
   }
 
   @FlaggedApi("com.android.tethering.flags.encrypted_client_hello_dns") public class HttpsRecord {
-    method @NonNull public java.util.List<java.lang.String> getAlpnIds();
+    method @NonNull public java.util.List<String> getAlpnIds();
     method @FlaggedApi("com.android.org.conscrypt.net.flags.encrypted_client_hello_platform") @Nullable public android.net.ssl.EchConfigList getEchConfigList() throws android.net.ssl.InvalidEchDataException;
     method @NonNull public java.util.List<java.net.InetAddress> getIpAddressHints();
     method @NonNull public String getOwnerName();
@@ -695,8 +697,8 @@ package android.net.http {
 
   public abstract class HeaderBlock {
     ctor public HeaderBlock();
-    method @NonNull public abstract java.util.List<java.util.Map.Entry<java.lang.String,java.lang.String>> getAsList();
-    method @NonNull public abstract java.util.Map<java.lang.String,java.util.List<java.lang.String>> getAsMap();
+    method @NonNull public abstract java.util.List<java.util.Map.Entry<String, String>> getAsList();
+    method @NonNull public abstract java.util.Map<String, java.util.List<String>> getAsMap();
   }
 
   public abstract class HttpEngine {
@@ -765,14 +767,14 @@ package android.net.http {
 
   public static interface Proxy.HttpConnectCallback {
     method public void onBeforeRequest(@NonNull android.net.http.Proxy.HttpConnectCallback.Request);
-    method public int onResponseReceived(@NonNull java.util.List<android.util.Pair<java.lang.String,java.lang.String>>, int);
+    method public int onResponseReceived(@NonNull java.util.List<android.util.Pair<String, String>>, int);
     field public static final int RESPONSE_ACTION_CLOSE = 0; // 0x0
     field public static final int RESPONSE_ACTION_PROCEED = 1; // 0x1
   }
 
-  public static final class Proxy.HttpConnectCallback.Request implements java.lang.AutoCloseable {
+  public static final class Proxy.HttpConnectCallback.Request implements AutoCloseable {
     method public void close();
-    method public void proceed(@NonNull java.util.List<android.util.Pair<java.lang.String,java.lang.String>>);
+    method public void proceed(@NonNull java.util.List<android.util.Pair<String, String>>);
   }
 
   @FlaggedApi("android.net.http.proxy_apis") public final class ProxyOptions {
@@ -786,7 +788,7 @@ package android.net.http {
   }
 
   public class QuicOptions {
-    method @NonNull public java.util.Set<java.lang.String> getAllowedQuicHosts();
+    method @NonNull public java.util.Set<String> getAllowedQuicHosts();
     method @Nullable public String getHandshakeUserAgent();
     method @Nullable public java.time.Duration getIdleConnectionTimeout();
     method public int getInMemoryServerConfigsCacheSize();
@@ -857,9 +859,9 @@ package android.net.http {
   public static interface UrlRequest.Callback {
     method public void onCanceled(@NonNull android.net.http.UrlRequest, @Nullable android.net.http.UrlResponseInfo);
     method public void onFailed(@NonNull android.net.http.UrlRequest, @Nullable android.net.http.UrlResponseInfo, @NonNull android.net.http.HttpException);
-    method public void onReadCompleted(@NonNull android.net.http.UrlRequest, @NonNull android.net.http.UrlResponseInfo, @NonNull java.nio.ByteBuffer) throws java.lang.Exception;
-    method public void onRedirectReceived(@NonNull android.net.http.UrlRequest, @NonNull android.net.http.UrlResponseInfo, @NonNull String) throws java.lang.Exception;
-    method public void onResponseStarted(@NonNull android.net.http.UrlRequest, @NonNull android.net.http.UrlResponseInfo) throws java.lang.Exception;
+    method public void onReadCompleted(@NonNull android.net.http.UrlRequest, @NonNull android.net.http.UrlResponseInfo, @NonNull java.nio.ByteBuffer) throws Exception;
+    method public void onRedirectReceived(@NonNull android.net.http.UrlRequest, @NonNull android.net.http.UrlResponseInfo, @NonNull String) throws Exception;
+    method public void onResponseStarted(@NonNull android.net.http.UrlRequest, @NonNull android.net.http.UrlResponseInfo) throws Exception;
     method public void onSucceeded(@NonNull android.net.http.UrlRequest, @NonNull android.net.http.UrlResponseInfo);
   }
 
@@ -894,7 +896,7 @@ package android.net.http {
     method @NonNull public abstract String getNegotiatedProtocol();
     method public abstract long getReceivedByteCount();
     method @NonNull public abstract String getUrl();
-    method @NonNull public abstract java.util.List<java.lang.String> getUrlChain();
+    method @NonNull public abstract java.util.List<String> getUrlChain();
     method public abstract boolean wasCached();
   }
 

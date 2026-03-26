@@ -215,3 +215,11 @@ static const int XTBPF_MATCH = 1;
 
 static const int BPF_DISALLOW = 0;
 static const int BPF_ALLOW = 1;
+
+// implicitly depends on 'kver' variable
+#define bpf_disallow(v) ({ \
+    _Static_assert((v) > 0, "bpf_disallow: error code " #v " must be positive"); \
+    _Static_assert((v) < 1000, "bpf_disallow: error code " #v " too large"); \
+    if (KVER_IS_AT_LEAST(kver, 6, 1)) bpf_set_retval(-(v)); \
+    BPF_DISALLOW; \
+})

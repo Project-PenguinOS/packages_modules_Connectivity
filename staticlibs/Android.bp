@@ -32,54 +32,6 @@ package {
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
-// This library shouldn't be used anymore (no class should be added), and per-user libraries like
-// net-utils-service-connectivity or net-utils-framework-wifi should be used instead.
-java_library {
-    name: "net-utils-device-common",
-    srcs: [
-        "device/com/android/net/module/util/arp/ArpPacket.java",
-        "device/com/android/net/module/util/DeviceConfigUtils.java",
-        "device/com/android/net/module/util/DomainUtils.java",
-        "device/com/android/net/module/util/FdEventsReader.java",
-        "device/com/android/net/module/util/FeatureVersions.java",
-        "device/com/android/net/module/util/HandlerUtils.java",
-        "device/com/android/net/module/util/NetworkMonitorUtils.java",
-        "device/com/android/net/module/util/PacketReader.java",
-        "device/com/android/net/module/util/SharedLog.java",
-        "device/com/android/net/module/util/SocketUtils.java",
-        "device/com/android/net/module/util/SyncStateMachine.java",
-        // This library is used by system modules, for which the system health impact of Kotlin
-        // has not yet been evaluated. Annotations may need jarjar'ing.
-        // "src_devicecommon/**/*.kt",
-    ],
-    sdk_version: "module_current",
-    min_sdk_version: "31",
-    apex_available: [
-        "//apex_available:anyapex",
-        "//apex_available:platform",
-    ],
-    visibility: [
-        "//packages/modules/Connectivity:__subpackages__",
-        "//packages/modules/Connectivity/framework:__subpackages__",
-        "//packages/modules/NetworkStack:__subpackages__",
-        "//packages/modules/CaptivePortalLogin",
-    ],
-    static_libs: [
-        "modules-utils-statemachine",
-        "net-utils-framework-common",
-    ],
-    libs: [
-        "androidx.annotation_annotation",
-        "framework-annotations-lib",
-        "framework-configinfrastructure.stubs.module_lib",
-        "framework-connectivity.stubs.module_lib",
-    ],
-    lint: {
-        strict_updatability_linting: true,
-        error_checks: ["NewApi"],
-    },
-}
-
 // Contains staticlibs classes for use by NetworkStack
 java_library {
     name: "net-utils-networkstack",
@@ -260,7 +212,7 @@ java_library {
     sdk_version: "module_current",
     min_sdk_version: "31",
     visibility: [
-        "//packages/modules/Connectivity:__subpackages__",
+        "//packages/modules/Connectivity/staticlibs/tests/unit",
         "//packages/modules/NetworkStack:__subpackages__",
     ],
     libs: [
@@ -268,7 +220,7 @@ java_library {
         "framework-connectivity.stubs.module_lib",
     ],
     static_libs: [
-        "net-utils-device-common",
+        "net-utils-connectivity-apks",
         "net-utils-device-common-netlink",
         "net-utils-framework-common",
         "netd-client",
@@ -537,6 +489,8 @@ java_library {
     jarjar_rules: "jarjar-rules-shared.txt",
     visibility: [
         "//packages/modules/Connectivity/service",
+        "//packages/modules/Connectivity/thread/service",
+        "//packages/modules/Connectivity/thread/tests/integration",
         "//packages/modules/Connectivity/staticlibs/tests/unit",
     ],
 }
@@ -565,6 +519,9 @@ java_library {
     visibility: [
         "//packages/modules/CaptivePortalLogin:__subpackages__",
         "//packages/modules/Connectivity/Tethering",
+        "//packages/modules/Connectivity/Tethering/tests/integration",
+        "//packages/modules/Connectivity/staticlibs/testutils",
+        "//packages/modules/NetworkStack",
     ],
 }
 

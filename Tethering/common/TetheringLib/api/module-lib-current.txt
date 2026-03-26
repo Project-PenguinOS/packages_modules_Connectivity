@@ -1,4 +1,5 @@
-// Signature format: 2.0
+// Signature format: 6.0
+// - style=java
 package android.net {
 
   public final class TetheringConstants {
@@ -41,9 +42,9 @@ package android.net {
   }
 
   @Deprecated public static class TetheringManager.TetheringInterfaceRegexps {
-    method @Deprecated @NonNull public java.util.List<java.lang.String> getTetherableBluetoothRegexs();
-    method @Deprecated @NonNull public java.util.List<java.lang.String> getTetherableUsbRegexs();
-    method @Deprecated @NonNull public java.util.List<java.lang.String> getTetherableWifiRegexs();
+    method @Deprecated @NonNull public java.util.List<String> getTetherableBluetoothRegexs();
+    method @Deprecated @NonNull public java.util.List<String> getTetherableUsbRegexs();
+    method @Deprecated @NonNull public java.util.List<String> getTetherableWifiRegexs();
   }
 
   public static final class TetheringManager.TetheringRequest implements android.os.Parcelable {

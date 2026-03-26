@@ -45,7 +45,9 @@ using bpf::isAtLeastU;
 using bpf::isAtLeastV;
 using bpf::isAtLeast25Q2;
 using bpf::isAtLeast26Q2;
+using bpf::isKernel64Bit;
 using bpf::isUser;
+using bpf::isUserspace64bit;
 using bpf::queryProgram;
 using bpf::retrieveProgram;
 
@@ -84,7 +86,7 @@ static Result<void> checkProgramAccessible(const char* programPath) {
 
 static void getsockoptTest() {
     // getsockopt bpf hook is not called if the device is running in compat mode.
-    if (bpf::isKernel64Bit() != bpf::isUserspace64bit() && !isAtLeastKernelVersion(6, 13)) return;
+    if (isKernel64Bit() != isUserspace64bit() && !isAtLeastKernelVersion(6, 13)) return;
 
     // SO_ANDROID_DROP_REASON option is only supported on 5.10+.
     if (!isAtLeastKernelVersion(5, 10)) return;
@@ -336,6 +338,125 @@ Result<void> BpfHandler::init(const char* cg2_path) {
         if (!map.ok()) return Error(errno) << "map create failed";
         int rv = bpf::writeToMapEntry(map, &key, &value, BPF_ANY);
         if (rv) return Error(errno) << "map write failed (rv=" << rv << ")";
+    }
+
+    if (isAtLeast26Q2) {
+        // Bring up loopback interface first
+        unique_fd sock(socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0));
+        if (!sock.ok()) return Error(errno) << "socket6udp";
+
+        struct ifreq ifr = {
+            .ifr_name = "lo",
+        };
+        // due to sepolicy this cannot be a unix/dgram nor ipv6/tcp socket
+        if (ioctl(sock.get(), SIOCGIFFLAGS, &ifr)) return Error(errno) << "SIOCGIFFLAGS";
+
+        if (ifr.ifr_flags & IFF_UP) {
+            // Nothing to be done, already up.
+        } else {
+            ifr.ifr_flags |= IFF_UP;
+            if (ioctl(sock.get(), SIOCSIFFLAGS, &ifr)) return Error(errno) << "SIOCSIFFLAGS";
+        }
+    }
+
+    if (isAtLeast26Q2) {
+        // Simple boot time self test that verifies that loopback ip/tcp works
+        // (this triggers at least bpf cgroup inet_create/ingress/egress/inet_release hooks)
+
+        unique_fd server(socket(AF_INET6, SOCK_STREAM | SOCK_CLOEXEC, 0));
+        if (!server.ok()) return Error(errno) << "socket6tcp";
+
+        struct sockaddr_in6 addr6 = {
+            .sin6_family = AF_INET6,
+        };
+        if (bind(server.get(), (struct sockaddr*)&addr6, sizeof(addr6)))
+            return Error(errno) << "bind";
+
+        if (listen(server.get(), 1)) return Error(errno) << "listen";
+
+        socklen_t addr6_len = sizeof(addr6);
+        if (getsockname(server.get(), (struct sockaddr*)&addr6, &addr6_len))
+            return Error(errno) << "getsockname";
+        if (addr6_len != sizeof(addr6)) return Error() << "addr6_len";
+
+        unique_fd client(socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
+        if (!client.ok()) return Error(errno) << "socket4tcp";
+
+        if (isKernel64Bit() == isUserspace64bit()
+            && isAtLeastKernelVersion(6, 1) && !isAtLeastKernelVersion(6, 18)) {
+            {
+                bool b = false;
+                socklen_t len = sizeof(b);
+                if (getsockopt(server.get(), SOL_TCP, TCP_ANDROID_L4S, &b, &len)) return Error(errno) << "gs-s1";
+                if (len != sizeof(b)) return Error(errno) << "gs-s-len1";
+                if (!b) return Error(errno) << "gs-s-off1";
+            }
+            {
+                bool b = false;
+                socklen_t len = sizeof(b);
+                if (getsockopt(client.get(), SOL_TCP, TCP_ANDROID_L4S, &b, &len)) return Error(errno) << "gs-c1";
+                if (len != sizeof(b)) return Error(errno) << "gs-c-len1";
+                if (!b) return Error(errno) << "gs-c-off1";
+            }
+            {
+                const bool off = false;
+                if (setsockopt(server.get(), SOL_TCP, TCP_ANDROID_L4S, &off, sizeof(off))) return Error(errno) << "ss-s2";
+                if (setsockopt(client.get(), SOL_TCP, TCP_ANDROID_L4S, &off, sizeof(off))) return Error(errno) << "ss-c2";
+            }
+            {
+                bool b = true;
+                socklen_t len = sizeof(b);
+                if (getsockopt(server.get(), SOL_TCP, TCP_ANDROID_L4S, &b, &len)) return Error(errno) << "gs-s3";
+                if (len != sizeof(b)) return Error(errno) << "gs-s-len3";
+                if (b) return Error(errno) << "gs-s-on3";
+            }
+            {
+                bool b = true;
+                socklen_t len = sizeof(b);
+                if (getsockopt(client.get(), SOL_TCP, TCP_ANDROID_L4S, &b, &len)) return Error(errno) << "gs-c3";
+                if (len != sizeof(b)) return Error(errno) << "gs-c-len3";
+                if (b) return Error(errno) << "gs-c-on3";
+            }
+            {
+                const bool on = true;
+                if (setsockopt(server.get(), SOL_TCP, TCP_ANDROID_L4S, &on, sizeof(on))) return Error(errno) << "ss-s4";
+                if (setsockopt(client.get(), SOL_TCP, TCP_ANDROID_L4S, &on, sizeof(on))) return Error(errno) << "ss-c4";
+            }
+            {
+                bool b = false;
+                socklen_t len = sizeof(b);
+                if (getsockopt(server.get(), SOL_TCP, TCP_ANDROID_L4S, &b, &len)) return Error(errno) << "gs-s5";
+                if (len != sizeof(b)) return Error(errno) << "gs-s-len5";
+                if (!b) return Error(errno) << "gs-s-off5";
+            }
+            {
+                bool b = false;
+                socklen_t len = sizeof(b);
+                if (getsockopt(client.get(), SOL_TCP, TCP_ANDROID_L4S, &b, &len)) return Error(errno) << "gs-c5";
+                if (len != sizeof(b)) return Error(errno) << "gs-c-len5";
+                if (!b) return Error(errno) << "gs-c-off5";
+            }
+        }
+
+        struct sockaddr_in addr4 = {
+            .sin_family = AF_INET,
+            .sin_port = addr6.sin6_port,
+        };
+        if (connect(client.get(), (struct sockaddr*)&addr4, sizeof(addr4)))
+            return Error(errno) << "connect";  // fails with ENETUNREACH if 'lo' is down
+
+        unique_fd peer(accept4(server.get(), NULL, NULL, SOCK_CLOEXEC));
+        if (!peer.ok()) return Error(errno) << "accept";
+
+        char snd = '@';
+        if (write(client.get(), &snd, sizeof(snd)) != 1) return Error(errno) << "write";
+
+        char rcv = 0;
+        if (read(peer.get(), &rcv, sizeof(rcv)) != 1) return Error(errno) << "read";
+
+        if (rcv != snd) return Error() << "wrong";
+
+        // all 3 sockets are closed automatically
     }
 
     return {};
