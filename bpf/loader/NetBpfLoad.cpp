@@ -1404,12 +1404,11 @@ static bool writeFile(const char *filename, const char *value) {
     return true;
 }
 
-#define APEX_MOUNT_POINT "/apex/com.android.tethering"
 const char * const platformBpfLoader = "/system/bin/bpfloader";
 const char *const uprobestatsBpfLoader =
     "/apex/com.android.uprobestats/bin/uprobestatsbpfload";
 
-static int logTetheringApexVersion(void) {
+static int logApexVersion(const char* const apex_pretty_name, const char* const apex_mount_point) {
     char src_apex[16] = {};
     if (!isUser) {
         // man readlink: Upon success, readlink() returns count of bytes placed in the buffer.
@@ -1435,7 +1434,7 @@ static int logTetheringApexVersion(void) {
         space = strchr(mntpath, ' ');
         if (!space) continue;
         *space = '\0';
-        if (strcmp(mntpath, APEX_MOUNT_POINT)) continue;
+        if (strcmp(mntpath, apex_mount_point)) continue;
         found_blockdev = strdup(blockdev);
         break;
     }
@@ -1443,10 +1442,12 @@ static int logTetheringApexVersion(void) {
     f = NULL;
 
     if (!found_blockdev) return 2;
-    ALOGV("Found Tethering Apex mounted from blockdev %s", found_blockdev);
+    ALOGV("Found %s Apex mounted from blockdev %s", apex_pretty_name, found_blockdev);
 
     f = fopen("/proc/mounts", "re");
     if (!f) { free(found_blockdev); return 3; }
+
+    int apex_mount_point_len = strlen(apex_mount_point);
 
     while (fgets(buf, sizeof(buf), f)) {
         char * blockdev = buf;
@@ -1458,14 +1459,14 @@ static int logTetheringApexVersion(void) {
         if (!space) continue;
         *space = '\0';
         if (strcmp(blockdev, found_blockdev)) continue;
-        if (strncmp(mntpath, APEX_MOUNT_POINT "@", strlen(APEX_MOUNT_POINT "@"))) continue;
-        char * at = strchr(mntpath, '@');
-        if (!at) continue;
+        if (strncmp(mntpath, apex_mount_point, apex_mount_point_len)) continue;
+        char * at = mntpath + apex_mount_point_len;
+        if (*at != '@') continue;
         char * ver = at + 1;
         if (isUser) {
-            ALOGI("Tethering APEX version %s", ver);
+            ALOGI("%s APEX version %s", apex_pretty_name, ver);
         } else {
-            ALOGI("Tethering APEX version %s (system: %s)", ver, src_apex);
+            ALOGI("%s APEX version %s (system: %s)", apex_pretty_name, ver, src_apex);
         }
     }
     fclose(f);
@@ -1579,10 +1580,11 @@ static int doLoad(char** argv, char * const envp[]) {
         return 1;
     }
 
-    logTetheringApexVersion();
+    logApexVersion("Tethering", "/apex/com.android.tethering");
 
     if (exists("/apex/com.android.resolv/lib") ||
         exists("/apex/com.android.resolv/lib64")) {
+        logApexVersion("DnsResolver", "/apex/com.android.resolv");
         ALOGE("Incorrect DNS Resolver APEX found.");
         return 2;
     }

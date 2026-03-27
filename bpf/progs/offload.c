@@ -184,7 +184,7 @@ function int do_forward6(struct __sk_buff* skb,
         if (gso_hdr_size == sizeof(struct ipv6hdr)) TC_PUNT(UNKNOWN_IPV6_GSO);
         const int mss = v->pmtu - gso_hdr_size;
         const uint64_t payload = L3_bytes - gso_hdr_size;
-        if (KVER_IS_AT_LEAST(kver, 5, 4, 0)) {
+        if (KVER_IS_AT_LEAST(kver, 5, 4)) {
             if (skb->gso_segs <= 1) TC_PUNT(ABOVE_IPV6_PMTU);
             // ?udp gso frags: gso_size is variable (thus 0), could this fail to trigger?
             if (gso_hdr_size + skb->gso_size > v->pmtu) TC_PUNT(ABOVE_IPV6_PMTU_GSO);
@@ -429,7 +429,7 @@ function int do_forward4_bottom(struct __sk_buff* skb,
         // we know it is IPv4 without IP options, and either TCP or UDP
         const int hdr_sz = sizeof(struct iphdr) + (is_tcp ? tcph->doff * 4 : sizeof(struct udphdr));
         const uint64_t payload = L3_bytes - hdr_sz;
-        if (KVER_IS_AT_LEAST(kver, 5, 4, 0)) {
+        if (KVER_IS_AT_LEAST(kver, 5, 4)) {
             if (skb->gso_segs <= 1) TC_PUNT(ABOVE_IPV4_PMTU);
             // ?udp gso frags: gso_size is variable (thus 0), could this fail to trigger?
             if (hdr_sz + skb->gso_size > v->pmtu) TC_PUNT(ABOVE_IPV4_PMTU_GSO);

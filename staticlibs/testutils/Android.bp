@@ -40,7 +40,7 @@ java_library {
         "libnanohttpd",
         "mockito-target-minus-junit4",
         "net-tests-utils-host-device-common",
-        "net-utils-device-common",
+        "net-utils-connectivity-apks",
         "net-utils-device-common-async",
         "net-utils-device-common-netlink",
         "net-utils-device-common-struct",

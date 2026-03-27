@@ -26,3 +26,9 @@ enum AndroidSocketOption : int32_t {
     SO_ANDROID_BASE = 0xAD01D00,
     SO_ANDROID_DROP_REASON,
 };
+
+// Socket options for SOL_TCP (aka IPPROTO_TCP)
+enum AndroidTcpSocketOption : int32_t {
+    TCP_ANDROID_BASE = 0xAD01D00,
+    TCP_ANDROID_L4S,
+};

@@ -40,7 +40,7 @@ java_library {
     ],
     static_libs: [
         "modules-utils-shell-command-handler",
-        "net-utils-device-common",
+        "net-utils-service-connectivity",
         "net-utils-device-common-netlink",
         // The required dependency net-utils-device-common-struct-base is in the classpath via
         // framework-connectivity
