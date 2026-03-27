@@ -256,7 +256,8 @@ public class PermissionMonitor {
             FORCE_USE_LOOPBACK_INTERFACE,
             INTERACT_ACROSS_USERS_FULL,
             INTERACT_ACROSS_PROFILES,
-            INTERACT_ACROSS_USERS
+            INTERACT_ACROSS_USERS,
+            PERMISSION_MAINLINE_NETWORK_STACK
     );
 
     // The perm bitmask expected from PermissionManagerLocal when calling setUidsPermissionBits
@@ -268,10 +269,12 @@ public class PermissionMonitor {
     public static final int PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS_FULL = 1 << 5;
     public static final int PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_PROFILES = 1 << 6;
     public static final int PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS = 1 << 7;
+    public static final int PERMISSION_BPF_MAP_BIT_MAINLINE_NETWORK_STACK = 1 << 8;
 
     private int convertToChunkPermissionBits(int permissionBits) {
         int chunkPermissions = PERMISSION_BIT_NONE;
-        if ((permissionBits & PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK) != 0) {
+        if ((permissionBits & PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK) != 0
+                || (permissionBits & PERMISSION_BPF_MAP_BIT_MAINLINE_NETWORK_STACK) != 0) {
             chunkPermissions |= PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
         }
         if ((permissionBits & PERMISSION_BPF_MAP_BIT_UPDATE_DEVICE_STATS) != 0) {
@@ -541,6 +544,10 @@ public class PermissionMonitor {
                 : NEARBY_WIFI_DEVICES;
         final int permissionState = mPermissionManager.checkPermissionForPreflight(
                 permission, attributionSource);
+        // Note this does not check PERMISSION_MAINLINE_NETWORK_STACK, because
+        // isPermissionPropagationEnabled is always enabled after B, so this code path is only for
+        // apps that opted in to the local network permission on B, and apps that have
+        // MAINLINE_NETWORK_STACK did not opt in.
         if (permissionState == PermissionManager.PERMISSION_GRANTED) {
             mBpfNetMaps.removeUidFromLocalNetBlockMap(attributionSource.getUid());
         } else {
