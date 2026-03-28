@@ -1,6 +1,5 @@
 // Signature format: 6.0
 // - style=java
-// - flagged-api-inheritance=none
 package android.net {
 
   public class CaptivePortal implements android.os.Parcelable {
@@ -258,7 +257,7 @@ package android.net {
     field public static final int ROLE_SERVER = 2; // 0x2
   }
 
-  public static final class L2capNetworkSpecifier.Builder {
+  @FlaggedApi("com.android.net.flags.ipv6_over_ble") public static final class L2capNetworkSpecifier.Builder {
     ctor public L2capNetworkSpecifier.Builder();
     method @NonNull public android.net.L2capNetworkSpecifier build();
     method @NonNull public android.net.L2capNetworkSpecifier.Builder setHeaderCompression(int);
@@ -765,14 +764,14 @@ package android.net.http {
     field public static final int SCHEME_HTTPS = 1; // 0x1
   }
 
-  public static interface Proxy.HttpConnectCallback {
+  @FlaggedApi("android.net.http.proxy_apis") public static interface Proxy.HttpConnectCallback {
     method public void onBeforeRequest(@NonNull android.net.http.Proxy.HttpConnectCallback.Request);
     method public int onResponseReceived(@NonNull java.util.List<android.util.Pair<String, String>>, int);
     field public static final int RESPONSE_ACTION_CLOSE = 0; // 0x0
     field public static final int RESPONSE_ACTION_PROCEED = 1; // 0x1
   }
 
-  public static final class Proxy.HttpConnectCallback.Request implements AutoCloseable {
+  @FlaggedApi("android.net.http.proxy_apis") public static final class Proxy.HttpConnectCallback.Request implements AutoCloseable {
     method public void close();
     method public void proceed(@NonNull java.util.List<android.util.Pair<String, String>>);
   }

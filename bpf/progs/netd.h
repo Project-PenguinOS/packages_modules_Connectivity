@@ -127,6 +127,15 @@ typedef struct {
 STRUCT_SIZE(LnpCache, 8 + 28 + 1 + 1 + 2); // 40
 
 typedef struct {
+    uint64_t cached_at_ns;
+    struct in6_addr daddr; // Stores v6 or v4-mapped-v6
+    __be16 dport;
+    bool result;
+    uint8_t padding[5];
+} LoopbackCache;
+STRUCT_SIZE(LoopbackCache, 8 + 16 + 2 + 1 + 5); // 32
+
+typedef struct {
     uint64_t cookie;
     // Store gid and uid to make them available outside the program types that
     // support `bpf_get_socket_uid`
@@ -136,8 +145,9 @@ typedef struct {
     uint64_t dropReasons;
     LnpCache lnp_cache;
     L4SStorage l4s;
+    LoopbackCache loopback_cache;
 } SkStorageValue;
-STRUCT_SIZE(SkStorageValue, 8 + 4 + 4 + 8 + 40 + 32); // 96
+STRUCT_SIZE(SkStorageValue, 8 + 4 + 4 + 8 + 40 + 32 + 32); // 128
 
 enum LoopbackAccessResult : uint32_t {
   LOOPBACK_ACCESS_ALLOWED = 0,

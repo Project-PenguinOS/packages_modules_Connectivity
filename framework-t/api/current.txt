@@ -1,6 +1,5 @@
 // Signature format: 6.0
 // - style=java
-// - flagged-api-inheritance=none
 package android.app.usage {
 
   public final class NetworkStats implements AutoCloseable {
@@ -245,7 +244,7 @@ package android.net.nsd {
     field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_USER_APPROVED_ONLY = 4L; // 0x4L
   }
 
-  public static final class DiscoveryRequest.Builder {
+  @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public static final class DiscoveryRequest.Builder {
     ctor public DiscoveryRequest.Builder(@NonNull String);
     method @NonNull public android.net.nsd.DiscoveryRequest build();
     method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setAttributeFilters(@Nullable java.util.Map<String, android.os.PatternMatcher>);
