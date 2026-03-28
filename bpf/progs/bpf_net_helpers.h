@@ -64,14 +64,14 @@ struct frag_hdr {
 
 // copied from //bionic/libc/include/bits/tcphdr.h 'struct tcphdr' but with bitfield replaced with flags16
 struct tcphdr_with_flags16 {
-  uint16_t source;
-  uint16_t dest;
-  uint32_t seq;
-  uint32_t ack_seq;
-  uint16_t flags16;
-  uint16_t window;
-  uint16_t check;
-  uint16_t urg_ptr;
+  __be16 source;
+  __be16 dest;
+  __be32 seq;
+  __be32 ack_seq;
+  __be16 flags16;
+  __be16 window;
+  __be16 check;
+  __be16 urg_ptr;
 };
 _Static_assert(sizeof(struct tcphdr_with_flags16) == sizeof(struct tcphdr), "struct tcphdr_with_flags16 ?!?");
 

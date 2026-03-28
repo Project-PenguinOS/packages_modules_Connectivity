@@ -1,6 +1,5 @@
 // Signature format: 6.0
 // - style=java
-// - flagged-api-inheritance=none
 package android.app.usage {
 
   public class NetworkStatsManager {
@@ -419,7 +418,7 @@ package android.net.nsd {
     field @NonNull public static final android.os.Parcelable.Creator<android.net.nsd.OffloadServiceInfo> CREATOR;
   }
 
-  public static final class OffloadServiceInfo.Key implements android.os.Parcelable {
+  @FlaggedApi("com.android.net.flags.register_nsd_offload_engine_api") public static final class OffloadServiceInfo.Key implements android.os.Parcelable {
     ctor public OffloadServiceInfo.Key(@NonNull String, @NonNull String);
     method public int describeContents();
     method @NonNull public String getServiceName();
@@ -468,7 +467,7 @@ package android.net.thread {
     field public static final int LENGTH_PSKC = 16; // 0x10
   }
 
-  public static final class ActiveOperationalDataset.Builder {
+  @FlaggedApi("com.android.net.thread.flags.thread_enabled") public static final class ActiveOperationalDataset.Builder {
     ctor public ActiveOperationalDataset.Builder();
     ctor public ActiveOperationalDataset.Builder(@NonNull android.net.thread.ActiveOperationalDataset);
     method @NonNull public android.net.thread.ActiveOperationalDataset build();
@@ -484,7 +483,7 @@ package android.net.thread {
     method @NonNull public android.net.thread.ActiveOperationalDataset.Builder setSecurityPolicy(@NonNull android.net.thread.ActiveOperationalDataset.SecurityPolicy);
   }
 
-  public static final class ActiveOperationalDataset.SecurityPolicy {
+  @FlaggedApi("com.android.net.thread.flags.thread_enabled") public static final class ActiveOperationalDataset.SecurityPolicy {
     ctor public ActiveOperationalDataset.SecurityPolicy(@IntRange(from=1, to=65535) int, @NonNull @Size(min=android.net.thread.ActiveOperationalDataset.SecurityPolicy.LENGTH_MIN_SECURITY_POLICY_FLAGS) byte[]);
     method @NonNull @Size(min=android.net.thread.ActiveOperationalDataset.SecurityPolicy.LENGTH_MIN_SECURITY_POLICY_FLAGS) public byte[] getFlags();
     method @IntRange(from=1, to=65535) public int getRotationTimeHours();
@@ -561,12 +560,12 @@ package android.net.thread {
     field public static final int THREAD_VERSION_1_3 = 4; // 0x4
   }
 
-  public static interface ThreadNetworkController.OperationalDatasetCallback {
+  @FlaggedApi("com.android.net.thread.flags.thread_enabled") public static interface ThreadNetworkController.OperationalDatasetCallback {
     method public void onActiveOperationalDatasetChanged(@Nullable android.net.thread.ActiveOperationalDataset);
     method public default void onPendingOperationalDatasetChanged(@Nullable android.net.thread.PendingOperationalDataset);
   }
 
-  public static interface ThreadNetworkController.StateCallback {
+  @FlaggedApi("com.android.net.thread.flags.thread_enabled") public static interface ThreadNetworkController.StateCallback {
     method public void onDeviceRoleChanged(int);
     method @FlaggedApi("com.android.net.thread.flags.epskc_enabled") @RequiresPermission("android.permission.THREAD_NETWORK_PRIVILEGED") public default void onEphemeralKeyStateChanged(int, @Nullable String, @Nullable java.time.Instant);
     method public default void onPartitionIdChanged(long);
@@ -603,7 +602,7 @@ package android.net.thread {
     field @NonNull public static final android.os.Parcelable.Creator<android.net.thread.ThreadNetworkSpecifier> CREATOR;
   }
 
-  public static final class ThreadNetworkSpecifier.Builder {
+  @FlaggedApi("com.android.net.thread.flags.thread_mobile_enabled") public static final class ThreadNetworkSpecifier.Builder {
     ctor public ThreadNetworkSpecifier.Builder();
     method @NonNull public android.net.thread.ThreadNetworkSpecifier build();
     method @NonNull public android.net.thread.ThreadNetworkSpecifier.Builder setActiveOperationalDataset(@Nullable android.net.thread.ActiveOperationalDataset);

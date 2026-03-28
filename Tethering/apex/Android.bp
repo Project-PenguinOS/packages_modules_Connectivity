@@ -160,6 +160,10 @@ bootclasspath_fragment {
             apex: "com.android.art",
             module: "art-bootclasspath-fragment",
         },
+        {
+            apex: "com.android.telephonycore",
+            module: "com.android.telephony-bootclasspath-fragment",
+        },
     ],
 
     // Additional stubs libraries that this fragment's contents use which are
