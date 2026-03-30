@@ -474,57 +474,49 @@ add_loopback_access_event(const uint32_t src_uid, const uint32_t dst_uid,
     bpf_loopback_access_ringbuf_submit(event);
 }
 
-static __always_inline inline void
-log_loopback_access(struct __sk_buff *const skb,
-                    const SkbIpPacketData *const packet_data,
-                    const uint32_t sender_uid) {
-    struct bpf_sock_tuple sock_tuple = {};
-    uint32_t tuple_size;
+static inline __always_inline bool loopback_metrics_enabled() {
+    const uint32_t zero = 0;
+    bool *enabled = bpf_loopback_access_metrics_enabled_map_lookup_elem(&zero);
+    return enabled && *enabled;
+}
 
-    if (packet_data->ip_version == 4) {
-        // IPv4-mapped-v6
-        sock_tuple.ipv4.saddr = packet_data->saddr.s6_addr32[3];
-        sock_tuple.ipv4.daddr = packet_data->daddr.s6_addr32[3];
-        sock_tuple.ipv4.sport = packet_data->sport;
-        sock_tuple.ipv4.dport = packet_data->dport;
-        tuple_size = sizeof(sock_tuple.ipv4);
-    } else if (packet_data->ip_version == 6) {
-        __builtin_memcpy(&sock_tuple.ipv6.saddr, &packet_data->saddr,
-                         sizeof(sock_tuple.ipv6.saddr));
-        __builtin_memcpy(&sock_tuple.ipv6.daddr, &packet_data->daddr,
-                         sizeof(sock_tuple.ipv6.daddr));
-        sock_tuple.ipv6.sport = packet_data->sport;
-        sock_tuple.ipv6.dport = packet_data->dport;
-        tuple_size = sizeof(sock_tuple.ipv6);
+static inline __always_inline bool loopback_checks_enabled() {
+    const uint32_t zero = 0;
+    bool *enabled = bpf_loopback_checks_enabled_map_lookup_elem(&zero);
+    return enabled && *enabled;
+}
+
+static __always_inline inline bool
+can_force_loopback(const uint32_t permissions) {
+    return (permissions & PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE)
+        && (permissions & PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL);
+}
+
+static __always_inline inline bool
+uids_have_loopback_permissions(const uint32_t sender_uid,
+                               const uint32_t receiver_uid) {
+    // TODO: be more specific about which system uids we should exempt
+    if (is_system_uid(sender_uid) || is_system_uid(receiver_uid)) return true;
+
+    bool same_profile =
+        sender_uid / AID_USER_OFFSET == receiver_uid / AID_USER_OFFSET;
+    if (same_profile) return true;
+
+    uint32_t sender_perms = get_chunk_permissions(sender_uid);
+    uint32_t receiver_perms = get_chunk_permissions(receiver_uid);
+    if (can_force_loopback(sender_perms)
+        || can_force_loopback(receiver_perms)) return true;
+
+    // TODO: check loopback interface permissions for both sender and receiver
+    bool same_app_id =
+        sender_uid % AID_USER_OFFSET == receiver_uid % AID_USER_OFFSET;
+    if (same_app_id) {
+        return
+            (sender_perms & PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES) ||
+            (sender_perms & PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL);
     } else {
-        return;
+        return sender_perms & PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
     }
-
-    struct bpf_sock *local_sk;
-    if (packet_data->ip_proto == IPPROTO_TCP) {
-        // Only trigger on SYN to avoid redundant lookups for established
-        // connections
-        if (!(packet_data->tcp_flags & TCP_FLAG8_SYN)) return;
-        local_sk = bpf_sk_lookup_tcp(skb, &sock_tuple, tuple_size,
-                                     BPF_F_CURRENT_NETNS, 0);
-    } else if (packet_data->ip_proto == IPPROTO_UDP) {
-        local_sk = bpf_sk_lookup_udp(skb, &sock_tuple, tuple_size,
-                                     BPF_F_CURRENT_NETNS, 0);
-    } else {
-        return;
-    }
-    if (!local_sk) return;
-
-    SkStorageValue *v = bpf_sk_storage_get(local_sk, 0, 0);
-    const uint32_t receiver_uid = v ? v->uid : 0;
-    bpf_sk_release(local_sk);
-    if (!v) return;
-
-    // We don't care about cases where apps are sending loopback traffic to
-    // themselves.
-    if (sender_uid == receiver_uid) return;
-    add_loopback_access_event(sender_uid, receiver_uid,
-                              LOOPBACK_ACCESS_ALLOWED);
 }
 
 static __always_inline inline bool parse_skb(SkbIpPacketData *const packet,
@@ -598,6 +590,75 @@ static __always_inline inline bool parse_skb(SkbIpPacketData *const packet,
             break;
     }
     return true;
+}
+
+static __always_inline inline bool
+should_block_loopback_access(struct __sk_buff *const skb,
+                             const uint32_t sender_uid,
+                             const struct kver_uint kver) {
+    bool checks_enabled = loopback_checks_enabled();
+    bool metrics_enabled = loopback_metrics_enabled();
+    if (!checks_enabled && !metrics_enabled) return false;
+
+    SkbIpPacketData packet_data = {};
+    if (!parse_skb(&packet_data, skb, kver)) return false;
+
+    struct bpf_sock_tuple sock_tuple = {};
+    uint32_t tuple_size;
+
+    if (packet_data.ip_version == 4) {
+        // IPv4-mapped-v6
+        sock_tuple.ipv4.saddr = packet_data.saddr.s6_addr32[3];
+        sock_tuple.ipv4.daddr = packet_data.daddr.s6_addr32[3];
+        sock_tuple.ipv4.sport = packet_data.sport;
+        sock_tuple.ipv4.dport = packet_data.dport;
+        tuple_size = sizeof(sock_tuple.ipv4);
+    } else if (packet_data.ip_version == 6) {
+        __builtin_memcpy(&sock_tuple.ipv6.saddr, &packet_data.saddr,
+                         sizeof(sock_tuple.ipv6.saddr));
+        __builtin_memcpy(&sock_tuple.ipv6.daddr, &packet_data.daddr,
+                         sizeof(sock_tuple.ipv6.daddr));
+        sock_tuple.ipv6.sport = packet_data.sport;
+        sock_tuple.ipv6.dport = packet_data.dport;
+        tuple_size = sizeof(sock_tuple.ipv6);
+    } else {
+        return false;
+    }
+
+    struct bpf_sock *local_sk;
+    if (packet_data.ip_proto == IPPROTO_TCP) {
+        // Only trigger on SYN to avoid redundant lookups for established
+        // connections
+        if (!(packet_data.tcp_flags & TCP_FLAG8_SYN)) return false;
+        local_sk = bpf_sk_lookup_tcp(skb, &sock_tuple, tuple_size,
+                                     BPF_F_CURRENT_NETNS, 0);
+    } else if (packet_data.ip_proto == IPPROTO_UDP) {
+        local_sk = bpf_sk_lookup_udp(skb, &sock_tuple, tuple_size,
+                                     BPF_F_CURRENT_NETNS, 0);
+    } else {
+        return false;
+    }
+    if (!local_sk) return false;
+
+    SkStorageValue *v = bpf_sk_storage_get(local_sk, 0, 0);
+    const uint32_t receiver_uid = v ? v->uid : 0;
+    bpf_sk_release(local_sk);
+    if (!v) return false;
+
+    // We don't care about cases where apps are sending loopback traffic to
+    // themselves.
+    if (sender_uid == receiver_uid) return false;
+
+    bool allowed = true;
+    if (checks_enabled) {
+        allowed = uids_have_loopback_permissions(sender_uid, receiver_uid);
+    }
+    if (metrics_enabled) {
+        add_loopback_access_event(
+            sender_uid, receiver_uid,
+            allowed ? LOOPBACK_ACCESS_ALLOWED : LOOPBACK_ACCESS_BLOCKED);
+    }
+    return !allowed;
 }
 
 static __always_inline inline void do_packet_tracing(
@@ -813,12 +874,6 @@ static __always_inline inline void update_stats_with_config(const uint32_t selec
     }
 }
 
-static inline __always_inline bool loopback_metrics_enabled() {
-    const uint32_t zero = 0;
-    bool *enabled = bpf_loopback_access_metrics_enabled_map_lookup_elem(&zero);
-    return enabled && *enabled;
-}
-
 static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
                                                       const struct egress_bool egress,
                                                       const struct kver_uint kver,
@@ -868,11 +923,10 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
         if (match == DROP_UNLESS_DNS) match = DROP;
     }
 
-    if (API_IS_AT_LEAST(lvl, 25Q4) && egress.egress && skb->ifindex == 1 &&
-        loopback_metrics_enabled()) {
-        SkbIpPacketData packet_data = {};
-        if (parse_skb(&packet_data, skb, kver)) {
-            log_loopback_access(skb, &packet_data, sock_uid);
+    if (API_IS_AT_LEAST(lvl, 25Q4) && (match != DROP) && egress.egress &&
+        skb->ifindex == 1) {
+        if (should_block_loopback_access(skb, sock_uid, kver)) {
+            match = DROP;
         }
     }
 
@@ -937,7 +991,7 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 // Android 26Q2+ 6.1+ (full featured + tcpAccECN)
 DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 6_1, INF, 26Q2, MAXAPI)
 (struct __sk_buff* skb) {
-    // place for tcpAccECN
+    update_accecn_counter(skb);
     return bpf_traffic_account(skb, INGRESS, KVER_6_1, API(26Q2));
 }
 

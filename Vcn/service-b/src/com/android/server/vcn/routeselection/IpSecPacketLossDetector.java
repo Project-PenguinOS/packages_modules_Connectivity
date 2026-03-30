@@ -560,7 +560,9 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
                             getLogPrefix());
         }
 
-        if (!Objects.equals(mLastCalculateResult, calculateResult)) {
+        if (mLastCalculateResult == null
+                || mLastCalculateResult.getPacketLossRatePercent()
+                        != calculateResult.getPacketLossRatePercent()) {
             logInfo(
                     "calculateResult changed to: "
                             + calculateResult
@@ -747,7 +749,9 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
                             + expectedPktCnt
                             + " actualPktCnt: "
                             + actualPktCnt);
-            final int percent = 100 - (int) (actualPktCnt * 100 / expectedPktCnt);
+
+            final double lossRate = (double) (expectedPktCnt - actualPktCnt) / expectedPktCnt;
+            final int percent = (int) Math.round(lossRate * 100.0);
 
             // Handle Invalid Result: Unusual Sequence Leap
             final boolean isUnusualSeqNumLeap =

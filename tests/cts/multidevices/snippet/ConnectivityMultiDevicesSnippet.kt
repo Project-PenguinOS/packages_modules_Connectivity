@@ -158,6 +158,7 @@ class ConnectivityMultiDevicesSnippet : Snippet {
         // transient issues. See b/448345079 for more context.
         repeat(MAX_CONNECT_RETRY) {
             // Add the test configuration and connect to it.
+            // This will throw if the Wi-Fi connection fails.
             connectUtil.connectToWifiConfig(wifiConfig)
 
             // Implement manual SSID matching. Specifying the SSID in
@@ -186,7 +187,8 @@ class ConnectivityMultiDevicesSnippet : Snippet {
             if (network != null) return network.networkHandle
             // If network is null, it means poll timed out. Retry connecting.
         }
-        fail("Could not connect to ${wifiConfig.SSID} after retrying $MAX_CONNECT_RETRY times")
+        fail("Tried connecting to ${wifiConfig.SSID} but could not verify" +
+            " access to the internet after retrying $MAX_CONNECT_RETRY times")
     }
 
     @Rpc(description = "Get interface name from NetworkHandle")

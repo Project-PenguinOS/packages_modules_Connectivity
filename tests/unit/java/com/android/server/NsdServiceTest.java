@@ -425,6 +425,7 @@ public class NsdServiceTest {
 
         doReturn(Process.myUid()).when(mDeps).getCallingUid();
         doReturn(Process.myPid()).when(mDeps).getCallingPid();
+        doReturn(true).when(mDeps).isPickerAutoUpgradeEnabled(anyInt());
         doReturn(TEST_RESOURCES_PACKAGE).when(mDeps).getConnectivityResourcesPackageName(any());
     }
 
@@ -1372,6 +1373,7 @@ public class NsdServiceTest {
                 attributionSource);
     }
 
+    @Test
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void testPickerStartIntent_AppNameNotFound() throws Exception {
         setMdnsDiscoveryManagerEnabled();
@@ -1695,6 +1697,29 @@ public class NsdServiceTest {
         inOrder.verify(discListener, timeout(TIMEOUT_MS)).onDiscoveryStopped(SERVICE_TYPE);
         verify(mPermissionManager, never()).finishDataDelivery(ACCESS_LOCAL_NETWORK,
                 getAttributionSource());
+    }
+
+    @Test
+    @DisableCompatChanges(RESTRICT_LOCAL_NETWORK)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @RequiresFlagsEnabled(FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED)
+    public void testDiscovery_MissingLocalNetworkPermission_NoPickerIfCompatDisabled()
+            throws Exception {
+        setMdnsDiscoveryManagerEnabled();
+        doReturn(false).when(mDeps).isPickerAutoUpgradeEnabled(anyInt());
+        final AttributionSource attributionSource = getAttributionSource();
+        doReturn(PermissionManager.PERMISSION_SOFT_DENIED).when(
+                mPermissionManager).checkPermissionForStartDataDelivery(
+                ACCESS_LOCAL_NETWORK, attributionSource, null);
+
+        final NsdManager client = connectClient(mService);
+        final DiscoveryListener discListener = mock(DiscoveryListener.class);
+        client.discoverServices(SERVICE_TYPE, PROTOCOL, discListener);
+        waitForIdle();
+
+        verify(discListener, timeout(TIMEOUT_MS)).onStartDiscoveryFailed(SERVICE_TYPE,
+                FAILURE_PERMISSION_DENIED);
+        verify(mContext, never()).startActivityAsUser(any(), any());
     }
 
     @Test

@@ -646,14 +646,14 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                         .build(),
                 0 /* expectedDataLossRate */);
 
-        // ExpectedDataLossRate: 100% - 2000/3000 => 34%
+        // ExpectedDataLossRate: 100% - 2000/3000 => 33%
         checkGetPacketLossRate(
                 mTransformStateInitial,
                 newStateBuilder
                         .setReplayBitmap(
                                 newReplayBitmap(2000 /* packetInWin */, 3000 /* highestSeqNum */))
                         .build(),
-                34 /* expectedDataLossRate */);
+                33 /* expectedDataLossRate */);
     }
 
     @Test
@@ -691,11 +691,11 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 newStateBuilder.setReplayBitmap(newReplayBitmap(4096 /* packetInWin */)).build(),
                 0 /* expectedDataLossRate */);
 
-        // ExpectedDataLossRate: 100% - 3800/4096 => 8%
+        // ExpectedDataLossRate: 100% - 3800/4096 => 7%
         checkGetPacketLossRate(
                 oldState,
                 newStateBuilder.setReplayBitmap(newReplayBitmap(3800 /* packetInWin */)).build(),
-                8 /* expectedDataLossRate */);
+                7 /* expectedDataLossRate */);
     }
 
     @Test
@@ -733,11 +733,11 @@ public class IpSecPacketLossDetectorTest extends NetworkEvaluationTestBase {
                 newStateBuilder.setReplayBitmap(newReplayBitmap(4096 /* packetInWin */)).build(),
                 0 /* expectedDataLossRate */);
 
-        // ExpectedDataLossRate: 100% - 2000/4096 => 52%
+        // ExpectedDataLossRate: 100% - 2000/4096 => 51%
         checkGetPacketLossRate(
                 oldState,
                 newStateBuilder.setReplayBitmap(newReplayBitmap(2000 /* packetInWin */)).build(),
-                52 /* expectedDataLossRate */);
+                51 /* expectedDataLossRate */);
     }
 
     @Test

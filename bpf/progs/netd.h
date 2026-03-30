@@ -227,7 +227,6 @@ ASSERT_STRING_EQUAL(XT_BPF_DENYLIST_PROG_PATH,  BPF_NETD_PATH "prog_netd_skfilte
 #define LOOPBACK_CHECKS_ENABLED_MAP_NETD_PATH                                  \
     BPF_NETD_PATH "map_netd_loopback_checks_enabled_map"
 
-#define L4S_INGRESS_PROG_PATH   BPF_NETD_PATH "prog_netd_ingress_accecn_common"
 #define L4S_EGRESS_ETHER_PROG_PATH    BPF_NETD_PATH "prog_netd_schedcls_egress_accecn_eth"
 #define L4S_EGRESS_RAWIP_PROG_PATH    BPF_NETD_PATH "prog_netd_schedcls_egress_accecn_rawip"
 #define L4S_OPTIONS_SOCKOPS_PROG_PATH BPF_NETD_PATH "prog_netd_sockops_accecn_option"

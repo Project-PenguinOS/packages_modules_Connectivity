@@ -71,6 +71,7 @@ import androidx.test.uiautomator.Until
 import com.android.compatibility.common.util.PollingCheck
 import com.android.compatibility.common.util.PropertyUtil
 import com.android.compatibility.common.util.SystemUtil
+import com.android.compatibility.common.util.UiAutomatorUtils2
 import com.android.modules.utils.build.SdkLevel.isAtLeastU
 import com.android.net.module.util.DnsPacket
 import com.android.net.module.util.DnsPacket.ANSECTION
@@ -139,7 +140,9 @@ import java.net.ServerSocket
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.Random
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
+import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 import kotlin.math.min
 import kotlin.test.assertContentEquals
@@ -683,6 +686,21 @@ class NsdManagerTest {
     }
 
     @Test
+    fun testCheckPermissionForService_deniedByDefault() {
+        assumeTrue(runAsShell(READ_DEVICE_CONFIG) {
+            com.android.tethering.flags.Flags.nsdServicePicker()
+        })
+        val permissionDeniedFuture = CompletableFuture<Int>()
+        nsdManager.checkPermissionForService(serviceName, serviceType, Runnable::run) {
+            permissionDeniedFuture.complete(it)
+        }
+        assertEquals(
+            NsdManager.SERVICE_PERMISSION_DENIED,
+            permissionDeniedFuture.get(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        )
+    }
+
+    @Test
     @CtsNetTestCasesLocalNetNoPermissions
     @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     @RequiresFlagsEnabled(
@@ -728,19 +746,84 @@ class NsdManagerTest {
             packetReader.sendResponse(buildMdnsPacket(payload2))
 
             // Wait for the picker to appear and click on the second service
-            val serviceText = uiDevice.wait(Until.findObject(By.text(serviceName2)), UI_TIMEOUT_MS)
-            assertNotNull(serviceText, "Picker did not show service $serviceName2")
-            serviceText.click()
+            UiAutomatorUtils2.waitFindObject(
+                By.text(serviceName2), UI_TIMEOUT_MS
+            ).click()
 
             // Expect the next callback to be the 2nd service being found, even though the response
             // for the 1st service was sent first
             val foundInfo = discoveryRecord.expectCallback<ServiceFound>(UI_TIMEOUT_MS)
             assertEquals(serviceName2, foundInfo.serviceInfo.serviceName)
+
+            // The service should now be allowlisted
+            val permissionGrantedFuture = CompletableFuture<Int>()
+            nsdManager.checkPermissionForService(serviceName2, serviceType, Runnable::run) {
+                permissionGrantedFuture.complete(it)
+            }
+            assertEquals(NsdManager.SERVICE_PERMISSION_GRANTED,
+                permissionGrantedFuture.get(TIMEOUT_MS, TimeUnit.MILLISECONDS))
         } cleanup {
             packetReader.handler.post { packetReader.stop() }
             handlerThread.waitForIdle(TIMEOUT_MS)
             nsdManager.stopServiceDiscovery(discoveryRecord)
             // No other callback (including for the 1st service) is received until DiscoveryStopped
+            discoveryRecord.expectCallback<DiscoveryStopped>()
+        }
+    }
+
+    @Test
+    fun testDiscoverServices_withServiceNameFilterAndPicker_showsFilteredServicesInPicker() {
+        assumeTrue(runAsShell(READ_DEVICE_CONFIG) {
+            com.android.tethering.flags.Flags.nsdServicePicker()
+        })
+        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        uiDevice.wakeUp()
+        uiDevice.executeShellCommand("wm dismiss-keyguard")
+        val packetReader = makePacketReader()
+        val discoveryRecord = NsdDiscoveryRecord()
+        tryTest {
+            val request = DiscoveryRequest.Builder(serviceType)
+                .setNetwork(testNetwork1.network)
+                .setFlags(DiscoveryRequest.FLAG_SHOW_PICKER)
+                .setServiceNameFilter(PatternMatcher(serviceName2, PatternMatcher.PATTERN_LITERAL))
+                .build()
+            nsdManager.discoverServices(
+                request,
+                Executor { it.run() },
+                discoveryRecord
+            )
+            discoveryRecord.expectCallback<DiscoveryStarted>()
+            assertNotNull(packetReader.pollForQuery("$serviceType.local", DnsResolver.TYPE_PTR))
+
+            /* Generated with:
+               scapy.raw(scapy.DNS(rd=0, qr=1, aa=1, qd = None, an =
+                   scapy.DNSRR(rrname='_nmt123456789._tcp.local', type='PTR', ttl=120,
+                   rdata='NsdTest123456789._nmt123456789._tcp.local'))).hex()
+             */
+            val ptrResponseTemplate = hexStringToByteArray("0000840000000001000000000d5f6e6d74313" +
+                    "233343536373839045f746370056c6f63616c00000c000100000078002b104e7364546573743" +
+                    "132333435363738390d5f6e6d74313233343536373839045f746370056c6f63616c00")
+            val payload1 = ptrResponseTemplate.clone().apply {
+                replaceServiceNameAndTypeWithTestSuffix(this, serviceName)
+            }
+            val payload2 = ptrResponseTemplate.clone().apply {
+                replaceServiceNameAndTypeWithTestSuffix(this, serviceName2)
+            }
+            packetReader.sendResponse(buildMdnsPacket(payload1))
+            packetReader.sendResponse(buildMdnsPacket(payload2))
+
+            // serviceName should be filtered out by serviceNameFilter, so it should not appear.
+            // Only serviceName2 should appear, although its payload was received later.
+            UiAutomatorUtils2.waitFindObject(
+                By.text(serviceName2), UI_TIMEOUT_MS
+            )
+
+            val service1Text = uiDevice.findObject(By.text(serviceName))
+            assertNull(service1Text, "Picker showed filtered service $serviceName")
+        } cleanup {
+            packetReader.handler.post { packetReader.stop() }
+            handlerThread.waitForIdle(TIMEOUT_MS)
+            nsdManager.stopServiceDiscovery(discoveryRecord)
             discoveryRecord.expectCallback<DiscoveryStopped>()
         }
     }
@@ -1198,12 +1281,8 @@ class NsdManagerTest {
         val record2 = NsdRegistrationRecord()
         val offloadEngine = TestNsdOffloadEngine()
         val offloadType = runAsShell(READ_DEVICE_CONFIG) {
-            if (Flags.nsdSelectiveMdnsResponseOffload()) {
-                (OffloadEngine.OFFLOAD_TYPE_REPLY
+            (OffloadEngine.OFFLOAD_TYPE_REPLY
                     or OffloadEngine.OFFLOAD_TYPE_FILTER_REPLIES).toLong()
-            } else {
-                OffloadEngine.OFFLOAD_TYPE_REPLY.toLong()
-            }
         }
 
         tryTest {
@@ -1266,8 +1345,6 @@ class NsdManagerTest {
 
     @Test
     fun testNsdManager_registerServiceAfterOffloadEngine_verifyOffloadInfoUpdates() {
-        assumeTrue(runAsShell(READ_DEVICE_CONFIG) { Flags.nsdSelectiveMdnsResponseOffload() })
-
         val si = NsdServiceInfo()
         si.serviceType = "$serviceType,_subtype"
         si.serviceName = serviceName
@@ -1341,11 +1418,6 @@ class NsdManagerTest {
 
     @Test
     fun testNsdManager_registerOffloadEngine_discoveryAndResolution() {
-        val isSelectiveMdnsResponseOffloadEnabled = runAsShell(READ_DEVICE_CONFIG) {
-            Flags.nsdSelectiveMdnsResponseOffload()
-        }
-        assumeTrue(isSelectiveMdnsResponseOffloadEnabled)
-
         val discoveryRecord = NsdDiscoveryRecord()
         val resolveRecord = NsdResolveRecord()
         val offloadEngine = TestNsdOffloadEngine()
@@ -1457,11 +1529,6 @@ class NsdManagerTest {
 
     @Test
     fun testNsdManager_registerOffloadEngine_discoveryAndResolution_SocketDestroyed() {
-        val isSelectiveMdnsResponseOffloadEnabled = runAsShell(READ_DEVICE_CONFIG) {
-            Flags.nsdSelectiveMdnsResponseOffload()
-        }
-        assumeTrue(isSelectiveMdnsResponseOffloadEnabled)
-
         val discoveryRecord = NsdDiscoveryRecord()
         val resolveRecord = NsdResolveRecord()
         val offloadEngine = TestNsdOffloadEngine()
@@ -3503,14 +3570,17 @@ class NsdManagerTest {
             replaceServiceNameAndTypeWithTestSuffix(payload2, serviceName2)
             packetReader.sendResponse(buildMdnsPacket(payload2))
 
-            val service1Text = uiDevice.wait(Until.findObject(By.text("Display Name 1")),
-                UI_TIMEOUT_MS)
+            val service1Text = UiAutomatorUtils2.waitFindObject(
+                By.text("Display Name 1"), UI_TIMEOUT_MS
+            )
             assertNotNull(
                 service1Text,
                 "Picker did not show service 1 with display attribute value"
             )
 
-            val service2Text = uiDevice.wait(Until.findObject(By.text(serviceName2)), UI_TIMEOUT_MS)
+            val service2Text = UiAutomatorUtils2.waitFindObject(
+                By.text(serviceName2), UI_TIMEOUT_MS
+            )
             assertNotNull(service2Text, "Picker did not show service 2 with its service name")
         } cleanup {
             packetReader.handler.post { packetReader.stop() }

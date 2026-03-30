@@ -668,7 +668,8 @@ public class MdnsServiceTypeClient {
         if (!(forceEnableBackoff)) {
             mdnsQueryScheduler.cancelScheduledRun();
         }
-        final QueryTaskConfig taskConfig = new QueryTaskConfig(searchOptions.getQueryMode());
+        final QueryTaskConfig taskConfig = new QueryTaskConfig(searchOptions.getQueryMode(),
+                featureFlags.mIsDualQueryForUnicastResponseEnabled);
         final long now = clock.elapsedRealtime();
         if (lastSentTime == 0) {
             lastSentTime = now;
@@ -1199,7 +1200,7 @@ public class MdnsServiceTypeClient {
                                 sharedLog,
                                 dependencies,
                                 existingServices,
-                                featureFlags.isQueryWithKnownAnswerEnabled())
+                                featureFlags)
                                 .call();
             } catch (RuntimeException e) {
                 sharedLog.e(String.format("Failed to run EnqueueMdnsQueryCallable for subtype: %s",

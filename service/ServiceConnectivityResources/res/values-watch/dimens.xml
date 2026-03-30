@@ -1,0 +1,6 @@
+<resources>
+    <dimen name="nsd_picker_padding_top">16dp</dimen>
+    <dimen name="nsd_picker_title_padding_top">0dp</dimen>
+    <dimen name="nsd_picker_summary_padding_top">0dp</dimen>
+    <dimen name="nsd_picker_progress_padding_top">4dp</dimen>
+</resources>

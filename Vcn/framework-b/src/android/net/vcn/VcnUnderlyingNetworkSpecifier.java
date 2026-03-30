@@ -121,7 +121,6 @@ public final class VcnUnderlyingNetworkSpecifier extends NetworkSpecifier implem
             }
             return false;
         }
-        // TODO(b/180140053): Allow matching against WifiNetworkAgentSpecifier
 
         // MatchAllNetworkSpecifier matched in NetworkCapabilities.
         return equals(other);

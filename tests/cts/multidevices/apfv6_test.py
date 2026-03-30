@@ -73,24 +73,6 @@ class ApfV6Test(apf_test_base.ApfTestBase):
       pass
     super().teardown_class()
 
-  def send_and_assert_packet_reply(
-      self, sent_packet, tag, expected_reply, test_case_name=''
-  ):
-    unexpected_behavior_error = None
-    try:
-      self._send_packet_and_expect_reply_received(
-          sent_packet, tag, expected_reply
-      )
-    except assert_utils.UnexpectedBehaviorError as e:
-      unexpected_behavior_error = e
-
-    if unexpected_behavior_error:
-      asserts.fail(
-          f'{test_case_name} failed. Sent packet: {sent_packet}, '
-          f'Expected reply: {expected_reply}. Original error: '
-          f'{unexpected_behavior_error}'
-      )
-
   def test_unicast_arp_request_offload(self):
     self.get_and_expect_ipv4_addresses_exist()
 
@@ -122,7 +104,7 @@ class ApfV6Test(apf_test_base.ApfTestBase):
         ARP_OFFLOAD_REPLY_LEN * 2, '0'
     )
 
-    self.send_and_assert_packet_reply(
+    self.send_packet_and_expect_counter_increased(
         arp_request,
         'DROPPED_ARP_REQUEST_REPLIED',
         expected_arp_reply,
@@ -151,7 +133,7 @@ class ApfV6Test(apf_test_base.ApfTestBase):
     icmpv6 = ICMPv6ND_NA(tgt=self.client_ipv6_addresses[0], R=1, S=1, O=1)
     opt = ICMPv6NDOptDstLLAddr(lladdr=self.client_mac_address)
     expected_neighbor_advertisement = bytes(eth / ip / icmpv6 / opt).hex()
-    self.send_and_assert_packet_reply(
+    self.send_packet_and_expect_counter_increased(
         neighbor_solicitation,
         'DROPPED_IPV6_NS_REPLIED_NON_DAD',
         expected_neighbor_advertisement,
@@ -179,7 +161,7 @@ class ApfV6Test(apf_test_base.ApfTestBase):
     )
     icmp = ICMP(type=0, id=1, seq=123)
     expected_echo_reply = bytes(eth / ip / icmp / b'hello').hex()
-    self.send_and_assert_packet_reply(
+    self.send_packet_and_expect_counter_increased(
         echo_request,
         'DROPPED_IPV4_PING_REQUEST_REPLIED',
         expected_echo_reply,
@@ -214,7 +196,7 @@ class ApfV6Test(apf_test_base.ApfTestBase):
     icmp = ICMPv6EchoReply(id=1, seq=123)
     expected_echo_reply = bytes(eth / ip / icmp / b'hello').hex()
 
-    self.send_and_assert_packet_reply(
+    self.send_packet_and_expect_counter_increased(
         echo_request,
         'DROPPED_IPV6_ICMP6_ECHO_REQUEST_REPLIED',
         expected_echo_reply,
@@ -277,7 +259,7 @@ class ApfV6Test(apf_test_base.ApfTestBase):
     igmp = IGMPv3mr(records=mcast_records)
     expected_igmpv3_report = bytes(ether / ip / igmpv3_hdr / igmp).hex()
     try:
-      self.send_and_assert_packet_reply(
+      self.send_packet_and_expect_counter_increased(
           igmpv3_general_query,
           'DROPPED_IGMP_V3_GENERAL_QUERY_REPLIED',
           expected_igmpv3_report,
@@ -324,7 +306,7 @@ class ApfV6Test(apf_test_base.ApfTestBase):
       mld_records.append(ICMPv6MLDMultAddrRec(dst=addr, rtype=2))
     mld = ICMPv6MLReport2(records=mld_records)
     expected_mldv2_report = bytes(ether / ip / hopOpts / mld).hex()
-    self.send_and_assert_packet_reply(
+    self.send_packet_and_expect_counter_increased(
         mldv2_general_query,
         'DROPPED_IPV6_MLD_V2_GENERAL_QUERY_REPLIED',
         expected_mldv2_report,
