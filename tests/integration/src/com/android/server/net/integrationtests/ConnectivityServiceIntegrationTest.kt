@@ -198,6 +198,10 @@ class ConnectivityServiceIntegrationTest {
         doReturn(UserHandle.ALL).`when`(asUserCtx).user
         doReturn(asUserCtx).`when`(context).createContextAsUser(eq(UserHandle.ALL), anyInt())
         doNothing().`when`(context).sendStickyBroadcast(any(), any())
+        doNothing().`when`(context).sendBroadcast(any())
+        doNothing().`when`(context).sendBroadcastAsUser(any(), any())
+        doNothing().`when`(context).sendOrderedBroadcastAsUser(any(), any(), any(), any(), any(),
+                anyInt(), any(), any())
         doReturn(Context.SYSTEM_CONFIG_SERVICE).`when`(context)
                 .getSystemServiceName(SystemConfigManager::class.java)
         doReturn(systemConfigManager).`when`(context)
