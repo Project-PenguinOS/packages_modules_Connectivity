@@ -68,6 +68,7 @@ import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_M
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS_FULL;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_MAINLINE_NETWORK_STACK;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSIONS;
 import static com.android.testutils.TestPermissionUtil.runAsShell;
 import static com.android.tethering.flags.Flags.FLAG_PERMISSION_MAP_UID_MIGRATION;
@@ -2098,6 +2099,27 @@ public class PermissionMonitorTest {
             expected.put(Process.toSdkSandboxUid(MOCK_UID11),
                     PERMISSION_BIT_ACCESS_LOCAL_NETWORK | PERMISSION_BIT_UPDATE_DEVICE_STATS
                             | PERMISSION_BIT_NO_INTERNET);
+        }
+        assertSameSparseIntArray(expected, actual);
+        verify(mDeps).logPermissionChangeListenerLatency(anyInt());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    public void testSetUidsPermissionBits_mainlineNetworkStack_lnpPermissionEnabled()
+            throws RemoteException {
+        LocalPermissionBpfMap permissionBpfMap = verifyAndCapturePermissionBpfMap();
+        SparseIntArray given = new SparseIntArray();
+        given.put(MOCK_UID11, PERMISSION_BPF_MAP_BIT_MAINLINE_NETWORK_STACK
+                | PERMISSION_BPF_MAP_BIT_INTERNET);
+        permissionBpfMap.setUidsPermissionBits(given);
+
+        SparseIntArray actual = verifySetChunkPermListForUidsAndCaptureInput();
+        SparseIntArray expected = new SparseIntArray();
+        expected.put(MOCK_UID11, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
+        if (hasSdkSandbox(MOCK_UID11)) {
+            expected.put(Process.toSdkSandboxUid(MOCK_UID11), PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
         }
         assertSameSparseIntArray(expected, actual);
         verify(mDeps).logPermissionChangeListenerLatency(anyInt());
