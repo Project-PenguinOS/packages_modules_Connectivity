@@ -204,7 +204,7 @@ class CSNetworkAgentTest : CSTest() {
             )
         } else {
             // Update the DNS with the TLS servers because the private DNS has been set.
-            resolverInOrder.verify(dnsResolver, times(2)).setResolverConfiguration(
+            resolverInOrder.verify(dnsResolver, times(1)).setResolverConfiguration(
                     argThat {
                         it.netId == agent.network.netId &&
                         it.servers.any { server -> server == DNS_ADDR } &&

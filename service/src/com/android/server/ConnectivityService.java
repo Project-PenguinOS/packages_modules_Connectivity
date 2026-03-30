@@ -5864,7 +5864,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // in order to restart a validation pass from within netd.
         final PrivateDnsConfig cfg = mDnsManager.getPrivateDnsConfig();
         if (cfg.inOpportunisticMode()) {
-            updateDnses(nai.linkProperties, null, nai.network.getNetId());
+            mDnsManager.forceRestartPrivateDnsValidation(nai.network.netId, nai.linkProperties);
         }
     }
 
@@ -5896,8 +5896,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void updatePrivateDns(NetworkAgentInfo nai, PrivateDnsConfig newCfg) {
-        mDnsManager.updatePrivateDns(nai.network, newCfg);
-        updateDnses(nai.linkProperties, null, nai.network.getNetId());
+        mDnsManager.onPrivateDnsConfigChanged(nai.network, nai.linkProperties, newCfg);
     }
 
     private void handlePrivateDnsValidationUpdate(PrivateDnsValidationUpdate update) {
@@ -5905,7 +5904,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (nai == null) {
             return;
         }
-        mDnsManager.updatePrivateDnsValidation(update);
+        mDnsManager.onPrivateDnsValidationUpdated(update);
         handleUpdateLinkProperties(nai, new LinkProperties(nai.linkProperties));
     }
 
@@ -6324,7 +6323,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             }
             mNetd.networkCreate(config);
             mDnsResolver.createNetworkCache(nai.network.getNetId());
-            mDnsManager.updateCapabilitiesForNetwork(nai.network.getNetId(),
+            mDnsManager.onCapabilitiesChanged(nai.network.getNetId(),
                     nai.networkCapabilities);
             return true;
         } catch (RemoteException | ServiceSpecificException e) {
@@ -10606,11 +10605,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         updateRoutes(newLp, oldLp, netId);
-        updateDnses(newLp, oldLp, netId);
+        updateDnsManagerLinkProperties(newLp, netId);
         // Make sure LinkProperties represents the latest private DNS status.
-        // This does not need to be done before updateDnses because the
+        // This does not need to be done before updateDnsManagerLinkProperties because the
         // LinkProperties are not the source of the private DNS configuration.
-        // updateDnses will fetch the private DNS configuration from DnsManager.
+        // updateDnsManagerLinkProperties will fetch the private DNS configuration from DnsManager.
+        // Note this modifies the same LinkProperties instance that DnsManager received in
+        // updateDnsManagerLinkProperties, but not fields that DnsManager uses itself.
         mDnsManager.updatePrivateDnsStatus(netId, newLp);
 
         if (isDefaultNetwork(networkAgent)) {
@@ -11392,21 +11393,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 || !routeDiff.updated.isEmpty();
     }
 
-    private void updateDnses(@NonNull LinkProperties newLp, @Nullable LinkProperties oldLp,
-            int netId) {
-        if (oldLp != null && newLp.isIdenticalDnses(oldLp)) {
-            return;  // no updating necessary
-        }
-
-        if (DBG) {
-            final Collection<InetAddress> dnses = newLp.getDnsServers();
-            log("Setting DNS servers for network " + netId + " to " + dnses);
-        }
+    private void updateDnsManagerLinkProperties(@NonNull LinkProperties newLp, int netId) {
         try {
-            mDnsManager.noteDnsServersForNetwork(netId, newLp);
-            mDnsManager.flushVmDnsCache();
+            mDnsManager.onLinkPropertiesChanged(netId, newLp);
         } catch (Exception e) {
-            loge("Exception in setDnsConfigurationForNetwork: " + e);
+            loge("Exception in DnsManager#onLinkPropertiesChanged", e);
         }
     }
 
@@ -11859,9 +11850,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // This network might have been underlying another network. Propagate its capabilities.
         propagateUnderlyingNetworkCapabilities(nai.network);
 
-        if (meteredChanged || !newNc.equalsTransportTypes(prevNc)) {
-            mDnsManager.updateCapabilitiesForNetwork(nai.network.getNetId(), newNc);
-        }
+        mDnsManager.onCapabilitiesChanged(nai.network.getNetId(), newNc);
 
         maybeSendProxyBroadcast(nai, prevNc, newNc);
     }
