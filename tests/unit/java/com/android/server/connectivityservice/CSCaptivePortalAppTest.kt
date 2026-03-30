@@ -23,6 +23,7 @@ import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.net.CaptivePortal
 import android.net.ConnectivityManager.ACTION_CAPTIVE_PORTAL_SIGN_IN
 import android.net.ConnectivityManager.EXTRA_CAPTIVE_PORTAL
+import android.net.LinkProperties
 import android.net.NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL
 import android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET
 import android.net.NetworkCapabilities.TRANSPORT_ETHERNET
@@ -222,6 +223,30 @@ class CSCaptivePortalAppTest : CSTest() {
         } else {
             verify(bpfNetMaps, never()).removeLocalNetHostAllowlistForInterface(anyInt())
         }
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    fun testCaptivePortalApp_SetDelegateUid_InterfaceChange() {
+        val newIfaceName = "wifi1"
+        val inOrder = inOrder(bpfNetMaps)
+        doReturn(102).`when`(interfaceTracker).removeInterface(eq(newIfaceName))
+
+        val (wifiAgent, captivePortal) = connectToWifiWithPortal(WIFI_IFACE)
+        captivePortal.setDelegateUidAndAwait(APP2_UID)
+        inOrder.verify(bpfNetMaps).addLocalNetUidAccess(eq(APP2_UID), eq(WIFI_IFACE))
+
+        val newLp = LinkProperties(wifiAgent.lp)
+        newLp.interfaceName = newIfaceName
+        wifiAgent.sendLinkProperties(newLp)
+        waitForIdle()
+
+        inOrder.verify(bpfNetMaps).addLocalNetUidAccess(eq(APP2_UID), eq(newIfaceName))
+        inOrder.verify(bpfNetMaps).removeLocalNetHostAllowlistForInterface(eq(100))
+
+        wifiAgent.disconnect()
+        waitForIdle()
+        inOrder.verify(bpfNetMaps).removeLocalNetHostAllowlistForInterface(eq(102))
     }
 
     @Test
