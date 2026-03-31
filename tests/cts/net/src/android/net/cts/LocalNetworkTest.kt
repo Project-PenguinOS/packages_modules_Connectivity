@@ -20,6 +20,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.permission.flags.Flags
+import android.platform.test.annotations.AppModeFull
 import android.system.Os
 import android.system.OsConstants
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
@@ -31,6 +32,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
+@AppModeFull(reason = "Cannot create test network in instant app mode")
 @IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
 @RunWith(DevSdkIgnoreRunner::class)
 class LocalNetworkTest : TestInterfaceBase() {
