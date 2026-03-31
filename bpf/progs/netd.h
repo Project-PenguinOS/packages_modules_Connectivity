@@ -107,7 +107,7 @@ typedef struct {
     uint64_t e0b;
     uint64_t e1b;
     uint32_t ce_count;
-    bool disabled;
+    bool enabled;
     bool ce_inited;
     bool byte_inited;
     uint8_t pad;

@@ -1162,12 +1162,14 @@ function uint8_t get_app_permissions() {
 
 function int inet_socket_create(struct bpf_sock* sk, const struct kver_uint kver) {
     uint64_t gid_uid = bpf_get_current_uid_gid();
+
     if (KVER_IS_AT_LEAST(kver, 5, 10)) {
         SkStorageValue *sks = bpf_sk_storage_get(sk, 0, BPF_SK_STORAGE_GET_F_CREATE);
         if (sks) {
             sks->cookie = bpf_get_sk_cookie(sk);
             sks->uid = gid_uid;
             sks->gid = (gid_uid >> 32);
+            sks->l4s.enabled = (sk->type == SOCK_STREAM && sk->protocol == IPPROTO_TCP);
         }
     }
 
@@ -1250,6 +1252,42 @@ function bool is_root_or_shell() {
     return (uid == AID_ROOT) || (uid == AID_SHELL);
 }
 
+function bool is_unpriv_tcp_port(__be16 port) {
+    switch (port) {
+        case htons(20):   // ftp (active mode data)
+        case htons(21):   // ftp (control)
+        case htons(22):   // ssh (incl. sftp)
+        case htons(23):   // telnet
+        case htons(80):   // http
+        case htons(443):  // https
+        case htons(445):  // smb over ip (direct host)
+        case htons(515):  // lpd
+        case htons(631):  // ipp
+            return true;
+        default:
+            return false;
+    }
+}
+
+function bool is_unpriv_udp_port(__be16 port) {
+    switch (port) {
+        case htons(319):  // ptp
+        case htons(320):  // ptp
+        case htons(443):  // http/3
+            return true;
+        default:
+            return false;
+    }
+}
+
+function bool is_unpriv_port(__u32 protocol, __be16 port) {
+    switch (protocol) {
+        case IPPROTO_TCP: return is_unpriv_tcp_port(port);
+        case IPPROTO_UDP: return is_unpriv_udp_port(port);
+        default:          return false;
+    }
+}
+
 // kernel's include/linux/bpf.h defines flag BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE as (1 << 0) == 1,
 // as a flag, it must be shifted up by 1 (making it == 2) and combined with 'generic' ALLOW (== 1)
 static const int BPF_ALLOW_IGNORING_CAP_NET_BIND = BPF_ALLOW + 2;
@@ -1261,6 +1299,8 @@ function int inet_bind(struct bpf_sock_addr *ctx, const struct kver_uint kver) {
         if (ctx->user_port == htons(53) && is_netd())
             return BPF_ALLOW_IGNORING_CAP_NET_BIND;
         if (ctx->protocol == IPPROTO_TCP && ctx->user_port == htons(555) && is_root_or_shell())
+            return BPF_ALLOW_IGNORING_CAP_NET_BIND;
+        if (is_unpriv_port(ctx->protocol, ctx->user_port))
             return BPF_ALLOW_IGNORING_CAP_NET_BIND;
     }
     return BPF_ALLOW;
@@ -1344,7 +1384,7 @@ function int inet_getsockopt(struct bpf_sockopt *ctx,
 
         if (!sks) return bpf_disallow(EUNATCH);
 
-        *(uint8_t *)optval = !sks->l4s.disabled;
+        *optval = sks->l4s.enabled;
         WRITE_ONCE(ctx->retval, 0);
         WRITE_ONCE(ctx->optlen, sizeof(uint8_t));
         return BPF_ALLOW;
@@ -1418,7 +1458,7 @@ function int inet_setsockopt(struct bpf_sockopt *ctx,
 
         if (!sks) return bpf_disallow(EUNATCH);
 
-        sks->l4s.disabled = !*optval;
+        sks->l4s.enabled = !!*optval;
         WRITE_ONCE(ctx->optlen, -1);
         return BPF_ALLOW;
     }
