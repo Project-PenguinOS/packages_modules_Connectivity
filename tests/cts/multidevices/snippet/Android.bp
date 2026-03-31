@@ -47,6 +47,7 @@ android_test_helper_app {
         "androidx.test.runner",
         "mobly-snippet-lib",
         "cts-net-utils",
+        "com.android.networkstack.flags-aconfig-java",
     ],
     platform_apis: true,
     min_sdk_version: "31",
