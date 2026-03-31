@@ -29,6 +29,7 @@ import static android.net.BpfNetMapsConstants.L4S_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_CACHE_GENERATION_ID_MAP_PATH;
+import static android.net.BpfNetMapsConstants.LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
 import static android.net.BpfNetMapsConstants.LOOPBACK_ACCESS_METRICS_ENABLED_MAP_PATH;
@@ -207,6 +208,7 @@ public class BpfNetMaps {
     private static BpfBoolean sL4sEnabledMap = null;
     private static BpfBoolean sLoopbackAccessMetricsEnabledBpfBoolean = null;
     private static BpfBoolean sLoopbackChecksEnabledBpfBoolean = null;
+    private static BpfBoolean sLocalNetNoteOpsEnabledBpfBoolean = null;
 
     private static final List<Pair<Integer, String>> PERMISSION_LIST = Arrays.asList(
             Pair.create(TRAFFIC_PERMISSION_INTERNET, "PERMISSION_INTERNET"),
@@ -251,6 +253,13 @@ public class BpfNetMaps {
      */
     public boolean isLocalNetMetricsEnabled() {
         return sBetaMetricsEnabled;
+    }
+
+    /**
+     * Get android.permission.flags.Flags#accessLocalNetworkPermissionEnabled()
+     */
+    public boolean isAccessLocalNetworkPermissionEnabled() {
+        return mDeps.isAccessLocalNetworkPermissionEnabled();
     }
 
     /**
@@ -335,6 +344,15 @@ public class BpfNetMaps {
     public static void setLoopbackChecksEnabledBpfBooleanForTest(
             BpfBoolean loopbackChecksEnabledBpfBoolean) {
         sLoopbackChecksEnabledBpfBoolean = loopbackChecksEnabledBpfBoolean;
+    }
+
+    /**
+     * Set localNetNoteOpsEnabledBpfBoolean for test.
+     */
+    @VisibleForTesting
+    public static void setLocalNetNoteOpsEnabledBpfBooleanForTest(
+            BpfBoolean localNetNoteOpsEnabledBpfBoolean) {
+        sLocalNetNoteOpsEnabledBpfBoolean = localNetNoteOpsEnabledBpfBoolean;
     }
 
     /**
@@ -552,6 +570,15 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private static BpfBoolean getLocalNetNoteOpsEnabledBpfBoolean() {
+        try {
+            return new BpfBoolean(LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH, true);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open LNP note op enabled map", e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     private static IBpfMap<LocalNetAccessKey, Bool> getLocalNetAccessMap() {
         try {
@@ -717,6 +744,18 @@ public class BpfNetMaps {
             } catch (ErrnoException e) {
                 throw new IllegalStateException("Failed to set permission propagation enabled map",
                         e);
+            }
+
+            if (sLocalNetNoteOpsEnabledBpfBoolean == null) {
+                sLocalNetNoteOpsEnabledBpfBoolean = getLocalNetNoteOpsEnabledBpfBoolean();
+            }
+            try {
+                // We collect access events if we are enforcing local network permissions or if we
+                // are collecting beta metrics
+                sLocalNetNoteOpsEnabledBpfBoolean.set(
+                        deps.isAccessLocalNetworkPermissionEnabled() || sBetaMetricsEnabled);
+            } catch (ErrnoException e) {
+                throw new IllegalStateException("Failed to set LNP note ops enabled map", e);
             }
         }
 
@@ -2302,6 +2341,16 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private void dumpLocalNetNoteOpsConfig(final IndentingPrintWriter pw) {
+        try {
+            final boolean enabled = sLocalNetNoteOpsEnabledBpfBoolean.get();
+            pw.println("sLocalNetNoteOpsEnabledBpfBoolean: " + enabled);
+        } catch (ErrnoException e) {
+            pw.println("Failed to read LNP note ops enabled map: " + e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private void dumpLoopbackAccessMetricsConfig(final IndentingPrintWriter pw) {
         try {
@@ -2428,6 +2477,9 @@ public class BpfNetMaps {
             }
             if (SdkLevel.isAtLeastB()) {
                 dumpLoopbackChecksConfig(pw);
+            }
+            if (SdkLevel.isAtLeastB()) {
+                dumpLocalNetNoteOpsConfig(pw);
             }
             if (SdkLevel.isAtLeastC()) {
                 dumpL4sEnabledConfig(pw);

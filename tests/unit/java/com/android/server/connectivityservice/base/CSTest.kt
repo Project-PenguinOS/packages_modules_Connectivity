@@ -60,6 +60,7 @@ import android.os.BatteryStatsManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
@@ -88,6 +89,7 @@ import com.android.server.connectivity.ClatCoordinator
 import com.android.server.connectivity.ConnectivityFlags
 import com.android.server.connectivity.IProxyTracker
 import com.android.server.connectivity.InterfaceTracker
+import com.android.server.connectivity.LocalNetEventListener
 import com.android.server.connectivity.MulticastRoutingCoordinatorService
 import com.android.server.connectivity.MultinetworkPolicyTracker
 import com.android.server.connectivity.MultinetworkPolicyTrackerTestDependencies
@@ -260,6 +262,8 @@ open class CSTest {
     val destroySocketsWrapper = mock<DestroySocketsWrapper>()
     val dnsResolver = mock<IDnsResolver>()
 
+    val localNetEventListener = mock<LocalNetEventListener>()
+
     val deps = CSDeps()
     val permDeps = PermDeps()
 
@@ -352,6 +356,12 @@ open class CSTest {
         override fun getInterfaceTracker(context: Context?) = this@CSTest.interfaceTracker
         override fun getClatCoordinator(netd: INetd?) = this@CSTest.clatCoordinator
         override fun getNetworkStack() = this@CSTest.networkStack
+        override fun getLocalNetEventListener(
+            context: Context?,
+            looper: Looper?,
+            metricsEnabled: Boolean,
+            noteOpsEnabled: Boolean
+        ) = this@CSTest.localNetEventListener
 
         override fun makeHandlerThread(tag: String) = csHandlerThread
         override fun makeProxyTracker(context: Context, connServiceHandler: Handler) = proxyTracker
