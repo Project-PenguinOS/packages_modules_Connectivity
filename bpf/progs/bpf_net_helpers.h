@@ -68,11 +68,25 @@ struct tcphdr_with_flags16 {
   __be16 dest;
   __be32 seq;
   __be32 ack_seq;
-  __be16 flags16;
+  __extension__ union {
+    __be16 flags16;
+    struct {
+      // copied from //external/iproute2/include/uapi/linux/tcp.h
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+      __u16 rsvd:4, doff:4, fin:1, syn:1, rst:1, psh:1, ack:1, urg:1, ece:1, cwr:1;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+      __u16 doff:4, rsvd:4, cwr:1, ece:1, urg:1, ack:1, psh:1, rst:1, syn:1, fin:1;
+#else
+#error "Adjust your <asm/byteorder.h> defines"
+#endif
+    };
+  };
   __be16 window;
-  __be16 check;
+  __sum16 check;
   __be16 urg_ptr;
 };
+
+_Static_assert(offsetof(struct tcphdr_with_flags16, flags16) == 12, "?");
 _Static_assert(sizeof(struct tcphdr_with_flags16) == sizeof(struct tcphdr), "struct tcphdr_with_flags16 ?!?");
 
 // Offsets from beginning of L4 (TCP/UDP) header

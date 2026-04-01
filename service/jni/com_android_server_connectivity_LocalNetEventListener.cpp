@@ -37,7 +37,7 @@ static jobject nativeGetLocalNetAccessRingbufFd(JNIEnv *env, jclass clazz) {
         ALOGE("Failed to get local net event ring buffer.");
         return nullptr;
     }
-    return jniCreateFileDescriptor(env, fd);
+    return jniCreateFileDescriptor(env, fd.release());
 }
 
 static jintArray nativeConsumeAllLocalNetAccessEvents(JNIEnv *env,

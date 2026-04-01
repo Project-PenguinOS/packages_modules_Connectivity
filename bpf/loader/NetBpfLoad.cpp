@@ -61,21 +61,18 @@
 
 #include <com_android_tethering_readonly_flags.h>
 
-#define BPF_SUPPORT_CMD_FIXUP
+#define BPF_UTILS_MORE_IS_FOO_HELPERS
 #include "BpfSyscallWrappers.h"
 #include "bpf/BpfUtils.h"
 #include "bpf_map_def.h"
 
 using android::base::borrowed_fd;
-using android::base::EndsWith;
 using android::base::GetIntProperty;
 using android::base::GetProperty;
 using android::base::InitLogging;
 using android::base::KernelLogger;
 using android::base::SetProperty;
 using android::base::Split;
-using android::base::StartsWith;
-using android::base::Tokenize;
 using android::base::unique_fd;
 using std::optional;
 using std::span;
@@ -1472,46 +1469,6 @@ static int logApexVersion(const char* const apex_pretty_name, const char* const 
     fclose(f);
     free(found_blockdev);
     return 0;
-}
-
-static bool hasGSM() {
-    static string ph = GetProperty("gsm.current.phone-type", "");
-    static bool gsm = (ph != "");
-    static bool logged = false;
-    if (!logged) {
-        logged = true;
-        ALOGI("hasGSM(gsm.current.phone-type='%s'): %s", ph.c_str(), gsm ? "true" : "false");
-    }
-    return gsm;
-}
-
-static bool isTV() {
-    if (hasGSM()) return false;  // TVs don't do GSM
-
-    static string key = GetProperty("ro.oem.key1", "");
-    static bool tv = StartsWith(key, "ATV00");
-    static bool logged = false;
-    if (!logged) {
-        logged = true;
-        ALOGI("isTV(ro.oem.key1='%s'): %s.", key.c_str(), tv ? "true" : "false");
-    }
-    return tv;
-}
-
-static bool isWear() {
-    static string wearSdkStr = GetProperty("ro.cw_build.wear_sdk.version", "");
-    static int wearSdkInt = GetIntProperty("ro.cw_build.wear_sdk.version", 0);
-    static string buildChars = GetProperty("ro.build.characteristics", "");
-    static vector<string> v = Tokenize(buildChars, ",");
-    static bool watch = (std::find(v.begin(), v.end(), "watch") != v.end());
-    static bool wear = (wearSdkInt > 0) || watch;
-    static bool logged = false;
-    if (!logged) {
-        logged = true;
-        ALOGI("isWear(ro.cw_build.wear_sdk.version=%d[%s] ro.build.characteristics='%s'): %s",
-              wearSdkInt, wearSdkStr.c_str(), buildChars.c_str(), wear ? "true" : "false");
-    }
-    return wear;
 }
 
 static int libbpfPrint(enum libbpf_print_level lvl, const char *const formatStr,

@@ -190,6 +190,11 @@ java_defaults {
 }
 
 // Updatable tethering packaged for finalized API
+filegroup {
+    name: "preinstalled-packages-com.android.networkstack.tethering.xml",
+    srcs: ["preinstalled-packages-com.android.networkstack.tethering.xml"],
+}
+
 android_app {
     name: "Tethering",
     defaults: [
@@ -200,6 +205,7 @@ android_app {
     manifest: "AndroidManifest.xml",
     use_embedded_native_libs: true,
     privapp_allowlist: ":privapp_allowlist_com.android.tethering",
+    preinstall_allowlist: ":preinstalled-packages-com.android.networkstack.tethering.xml",
     apex_available: ["com.android.tethering"],
     updatable: true,
 }

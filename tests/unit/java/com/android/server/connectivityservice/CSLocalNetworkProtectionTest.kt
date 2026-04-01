@@ -27,6 +27,7 @@ import android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN
 import android.net.NetworkCapabilities.TRANSPORT_VPN
 import android.net.NetworkCapabilities.TRANSPORT_WIFI
 import android.net.NetworkRequest
+import android.net.ProxyInfo
 import android.net.RouteInfo
 import android.net.VpnManager
 import android.net.VpnTransportInfo
@@ -48,11 +49,15 @@ import org.junit.runner.RunWith
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyString
+import org.mockito.InOrder
 import org.mockito.Mockito.atLeastOnce
+import org.mockito.Mockito.clearInvocations
+import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.never
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoMoreInteractions
+import org.mockito.verification.VerificationMode
 
 private const val TIMEOUT_MS = 500
 private const val PREFIX_LENGTH_IPV4 = 32 + 96
@@ -106,9 +111,9 @@ private fun address(addressStr: String) = InetAddresses.parseNumericAddress(addr
 @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
 class CSLocalNetworkProtectionTest : CSTest() {
     private val MULTICAST_AND_BROADCAST_PREFIXES = listOf(
-        IpPrefix("ff00::/8"),
-        IpPrefix("224.0.0.0/4"),
-        IpPrefix("255.255.255.255/32")
+        IpPrefix("224.0.0.0/4"), // Multicast
+        IpPrefix("ff00::/8"), // Multicast
+        IpPrefix("255.255.255.255/32") // Broadcast
     )
     private val LINK_LOCAL_PREFIX = IpPrefix("fe80::/64")
 
@@ -145,41 +150,271 @@ class CSLocalNetworkProtectionTest : CSTest() {
     } else {
         prefix.prefixLength + PREFIX_LENGTH_IPV4
     }
-    private fun verifyAddedToLocal(prefix: IpPrefix, iface: String = WIFI_IFNAME) {
-        verify(bpfNetMaps).addLocalNetAccess(triePrefixLength(prefix), iface,
+
+    private fun <T> verifyMock(
+        mock: T,
+        inOrder: InOrder? = null,
+        mode: VerificationMode = atLeastOnce()
+    ): T {
+        return inOrder?.verify(mock, mode) ?: verify(mock, mode)
+    }
+
+    private fun verifyAddedToLocal(
+        prefix: IpPrefix,
+        iface: String = WIFI_IFNAME,
+        inOrder: InOrder? = null
+    ) {
+        verifyMock(bpfNetMaps, inOrder).addLocalNetAccess(triePrefixLength(prefix), iface,
             prefix.address, 0 /* protocol */, 0 /* remoteport */, false)
     }
 
-    private fun verifyNeverAddedToLocal(prefix: IpPrefix, iface: String = WIFI_IFNAME) =
-        verify(bpfNetMaps, never()).addLocalNetAccess(triePrefixLength(prefix),
-            iface, prefix.address, 0 /* protocol */, 0 /* remoteport */, false)
-
-    private fun verifyRemovedFromLocal(prefix: IpPrefix, iface: String = WIFI_IFNAME) {
-        verify(bpfNetMaps).removeLocalNetAccess(triePrefixLength(prefix), iface,
+    private fun verifyRemovedFromLocal(
+        prefix: IpPrefix,
+        iface: String = WIFI_IFNAME,
+        inOrder: InOrder? = null
+    ) {
+        verifyMock(bpfNetMaps, inOrder).removeLocalNetAccess(triePrefixLength(prefix), iface,
             prefix.address, 0 /* protocol */, 0 /* remoteport */)
     }
 
-    private fun verifyNeverRemovedFromLocal(prefix: IpPrefix, iface: String = WIFI_IFNAME) =
-        verify(bpfNetMaps, never()).removeLocalNetAccess(triePrefixLength(prefix),
+    private fun verifyPopulationOfMulticastAndBroadcastAddress(
+        iface: String = WIFI_IFNAME,
+        inOrder: InOrder? = null
+    ) {
+        for (prefix in MULTICAST_AND_BROADCAST_PREFIXES) {
+            verifyAddedToLocal(prefix, iface, inOrder)
+        }
+    }
+
+    private fun verifyRemovalOfMulticastAndBroadcastAddress(
+        iface: String = WIFI_IFNAME,
+        inOrder: InOrder? = null
+    ) {
+        for (prefix in MULTICAST_AND_BROADCAST_PREFIXES) {
+            verifyRemovedFromLocal(prefix, iface, inOrder)
+        }
+    }
+
+    private fun verifyNeverAddedToLocal(
+        prefix: IpPrefix,
+        iface: String = WIFI_IFNAME,
+        inOrder: InOrder? = null
+    ) {
+        verifyMock(bpfNetMaps, inOrder, never()).addLocalNetAccess(triePrefixLength(prefix), iface,
+            prefix.address, 0 /* protocol */, 0 /* remoteport */, false)
+    }
+
+    private fun verifyNeverRemovedFromLocal(
+        prefix: IpPrefix,
+        iface: String = WIFI_IFNAME,
+        inOrder: InOrder? = null
+    ) {
+        verifyMock(bpfNetMaps, inOrder, never()).removeLocalNetAccess(triePrefixLength(prefix),
             iface, prefix.address, 0 /* protocol */, 0 /* remoteport */)
+    }
 
     private fun verifyNothingRemovedFromLocal() {
         verify(bpfNetMaps, never()).removeLocalNetAccess(anyInt(), anyString(),
             any(InetAddress::class.java), anyInt(), anyInt())
     }
 
-    // Verify if multicast and broadcast addresses have been added using addLocalNetAccess
-    fun verifyPopulationOfMulticastAndBroadcastAddress(iface: String = WIFI_IFNAME) {
-        for (prefix in MULTICAST_AND_BROADCAST_PREFIXES) {
-            verifyAddedToLocal(prefix, iface)
-        }
+    @Test
+    fun testNetworkWithProxy_AddressRemovedFromBpfMap() {
+        val nr = nr(TRANSPORT_WIFI)
+        val cb = TestableNetworkCallback()
+        cm.requestNetwork(nr, cb)
+
+        // Verifying IPv4 matching prefix should be populated in local_net_access map
+        val inOrder = inOrder(bpfNetMaps)
+
+        // Connecting to network with IPv4 local address in LinkProperties
+        val wifiLp = lp(WIFI_IFNAME, IPV4_ADDRESS_1)
+        val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
+        wifiAgent.connect()
+        cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
+
+        // Multicast and Broadcast address should always be populated in local_net_access map
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME, inOrder)
+        verifyAddedToLocal(IPV4_PREFIX_1, WIFI_IFNAME, inOrder)
+
+        // Add another network without a proxy to verify that proxy changes on one network do not
+        // affect LNP enforcement for other networks
+        val wifiLp2 = lp(WIFI_IFNAME_2, IPV4_ADDRESS_2)
+        val wifiAgent2 = Agent(nc = wifiNc, lp = wifiLp2)
+        wifiAgent2.connect()
+
+        // Multicast and Broadcast address should always be populated in local_net_access map
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME_2, inOrder)
+        verifyAddedToLocal(IPV4_PREFIX_2, WIFI_IFNAME_2, inOrder)
+
+        // Adding the proxy, the local network protection should be disabled.
+        wifiLp.httpProxy = ProxyInfo.buildDirectProxy("10.0.0.185", 8080)
+        wifiAgent.sendLinkProperties(wifiLp)
+        cb.expect<LinkPropertiesChanged>(wifiAgent.network)
+
+        // Multicast and Broadcast address should be removed in local_net_access map
+        verifyRemovalOfMulticastAndBroadcastAddress(WIFI_IFNAME, inOrder)
+        // Verifying IPv4 matching prefix should be removed from local_net_access map
+        verifyRemovedFromLocal(IPV4_PREFIX_1, WIFI_IFNAME, inOrder)
+
+        // Verify that other networks are not affected
+        verifyNeverRemovedFromLocal(IPV4_PREFIX_2, WIFI_IFNAME_2, inOrder)
+
+        // Removing the proxy, the local network protection should be enabled.
+        wifiLp.httpProxy = null
+        wifiAgent.sendLinkProperties(wifiLp)
+        cb.expect<LinkPropertiesChanged>(wifiAgent.network)
+
+        // Multicast and Broadcast address should always be populated in local_net_access map
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME, inOrder)
+        // Verifying IPv4 matching prefix should be populated in local_net_access map
+        verifyAddedToLocal(IPV4_PREFIX_1, WIFI_IFNAME, inOrder)
+
+        // Verify that LNP bfp rules were added only once for the second wifi network.
+        verifyNeverAddedToLocal(IPV4_PREFIX_2, WIFI_IFNAME_2, inOrder)
+        verifyNeverRemovedFromLocal(IPV4_PREFIX_2, WIFI_IFNAME_2, inOrder)
     }
 
-    // Verify if multicast and broadcast addresses have been removed using removeLocalNetAccess
-    fun verifyRemovalOfMulticastAndBroadcastAddress(iface: String = WIFI_IFNAME) {
-        for (prefix in MULTICAST_AND_BROADCAST_PREFIXES) {
-            verifyRemovedFromLocal(prefix, iface)
-        }
+    @Test
+    fun testNetworkWithGlobalProxy_AddressRemovedFromBpfMap() {
+        val nr = nr(TRANSPORT_WIFI)
+        val cb = TestableNetworkCallback()
+        cm.requestNetwork(nr, cb)
+
+        val wifiLp = lp(WIFI_IFNAME, IPV4_ADDRESS_1)
+        val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
+        wifiAgent.connect()
+        cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
+
+        // A global proxy configuration affects all networks
+        val wifiLp2 = lp(WIFI_IFNAME_2, IPV4_ADDRESS_2)
+        val wifiAgent2 = Agent(nc = wifiNc, lp = wifiLp2)
+        wifiAgent2.connect()
+
+        // Initial state: Verify LNP rules are added for both networks
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME)
+        verifyAddedToLocal(IPV4_PREFIX_1, WIFI_IFNAME)
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME_2)
+        verifyAddedToLocal(IPV4_PREFIX_2, WIFI_IFNAME_2)
+        clearInvocations(bpfNetMaps) // Clear invocations after setup
+
+        // Adding the global proxy, the local network protection should be disabled for all networks.
+        service.setGlobalProxy(ProxyInfo.buildDirectProxy("10.0.0.185", 8080))
+        csHandler.waitForIdle(TIMEOUT_MS)
+
+        verifyRemovalOfMulticastAndBroadcastAddress(WIFI_IFNAME)
+        verifyRemovedFromLocal(IPV4_PREFIX_1, WIFI_IFNAME)
+        verifyRemovalOfMulticastAndBroadcastAddress(WIFI_IFNAME_2)
+        verifyRemovedFromLocal(IPV4_PREFIX_2, WIFI_IFNAME_2)
+        clearInvocations(bpfNetMaps)
+
+        // Removing the global proxy, the local network protection should be enabled.
+        service.setGlobalProxy(ProxyInfo.buildDirectProxy("", 0))
+        csHandler.waitForIdle(TIMEOUT_MS)
+
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME)
+        verifyAddedToLocal(IPV4_PREFIX_1, WIFI_IFNAME)
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME_2)
+        verifyAddedToLocal(IPV4_PREFIX_2, WIFI_IFNAME_2)
+        verifyNoMoreInteractions(bpfNetMaps)
+    }
+
+    @Test
+    fun testLinkPropertiesChangeWithProxy_LnpRulesSynchronizedCorrectly() {
+        val nr = nr(TRANSPORT_WIFI)
+        val cb = TestableNetworkCallback()
+        cm.requestNetwork(nr, cb)
+
+        val initialLp = lp(WIFI_IFNAME, IPV4_ADDRESS_1)
+        val wifiAgent = Agent(nc = wifiNc, lp = initialLp)
+        wifiAgent.connect()
+        cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
+
+        val inOrder = inOrder(bpfNetMaps)
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME, inOrder)
+        verifyAddedToLocal(IPV4_PREFIX_1, WIFI_IFNAME, inOrder)
+
+        // Configure per-network proxy, verify LNP rules removed
+        val lpWithProxy = LinkProperties(initialLp)
+        lpWithProxy.httpProxy = ProxyInfo.buildDirectProxy("10.0.0.185", 8080)
+        wifiAgent.sendLinkProperties(lpWithProxy)
+        cb.expect<LinkPropertiesChanged>(wifiAgent.network)
+
+        verifyRemovalOfMulticastAndBroadcastAddress(WIFI_IFNAME, inOrder)
+        verifyRemovedFromLocal(IPV4_PREFIX_1, WIFI_IFNAME, inOrder)
+
+        // Configure a different proxy, verify that rules are not added or removed
+        val updatedLp = lp(WIFI_IFNAME_2, IPV4_ADDRESS_2)
+        updatedLp.httpProxy = ProxyInfo.buildDirectProxy("10.0.0.185", 8081)
+        wifiAgent.sendLinkProperties(updatedLp)
+        cb.expect<LinkPropertiesChanged>(wifiAgent.network)
+
+        // Verify that no LNP rules are added or removed
+        verifyNeverAddedToLocal(IPV4_PREFIX_1, WIFI_IFNAME, inOrder)
+        verifyNeverRemovedFromLocal(IPV4_PREFIX_1, WIFI_IFNAME, inOrder)
+        verifyNeverAddedToLocal(IPV4_PREFIX_2, WIFI_IFNAME_2, inOrder)
+        verifyNeverRemovedFromLocal(IPV4_PREFIX_2, WIFI_IFNAME_2, inOrder)
+
+        // Unset the proxy on the new network
+        val lpWithoutProxy = LinkProperties(updatedLp)
+        lpWithoutProxy.httpProxy = null
+        wifiAgent.sendLinkProperties(lpWithoutProxy)
+        cb.expect<LinkPropertiesChanged>(wifiAgent.network)
+
+        // Verify LNP rules are populated using the updated LinkProperties
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME_2, inOrder)
+        verifyAddedToLocal(IPV4_PREFIX_2, WIFI_IFNAME_2, inOrder)
+    }
+
+    @Test
+    fun testGlobalAndPerNetworkProxyInteraction_LnpRulesClearedAndRestored() {
+        val nr = nr(TRANSPORT_WIFI)
+        val cb = TestableNetworkCallback()
+        cm.requestNetwork(nr, cb)
+
+        // Register network and verify LNP rules are populated.
+        val wifiLp = lp(WIFI_IFNAME, IPV4_ADDRESS_1)
+        val wifiAgent = Agent(nc = wifiNc, lp = wifiLp)
+        wifiAgent.connect()
+        cb.expectAvailableCallbacks(wifiAgent.network, validated = false)
+
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME)
+        verifyAddedToLocal(IPV4_PREFIX_1, WIFI_IFNAME)
+        clearInvocations(bpfNetMaps)
+
+        // Configure a per-network proxy and verify LNP rules are removed.
+        val lpWithPerNetworkProxy = LinkProperties(wifiLp)
+        lpWithPerNetworkProxy.httpProxy = ProxyInfo.buildDirectProxy("10.0.0.185", 8080)
+        wifiAgent.sendLinkProperties(lpWithPerNetworkProxy)
+        cb.expect<LinkPropertiesChanged>(wifiAgent.network)
+
+        verifyRemovalOfMulticastAndBroadcastAddress(WIFI_IFNAME)
+        verifyRemovedFromLocal(IPV4_PREFIX_1, WIFI_IFNAME)
+        clearInvocations(bpfNetMaps)
+
+        // Set a global proxy and verify that LNP rules remain cleared.
+        service.setGlobalProxy(ProxyInfo.buildDirectProxy("global.proxy", 8000))
+        csHandler.waitForIdle(TIMEOUT_MS)
+
+        // Verify that no LNP rules are added or removed
+        verifyNoMoreInteractions(bpfNetMaps)
+
+        // Remove the per-network proxy.
+        val lpWithoutPerNetworkProxy = LinkProperties(wifiLp)
+        wifiAgent.sendLinkProperties(lpWithoutPerNetworkProxy)
+        cb.expect<LinkPropertiesChanged>(wifiAgent.network)
+
+        // Verify LNP rules are not restored because the global proxy is still active.
+        verifyNoMoreInteractions(bpfNetMaps)
+
+        // Unset the global proxy.
+        service.setGlobalProxy(ProxyInfo.buildDirectProxy("", 0))
+        csHandler.waitForIdle(TIMEOUT_MS)
+
+        // Verify that the LNP rules are correctly restored.
+        verifyPopulationOfMulticastAndBroadcastAddress(WIFI_IFNAME)
+        verifyAddedToLocal(IPV4_PREFIX_1, WIFI_IFNAME)
+        verifyNoMoreInteractions(bpfNetMaps)
     }
 
     @Test
