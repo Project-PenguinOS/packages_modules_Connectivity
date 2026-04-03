@@ -119,6 +119,7 @@ import android.os.Process;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 import android.os.ResultReceiver;
+import android.os.SystemClock;
 import android.os.UserHandle;
 import android.permission.PermissionManager;
 import android.provider.DeviceConfig;
@@ -167,6 +168,9 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -3989,12 +3993,20 @@ public class NsdService extends INsdManager.Stub {
         @Override
         public String toString() {
             return getRequestDescriptor() + " {" + mTransactionId
-                    + ", startTime " + mStartTimeMs
+                    + ", startTime " + getFormattedStartTime()
                     + ", foundServices " + mFoundServiceCount
                     + ", lostServices " + mLostServiceCount
                     + ", fromCache " + mIsServiceFromCache
                     + ", sentQueries " + mSentQueryCount
                     + "}";
+        }
+
+        private String getFormattedStartTime() {
+            final long startTimeToNow = SystemClock.elapsedRealtime() - mStartTimeMs;
+            final LocalDateTime startTime = LocalDateTime.now().minus(
+                    startTimeToNow, ChronoUnit.MILLIS);
+            return startTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                    + " (" + mStartTimeMs + ")";
         }
 
         @NonNull

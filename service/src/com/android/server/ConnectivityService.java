@@ -418,6 +418,7 @@ import com.android.server.connectivity.InvalidTagException;
 import com.android.server.connectivity.KeepaliveResourceUtil;
 import com.android.server.connectivity.KeepaliveTracker;
 import com.android.server.connectivity.LingerMonitor;
+import com.android.server.connectivity.LocalNetEventListener;
 import com.android.server.connectivity.MockableSystemProperties;
 import com.android.server.connectivity.MulticastRoutingCoordinatorService;
 import com.android.server.connectivity.MultinetworkPolicyTracker;
@@ -657,6 +658,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     @VisibleForTesting
     protected INetd mNetd;
     private DscpPolicyTracker mDscpPolicyTracker = null;
+    private final LocalNetEventListener mLocalNetEventListener;
     private final NetworkStatsManager mStatsManager;
     private final NetworkPolicyManager mPolicyManager;
     private final BpfNetMaps mBpfNetMaps;
@@ -1921,6 +1923,16 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         /**
+         * Creates a LocalNetEventListener.
+         */
+        @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+        public LocalNetEventListener getLocalNetEventListener(
+                Context context, Looper looper, boolean metricsEnabled, boolean noteOpsEnabled) {
+            return new LocalNetEventListener(
+                    context, looper, metricsEnabled, noteOpsEnabled);
+        }
+
+        /**
          * Wraps {@link TcUtils#tcFilterAddDevIngressPolice}
          */
         public void enableIngressRateLimit(String iface, long rateInBytesPerSecond) {
@@ -2282,6 +2294,15 @@ public class ConnectivityService extends IConnectivityManager.Stub
         mPolicyManager = mContext.getSystemService(NetworkPolicyManager.class);
         mDnsResolver = Objects.requireNonNull(dnsresolver, "missing IDnsResolver");
         mProxyTracker = mDeps.makeProxyTracker(mContext, mHandler);
+        if (mDeps.isAtLeastB()) {
+            mLocalNetEventListener = mDeps.getLocalNetEventListener(
+                    mContext,
+                    mHandler.getLooper(),
+                    mBpfNetMaps.isLocalNetMetricsEnabled(),
+                    mBpfNetMaps.isAccessLocalNetworkPermissionEnabled());
+        } else {
+            mLocalNetEventListener = null;
+        }
 
         mTelephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
         mAppOpsManager = (AppOpsManager) mContext.getSystemService(Context.APP_OPS_SERVICE);
@@ -4654,6 +4675,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
             BpfEventPoller.nativeInitLoopbackEventConsumer();
         }
 
+        if (mLocalNetEventListener != null) {
+            mLocalNetEventListener.start();
+        }
+
         // Clear all clsact stubs on all interfaces.
         mHandler.post(() -> maybeClearTcQdiscClsact());
 
@@ -5864,7 +5889,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // in order to restart a validation pass from within netd.
         final PrivateDnsConfig cfg = mDnsManager.getPrivateDnsConfig();
         if (cfg.inOpportunisticMode()) {
-            updateDnses(nai.linkProperties, null, nai.network.getNetId());
+            mDnsManager.forceRestartPrivateDnsValidation(nai.network.netId, nai.linkProperties);
         }
     }
 
@@ -5896,8 +5921,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void updatePrivateDns(NetworkAgentInfo nai, PrivateDnsConfig newCfg) {
-        mDnsManager.updatePrivateDns(nai.network, newCfg);
-        updateDnses(nai.linkProperties, null, nai.network.getNetId());
+        mDnsManager.onPrivateDnsConfigChanged(nai.network, nai.linkProperties, newCfg);
     }
 
     private void handlePrivateDnsValidationUpdate(PrivateDnsValidationUpdate update) {
@@ -5905,7 +5929,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (nai == null) {
             return;
         }
-        mDnsManager.updatePrivateDnsValidation(update);
+        mDnsManager.onPrivateDnsValidationUpdated(update);
         handleUpdateLinkProperties(nai, new LinkProperties(nai.linkProperties));
     }
 
@@ -6324,7 +6348,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             }
             mNetd.networkCreate(config);
             mDnsResolver.createNetworkCache(nai.network.getNetId());
-            mDnsManager.updateCapabilitiesForNetwork(nai.network.getNetId(),
+            mDnsManager.onCapabilitiesChanged(nai.network.getNetId(),
                     nai.networkCapabilities);
             return true;
         } catch (RemoteException | ServiceSpecificException e) {
@@ -7086,6 +7110,23 @@ public class ConnectivityService extends IConnectivityManager.Stub
         });
     }
 
+    private void updateLocalNetUidAllowlist(@NonNull NetworkAgentInfo nai,
+            @NonNull Set<Integer> oldUids, @NonNull Set<Integer> newUids) {
+        if (!mDeps.isAtLeastB()) return;
+        // Stacked interfaces are not supported, as they are only for clat at the moment and there
+        // are no local prefixes on clat.
+        final String ifName = nai.linkProperties.getInterfaceName();
+        if (ifName == null) return;
+
+        final CompareResult<Integer> compareResult = new CompareResult<>(oldUids, newUids);
+        for (int uid : compareResult.removed) {
+            mBpfNetMaps.removeLocalNetUidAccess(uid, ifName);
+        }
+        for (int uid : compareResult.added) {
+            mBpfNetMaps.addLocalNetUidAccess(uid, ifName);
+        }
+    }
+
     private int updateGlobalAllowBypassVpn(@NonNull Set<Integer> oldDelegateBypassUids,
             @NonNull Set<Integer> newDelegateBypassUids) {
         // this method is for U- and V+ must use per network VPN bypass.
@@ -7190,11 +7231,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
             if (nai == null) return ENOENT; // network does not exist anymore.
             if (nai.isDestroyed()) return ENOENT; // network has already been destroyed.
 
+            final Set<Integer> oldUids = nai.getCaptivePortalDelegateUids();
             final Set<Integer> oldDelegateBypassUids = getAllCaptivePortalDelegateUids();
             int ret = updateDelegateUid(nai, uid);
             // updateDelegateUid() updates mCaptivePortalDelegateUids even if it returns non-zero
             // value. Therefore, we need to call updateAllVpnForDelegateUid regardless of the
             // returned value.
+            final Set<Integer> newUids = nai.getCaptivePortalDelegateUids();
             final Set<Integer> newDelegateBypassUids = getAllCaptivePortalDelegateUids();
             if (!mDeps.isAtLeastV()) {
                 // Before V, we need to update protect VPN rules globally instead of per network.
@@ -7202,6 +7245,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 ret = updateGlobalAllowBypassVpn(oldDelegateBypassUids, newDelegateBypassUids);
             }
             updateAllVpnForDelegateUid(oldDelegateBypassUids, newDelegateBypassUids);
+            updateLocalNetUidAllowlist(nai, oldUids, newUids);
             return ret;
         }
 
@@ -10606,11 +10650,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         updateRoutes(newLp, oldLp, netId);
-        updateDnses(newLp, oldLp, netId);
+        updateDnsManagerLinkProperties(newLp, netId);
         // Make sure LinkProperties represents the latest private DNS status.
-        // This does not need to be done before updateDnses because the
+        // This does not need to be done before updateDnsManagerLinkProperties because the
         // LinkProperties are not the source of the private DNS configuration.
-        // updateDnses will fetch the private DNS configuration from DnsManager.
+        // updateDnsManagerLinkProperties will fetch the private DNS configuration from DnsManager.
+        // Note this modifies the same LinkProperties instance that DnsManager received in
+        // updateDnsManagerLinkProperties, but not fields that DnsManager uses itself.
         mDnsManager.updatePrivateDnsStatus(netId, newLp);
 
         if (isDefaultNetwork(networkAgent)) {
@@ -10893,6 +10939,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private void updateLocalNetUidAccessForInterfaceAdded(final @NonNull String ifName,
+            final @NonNull NetworkAgentInfo nai) {
+        for (int uid : nai.getCaptivePortalDelegateUids()) {
+            mBpfNetMaps.addLocalNetUidAccess(uid, ifName);
+        }
+    }
+
     private void updateInterfaces(final @NonNull LinkProperties newLp,
             final @Nullable LinkProperties oldLp, final int netId,
             final @NonNull NetworkAgentInfo nai) {
@@ -10907,11 +10961,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
                     wakeupModifyInterface(iface, nai, true);
                     mDeps.reportNetworkInterfaceForTransports(mContext, iface,
                             nai.networkCapabilities.getTransportTypes());
-                    mInterfaceTracker.addInterface(iface);
                 } catch (Exception e) {
                     logw("Exception adding interface: " + e);
                 }
+                mInterfaceTracker.addInterface(iface);
                 maybeAttachL4sEgressProgram(iface, nai);
+                if (mDeps.isAtLeastB()) {
+                    updateLocalNetUidAccessForInterfaceAdded(iface, nai);
+                }
             }
         }
 
@@ -11392,21 +11449,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 || !routeDiff.updated.isEmpty();
     }
 
-    private void updateDnses(@NonNull LinkProperties newLp, @Nullable LinkProperties oldLp,
-            int netId) {
-        if (oldLp != null && newLp.isIdenticalDnses(oldLp)) {
-            return;  // no updating necessary
-        }
-
-        if (DBG) {
-            final Collection<InetAddress> dnses = newLp.getDnsServers();
-            log("Setting DNS servers for network " + netId + " to " + dnses);
-        }
+    private void updateDnsManagerLinkProperties(@NonNull LinkProperties newLp, int netId) {
         try {
-            mDnsManager.noteDnsServersForNetwork(netId, newLp);
-            mDnsManager.flushVmDnsCache();
+            mDnsManager.onLinkPropertiesChanged(netId, newLp);
         } catch (Exception e) {
-            loge("Exception in setDnsConfigurationForNetwork: " + e);
+            loge("Exception in DnsManager#onLinkPropertiesChanged", e);
         }
     }
 
@@ -11859,9 +11906,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // This network might have been underlying another network. Propagate its capabilities.
         propagateUnderlyingNetworkCapabilities(nai.network);
 
-        if (meteredChanged || !newNc.equalsTransportTypes(prevNc)) {
-            mDnsManager.updateCapabilitiesForNetwork(nai.network.getNetId(), newNc);
-        }
+        mDnsManager.onCapabilitiesChanged(nai.network.getNetId(), newNc);
 
         maybeSendProxyBroadcast(nai, prevNc, newNc);
     }

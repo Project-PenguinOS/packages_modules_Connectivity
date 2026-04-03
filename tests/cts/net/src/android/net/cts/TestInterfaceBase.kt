@@ -186,7 +186,7 @@ open class TestInterfaceBase {
                 matchTcpPacket(
                     packet,
                     dstAddress = srcAddress,
-                    NetworkStackConstants.TCPHDR_ACK.toInt()
+                    NetworkStackConstants.TCPHDR_SYNACK.toInt()
                 )
             })
             // TODO: verify that android_getnetworkblockedreason does not report any errors when
@@ -217,10 +217,10 @@ open class TestInterfaceBase {
             writeSynPacket(allowedAddr, PORT, dstAddress, dstPort)
 
             assertNotNull(packetReader.poll(TEST_TIMEOUT_MS) { packet ->
-                if (matchTcpPacket(packet, srcAddress, NetworkStackConstants.TCPHDR_ACK.toInt())) {
+                if (matchTcpPacket(packet, srcAddress, NetworkStackConstants.TCPHDR_SYNACK.toInt())) {
                     fail("Unexpectedly received packet that should have been dropped")
                 }
-                if (matchTcpPacket(packet, allowedAddr, NetworkStackConstants.TCPHDR_ACK.toInt())) {
+                if (matchTcpPacket(packet, allowedAddr, NetworkStackConstants.TCPHDR_SYNACK.toInt())) {
                     return@poll true
                 }
                 false
@@ -355,7 +355,7 @@ open class TestInterfaceBase {
                 return false
             }
             val tcpHeader = Struct.parse(TcpHeader::class.java, buf)
-            return (tcpHeader.dataOffsetAndControlBits.toInt() and tcpFlags) != 0
+            return (tcpHeader.dataOffsetAndControlBits.toInt() and 0xfff) == tcpFlags
         } catch (ignored: IllegalArgumentException) {
             return false
         }
