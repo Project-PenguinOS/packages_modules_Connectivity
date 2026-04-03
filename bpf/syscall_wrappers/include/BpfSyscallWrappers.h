@@ -40,7 +40,7 @@ enum class BuildType {
 };
 
 static inline BuildType getBuildType() {
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.build.type", value) < 1)
         return BuildType::UNKNOWN;
     if (!strcmp(value, "eng")) return BuildType::ENG;
@@ -210,7 +210,7 @@ inline int bpfFdGet(const char* pathname, uint32_t flag) {
 int bpfGetFdMapId(const borrowed_fd& map_fd);
 
 static inline bool is_cuttlefish() {
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.product.board", value) < 1) return false;
     return !strcmp(value, "cutf");
 }
@@ -327,20 +327,23 @@ inline int detachSingleProgram(bpf_attach_type type, const borrowed_fd& prog_fd,
 }
 
 // Available in 4.12 and later kernels.
-inline int runProgram(const borrowed_fd &prog_fd, const void *data,
-                      const uint32_t data_size, const void *ctx = nullptr,
-                      const uint32_t ctx_size = 0) {
-    return bpf(BPF_PROG_RUN,
-               {
-                   .test =
-                       {
-                           .prog_fd = static_cast<__u32>(prog_fd.get()),
-                           .data_size_in = data_size,
-                           .data_in = ptr_to_u64(data),
-                           .ctx_size_in = ctx_size,
-                           .ctx_in = ptr_to_u64(ctx),
-                       },
-               });
+inline int runProgram(const borrowed_fd &prog_fd,
+                      const void *data, const uint32_t data_size,
+                      const void *ctx = nullptr, const uint32_t ctx_size = 0,
+                      uint32_t *retval = nullptr) {
+    bpf_attr attr = {
+        .test =
+            {
+                .prog_fd = static_cast<__u32>(prog_fd.get()),
+                .data_size_in = data_size,
+                .data_in = ptr_to_u64(data),
+                .ctx_size_in = ctx_size,
+                .ctx_in = ptr_to_u64(ctx),
+            },
+    };
+    int ret = bpf(BPF_PROG_RUN, &attr);
+    if (retval) *retval = attr.test.retval;
+    return ret;
 }
 
 // 4.14+: returns next id > prog_id, or 0 (and sets errno)

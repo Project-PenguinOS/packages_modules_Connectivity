@@ -43,7 +43,10 @@ cc_library_static {
     vendor_available: false,
     host_supported: false,
     header_libs: ["bpf_connectivity_headers"],
-    srcs: ["LoopbackEventHandler.cpp"],
+    srcs: [
+        "LocalNetEventHandler.cpp",
+        "LoopbackEventHandler.cpp",
+    ],
     defaults: ["libstatslog_defaults"],
     export_include_dirs: ["include"],
     sanitize: {

@@ -20,6 +20,8 @@ import static android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET;
 import static android.net.NetworkCapabilities.TRANSPORT_CELLULAR;
 import static android.net.NetworkCapabilities.TRANSPORT_VPN;
 import static android.net.NetworkCapabilities.TRANSPORT_WIFI;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_PRIVATE_DNS_BROKEN_NOTIFICATION;
 
 import android.annotation.NonNull;
 import android.app.ActivityOptions;
@@ -35,6 +37,7 @@ import android.net.TelephonyNetworkSpecifier;
 import android.net.wifi.WifiInfo;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Process;
 import android.os.UserHandle;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
@@ -49,6 +52,7 @@ import com.android.connectivity.resources.R;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.internal.messages.nano.SystemMessageProto.SystemMessage;
 import com.android.modules.utils.build.SdkLevel;
+import com.android.server.ConnectivityStatsLog;
 
 public class NetworkNotificationManager {
 
@@ -247,6 +251,12 @@ public class NetworkNotificationManager {
                 title = r.getString(R.string.other_networks_no_internet);
             }
             details = r.getString(R.string.private_dns_broken_detailed);
+            ConnectivityStatsLog.write_non_chained(
+                    CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED,
+                    Process.SYSTEM_UID,
+                    null,
+                    CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_PRIVATE_DNS_BROKEN_NOTIFICATION,
+                    1);
         } else if (notifyType == NotificationType.PARTIAL_CONNECTIVITY
                 && transportType == TRANSPORT_WIFI) {
             title = r.getString(R.string.network_partial_connectivity, name);

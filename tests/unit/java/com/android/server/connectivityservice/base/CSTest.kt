@@ -51,6 +51,7 @@ import android.net.NetworkProvider
 import android.net.NetworkScore
 import android.net.NetworkScore.KEEP_CONNECTED_FOR_TEST
 import android.net.PacProxyManager
+import android.net.ProxyInfo
 import android.net.Uri
 import android.net.connectivity.ConnectivityCompatChanges.ENABLE_MATCH_LOCAL_NETWORK
 import android.net.networkstack.NetworkStackClientBase
@@ -59,6 +60,7 @@ import android.os.BatteryStatsManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
@@ -87,6 +89,7 @@ import com.android.server.connectivity.ClatCoordinator
 import com.android.server.connectivity.ConnectivityFlags
 import com.android.server.connectivity.IProxyTracker
 import com.android.server.connectivity.InterfaceTracker
+import com.android.server.connectivity.LocalNetEventListener
 import com.android.server.connectivity.MulticastRoutingCoordinatorService
 import com.android.server.connectivity.MultinetworkPolicyTracker
 import com.android.server.connectivity.MultinetworkPolicyTrackerTestDependencies
@@ -229,7 +232,12 @@ open class CSTest {
     }
     val clatCoordinator = mock<ClatCoordinator>()
     val networkRequestStateStatsMetrics = mock<NetworkRequestStateStatsMetrics>()
-    val proxyTracker = mock<IProxyTracker>()
+    val proxyTracker = mock<IProxyTracker>().also {
+        var globalProxy: ProxyInfo? = null
+        doAnswer { invocation -> globalProxy = invocation.getArgument(0); null }
+            .`when`(it).setGlobalProxy(any())
+        doAnswer { globalProxy }.`when`(it).getGlobalProxy()
+    }
     val systemConfigManager = makeMockSystemConfigManager()
     val batteryStats = mock<IBatteryStats>()
     val batteryManager = BatteryStatsManager(batteryStats)
@@ -253,6 +261,8 @@ open class CSTest {
     val quicConnectionCloser = mock<QuicConnectionCloser>()
     val destroySocketsWrapper = mock<DestroySocketsWrapper>()
     val dnsResolver = mock<IDnsResolver>()
+
+    val localNetEventListener = mock<LocalNetEventListener>()
 
     val deps = CSDeps()
     val permDeps = PermDeps()
@@ -346,6 +356,12 @@ open class CSTest {
         override fun getInterfaceTracker(context: Context?) = this@CSTest.interfaceTracker
         override fun getClatCoordinator(netd: INetd?) = this@CSTest.clatCoordinator
         override fun getNetworkStack() = this@CSTest.networkStack
+        override fun getLocalNetEventListener(
+            context: Context?,
+            looper: Looper?,
+            metricsEnabled: Boolean,
+            noteOpsEnabled: Boolean
+        ) = this@CSTest.localNetEventListener
 
         override fun makeHandlerThread(tag: String) = csHandlerThread
         override fun makeProxyTracker(context: Context, connServiceHandler: Handler) = proxyTracker

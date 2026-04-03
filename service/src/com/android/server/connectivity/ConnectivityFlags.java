@@ -61,9 +61,6 @@ public final class ConnectivityFlags {
 
     public static final String CLOSE_QUIC_CONNECTION = "close_quic_connection";
 
-    public static final String CONSTRAINED_DATA_SATELLITE_OPTIN =
-            "constrained_data_satellite_optin";
-
     public static final String CONSTRAINED_DATA_SATELLITE_METRICS =
             "constrained_data_satellite_metrics";
 

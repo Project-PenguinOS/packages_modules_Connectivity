@@ -87,7 +87,9 @@ apex {
     bpfs: [
         "clatd.o",
         "dscpPolicy.o",
+        "dscpPolicy@funcs.o",
         "netd.o",
+        "netd@funcs.o",
         "offload.o",
         "test.o",
     ],
@@ -150,6 +152,7 @@ bootclasspath_fragment {
     apex_available: ["com.android.tethering"],
     dex_preopt: {
         profile: "packages/modules/Connectivity/Tethering/apex/boot-image-profile.txt",
+        nopreload_classes: "packages/modules/Connectivity/Tethering/apex/nopreload-classes",
     },
 
     // The bootclasspath_fragments that provide APIs on which this depends.
@@ -157,6 +160,10 @@ bootclasspath_fragment {
         {
             apex: "com.android.art",
             module: "art-bootclasspath-fragment",
+        },
+        {
+            apex: "com.android.telephonycore",
+            module: "com.android.telephony-bootclasspath-fragment",
         },
     ],
 

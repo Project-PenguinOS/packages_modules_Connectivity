@@ -50,6 +50,11 @@ android_library {
     visibility: ["//packages/modules/Connectivity:__subpackages__"],
 }
 
+filegroup {
+    name: "preinstalled-packages-com.android.connectivity.resources.xml",
+    srcs: ["preinstalled-packages-com.android.connectivity.resources.xml"],
+}
+
 android_app {
     name: "ServiceConnectivityResources",
     defaults: ["ServiceConnectivityResourcesDefaults"],
@@ -57,6 +62,7 @@ android_app {
     export_package_resources: true,
     updatable: true,
     certificate: ":com.android.connectivity.resources.certificate",
+    preinstall_allowlist: ":preinstalled-packages-com.android.connectivity.resources.xml",
     apex_available: [
         "com.android.tethering",
     ],

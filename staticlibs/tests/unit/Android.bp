@@ -22,7 +22,6 @@ android_library {
         "netd-client",
         "net-tests-utils",
         "net-utils-framework-common",
-        "net-utils-device-common",
         "net-utils-device-common-async",
         "net-utils-device-common-bpf",
         "net-utils-device-common-ip",

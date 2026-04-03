@@ -21,6 +21,7 @@ import static android.net.DnsResolver.ERROR_SYSTEM;
 import static android.net.DnsResolver.TYPE_A;
 import static android.net.DnsResolver.TYPE_AAAA;
 import static android.net.DnsResolver.TYPE_HTTPS;
+import static android.system.OsConstants.ETIMEDOUT;
 
 import static com.android.net.module.util.DnsPacket.ANSECTION;
 import static com.android.net.module.util.DnsPacket.QDSECTION;
@@ -37,8 +38,13 @@ import android.net.Network;
 import android.net.ParseException;
 import android.net.dns.HttpsEndpoint;
 import android.net.dns.HttpsRecord;
+import android.net.util.DnsHttpsEndpointEventMetrics.FailureReason;
+import android.net.util.DnsHttpsEndpointEventMetrics.ResponseFlag;
 import android.os.CancellationSignal;
 import android.os.Handler;
+import android.os.Process;
+import android.os.SystemClock;
+import android.system.ErrnoException;
 import android.util.Log;
 
 import com.android.internal.annotations.GuardedBy;
@@ -69,6 +75,7 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
     // As specified in RFC 9460 section 5.1, clients should wait 50 ms before starting optimistic
     // pre-connection. Depending on metric results, this value may be adjusted in the future.
     private static final int DEFAULT_HTTPS_TIMEOUT_MILLIS = 50;
+    private static final String UNEXPECTED_ANSWER_TYPE_ERROR_STR = "Unexpected answer type: ";
 
     private final Network mNetwork;
     private final LinkProperties mLinkProperties;
@@ -87,13 +94,15 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
     private final CancellationSignal mUserCancellationSignal;
     private final CancellationSignal mPendingQueryCancellationSignal;
 
+    private final DnsHttpsEndpointEventMetrics.Builder mMetricsBuilder;
+
     /**
      * Nested class to group the results of the DNS queries that must be kept in sync.
      */
     private static class HttpsEndpointAccumulatorResult {
         final Set<Integer> mReceivedAnswersToQueryTypes;
         final Set<InetAddress> mAddresses;
-        final List<HttpsRecord> mHttpsRecords;
+        final ArrayList<HttpsRecord> mHttpsRecords;
         DnsException mDnsException;
 
         private HttpsEndpointAccumulatorResult() {
@@ -128,15 +137,48 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
         mHttpsTimeoutHandler = handler;
         mUserCancellationSignal = userCancellationSignal;
         mPendingQueryCancellationSignal = pendingQueryCancellationSignal;
+
+        mMetricsBuilder =
+            new DnsHttpsEndpointEventMetrics.Builder()
+                .setUserHttpsTimeoutDurationMillis(mHttpsTimeoutMillis)
+                .setAccumulatorInitializationNanos(SystemClock.elapsedRealtimeNanos())
+                .setUid(Process.myUid());
+    }
+
+    private void reportMetrics(long callbackNanos) {
+        synchronized (mResult) {
+            mMetricsBuilder.setCallbackNanos(callbackNanos)
+                    .setHttpsRecords(mResult.mHttpsRecords)
+                    .build()
+                    .reportMetrics();
+        }
+    }
+
+    /**
+     * Called when the user cancels the query.
+     */
+    public void onUserCancellation() {
+        if (!mCallbackInvoked.compareAndSet(false, true)) {
+            return;
+        }
+
+        synchronized (mResult) {
+            mMetricsBuilder.setFailureReason(FailureReason.USER_CANCELLATION);
+        }
+        reportMetrics(SystemClock.elapsedRealtimeNanos());
     }
 
     @Override
     public void onAnswer(@NonNull byte[] answer, int rcode) {
+        long packetReceivedNanos = SystemClock.elapsedRealtimeNanos();
         Objects.requireNonNull(answer, "Raw byte response for query cannot be null");
 
         // Callback has already been invoked, skip parsing this response.
         if (mCallbackInvoked.get()) return;
-        if (mUserCancellationSignal != null && mUserCancellationSignal.isCanceled()) return;
+        if (mUserCancellationSignal != null && mUserCancellationSignal.isCanceled()) {
+            onUserCancellation();
+            return;
+        }
 
         DnsPacket dnsPacket = new DnsPacket(answer);
         final List<DnsRecord> questionRecords = dnsPacket.getRecords(QDSECTION);
@@ -157,8 +199,12 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
 
         final List<DnsRecord> answerRecords = dnsPacket.getRecords(ANSECTION);
         Set<InetAddress> addresses = new LinkedHashSet<>();
-        List<HttpsRecord> httpsRecords = new ArrayList<>();
+        ArrayList<HttpsRecord> httpsRecords = new ArrayList<>();
         DnsException exception = null;
+
+        boolean addressRecordReceived = false;
+        boolean httpsRecordReceived = false;
+        boolean hasMandatory = false;
 
         // In the NODATA scenario, answerRecords will be empty and this whole loop will be skipped.
         for (DnsRecord record : answerRecords) {
@@ -168,13 +214,19 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                 switch (answerType) {
                     case TYPE_A, TYPE_AAAA -> {
                         addresses.add(InetAddress.getByAddress(record.getRR()));
+                        addressRecordReceived = true;
                     }
                     case TYPE_HTTPS -> {
+                        httpsRecordReceived = true;
                         DnsHttpsRecord dnsHttpsRecord = (DnsHttpsRecord) record;
                         try {
-                            dnsHttpsRecord.verifyMandatoryKeys();
+                            if (dnsHttpsRecord.getMandatory().length > 0) {
+                                hasMandatory = true;
+                                dnsHttpsRecord.verifyMandatoryKeys();
+                            }
                         } catch (DnsPacket.ParseException e) {
                             // Ignore the HTTPS record as it is missing mandatory keys.
+                            mMetricsBuilder.addResponseFlag(ResponseFlag.MISSING_MANDATORY_KEYS);
                             continue;
                         }
 
@@ -194,7 +246,7 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                     }
                     default -> {
                         exception = new DnsException(ERROR_PARSE,
-                                new ParseException("Unexpected answer type: " + answerType));
+                                new ParseException(UNEXPECTED_ANSWER_TYPE_ERROR_STR + answerType));
                     }
                 }
             } catch (DnsPacket.ParseException e) {
@@ -211,6 +263,20 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
         boolean shouldStartHttpsTimeout = false;
 
         synchronized (mResult) {
+            if (mResult.mReceivedAnswersToQueryTypes.isEmpty()) {
+                mMetricsBuilder.setFirstRecordReceivedNanos(packetReceivedNanos);
+            }
+            if (addressRecordReceived) {
+                // Deliberately overwrite the address record received nanos to the latest one.
+                mMetricsBuilder.setAddressRecordReceivedNanos(packetReceivedNanos);
+            }
+            if (httpsRecordReceived) {
+                mMetricsBuilder.setHttpsRecordReceivedNanos(packetReceivedNanos);
+            }
+            if (hasMandatory) {
+                mMetricsBuilder.setHasMandatory(true);
+            }
+
             mResult.mAddresses.addAll(addresses);
             mResult.mHttpsRecords.addAll(httpsRecords);
             // Add the query type even in the case of NODATA, mismatched query/response type (even
@@ -241,6 +307,7 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                     endpoint = createHttpsEndpoint(rcode);
                 }
             } else if (mTargetQueryCount == mResult.mReceivedAnswersToQueryTypes.size()) {
+                mMetricsBuilder.addResponseFlag(ResponseFlag.NOT_ENOUGH_ADDRESS_INFO);
                 // Return if we have gotten all the records as we expected.
                 endpoint = createHttpsEndpoint(rcode);
             }
@@ -260,16 +327,17 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                 reportResult(timeoutEndpoint, timeoutException, rcode);
             }, mTimeoutCancellationToken, mHttpsTimeoutMillis);
         }
-        // TODO(b/448882639): handle filtering out HTTPS records with specified mandatory values
-        // that are absent
-        // TODO(b/448882639): handle if the HTTPS record name does not match the A/AAAA ones
+        // TODO(b/494647387): handle if the HTTPS record name does not match the A/AAAA ones
     }
 
     @Override
     public void onError(@NonNull DnsException error) {
         // Callback has already been invoked, skip.
         if (mCallbackInvoked.get()) return;
-        if (mUserCancellationSignal != null && mUserCancellationSignal.isCanceled()) return;
+        if (mUserCancellationSignal != null && mUserCancellationSignal.isCanceled()) {
+            onUserCancellation();
+            return;
+        }
 
         DnsException exception = null;
         synchronized (mResult) {
@@ -293,6 +361,43 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
                 new ArrayList<>(mResult.mAddresses));
     }
 
+    private FailureReason getFailureReason(@Nullable DnsException exception) {
+        if (exception == null) {
+            synchronized (mResult) {
+                // If the host is not recognized, empty records may be returned instead of an
+                // UnknownHostException being thrown. Note that the onAnswer user callback will
+                // still be invoked, but with an empty endpoint.
+                if (mResult.mHttpsRecords.isEmpty() && mResult.mAddresses.isEmpty()) {
+                    return FailureReason.UNKNOWN_HOST;
+                }
+            }
+
+            return FailureReason.UNSPECIFIED;
+        }
+
+        switch(exception.code) {
+            case ERROR_PARSE -> {
+                if (exception.getMessage() != null &&
+                        exception.getMessage().startsWith(UNEXPECTED_ANSWER_TYPE_ERROR_STR)) {
+                    return FailureReason.UNEXPECTED_ANSWER_TYPE;
+                } else {
+                    return FailureReason.PARSE_EXCEPTION;
+                }
+            }
+            case ERROR_SYSTEM -> {
+                if (exception.getCause() instanceof UnknownHostException) {
+                    return FailureReason.UNKNOWN_HOST;
+                } else if (exception.getCause() instanceof ErrnoException
+                    && ((ErrnoException) exception.getCause()).errno == ETIMEDOUT) {
+                    return FailureReason.RECORD_TIMEOUT;
+                } else {
+                    return FailureReason.FATAL_ERROR;
+                }
+            }
+            default -> { return FailureReason.UNSPECIFIED; }
+        }
+    }
+
     /**
      * Reports the DNS query results to the user callback, both success and failure.
      *
@@ -311,12 +416,18 @@ public class HttpsEndpointAccumulator implements DnsResolver.Callback<byte[]> {
             return;
         }
 
+        // Get the latency measurement just before user callbacks are triggered.
+        long callbackNanos = SystemClock.elapsedRealtimeNanos();
+        mMetricsBuilder.setFailureReason(getFailureReason(exception));
+
         if (exception != null) {
             mUserCallback.onError(exception);
         } else {
             mUserCallback.onAnswer(endpoint, rcode);
         }
 
+        // Reporting the metrics might be latency-sensitive, so call it after the user callbacks.
+        reportMetrics(callbackNanos);
         // Cancel any pending queries or timeout callbacks.
         mPendingQueryCancellationSignal.cancel();
         mHttpsTimeoutHandler.removeCallbacksAndMessages(mTimeoutCancellationToken);

@@ -265,6 +265,30 @@ TEST_F(BpfMapTest, mapIsEmpty) {
         }
     ));
     EXPECT_EQ(0, entriesSeen);
+    auto entries = testMap.count();
+    ASSERT_RESULT_OK(entries);
+    EXPECT_EQ(0u, *entries);
+}
+
+TEST_F(BpfMapTest, mapEntries) {
+    BpfMap<uint32_t, uint32_t> testMap;
+    ASSERT_RESULT_OK(testMap.resetMap(BPF_MAP_TYPE_HASH, TEST_MAP_SIZE));
+    auto entries = testMap.count();
+    ASSERT_RESULT_OK(entries);
+    EXPECT_EQ(0u, *entries);
+    populateMap(TEST_MAP_SIZE, testMap);
+    entries = testMap.count();
+    ASSERT_RESULT_OK(entries);
+    EXPECT_EQ(TEST_MAP_SIZE, *entries);
+}
+
+TEST_F(BpfMapTest, mapMaxEntries) {
+    if (!isAtLeastKernelVersion(4, 14)) GTEST_SKIP() << "Kver < 4.14";
+    BpfMap<uint32_t, uint32_t> testMap;
+    ASSERT_RESULT_OK(testMap.resetMap(BPF_MAP_TYPE_HASH, TEST_MAP_SIZE));
+    auto maxEntries = testMap.maxEntries();
+    ASSERT_RESULT_OK(maxEntries);
+    EXPECT_EQ(TEST_MAP_SIZE, *maxEntries);
 }
 
 TEST_F(BpfMapTest, mapClear) {

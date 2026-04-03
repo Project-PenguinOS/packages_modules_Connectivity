@@ -136,6 +136,7 @@ cc_library_shared {
         ":services.connectivity-netstats-jni-sources",
         "jni/com_android_server_connectivity_BpfEventPoller.cpp",
         "jni/com_android_server_connectivity_ClatCoordinator.cpp",
+        "jni/com_android_server_connectivity_LocalNetEventListener.cpp",
         "jni/onload.cpp",
     ],
     header_libs: [
@@ -221,6 +222,9 @@ java_library {
         "service-connectivity-resources-aidl",
         "service-connectivity-stats-protos",
         "jsr305",
+        "commercial-common",
+        "MultiPacProcessor-api",
+        "MultiProxyHandler-api",
     ],
     apex_available: ["com.android.tethering"],
     lint: {

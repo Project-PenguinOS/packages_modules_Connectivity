@@ -89,6 +89,7 @@ import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISS
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_INTERNET;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UNINSTALLED;
 import static com.android.server.connectivity.NetworkPermissions.TRAFFIC_PERMISSION_UPDATE_DEVICE_STATS;
+import static com.android.tethering.flags.Flags.FLAG_COLLECT_BETA_METRICS;
 import static com.android.tethering.flags.Flags.FLAG_LOOPBACK_ACCESS_METRICS;
 import static com.android.tethering.flags.Flags.FLAG_PERMISSION_MAP_UID_MIGRATION;
 
@@ -250,6 +251,8 @@ public final class BpfNetMapsTest {
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
     private final BpfBoolean mPermissionPropagationEnabledBpfBoolean =
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
+    private final BpfBoolean mLocalNetNoteOpsEnabledBpfBoolean =
+            new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
     private final BpfBoolean mL4sEnabledMap =
             new BpfBoolean(new TestBpfMap<>(S32.class, Bool.class));
     private final BpfBoolean mLoopbackAccessMetricsEnabledBpfBoolean =
@@ -274,6 +277,9 @@ public final class BpfNetMapsTest {
         doAnswer(invocation -> mFeatureFlags.getOrDefault(
                         FLAG_USE_LOOPBACK_INTERFACE_PERMISSION_ENABLED, false))
                 .when(mDeps).isLoopbackChecksEnabled();
+        doAnswer(invocation -> mFeatureFlags.getOrDefault(
+                FLAG_COLLECT_BETA_METRICS, false))
+                .when(mDeps).isBetaMetricsEnabled();
         BpfNetMaps.setConfigurationMapForTest(mConfigurationMap);
         mConfigurationMap.updateEntry(UID_RULES_CONFIGURATION_KEY, new U32(0));
         mConfigurationMap.updateEntry(
@@ -293,6 +299,7 @@ public final class BpfNetMapsTest {
         BpfNetMaps.setUidMigrationEnabledBpfBooleanForTest(mUidMigrationEnabledBpfBoolean);
         BpfNetMaps.setPermissionPropagationEnabledBpfBooleanForTest(
                 mPermissionPropagationEnabledBpfBoolean);
+        BpfNetMaps.setLocalNetNoteOpsEnabledBpfBooleanForTest(mLocalNetNoteOpsEnabledBpfBoolean);
         BpfNetMaps.setUidPermissionChunkMapForTest(mUidPermissionChunkMap);
         BpfNetMaps.setLoopbackAccessMetricsEnabledBpfBooleanForTest(
                 mLoopbackAccessMetricsEnabledBpfBoolean);
@@ -594,6 +601,36 @@ public final class BpfNetMapsTest {
 
         mBpfNetMaps.removeUidFromLocalNetBlockMap(uid1);
         assertNull(mLocalNetBlockedUidMap.getValue(new U32(uid1)));
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testAddLocalNetUidAccessAfterV() throws Exception {
+        assertTrue(mLocalNetUidHostAllowlistMap.isEmpty());
+        long oldGenId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
+        mBpfNetMaps.addLocalNetUidAccess(TEST_UID, TEST_IF_NAME);
+
+        final Bool value = mLocalNetUidHostAllowlistMap.getValue(
+                new LocalNetUidHostAllowlistKey(TEST_UID, TEST_IF_INDEX));
+        assertNotNull(value);
+        assertTrue(value.val);
+        long genId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
+        assertEquals(oldGenId + 2, genId);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testRemoveLocalNetUidAccessAfterV() throws Exception {
+        mBpfNetMaps.addLocalNetUidAccess(TEST_UID, TEST_IF_NAME);
+        assertNotNull(mLocalNetUidHostAllowlistMap.getValue(
+                new LocalNetUidHostAllowlistKey(TEST_UID, TEST_IF_INDEX)));
+
+        long oldGenId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
+        mBpfNetMaps.removeLocalNetUidAccess(TEST_UID, TEST_IF_NAME);
+        assertNull(mLocalNetUidHostAllowlistMap.getValue(
+                new LocalNetUidHostAllowlistKey(TEST_UID, TEST_IF_INDEX)));
+        long genId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
+        assertEquals(oldGenId + 2, genId);
     }
 
     @Test
@@ -2061,6 +2098,74 @@ public final class BpfNetMapsTest {
     public void testDumpPermissionPropagationMapDisabled() throws Exception {
         assertDumpContains(getDump(),
                 "sPermissionPropagationEnabledMap: false");
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = false)
+    @FeatureFlag(name = FLAG_COLLECT_BETA_METRICS, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testSetLocalNetNoteOpsDisabled() throws Exception {
+        assertFalse(mLocalNetNoteOpsEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @FeatureFlag(name = FLAG_COLLECT_BETA_METRICS, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testSetLocalNetNoteOpsEnabled_accessLocalNetEnabled() throws Exception {
+        assertTrue(mLocalNetNoteOpsEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = false)
+    @FeatureFlag(name = FLAG_COLLECT_BETA_METRICS, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testSetLocalNetNoteOpsEnabled_collectBetaMetricsEnabled() throws Exception {
+        assertTrue(mLocalNetNoteOpsEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @FeatureFlag(name = FLAG_COLLECT_BETA_METRICS, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testSetLocalNetNoteOpsEnabled() throws Exception {
+        assertTrue(mLocalNetNoteOpsEnabledBpfBoolean.get());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @FeatureFlag(name = FLAG_COLLECT_BETA_METRICS, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpLocalNetOpsConfigEnabled() throws Exception {
+        assertDumpContains(getDump(),
+                "sLocalNetNoteOpsEnabledBpfBoolean: true");
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    @FeatureFlag(name = FLAG_COLLECT_BETA_METRICS, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpLocalNetOpsConfig_localNetPermissionEnabled() throws Exception {
+        assertDumpContains(getDump(),
+                "sLocalNetNoteOpsEnabledBpfBoolean: true");
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = false)
+    @FeatureFlag(name = FLAG_COLLECT_BETA_METRICS, enabled = true)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpLocalNetOpsConfig_collectBetaMetricsEnabled() throws Exception {
+        assertDumpContains(getDump(),
+                "sLocalNetNoteOpsEnabledBpfBoolean: true");
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = false)
+    @FeatureFlag(name = FLAG_COLLECT_BETA_METRICS, enabled = false)
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testDumpLocalNetOpsConfigDisabled() throws Exception {
+        assertDumpContains(getDump(),
+                "sLocalNetNoteOpsEnabledBpfBoolean: false");
     }
 
     @IgnoreUpTo(Build.VERSION_CODES.S_V2)

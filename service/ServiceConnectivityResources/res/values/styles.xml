@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="NsdPickerActivityTheme" parent="@style/Theme.AppCompat.DayNight.Dialog.Alert"/>
+    <style name="NsdPickerActivityTheme" parent="@style/Theme.AppCompat.DayNight.Dialog.Alert">
+        <!-- Material3 corner radius -->
+        <item name="dialogCornerRadius">28dp</item>
+        <item name="buttonBarButtonStyle">@style/Theme.AlertDialog.Buttons</item>
+    </style>
+    <style name="Theme.AlertDialog.Buttons" parent="@style/Widget.AppCompat.Button.ButtonBar.AlertDialog">
+        <item name="textAllCaps">false</item>
+    </style>
     <style name="NsdPickerTitleStyle">
         <item name="android:textSize">20sp</item>
         <item name="android:textStyle">bold</item>

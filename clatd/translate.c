@@ -18,6 +18,8 @@
 #include "translate.h"
 
 #include <string.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 #include "checksum.h"
 #include "clatd.h"
@@ -479,7 +481,13 @@ void send_rawv6(int fd, clat_packet out, int iov_len) {
 
   msg.msg_iov = out, msg.msg_iovlen = iov_len,
   sin6.sin6_addr = ((struct ip6_hdr *)out[CLAT_POS_IPHDR].iov_base)->ip6_dst;
+
+#if defined(__LP64__)
+  // with seccomp we don't want to hit conditionally enabled netdclient sendmsg() interceptor
+  syscall(__NR_sendmsg, fd, &msg, 0);
+#else
   sendmsg(fd, &msg, 0);
+#endif
 }
 
 /* function: translate_packet

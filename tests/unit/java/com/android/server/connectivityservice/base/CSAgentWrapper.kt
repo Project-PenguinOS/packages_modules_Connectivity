@@ -108,7 +108,7 @@ class CSAgentWrapper(
     private val NO_PROBE_RESULT = 0
     private val VALIDATION_TIMESTAMP = 1234L
     private val agent: NetworkAgent
-    private val nmCallbacks: INetworkMonitorCallbacks
+    val nmCallbacks: INetworkMonitorCallbacks
     val networkMonitor = mock<INetworkMonitor>()
     private var nmValidationRedirectUrl: String? = null
     private var nmValidationResult = NO_PROBE_RESULT
