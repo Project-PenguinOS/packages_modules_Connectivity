@@ -43,7 +43,6 @@ cc_library {
     shared_libs: [
         "libbase",
         "liblog",
-        "libnetdutils",
     ],
     export_include_dirs: ["include"],
     header_abi_checker: {
@@ -82,7 +81,6 @@ cc_test {
     shared_libs: [
         "libcutils",
         "liblog",
-        "libnetdutils",
     ],
     compile_multilib: "both",
     multilib: {

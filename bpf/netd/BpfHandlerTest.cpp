@@ -20,16 +20,16 @@
 #include <sys/socket.h>
 
 #include <gtest/gtest.h>
+#include <android-base/result.h>
 
 #define BPF_MAP_MAKE_VISIBLE_FOR_TESTING
 #include "BpfHandler.h"
 #include <bpf/BpfUtils.h>
 
-using namespace android::bpf;  // NOLINT(google-build-using-namespace): exempted
-
 namespace android {
 namespace net {
 
+using namespace android::bpf;  // NOLINT(google-build-using-namespace): exempted
 using base::Result;
 
 constexpr int TEST_MAP_SIZE = 10;

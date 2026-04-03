@@ -30,7 +30,6 @@ import android.os.Looper
 import android.os.UserHandle
 import android.os.UserManager
 import android.util.ArrayMap
-import com.android.server.connectivity.ConnectivityFlags.CONSTRAINED_DATA_SATELLITE_OPTIN
 import com.android.server.connectivity.AppOptInDefaultNetworkController.PER_USER_RANGE
 import com.android.server.connectivity.AppOptInDefaultNetworkController.PROPERTY_SATELLITE_DATA_OPTIMIZED
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_OTT
@@ -38,12 +37,11 @@ import com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATEL
 import com.android.server.connectivity.AppOptInDefaultNetworkPolicy.POLICY_SATELLITE_ROLE_SMS
 import com.android.testutils.DevSdkIgnoreRule.IgnoreUpTo
 import com.android.testutils.DevSdkIgnoreRunner
-import com.android.testutils.com.android.testutils.SetFeatureFlagsRule
-import com.android.testutils.com.android.testutils.SetFeatureFlagsRule.FeatureFlag
 import com.google.common.truth.Truth.assertThat
 import java.util.Collections.emptyList
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
+import java.util.function.Consumer
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -51,11 +49,8 @@ import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyInt
-import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Captor
-import org.mockito.junit.MockitoJUnit
-import org.mockito.junit.MockitoRule
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.mock
@@ -63,8 +58,8 @@ import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-import java.util.function.Consumer
-
+import org.mockito.junit.MockitoJUnit
+import org.mockito.junit.MockitoRule
 
 private const val PRIMARY_USER = 0
 private const val SECONDARY_USER = 10
@@ -96,25 +91,16 @@ class AppOptInDefaultNetworkControllerTest {
     private val context = mock(Context::class.java)
     private val deps = mock(AppOptInDefaultNetworkController.Dependencies::class.java)
     @Suppress("UNCHECKED_CAST")
-    private val callback = mock(Consumer::class.java) as Consumer<List<AppOptInDefaultNetworkPolicy>>
+    private val callback = mock(Consumer::class.java)
+        as Consumer<List<AppOptInDefaultNetworkPolicy>>
     @Captor
     private lateinit var policiesCaptor: ArgumentCaptor<List<AppOptInDefaultNetworkPolicy>>
+
     private val userManager = mock(UserManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var appOptInDefaultNetworkController: AppOptInDefaultNetworkController
     private lateinit var roleHolderChangedListener: OnRoleHoldersChangedListener
     private val mockedPackageManagerForUser = ArrayMap<Int, PackageManager>()
-
-    private val featureFlags = HashSet<String>()
-
-    // This will set feature flags from @FeatureFlag annotations
-    // into the map before setUp() runs.
-    @get:Rule
-    val setFeatureFlagsRule = SetFeatureFlagsRule(
-            { name, enabled ->
-                if (enabled == true) featureFlags.add(name) else featureFlags.remove(name) },
-            { name -> featureFlags.contains(name) }
-    )
 
     private fun <T> mockService(name: String, clazz: Class<T>, service: T) {
         doReturn(name).`when`(context).getSystemServiceName(clazz)
@@ -141,8 +127,6 @@ class AppOptInDefaultNetworkControllerTest {
     fun setup() {
         doReturn(emptyList<UserHandle>()).`when`(userManager).getUserHandles(true)
         mockService(Context.USER_SERVICE, UserManager::class.java, userManager)
-        doReturn(featureFlags.contains(CONSTRAINED_DATA_SATELLITE_OPTIN))
-                .`when`(deps).supportConstrainedDataSatelliteOptIn(any())
         appOptInDefaultNetworkController = AppOptInDefaultNetworkController(
                 context, deps, callback, handler)
 
@@ -191,8 +175,10 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         // Verify the callback was called with the correct policy info object.
         verify(callback).accept(policiesCaptor.capture())
-        var expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID1.toUid(PRIMARY_USER)))
+        var expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID1.toUid(PRIMARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // check SMS_APP2 is available as satellite network Fallback uid
@@ -203,8 +189,10 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         // Verify the callback was called with the updated policy info.
         verify(callback, times(2)).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID2.toUid(PRIMARY_USER)))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID2.toUid(PRIMARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // check no uid is available as satellite network fallback uid
@@ -263,7 +251,9 @@ class AppOptInDefaultNetworkControllerTest {
         // Verify the callback was called with the correct policy for the primary user.
         verify(callback).accept(policiesCaptor.capture())
         var expectedPolicy = AppOptInDefaultNetworkPolicy(
-                POLICY_SATELLITE_ROLE_SMS, setOf(SMS_APP_ID1.toUid(PRIMARY_USER)))
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID1.toUid(PRIMARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // check SMS_APP2 is available as satellite network fallback uid at primary user
@@ -274,8 +264,10 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         // Verify the callback was called with the updated policy for the primary user.
         verify(callback, times(2)).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID2.toUid(PRIMARY_USER)))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID2.toUid(PRIMARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // check SMS_APP1 is available as satellite network fallback uid at secondary user
@@ -286,8 +278,10 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, SECONDARY_USER_HANDLE)
         // Verify the callback contains both UIDs, grouped under the same policy.
         verify(callback, times(3)).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID2.toUid(PRIMARY_USER), SMS_APP_ID1.toUid(SECONDARY_USER)))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID2.toUid(PRIMARY_USER), SMS_APP_ID1.toUid(SECONDARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // check no uid is available as satellite network fallback uid at primary user
@@ -298,8 +292,10 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         // Verify the primary user's UID has been removed.
         verify(callback, times(4)).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID1.toUid(SECONDARY_USER)))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID1.toUid(SECONDARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // check SMS_APP2 is available as satellite network fallback uid at secondary user
@@ -308,8 +304,10 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, SECONDARY_USER_HANDLE)
         // Verify the secondary user's UID has been updated.
         verify(callback, times(5)).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID2.toUid(SECONDARY_USER)))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID2.toUid(SECONDARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // check no uid is available as satellite network fallback uid at secondary user
@@ -333,8 +331,10 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         // Verify the callback was called with the correct policy for the primary user.
         verify(callback).accept(policiesCaptor.capture())
-        var expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID2.toUid(PRIMARY_USER)))
+        var expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID2.toUid(PRIMARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // check SMS_APP1 is available as satellite network fallback uid at secondary user
@@ -345,16 +345,19 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, SECONDARY_USER_HANDLE)
         // Verify the callback now contains both UIDs, grouped under the same policy.
         verify(callback, times(2)).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID2.toUid(PRIMARY_USER), SMS_APP_ID1.toUid(SECONDARY_USER))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID2.toUid(PRIMARY_USER), SMS_APP_ID1.toUid(SECONDARY_USER))
         )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         onUserRemoved(SECONDARY_USER_HANDLE)
         // Verify the secondary user's UID has been removed from the policy.
         verify(callback, times(3)).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID2.toUid(PRIMARY_USER)))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID2.toUid(PRIMARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
     }
 
@@ -429,7 +432,6 @@ class AppOptInDefaultNetworkControllerTest {
         doReturn(appInfo).`when`(pm).getApplicationInfo(packageName, PackageManager.GET_META_DATA)
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_onPackageAdded() {
         mockIsSatelliteDataOptimizedAppForUser(TEST_UID1.getUserId(), TEST_PACKAGE1, true)
@@ -440,7 +442,6 @@ class AppOptInDefaultNetworkControllerTest {
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_invalidMetaData() {
         val appInfoWithBoolean = ApplicationInfo()
@@ -470,7 +471,6 @@ class AppOptInDefaultNetworkControllerTest {
         verify(callback, never()).accept(any())
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_withServiceMetaData() {
         val pm = mockPackageManagerForUser(TEST_UID1.getUserId())
@@ -497,7 +497,6 @@ class AppOptInDefaultNetworkControllerTest {
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_onPackageAdded_ignoresIfNotSatelliteOptimized() {
         mockIsSatelliteDataOptimizedAppForUser(TEST_UID1.getUserId(), TEST_PACKAGE1, false)
@@ -517,7 +516,6 @@ class AppOptInDefaultNetworkControllerTest {
         verify(callback, never()).accept(any())
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_onPackageRemoved_noOtherShareUid() {
         mockIsSatelliteDataOptimizedAppForUser(TEST_UID1.getUserId(), TEST_PACKAGE1, true)
@@ -534,7 +532,6 @@ class AppOptInDefaultNetworkControllerTest {
         verify(callback).accept(emptyList())
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_onPackageRemoved_otherShareUid() {
         mockIsSatelliteDataOptimizedAppForUser(TEST_UID1.getUserId(), TEST_PACKAGE1, true)
@@ -559,7 +556,6 @@ class AppOptInDefaultNetworkControllerTest {
         inOrder.verify(callback).accept(emptyList())
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_onUserAddedRemoved() {
         mockIsSatelliteDataOptimizedAppForUser(TEST_UID1.getUserId(), TEST_PACKAGE1, true)
@@ -577,8 +573,10 @@ class AppOptInDefaultNetworkControllerTest {
         onUserAddedWithInstalledPackageList(SECONDARY_USER_HANDLE, listOf(packageInfo2))
         // Verify the callback for the second user addition. The UIDs should be merged.
         inOrder.verify(callback).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN,
-                setOf(TEST_UID1, TEST_UID2))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_OPT_IN,
+            setOf(TEST_UID1, TEST_UID2)
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         onUserRemoved(SECONDARY_USER_HANDLE)
@@ -593,22 +591,6 @@ class AppOptInDefaultNetworkControllerTest {
         inOrder.verifyNoMoreInteractions()
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN, enabled = false)
-    @Test
-    fun testSatelliteOptInUids_featureDisabled() {
-        mockIsSatelliteDataOptimizedAppForUser(TEST_UID1.getUserId(), TEST_PACKAGE1, true)
-        val packageInfo1 = makePackageInfo(TEST_PACKAGE1, TEST_UID1)
-
-        // Verify nothing changes and nothing crashes.
-        onUserAddedWithInstalledPackageList(PRIMARY_USER_HANDLE, listOf(packageInfo1))
-        onPackageAdded(TEST_PACKAGE1, TEST_UID1)
-        onPackageRemoved(TEST_PACKAGE1, TEST_UID1)
-        onExternalApplicationsAvailable(arrayOf(SMS_APP1, SMS_APP2))
-        onUserRemoved(PRIMARY_USER_HANDLE)
-        verify(callback, never()).accept(any())
-    }
-
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_withRoleSmsUids() {
         startAppOptInDefaultNetworkController()
@@ -620,8 +602,10 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         // Verify the callback was called with a list containing one policy for the SMS UID.
         inOrder.verify(callback).accept(policiesCaptor.capture())
-        var expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID1.toUid(PRIMARY_USER)))
+        var expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID1.toUid(PRIMARY_USER))
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // Mock another opt-in uid, verify they both reported via the callback.
@@ -629,14 +613,17 @@ class AppOptInDefaultNetworkControllerTest {
         onPackageAdded(TEST_PACKAGE1, TEST_UID1)
         // Verify the callback was called with a list containing two distinct policy objects.
         inOrder.verify(callback).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID1.toUid(PRIMARY_USER)))
-        val expectedPolicy1 = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN,
-                setOf(TEST_UID1))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID1.toUid(PRIMARY_USER))
+        )
+        val expectedPolicy1 = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_OPT_IN,
+            setOf(TEST_UID1)
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy, expectedPolicy1)
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_onUserAddedWithRoleSmsUids() {
         mockIsSatelliteDataOptimizedAppForUser(TEST_UID1.getUserId(), TEST_PACKAGE1, true)
@@ -648,15 +635,18 @@ class AppOptInDefaultNetworkControllerTest {
         onUserAddedWithInstalledPackageList(PRIMARY_USER_HANDLE, listOf(packageInfo1))
         // Verify the callback was called list containing two distinct policy objects.
         inOrder.verify(callback).accept(policiesCaptor.capture())
-        val expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID1.toUid(PRIMARY_USER)))
-        val expectedPolicy1 = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN,
-                setOf(TEST_UID1))
+        val expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID1.toUid(PRIMARY_USER))
+        )
+        val expectedPolicy1 = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_OPT_IN,
+            setOf(TEST_UID1)
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy, expectedPolicy1)
         inOrder.verifyNoMoreInteractions()
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_withRoleSmsUids_overlappedUid() {
         startAppOptInDefaultNetworkController()
@@ -676,8 +666,10 @@ class AppOptInDefaultNetworkControllerTest {
         onPackageAdded(SMS_APP1, smsUid)
         // Verify the second opt-in UID is added to the same policy group.
         inOrder.verify(callback).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN,
-                setOf(TEST_UID1, smsUid))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_OPT_IN,
+            setOf(TEST_UID1, smsUid)
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // Set SMS_APP1 as a role-sms Uid.
@@ -686,10 +678,14 @@ class AppOptInDefaultNetworkControllerTest {
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         inOrder.verify(callback).accept(policiesCaptor.capture())
         val expectedPolicyFlags = POLICY_SATELLITE_OPT_IN or POLICY_SATELLITE_ROLE_SMS
-        expectedPolicy = AppOptInDefaultNetworkPolicy(expectedPolicyFlags,
-                setOf(smsUid))
-        val expectedPolicy1 = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN,
-                setOf(TEST_UID1))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            expectedPolicyFlags,
+            setOf(smsUid)
+        )
+        val expectedPolicy1 = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_OPT_IN,
+            setOf(TEST_UID1)
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy, expectedPolicy1)
 
         // Unset SMS_APP1 as the role-sms Uid.
@@ -698,12 +694,13 @@ class AppOptInDefaultNetworkControllerTest {
                 .`when`(deps).getRoleHoldersAsUser(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         inOrder.verify(callback).accept(policiesCaptor.capture())
-        expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN,
-                setOf(TEST_UID1, smsUid))
+        expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_OPT_IN,
+            setOf(TEST_UID1, smsUid)
+        )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testSatelliteOptInUids_onExternalApplicationsAvailable() {
         // Mock the sms apps as general opt-in apps without setting role-sms.
@@ -721,13 +718,14 @@ class AppOptInDefaultNetworkControllerTest {
         // Verify the callback was called once with a list containing a single policy object
         // that groups all four UIDs under the "satellite opt-in" policy.
         inOrder.verify(callback).accept(policiesCaptor.capture())
-        val expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_OPT_IN,
-                setOf(
-                        SMS_APP_ID1.toUid(PRIMARY_USER),
-                        SMS_APP_ID1.toUid(SECONDARY_USER),
-                        SMS_APP_ID2.toUid(PRIMARY_USER),
-                        SMS_APP_ID2.toUid(SECONDARY_USER)
-                )
+        val expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_OPT_IN,
+            setOf(
+                SMS_APP_ID1.toUid(PRIMARY_USER),
+                SMS_APP_ID1.toUid(SECONDARY_USER),
+                SMS_APP_ID2.toUid(PRIMARY_USER),
+                SMS_APP_ID2.toUid(SECONDARY_USER)
+            )
         )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
         inOrder.verifyNoMoreInteractions()
@@ -741,18 +739,23 @@ class AppOptInDefaultNetworkControllerTest {
 
         // Add SMS role
         doReturn(listOf(SMS_APP1)).`when`(deps).getRoleHoldersAsUser(
-                RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
+            RoleManager.ROLE_SMS,
+            PRIMARY_USER_HANDLE
+        )
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
 
         inOrder.verify(callback).accept(policiesCaptor.capture())
-        val expectedPolicy = AppOptInDefaultNetworkPolicy(POLICY_SATELLITE_ROLE_SMS,
-                setOf(SMS_APP_ID1.toUid(PRIMARY_USER))
+        val expectedPolicy = AppOptInDefaultNetworkPolicy(
+            POLICY_SATELLITE_ROLE_SMS,
+            setOf(SMS_APP_ID1.toUid(PRIMARY_USER))
         )
         assertThat(policiesCaptor.value).containsExactly(expectedPolicy)
 
         // Remove SMS role
         doReturn(emptyList<String>()).`when`(deps).getRoleHoldersAsUser(
-                RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
+            RoleManager.ROLE_SMS,
+            PRIMARY_USER_HANDLE
+        )
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
         inOrder.verify(callback).accept(emptyList())
         inOrder.verifyNoMoreInteractions()
@@ -776,7 +779,6 @@ class AppOptInDefaultNetworkControllerTest {
         // 2. Remove the OTT call
         processOnHandlerThread {
             appOptInDefaultNetworkController.onOttCallStateChanged(TEST_UID1, false /*isAdded*/)
-
         }
 
         // Verify the callback is invoked with an empty list again
@@ -792,7 +794,9 @@ class AppOptInDefaultNetworkControllerTest {
 
         // Add SMS role
         doReturn(listOf(SMS_APP1)).`when`(deps).getRoleHoldersAsUser(
-                RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
+            RoleManager.ROLE_SMS,
+            PRIMARY_USER_HANDLE
+        )
         onRoleHoldersChanged(RoleManager.ROLE_SMS, PRIMARY_USER_HANDLE)
 
         inOrder.verify(callback).accept(policiesCaptor.capture())
@@ -812,7 +816,6 @@ class AppOptInDefaultNetworkControllerTest {
         inOrder.verifyNoMoreInteractions()
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testOttCall_withOptIn_hasCorrectPolicy() {
         startAppOptInDefaultNetworkController()
@@ -839,7 +842,6 @@ class AppOptInDefaultNetworkControllerTest {
         inOrder.verifyNoMoreInteractions()
     }
 
-    @FeatureFlag(name = CONSTRAINED_DATA_SATELLITE_OPTIN)
     @Test
     fun testOttCall_withSmsAndOptIn_hasCorrectPolicy() {
         startAppOptInDefaultNetworkController()
@@ -884,14 +886,18 @@ class AppOptInDefaultNetworkControllerTest {
         doReturn(startTime).doReturn(endTime).`when`(deps).elapsedRealtime()
         // ott call slicing adding request
         processOnHandlerThread {
-            appOptInDefaultNetworkController.onOttCallStateChanged(TEST_UID1,
-                    true /*isAdded*/)
+            appOptInDefaultNetworkController.onOttCallStateChanged(
+                TEST_UID1,
+                true /*isAdded*/
+            )
         }
 
         // ott call slicing removal request
         processOnHandlerThread {
-            appOptInDefaultNetworkController.onOttCallStateChanged(TEST_UID1,
-                    false /*isAdded*/)
+            appOptInDefaultNetworkController.onOttCallStateChanged(
+                TEST_UID1,
+                false /*isAdded*/
+            )
         }
 
         // Verify that logOttSessionDuration is called with duration used.

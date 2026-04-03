@@ -63,10 +63,10 @@ DEFINE_BPF_MAP_GRW(tether_downstream64_map, HASH, TetherDownstream64Key, TetherD
 DEFINE_BPF_MAP_GRW(tether_upstream6_map, HASH, TetherUpstream6Key, Tether6Value, 64,
                    AID_NETWORK_STACK)
 
-static inline __always_inline int do_forward6(struct __sk_buff* skb,
-                                              const struct rawip_bool rawip,
-                                              const struct stream_bool stream,
-                                              __unused const struct kver_uint kver) {
+function int do_forward6(struct __sk_buff* skb,
+                         const struct rawip_bool rawip,
+                         const struct stream_bool stream,
+                         __unused const struct kver_uint kver) {
     const bool is_ethernet = !rawip.rawip;
 
     // Must be meta-ethernet IPv6 frame
@@ -184,7 +184,7 @@ static inline __always_inline int do_forward6(struct __sk_buff* skb,
         if (gso_hdr_size == sizeof(struct ipv6hdr)) TC_PUNT(UNKNOWN_IPV6_GSO);
         const int mss = v->pmtu - gso_hdr_size;
         const uint64_t payload = L3_bytes - gso_hdr_size;
-        if (KVER_IS_AT_LEAST(kver, 5, 4, 0)) {
+        if (KVER_IS_AT_LEAST(kver, 5, 4)) {
             if (skb->gso_segs <= 1) TC_PUNT(ABOVE_IPV6_PMTU);
             // ?udp gso frags: gso_size is variable (thus 0), could this fail to trigger?
             if (gso_hdr_size + skb->gso_size > v->pmtu) TC_PUNT(ABOVE_IPV6_PMTU_GSO);
@@ -330,11 +330,17 @@ DEFINE_BPF_MAP_GRW(tether_downstream4_map, HASH, Tether4Key, Tether4Value, 1024,
 
 DEFINE_BPF_MAP_GRW(tether_upstream4_map, HASH, Tether4Key, Tether4Value, 1024, AID_NETWORK_STACK)
 
-static inline __always_inline int do_forward4_bottom(struct __sk_buff* skb,
-        const int l2_header_size, void* data, const void* data_end,
-        struct ethhdr* eth, struct iphdr* ip, const struct rawip_bool rawip,
-        const struct stream_bool stream, const struct updatetime_bool updatetime,
-        const bool is_tcp, __unused const struct kver_uint kver) {
+function int do_forward4_bottom(struct __sk_buff* skb,
+                                const int l2_header_size,
+                                void* data,
+                                const void* data_end,
+                                struct ethhdr* eth,
+                                struct iphdr* ip,
+                                const struct rawip_bool rawip,
+                                const struct stream_bool stream,
+                                const struct updatetime_bool updatetime,
+                                const bool is_tcp,
+                                __unused const struct kver_uint kver) {
     const bool is_ethernet = !rawip.rawip;
     struct tcphdr* tcph = is_tcp ? (void*)(ip + 1) : NULL;
     struct udphdr* udph = is_tcp ? NULL : (void*)(ip + 1);
@@ -423,7 +429,7 @@ static inline __always_inline int do_forward4_bottom(struct __sk_buff* skb,
         // we know it is IPv4 without IP options, and either TCP or UDP
         const int hdr_sz = sizeof(struct iphdr) + (is_tcp ? tcph->doff * 4 : sizeof(struct udphdr));
         const uint64_t payload = L3_bytes - hdr_sz;
-        if (KVER_IS_AT_LEAST(kver, 5, 4, 0)) {
+        if (KVER_IS_AT_LEAST(kver, 5, 4)) {
             if (skb->gso_segs <= 1) TC_PUNT(ABOVE_IPV4_PMTU);
             // ?udp gso frags: gso_size is variable (thus 0), could this fail to trigger?
             if (hdr_sz + skb->gso_size > v->pmtu) TC_PUNT(ABOVE_IPV4_PMTU_GSO);
@@ -531,11 +537,11 @@ static inline __always_inline int do_forward4_bottom(struct __sk_buff* skb,
     return bpf_redirect(v->oif, 0 /* this is effectively BPF_F_EGRESS */);
 }
 
-static inline __always_inline int do_forward4(struct __sk_buff* skb,
-                                              const struct rawip_bool rawip,
-                                              const struct stream_bool stream,
-                                              const struct updatetime_bool updatetime,
-                                              const struct kver_uint kver) {
+function int do_forward4(struct __sk_buff* skb,
+                         const struct rawip_bool rawip,
+                         const struct stream_bool stream,
+                         const struct updatetime_bool updatetime,
+                         const struct kver_uint kver) {
     const bool is_ethernet = !rawip.rawip;
 
     // Require ethernet dst mac address to be our unicast address.

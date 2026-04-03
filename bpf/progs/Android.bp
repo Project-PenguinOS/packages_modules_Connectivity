@@ -100,10 +100,26 @@ bpf {
 }
 
 bpf {
+    name: "dscpPolicy@funcs.o",
+    srcs: ["dscpPolicy@funcs.c"],
+    include_dirs: ["packages/modules/Connectivity/bpf/progs/include"],
+    sub_dir: "mainline",
+    cflags: ["-DBPF_USE_FUNCS"],
+}
+
+bpf {
     name: "netd.o",
     srcs: ["netd.c"],
     include_dirs: ["packages/modules/Connectivity/bpf/progs/include"],
     sub_dir: "mainline",
+}
+
+bpf {
+    name: "netd@funcs.o",
+    srcs: ["netd@funcs.c"],
+    include_dirs: ["packages/modules/Connectivity/bpf/progs/include"],
+    sub_dir: "mainline",
+    cflags: ["-DBPF_USE_FUNCS"],
 }
 
 bpf {

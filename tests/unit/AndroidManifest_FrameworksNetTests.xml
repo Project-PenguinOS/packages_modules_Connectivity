@@ -19,7 +19,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <application android:testOnly="true">
+    <application>
         <uses-library android:name="android.test.runner" />
         <uses-library android:name="android.net.ipsec.ike" />
     </application>

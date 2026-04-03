@@ -28,7 +28,7 @@ java_defaults {
         "guava",
         "mockito-target-minus-junit4",
         "net-tests-utils",
-        "net-utils-device-common",
+        "net-utils-service-connectivity",
         "net-utils-device-common-bpf",
         "net-utils-device-common-struct-base",
         "testables",

@@ -2270,6 +2270,15 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.CINNAMON_BUN)
+    private void dumpL4sEnabledConfig(final IndentingPrintWriter pw) {
+        try {
+            pw.println("sL4sEnabledMap: " + sL4sEnabledMap.get());
+        } catch (ErrnoException e) {
+            pw.println("Failed to read L4S enabled map: " + e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private void dumpUidPermissionChunkMap(final IndentingPrintWriter pw) {
         pw.println("sUidPermissionChunkMap:" );
@@ -2367,6 +2376,9 @@ public class BpfNetMaps {
             }
             if (SdkLevel.isAtLeastB()) {
                 dumpLoopbackChecksConfig(pw);
+            }
+            if (SdkLevel.isAtLeastC()) {
+                dumpL4sEnabledConfig(pw);
             }
             dumpUidPermissionChunkMap(pw);
             pw.decreaseIndent();

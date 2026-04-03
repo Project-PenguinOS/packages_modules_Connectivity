@@ -36,20 +36,62 @@ namespace android {
 namespace bpf {
 
 static inline bool getIsCuttlefish() {
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.product.board", value) < 1) return false;
     return !strcmp(value, "cutf");
 }
 
 const bool isCuttlefish = getIsCuttlefish();
 
+#ifdef BPF_UTILS_MORE_IS_FOO_HELPERS
 static inline bool getIsDesktop() {
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.boot.hardware", value) < 1) return false;
     return !strcmp(value, "android-desktop");
 }
 
 const bool isDesktop = getIsDesktop();
+
+static inline bool hasGSM() {
+    static std::string ph = base::GetProperty("gsm.current.phone-type", "");
+    static bool gsm = (ph != "");
+    static bool logged = false;
+    if (!logged) {
+        logged = true;
+        ALOGI("hasGSM(gsm.current.phone-type='%s'): %s", ph.c_str(), gsm ? "true" : "false");
+    }
+    return gsm;
+}
+
+static inline bool isTV() {
+    if (hasGSM()) return false;  // TVs don't do GSM
+
+    static std::string key = base::GetProperty("ro.oem.key1", "");
+    static bool tv = base::StartsWith(key, "ATV00");
+    static bool logged = false;
+    if (!logged) {
+        logged = true;
+        ALOGI("isTV(ro.oem.key1='%s'): %s.", key.c_str(), tv ? "true" : "false");
+    }
+    return tv;
+}
+
+static inline bool isWear() {
+    static std::string wearSdkStr = base::GetProperty("ro.cw_build.wear_sdk.version", "");
+    static int wearSdkInt = base::GetIntProperty("ro.cw_build.wear_sdk.version", 0);
+    static std::string buildChars = base::GetProperty("ro.build.characteristics", "");
+    static std::vector<std::string> v = base::Tokenize(buildChars, ",");
+    static bool watch = (std::find(v.begin(), v.end(), "watch") != v.end());
+    static bool wear = (wearSdkInt > 0) || watch;
+    static bool logged = false;
+    if (!logged) {
+        logged = true;
+        ALOGI("isWear(ro.cw_build.wear_sdk.version=%d[%s] ro.build.characteristics='%s'): %s",
+              wearSdkInt, wearSdkStr.c_str(), buildChars.c_str(), wear ? "true" : "false");
+    }
+    return wear;
+}
+#endif
 
 static inline int get_api_level_full() {
     // This fetches/parses 'ro.build.version.sdk' system property.
@@ -58,7 +100,7 @@ static inline int get_api_level_full() {
     if (api_level < 36) return api_level * 100;  // 3x -> 3x00
 
     // Fetch and parse the 'sdk_full' system property.
-    char value[92] = {};
+    char value[PROP_VALUE_MAX] = {};
     if (__system_property_get("ro.build.version.sdk_full", value) < 1) abort();
     int major, minor;
     if (sscanf(value, "%d.%d", &major, &minor) != 2) abort();

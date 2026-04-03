@@ -22,6 +22,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.nsd.DiscoveryRequest
 import android.net.nsd.NsdServiceInfo
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.ConditionVariable
@@ -89,14 +90,23 @@ class NsdPickerActivityTest {
 
     companion object {
         @get:ClassRule
+        @JvmStatic
         val autoCloseRule = AutoCloseTestResourcesRule()
+        val device by lazy { UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()) }
 
         @JvmStatic
         @BeforeClass
         fun setUpClass() {
-            val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
             device.wakeUp()
             device.executeShellCommand("wm dismiss-keyguard")
+            // Ensure the screen does not turn off during tests
+            // This replicates the "svc power stayon true" command but restores previous state
+            val powerSources = (BatteryManager.BATTERY_PLUGGED_AC or
+                    BatteryManager.BATTERY_PLUGGED_USB or
+                    BatteryManager.BATTERY_PLUGGED_WIRELESS or
+                    BatteryManager.BATTERY_PLUGGED_DOCK).toString()
+            autoCloseRule.add(
+                CloseableGlobalSetting("stay_on_while_plugged_in").apply { setValue(powerSources) })
             // As per Espresso prerequisites, disable animations
             autoCloseRule.add(
                 CloseableGlobalSetting("transition_animation_scale").apply { setValue("0") })
@@ -365,13 +375,18 @@ class NsdPickerActivityTest {
 
     @Test
     fun testRtlLayout_summaryAlignedRight() {
-        overrideLocales(LocaleList.forLanguageTags("ur"))
+        // Changing configuration recreates the activity
+        assertFinishesActivity {
+            overrideLocales(LocaleList.forLanguageTags("ur"))
+        }
 
         tryTest {
             onDialogView(withId(android.R.id.summary)).check(matches(isTextLayoutRtl()))
         } cleanup {
             // Reset to system locales
-            overrideLocales(LocaleList.getEmptyLocaleList())
+            assertFinishesActivity {
+                overrideLocales(LocaleList.getEmptyLocaleList())
+            }
         }
     }
 

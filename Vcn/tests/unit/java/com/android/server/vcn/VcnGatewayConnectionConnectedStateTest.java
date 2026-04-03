@@ -46,6 +46,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -177,10 +178,18 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
         assertEquals(mGatewayConnection.mConnectedState, mGatewayConnection.getCurrentState());
         verify(mIkeSession, never()).close();
         verify(mIkeSession).setNetwork(TEST_UNDERLYING_NETWORK_RECORD_2.network);
+
+        int elapsedTime = 1000;
+        doReturn(ELAPSED_REAL_TIME + elapsedTime).when(mDeps).getElapsedRealTime();
+        getChildSessionCallback()
+                .onIpSecTransformsMigrated(makeDummyIpSecTransform(), makeDummyIpSecTransform());
+        mTestLooper.dispatchAll();
+
         verify(mVcnMetrics)
                 .logUnderlyingNetworkSwitched(
                         eq(VcnMetrics.TRANSPORT_MASK_CELLULAR),
-                        eq(VcnMetrics.TRANSPORT_MASK_WIFI));
+                        eq(VcnMetrics.TRANSPORT_MASK_WIFI),
+                        eq(elapsedTime));
     }
 
     @Test
@@ -192,7 +201,7 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
 
         assertEquals(mGatewayConnection.mConnectedState, mGatewayConnection.getCurrentState());
         verify(mIkeSession, never()).setNetwork(any());
-        verify(mVcnMetrics, never()).logUnderlyingNetworkSwitched(anyInt(), anyInt());
+        verify(mVcnMetrics, never()).logUnderlyingNetworkSwitched(anyInt(), anyInt(), anyInt());
     }
 
     private void verifyDataStallTriggersMigration(
@@ -229,6 +238,17 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
     public void testDataStallTriggersMigration() throws Exception {
         verifyDataStallTriggersMigration(
                 TEST_UNDERLYING_NETWORK_RECORD_1, mVcnNetwork, true /* expectMobilityUpdate */);
+        int elapsedTime = 1000;
+        doReturn(ELAPSED_REAL_TIME + elapsedTime).when(mDeps).getElapsedRealTime();
+        getChildSessionCallback()
+                .onIpSecTransformsMigrated(makeDummyIpSecTransform(), makeDummyIpSecTransform());
+        mTestLooper.dispatchAll();
+
+        verify(mVcnMetrics)
+                .logVcnRecoveryIkeMobilityUpdated(
+                        eq(VcnMetrics.TRANSPORT_MASK_CELLULAR),
+                        eq(VcnMetrics.VCN_RECOVERY_REASON_DATA_STALL),
+                        eq(elapsedTime));
     }
 
     @Test
@@ -237,12 +257,14 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
                 TEST_UNDERLYING_NETWORK_RECORD_1,
                 mock(Network.class),
                 false /* expectMobilityUpdate */);
+        verify(mVcnMetrics, never()).logUnderlyingNetworkSwitched(anyInt(), anyInt(), anyInt());
     }
 
     @Test
     public void testDataStallWontTriggerMigrationWhenUnderlyingNetworkLost() throws Exception {
         verifyDataStallTriggersMigration(
                 null /* networkRecord */, mock(Network.class), false /* expectMobilityUpdate */);
+        verify(mVcnMetrics, never()).logUnderlyingNetworkSwitched(anyInt(), anyInt(), anyInt());
     }
 
     private void verifyVcnTransformsApplied(
@@ -388,6 +410,76 @@ public class VcnGatewayConnectionConnectedStateTest extends VcnGatewayConnection
 
         assertEquals(mGatewayConnection.mDisconnectingState, mGatewayConnection.getCurrentState());
         verify(mIkeSession).close();
+    }
+
+    @Test
+    public void testBackToBackMigrations() throws Exception {
+        triggerChildOpened();
+        mGatewayConnection
+                .getUnderlyingNetworkControllerCallback()
+                .onSelectedUnderlyingNetworkChanged(TEST_UNDERLYING_NETWORK_RECORD_2);
+        mTestLooper.dispatchAll();
+
+        verify(mIkeSession).setNetwork(TEST_UNDERLYING_NETWORK_RECORD_2.network);
+
+        // Trigger another migration before the first one completes
+        mGatewayConnection
+                .getUnderlyingNetworkControllerCallback()
+                .onSelectedUnderlyingNetworkChanged(TEST_UNDERLYING_NETWORK_RECORD_1);
+        mTestLooper.dispatchAll();
+
+        verify(mIkeSession).setNetwork(TEST_UNDERLYING_NETWORK_RECORD_1.network);
+
+        int elapsedTime1 = 1000;
+        doReturn(ELAPSED_REAL_TIME + elapsedTime1).when(mDeps).getElapsedRealTime();
+        getChildSessionCallback()
+                .onIpSecTransformsMigrated(makeDummyIpSecTransform(), makeDummyIpSecTransform());
+        mTestLooper.dispatchAll();
+
+        // The first migration should be logged with CELLULAR -> WIFI
+        verify(mVcnMetrics)
+                .logUnderlyingNetworkSwitched(
+                        eq(VcnMetrics.TRANSPORT_MASK_CELLULAR),
+                        eq(VcnMetrics.TRANSPORT_MASK_WIFI),
+                        eq(elapsedTime1));
+
+        clearInvocations(mVcnMetrics);
+        int elapsedTime2 = 2000;
+        doReturn(ELAPSED_REAL_TIME + elapsedTime2).when(mDeps).getElapsedRealTime();
+        getChildSessionCallback()
+                .onIpSecTransformsMigrated(makeDummyIpSecTransform(), makeDummyIpSecTransform());
+        mTestLooper.dispatchAll();
+
+        // The second migration should be logged with WIFI -> CELLULAR
+        verify(mVcnMetrics)
+                .logUnderlyingNetworkSwitched(
+                        eq(VcnMetrics.TRANSPORT_MASK_WIFI),
+                        eq(VcnMetrics.TRANSPORT_MASK_CELLULAR),
+                        eq(elapsedTime2));
+    }
+
+    @Test
+    public void testMigrationAfterIkeSessionRestart() throws Exception {
+        triggerChildOpened();
+        mGatewayConnection
+                .getUnderlyingNetworkControllerCallback()
+                .onSelectedUnderlyingNetworkChanged(TEST_UNDERLYING_NETWORK_RECORD_2);
+        mTestLooper.dispatchAll();
+
+        verify(mIkeSession).setNetwork(TEST_UNDERLYING_NETWORK_RECORD_2.network);
+
+        // Restart session (increment token)
+        mIkeSession = mGatewayConnection.buildIkeSession(TEST_UNDERLYING_NETWORK_RECORD_1.network);
+        mGatewayConnection.setIkeSession(mIkeSession);
+
+        int elapsedTime = 1000;
+        doReturn(ELAPSED_REAL_TIME + elapsedTime).when(mDeps).getElapsedRealTime();
+        getChildSessionCallback()
+                .onIpSecTransformsMigrated(makeDummyIpSecTransform(), makeDummyIpSecTransform());
+        mTestLooper.dispatchAll();
+
+        // Migration from previous session should be discarded; no metrics logged
+        verify(mVcnMetrics, never()).logUnderlyingNetworkSwitched(anyInt(), anyInt(), anyInt());
     }
 
     private void triggerChildOpened() {

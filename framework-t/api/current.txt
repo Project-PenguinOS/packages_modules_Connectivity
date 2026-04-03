@@ -1,7 +1,8 @@
-// Signature format: 2.0
+// Signature format: 6.0
+// - style=java
 package android.app.usage {
 
-  public final class NetworkStats implements java.lang.AutoCloseable {
+  public final class NetworkStats implements AutoCloseable {
     method public void close();
     method public boolean getNextBucket(@Nullable android.app.usage.NetworkStats.Bucket);
     method public boolean hasNextBucket();
@@ -40,13 +41,13 @@ package android.app.usage {
   }
 
   public class NetworkStatsManager {
-    method @WorkerThread public android.app.usage.NetworkStats queryDetails(int, @Nullable String, long, long) throws android.os.RemoteException, java.lang.SecurityException;
-    method @NonNull @WorkerThread public android.app.usage.NetworkStats queryDetailsForUid(int, @Nullable String, long, long, int) throws java.lang.SecurityException;
-    method @NonNull @WorkerThread public android.app.usage.NetworkStats queryDetailsForUidTag(int, @Nullable String, long, long, int, int) throws java.lang.SecurityException;
-    method @NonNull @WorkerThread public android.app.usage.NetworkStats queryDetailsForUidTagState(int, @Nullable String, long, long, int, int, int) throws java.lang.SecurityException;
-    method @WorkerThread public android.app.usage.NetworkStats querySummary(int, @Nullable String, long, long) throws android.os.RemoteException, java.lang.SecurityException;
-    method @WorkerThread public android.app.usage.NetworkStats.Bucket querySummaryForDevice(int, @Nullable String, long, long) throws android.os.RemoteException, java.lang.SecurityException;
-    method @WorkerThread public android.app.usage.NetworkStats.Bucket querySummaryForUser(int, @Nullable String, long, long) throws android.os.RemoteException, java.lang.SecurityException;
+    method @WorkerThread public android.app.usage.NetworkStats queryDetails(int, @Nullable String, long, long) throws android.os.RemoteException, SecurityException;
+    method @NonNull @WorkerThread public android.app.usage.NetworkStats queryDetailsForUid(int, @Nullable String, long, long, int) throws SecurityException;
+    method @NonNull @WorkerThread public android.app.usage.NetworkStats queryDetailsForUidTag(int, @Nullable String, long, long, int, int) throws SecurityException;
+    method @NonNull @WorkerThread public android.app.usage.NetworkStats queryDetailsForUidTagState(int, @Nullable String, long, long, int, int, int) throws SecurityException;
+    method @WorkerThread public android.app.usage.NetworkStats querySummary(int, @Nullable String, long, long) throws android.os.RemoteException, SecurityException;
+    method @WorkerThread public android.app.usage.NetworkStats.Bucket querySummaryForDevice(int, @Nullable String, long, long) throws android.os.RemoteException, SecurityException;
+    method @WorkerThread public android.app.usage.NetworkStats.Bucket querySummaryForUser(int, @Nullable String, long, long) throws android.os.RemoteException, SecurityException;
     method public void registerUsageCallback(int, @Nullable String, long, @NonNull android.app.usage.NetworkStatsManager.UsageCallback);
     method public void registerUsageCallback(int, @Nullable String, long, @NonNull android.app.usage.NetworkStatsManager.UsageCallback, @Nullable android.os.Handler);
     method public void unregisterUsageCallback(@NonNull android.app.usage.NetworkStatsManager.UsageCallback);
@@ -75,7 +76,7 @@ package android.net {
     method public int describeContents();
     method @NonNull public byte[] getKey();
     method @NonNull public String getName();
-    method @NonNull public static java.util.Set<java.lang.String> getSupportedAlgorithms();
+    method @NonNull public static java.util.Set<String> getSupportedAlgorithms();
     method public int getTruncationLengthBits();
     method public void writeToParcel(android.os.Parcel, int);
     field public static final String AUTH_AES_CMAC = "cmac(aes)";
@@ -95,14 +96,14 @@ package android.net {
   public class IpSecManager {
     method @NonNull public android.net.IpSecManager.SecurityParameterIndex allocateSecurityParameterIndex(@NonNull java.net.InetAddress) throws android.net.IpSecManager.ResourceUnavailableException;
     method @NonNull public android.net.IpSecManager.SecurityParameterIndex allocateSecurityParameterIndex(@NonNull java.net.InetAddress, int) throws android.net.IpSecManager.ResourceUnavailableException, android.net.IpSecManager.SpiUnavailableException;
-    method public void applyTransportModeTransform(@NonNull java.net.Socket, int, @NonNull android.net.IpSecTransform) throws java.io.IOException;
-    method public void applyTransportModeTransform(@NonNull java.net.DatagramSocket, int, @NonNull android.net.IpSecTransform) throws java.io.IOException;
     method public void applyTransportModeTransform(@NonNull java.io.FileDescriptor, int, @NonNull android.net.IpSecTransform) throws java.io.IOException;
-    method @NonNull public android.net.IpSecManager.UdpEncapsulationSocket openUdpEncapsulationSocket(int) throws java.io.IOException, android.net.IpSecManager.ResourceUnavailableException;
+    method public void applyTransportModeTransform(@NonNull java.net.DatagramSocket, int, @NonNull android.net.IpSecTransform) throws java.io.IOException;
+    method public void applyTransportModeTransform(@NonNull java.net.Socket, int, @NonNull android.net.IpSecTransform) throws java.io.IOException;
     method @NonNull public android.net.IpSecManager.UdpEncapsulationSocket openUdpEncapsulationSocket() throws java.io.IOException, android.net.IpSecManager.ResourceUnavailableException;
-    method public void removeTransportModeTransforms(@NonNull java.net.Socket) throws java.io.IOException;
-    method public void removeTransportModeTransforms(@NonNull java.net.DatagramSocket) throws java.io.IOException;
+    method @NonNull public android.net.IpSecManager.UdpEncapsulationSocket openUdpEncapsulationSocket(int) throws java.io.IOException, android.net.IpSecManager.ResourceUnavailableException;
     method public void removeTransportModeTransforms(@NonNull java.io.FileDescriptor) throws java.io.IOException;
+    method public void removeTransportModeTransforms(@NonNull java.net.DatagramSocket) throws java.io.IOException;
+    method public void removeTransportModeTransforms(@NonNull java.net.Socket) throws java.io.IOException;
     field public static final int DIRECTION_IN = 0; // 0x0
     field public static final int DIRECTION_OUT = 1; // 0x1
   }
@@ -110,7 +111,7 @@ package android.net {
   public static final class IpSecManager.ResourceUnavailableException extends android.util.AndroidException {
   }
 
-  public static final class IpSecManager.SecurityParameterIndex implements java.lang.AutoCloseable {
+  public static final class IpSecManager.SecurityParameterIndex implements AutoCloseable {
     method public void close();
     method public int getSpi();
   }
@@ -119,15 +120,15 @@ package android.net {
     method public int getSpi();
   }
 
-  public static final class IpSecManager.UdpEncapsulationSocket implements java.lang.AutoCloseable {
+  public static final class IpSecManager.UdpEncapsulationSocket implements AutoCloseable {
     method public void close() throws java.io.IOException;
     method public java.io.FileDescriptor getFileDescriptor();
     method public int getPort();
   }
 
-  public final class IpSecTransform implements java.lang.AutoCloseable {
+  public final class IpSecTransform implements AutoCloseable {
     method public void close();
-    method @FlaggedApi("com.android.net.flags.ipsec_transform_state") public void requestIpSecTransformState(@NonNull java.util.concurrent.Executor, @NonNull android.os.OutcomeReceiver<android.net.IpSecTransformState,java.lang.RuntimeException>);
+    method @FlaggedApi("com.android.net.flags.ipsec_transform_state") public void requestIpSecTransformState(@NonNull java.util.concurrent.Executor, @NonNull android.os.OutcomeReceiver<android.net.IpSecTransformState, RuntimeException>);
   }
 
   public static class IpSecTransform.Builder {
@@ -229,7 +230,7 @@ package android.net.nsd {
 
   @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public final class DiscoveryRequest implements android.os.Parcelable {
     method public int describeContents();
-    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public java.util.Map<java.lang.String,android.os.PatternMatcher> getAttributeFilters();
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public java.util.Map<String, android.os.PatternMatcher> getAttributeFilters();
     method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @Nullable public String getDisplayNameAttribute();
     method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public long getFlags();
     method @Nullable public android.net.Network getNetwork();
@@ -243,10 +244,10 @@ package android.net.nsd {
     field @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public static final long FLAG_USER_APPROVED_ONLY = 4L; // 0x4L
   }
 
-  public static final class DiscoveryRequest.Builder {
+  @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public static final class DiscoveryRequest.Builder {
     ctor public DiscoveryRequest.Builder(@NonNull String);
     method @NonNull public android.net.nsd.DiscoveryRequest build();
-    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setAttributeFilters(@Nullable java.util.Map<java.lang.String,android.os.PatternMatcher>);
+    method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setAttributeFilters(@Nullable java.util.Map<String, android.os.PatternMatcher>);
     method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setDisplayNameAttribute(@Nullable String);
     method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setFlags(long);
     method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") @NonNull public android.net.nsd.DiscoveryRequest.Builder setFlags(long, long);
@@ -257,15 +258,15 @@ package android.net.nsd {
 
   public final class NsdManager {
     method @FlaggedApi("android.permission.flags.access_local_network_permission_enabled") public void checkPermissionForService(@NonNull String, @NonNull String, @NonNull java.util.concurrent.Executor, @NonNull java.util.function.IntConsumer);
-    method public void discoverServices(String, int, android.net.nsd.NsdManager.DiscoveryListener);
-    method public void discoverServices(@NonNull String, int, @Nullable android.net.Network, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.DiscoveryListener);
     method @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public void discoverServices(@NonNull android.net.nsd.DiscoveryRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.DiscoveryListener);
+    method public void discoverServices(@NonNull String, int, @Nullable android.net.Network, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.DiscoveryListener);
     method @RequiresPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) public void discoverServices(@NonNull String, int, @NonNull android.net.NetworkRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.DiscoveryListener);
+    method public void discoverServices(String, int, android.net.nsd.NsdManager.DiscoveryListener);
+    method @FlaggedApi("com.android.net.flags.mdns_advertising_improvement") public void registerService(@NonNull android.net.nsd.AdvertisingRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.RegistrationListener);
     method public void registerService(android.net.nsd.NsdServiceInfo, int, android.net.nsd.NsdManager.RegistrationListener);
     method public void registerService(@NonNull android.net.nsd.NsdServiceInfo, int, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.RegistrationListener);
-    method @FlaggedApi("com.android.net.flags.mdns_advertising_improvement") public void registerService(@NonNull android.net.nsd.AdvertisingRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.RegistrationListener);
-    method public void registerServiceInfoCallback(@NonNull android.net.nsd.NsdServiceInfo, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ServiceInfoCallback);
     method @FlaggedApi("com.android.tethering.flags.nsd_service_picker") public void registerServiceInfoCallback(@NonNull android.net.nsd.DiscoveryRequest, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ServiceInfoCallback);
+    method public void registerServiceInfoCallback(@NonNull android.net.nsd.NsdServiceInfo, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ServiceInfoCallback);
     method @Deprecated public void resolveService(android.net.nsd.NsdServiceInfo, android.net.nsd.NsdManager.ResolveListener);
     method @Deprecated public void resolveService(@NonNull android.net.nsd.NsdServiceInfo, @NonNull java.util.concurrent.Executor, @NonNull android.net.nsd.NsdManager.ResolveListener);
     method public void stopServiceDiscovery(android.net.nsd.NsdManager.DiscoveryListener);
@@ -322,7 +323,7 @@ package android.net.nsd {
   public final class NsdServiceInfo implements android.os.Parcelable {
     ctor public NsdServiceInfo();
     method public int describeContents();
-    method public java.util.Map<java.lang.String,byte[]> getAttributes();
+    method public java.util.Map<String, byte[]> getAttributes();
     method @Deprecated public java.net.InetAddress getHost();
     method @NonNull public java.util.List<java.net.InetAddress> getHostAddresses();
     method @FlaggedApi("com.android.net.flags.ipv6_over_ble") @Nullable public String getHostname();
@@ -330,7 +331,7 @@ package android.net.nsd {
     method public int getPort();
     method public String getServiceName();
     method public String getServiceType();
-    method @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") @NonNull public java.util.Set<java.lang.String> getSubtypes();
+    method @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") @NonNull public java.util.Set<String> getSubtypes();
     method public void removeAttribute(String);
     method @FlaggedApi("com.android.tethering.flags.nsd_mdns_scan_offload") public void setAttribute(@NonNull String, @Nullable byte[]);
     method public void setAttribute(String, String);
@@ -340,7 +341,7 @@ package android.net.nsd {
     method public void setPort(int);
     method public void setServiceName(String);
     method public void setServiceType(String);
-    method @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public void setSubtypes(@NonNull java.util.Set<java.lang.String>);
+    method @FlaggedApi("com.android.net.flags.nsd_subtypes_support_enabled") public void setSubtypes(@NonNull java.util.Set<String>);
     method public void writeToParcel(android.os.Parcel, int);
     field @NonNull public static final android.os.Parcelable.Creator<android.net.nsd.NsdServiceInfo> CREATOR;
   }

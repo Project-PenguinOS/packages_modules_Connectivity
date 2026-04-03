@@ -36,5 +36,6 @@ cc_library_headers {
         "com.android.mediaprovider",
         "com.android.os.statsd",
         "com.android.tethering",
+        "com.android.uprobestats",
     ],
 }
