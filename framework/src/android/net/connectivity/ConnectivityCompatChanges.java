@@ -121,7 +121,7 @@ public final class ConnectivityCompatChanges {
      * @hide
      */
     @ChangeId
-    @EnabledAfter(targetSdkVersion = Build.VERSION_CODES.CINNAMON_BUN)
+    @EnabledAfter(targetSdkVersion = Build.VERSION_CODES.BAKLAVA)
     public static final long NETWORK_BLOCKED_WITHOUT_INTERNET_PERMISSION = 333340911L;
 
     /**

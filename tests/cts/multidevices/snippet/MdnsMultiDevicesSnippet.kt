@@ -72,8 +72,8 @@ class MdnsMultiDevicesSnippet : Snippet {
     @Suppress("DEPRECATION")
     fun ensureMDnsServiceDiscoveryAndResolution() {
         // Discover a mDns service that matches the test service
-        startMDnsServiceDiscovery()
-        val info = ensureMDnsServiceDiscovered()
+        nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryRecord)
+        val info = discoveryRecord.waitForServiceDiscovered(SERVICE_NAME, SERVICE_TYPE)
         // Resolve the retrieved mDns service.
         nsdManager.resolveService(info, resolveRecord)
         val serviceResolved = resolveRecord.expectCallbackEventually<ServiceResolved>()
@@ -87,19 +87,6 @@ class MdnsMultiDevicesSnippet : Snippet {
                     it.attributes[SERVICE_ATTRIBUTES_KEY]
             )
         }
-    }
-
-    @Rpc(description = "Start the mDNS service discovery")
-    fun startMDnsServiceDiscovery() {
-        // start a mDns service discovery
-        nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryRecord)
-        discoveryRecord.expectCallbackEventually<DiscoveryStarted>()
-    }
-
-    @Rpc(description = "Ensure the target mDNS service discovered")
-    fun ensureMDnsServiceDiscovered(): NsdServiceInfo {
-        // Ensure the test service is discovered.
-        return discoveryRecord.waitForServiceDiscovered(SERVICE_NAME, SERVICE_TYPE)
     }
 
     @Rpc(description = "Stop discovery")

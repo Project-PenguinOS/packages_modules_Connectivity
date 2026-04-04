@@ -174,6 +174,7 @@ class DnsResolverTapTest {
         return SystemClock.elapsedRealtime() - queryStart
     }
 
+    @SetFeatureFlagsRule.FeatureFlag("no_retry_after_cancel", true)
     @Test
     fun testCancellation() {
         val timeWithRetryWhenNotCancelled = doCancellationTest("test1.example.com",

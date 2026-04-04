@@ -72,8 +72,6 @@ public class BpfNetMapsConstants {
             "/sys/fs/bpf/netd_shared/map_netd_uid_migration_enabled_map";
     public static final String PERMISSION_PROPAGATION_ENABLED_MAP_PATH =
             "/sys/fs/bpf/netd_shared/map_netd_permission_propagation_enabled_map";
-    public static final String LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH =
-            "/sys/fs/bpf/netd_shared/map_netd_local_net_note_op_enabled_map";
     public static final String UID_PERMISSION_CHUNK_MAP_PATH =
             "/sys/fs/bpf/netd_shared/map_netd_uid_permission_chunk_map";
     public static final String L4S_ENABLED_MAP_PATH =

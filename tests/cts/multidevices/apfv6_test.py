@@ -18,8 +18,7 @@ from android.platform.test.annotations import CddTest, VsrTest
 from mobly import asserts
 from net_tests_utils.host.python import adb_utils, apf_test_base, apf_utils, assert_utils
 from scapy.contrib.igmpv3 import IGMPv3, IGMPv3gr, IGMPv3mq, IGMPv3mr
-from scapy.layers.dns import DNS, DNSRR, DNSRRSRV, dns_compress
-from scapy.layers.inet import ICMP, IP, IPOption_Router_Alert, UDP
+from scapy.layers.inet import ICMP, IP, IPOption_Router_Alert
 from scapy.layers.inet6 import (
     ICMPv6EchoReply,
     ICMPv6EchoRequest,
@@ -38,7 +37,6 @@ from scapy.layers.l2 import ARP, Ether
 
 APFV6_VERSION = 6000
 ARP_OFFLOAD_REPLY_LEN = 60
-MDNS_RCLASS_IN_FLUSH_CACHE = 0x8001
 
 
 @VsrTest(
@@ -313,120 +311,4 @@ class ApfV6Test(apf_test_base.ApfTestBase):
         'DROPPED_IPV6_MLD_V2_GENERAL_QUERY_REPLIED',
         expected_mldv2_report,
         test_case_name=inspect.currentframe().f_code.co_name,
-    )
-
-  def _generate_mdns_dns_reply_payload(
-      self,
-      service_name,
-      hostname,
-      txt_content,
-      dnsrr_type,
-      server_ip,
-  ):
-    # service_name is in the format of <instance_name>.<service_type>
-    service_type = '.'.join(service_name.split('.')[1:])
-    answers = [
-        DNSRR(
-            rrname=service_type,
-            type='PTR',
-            ttl=120,
-            rdata=service_name,
-        )
-    ]
-    additional_record = [
-        DNSRRSRV(
-            rrname=service_name,
-            rclass=MDNS_RCLASS_IN_FLUSH_CACHE,
-            port=12345,
-            target=hostname,
-            ttl=120,
-        ),
-        DNSRR(rrname=service_name, type='TXT', ttl=120, rdata=txt_content),
-        DNSRR(rrname=hostname, type=dnsrr_type, ttl=120, rdata=server_ip),
-    ]
-    return dns_compress(
-        DNS(qr=1, aa=1, rd=0, qd=None, an=answers, ar=additional_record)
-    )
-
-  def _test_mdns_reply_filter_service_discovery(
-      self, ip_version, test_case_name=''
-  ):
-    if ip_version == 4:
-      self.get_and_expect_ipv4_addresses_exist()
-      apf_filter_name = 'Mdns4'
-      dst_ip = self.server_ipv4_addresses[0]
-      mdns_ip = '224.0.0.251'
-      ip = IP(src=dst_ip, dst=mdns_ip)
-      dnsrr_type = 'A'
-    elif ip_version == 6:
-      self.get_and_expect_ipv6_addresses_exist()
-      apf_filter_name = 'Mdns6'
-      dst_ip = self.server_ipv6_addresses[0]
-      mdns_ip = 'ff02::fb'
-      ip = IPv6(src=dst_ip, dst=mdns_ip)
-      dnsrr_type = 'AAAA'
-    else:
-      asserts.fail('Invalid ip_version')
-
-    self.check_and_mdns_reply_filter_enabled()
-    self.expect_no_multicast_lock_held()
-
-    mdns_client = self.clientDevice
-    mdns_client.connectivity_multi_devices_snippet.startMDnsServiceDiscovery()
-
-    time.sleep(apf_test_base.APF_ACTIVATION_WAIT_TIME_SEC)
-    self.expect_apf_mdns_reply_filter_enabled(apf_filter_name, test_case_name)
-
-    try:
-      service_name = 'MultiDevicesTest._multi_devices._tcp.local'
-      hostname = 'multidevicestest12345.local'
-      txt_content = 'key=value'
-      ether = Ether(src=self.server_mac_address, dst=self.client_mac_address)
-      udp = UDP(sport=5353, dport=5353)
-      matching_dns = self._generate_mdns_dns_reply_payload(
-          service_name, hostname, txt_content, dnsrr_type, dst_ip
-      )
-      matching_packet = bytes(ether / ip / udp / matching_dns).hex()
-
-      self.send_packet_and_expect_counter_increased(
-          packet=matching_packet,
-          counter_name='PASSED_MDNS',
-          test_case_name=test_case_name,
-          max_retries=20,
-          retry_interval_sec=5,
-      )
-      mdns_client.connectivity_multi_devices_snippet.ensureMDnsServiceDiscovered()
-
-      non_matching_service_name = 'NonMatchingService._different._tcp.local'
-      non_matching_hostname = 'nonmatchinghost.local'
-      non_matching_dns = self._generate_mdns_dns_reply_payload(
-          non_matching_service_name,
-          non_matching_hostname,
-          txt_content,
-          dnsrr_type,
-          dst_ip,
-      )
-      non_matching_packet = bytes(ether / ip / udp / non_matching_dns).hex()
-      self.send_packet_and_expect_counter_increased(
-          packet=non_matching_packet,
-          counter_name='DROPPED_MDNS_REPLY_FILTERED',
-          test_case_name=test_case_name,
-          max_retries=20,
-          retry_interval_sec=5,
-      )
-    finally:
-      mdns_client.connectivity_multi_devices_snippet.stopMDnsServiceDiscovery()
-
-  @apf_utils.at_least_B()
-  @apf_utils.apf_ram_at_least(3000)
-  def test_ipv4_mdns_reply_filter_service_discovery(self):
-    self._test_mdns_reply_filter_service_discovery(
-        ip_version=4, test_case_name=inspect.currentframe().f_code.co_name
-    )
-
-  @apf_utils.at_least_B()
-  @apf_utils.apf_ram_at_least(3000)
-  def test_ipv6_mdns_reply_filter_service_discovery(self):
-    self._test_mdns_reply_filter_service_discovery(
-        ip_version=6, test_case_name=inspect.currentframe().f_code.co_name
     )

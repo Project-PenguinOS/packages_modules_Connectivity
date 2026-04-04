@@ -68,7 +68,6 @@ import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_M
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_USE_LOOPBACK_INTERFACE;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_INTERACT_ACROSS_USERS_FULL;
-import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_MAINLINE_NETWORK_STACK;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSIONS;
 import static com.android.testutils.TestPermissionUtil.runAsShell;
 import static com.android.tethering.flags.Flags.FLAG_PERMISSION_MAP_UID_MIGRATION;
@@ -1080,34 +1079,6 @@ public class PermissionMonitorTest {
     @Test
     public void testUidFilteringDuringPackageInstallAndUninstallWithWildcard() throws Exception {
         doTestUidFilteringDuringPackageInstallAndUninstall(null /* ifName */);
-    }
-
-    @Test
-    public void testVpnAppUidIsFilteredFromVpnUidRanges() throws Exception {
-        final String ifName = "tun0";
-        final List<PackageInfo> pkgs = List.of(
-                buildPackageInfo(MOCK_PACKAGE1, MOCK_UID11),
-                buildPackageInfo(MOCK_PACKAGE2, MOCK_UID12),
-                buildPackageInfo(SYSTEM_PACKAGE2, VPN_UID));
-        initialize();
-        onUserAddedWithInstalledPackageList(MOCK_USER1, pkgs);
-
-        // VPN range includes the VPN app UID itself.
-        final Set<UidRange> vpnRange = Set.of(UidRange.createForUser(MOCK_USER1));
-
-        // When VPN is connected, expect a rule to be set up for MOCK_UID11 but NOT for VPN_UID.
-        mPermissionMonitor.onVpnUidRangesAdded(ifName, vpnRange, VPN_UID, Set.of(MOCK_UID12));
-        verify(mBpfNetMaps).addUidInterfaceRules(eq(ifName), aryEq(new int[]{MOCK_UID11}));
-        verify(mBpfNetMaps, never()).addUidInterfaceRules(eq(ifName), aryEq(new int[]{VPN_UID}));
-        verify(mBpfNetMaps, never()).addUidInterfaceRules(eq(ifName), aryEq(new int[]{MOCK_UID12}));
-
-        // When the VPN app package is uninstalled and reinstalled, expect NO BPF rules to be
-        // added or removed for it because it's a bypassing UID.
-        onPackageRemoved(SYSTEM_PACKAGE2, VPN_UID);
-        verify(mBpfNetMaps, never()).removeUidInterfaceRules(any());
-
-        onPackageAdded(SYSTEM_PACKAGE2, VPN_UID);
-        verify(mBpfNetMaps, never()).addUidInterfaceRules(eq(ifName), aryEq(new int[]{VPN_UID}));
     }
 
     @Test
@@ -2127,27 +2098,6 @@ public class PermissionMonitorTest {
             expected.put(Process.toSdkSandboxUid(MOCK_UID11),
                     PERMISSION_BIT_ACCESS_LOCAL_NETWORK | PERMISSION_BIT_UPDATE_DEVICE_STATS
                             | PERMISSION_BIT_NO_INTERNET);
-        }
-        assertSameSparseIntArray(expected, actual);
-        verify(mDeps).logPermissionChangeListenerLatency(anyInt());
-    }
-
-    @Test
-    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
-    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
-    public void testSetUidsPermissionBits_mainlineNetworkStack_lnpPermissionEnabled()
-            throws RemoteException {
-        LocalPermissionBpfMap permissionBpfMap = verifyAndCapturePermissionBpfMap();
-        SparseIntArray given = new SparseIntArray();
-        given.put(MOCK_UID11, PERMISSION_BPF_MAP_BIT_MAINLINE_NETWORK_STACK
-                | PERMISSION_BPF_MAP_BIT_INTERNET);
-        permissionBpfMap.setUidsPermissionBits(given);
-
-        SparseIntArray actual = verifySetChunkPermListForUidsAndCaptureInput();
-        SparseIntArray expected = new SparseIntArray();
-        expected.put(MOCK_UID11, PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
-        if (hasSdkSandbox(MOCK_UID11)) {
-            expected.put(Process.toSdkSandboxUid(MOCK_UID11), PERMISSION_BIT_ACCESS_LOCAL_NETWORK);
         }
         assertSameSparseIntArray(expected, actual);
         verify(mDeps).logPermissionChangeListenerLatency(anyInt());

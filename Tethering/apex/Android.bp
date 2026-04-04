@@ -152,7 +152,6 @@ bootclasspath_fragment {
     apex_available: ["com.android.tethering"],
     dex_preopt: {
         profile: "packages/modules/Connectivity/Tethering/apex/boot-image-profile.txt",
-        nopreload_classes: "packages/modules/Connectivity/Tethering/apex/nopreload-classes",
     },
 
     // The bootclasspath_fragments that provide APIs on which this depends.

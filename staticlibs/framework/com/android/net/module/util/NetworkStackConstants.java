@@ -228,7 +228,6 @@ public final class NetworkStackConstants {
     public static final byte TCPHDR_ECE = (byte) (1 << 6);
     public static final byte TCPHDR_CWR = (byte) (1 << 7);
     // TODO: change these constants from byte to short and add TCPHDR_AE.
-    public static final byte TCPHDR_SYNACK = TCPHDR_SYN | TCPHDR_ACK;
 
     /**
      * UDP constants.

@@ -20,7 +20,6 @@ import androidx.annotation.NonNull;
 
 import com.android.net.module.util.Struct;
 
-import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.util.Locale;
 
@@ -47,20 +46,13 @@ public class LocalNetUidHostAllowlistKey extends Struct {
     }
 
     /**
-     * Make a new LocalNetUidHostAllowlistKey for a specific remote address.
+     * Make a new LocalNetUidHostAllowlistKey.
      *
      * <p>Although the allowlist is a trie and not a map, that is only for performance reasons, so
      * every key sets the prefix match bit length to cover the whole key.
      */
     public LocalNetUidHostAllowlistKey(long uid, long ifIndex, @NonNull InetAddress remoteAddress) {
         this(/* lpmBitlen=*/32 + 32 + 128, uid, ifIndex, remoteAddress);
-    }
-
-    /**
-     * Make a new LocalNetUidHostAllowlistKey for all remote addresses on an interface.
-     */
-    public LocalNetUidHostAllowlistKey(long uid, long ifIndex) {
-        this(/* lpmBitlen=*/32 + 32, uid, ifIndex, Inet6Address.ANY);
     }
 
     @Override

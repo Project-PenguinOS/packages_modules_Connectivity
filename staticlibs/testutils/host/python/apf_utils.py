@@ -61,16 +61,14 @@ def get_apf_counters_from_cmd(
 
 
 def get_apf_config_from_cmd(
-    ad: android_device.AndroidDevice,
-    iface_name: str,
-    config: str,
+    ad: android_device.AndroidDevice, iface_name: str
 ) -> list[str]:
   cmd = f'cmd network_stack apf {iface_name} config'
   output = AdbOutputHandler(ad, cmd).get_output()
   if not output or '\n' in output.strip():
     return []
 
-  match = re.search(rf'{config}:\s*\[(.*?)\]', output)
+  match = re.search(r'offloads:\s*\[(.*?)\]', output)
   if not match:
     return []
 
@@ -81,24 +79,6 @@ def get_apf_config_from_cmd(
   # and return the result as a list.
   items = [item for item in re.split(r'[,\s]+', list_content) if item]
   return items
-
-
-def get_apf_mcast_mode(
-    ad: android_device.AndroidDevice, iface_name: str
-) -> str:
-  """Retrieves the multicast mode from APF config.
-
-  Args:
-      ad: The Android device object.
-      iface_name: The name of the network interface.
-
-  Returns:
-      The multicast mode (e.g., "DROP", "ALLOW") as a string.
-  """
-  cmd = f'cmd network_stack apf {iface_name} config'
-  output = AdbOutputHandler(ad, cmd).get_output()
-  match = re.search(r'mcast:\s*(\w+)', output)
-  return match.group(1) if match else ''
 
 
 def get_ipv4_addresses(

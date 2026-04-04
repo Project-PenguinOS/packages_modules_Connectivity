@@ -53,8 +53,6 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.Pair;
 
-import com.android.internal.annotations.VisibleForTesting;
-
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -294,24 +292,13 @@ public class DnsManager {
         return mPrivateDnsMap.getOrDefault(network.getNetId(), PRIVATE_DNS_OFF);
     }
 
-    /**
-     * Called by ConnectivityService when {@link PrivateDnsConfig} was updated for a Network.
-     */
-    public void onPrivateDnsConfigChanged(Network network, LinkProperties lp,
-            PrivateDnsConfig cfg) {
-        Log.w(TAG, "onPrivateDnsConfigChanged(" + network + ", " + cfg + ")");
-        if (cfg != null) {
-            mPrivateDnsMap.put(network.getNetId(), cfg);
-        } else {
-            mPrivateDnsMap.remove(network.getNetId());
-        }
-        forceRestartPrivateDnsValidation(network.netId, lp);
+    public PrivateDnsConfig updatePrivateDns(Network network, PrivateDnsConfig cfg) {
+        Log.w(TAG, "updatePrivateDns(" + network + ", " + cfg + ")");
+        return (cfg != null)
+                ? mPrivateDnsMap.put(network.getNetId(), cfg)
+                : mPrivateDnsMap.remove(network.getNetId());
     }
 
-    /**
-     * Fill in the private DNS setting and servers in the provided LinkProperties using
-     * information tracked in this class.
-     */
     public void updatePrivateDnsStatus(int netId, LinkProperties lp) {
         // Use the PrivateDnsConfig data pushed to this class instance
         // from ConnectivityService.
@@ -335,10 +322,7 @@ public class DnsManager {
         }
     }
 
-    /**
-     * Called by ConnectivityService when private DNS validation was updated for a Network
-     */
-    public void onPrivateDnsValidationUpdated(PrivateDnsValidationUpdate update) {
+    public void updatePrivateDnsValidation(PrivateDnsValidationUpdate update) {
         final PrivateDnsValidationStatuses statuses = mPrivateDnsValidationMap.get(update.netId);
         if (statuses == null) return;
         statuses.updateStatus(update);
@@ -354,13 +338,7 @@ public class DnsManager {
      * the hashMap. To prevent concurrency issues, the hashMap should always be accessed from the
      * same thread.
      */
-    public void onCapabilitiesChanged(int netId, @NonNull final NetworkCapabilities nc) {
-        final NetworkCapabilities prevNc = mNetworkCapabilitiesMap.get(netId);
-        if (prevNc != null
-                && prevNc.isMetered() == nc.isMetered()
-                && nc.equalsTransportTypes(prevNc)) {
-            return;
-        }
+    public void updateCapabilitiesForNetwork(int netId, @NonNull final NetworkCapabilities nc) {
         mNetworkCapabilitiesMap.put(netId, nc);
         sendDnsConfigurationForNetwork(netId);
     }
@@ -371,28 +349,9 @@ public class DnsManager {
      * When destroying network, the specific network will be removed from the hashMap.
      * The hashMap is always accessed on the same thread.
      */
-    public void onLinkPropertiesChanged(int netId, @NonNull LinkProperties newLp) {
-        final LinkProperties oldLp = mLinkPropertiesMap.get(netId);
-        if (oldLp != null && newLp.isIdenticalDnses(oldLp)) {
-            return;
-        }
-        // TODO: the DNS configuration does not only depend on DNS servers and still needs to
-        //  be updated for other cases
-        final Collection<InetAddress> dnses = newLp.getDnsServers();
-        Log.d(TAG, "Setting DNS servers for network " + netId + " to " + dnses);
-
-        mLinkPropertiesMap.put(netId, newLp);
-        sendDnsConfigurationForNetwork(netId);
-        flushVmDnsCache();
-    }
-
-    /**
-     * Called by ConnectivityService to force-restart private DNS validation.
-     */
-    public void forceRestartPrivateDnsValidation(int netId, LinkProperties lp) {
+    public void noteDnsServersForNetwork(int netId, @NonNull LinkProperties lp) {
         mLinkPropertiesMap.put(netId, lp);
         sendDnsConfigurationForNetwork(netId);
-        flushVmDnsCache();
     }
 
     /**
@@ -457,8 +416,7 @@ public class DnsManager {
     /**
      * Flush DNS caches and events work before boot has completed.
      */
-    @VisibleForTesting
-    void flushVmDnsCache() {
+    public void flushVmDnsCache() {
         /*
          * Tell the VMs to toss their DNS caches
          */

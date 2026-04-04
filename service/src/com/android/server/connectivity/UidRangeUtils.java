@@ -101,38 +101,6 @@ public final class UidRangeUtils {
     }
 
     /**
-     * Remove given UIDs from a uid range
-     * @param uidRange uid range from which uidsToRemove will be removed
-     * @param uidsToRemove set of UIDs to be removed from uidRange
-     * @return a set of uid ranges that are in uidRange but not in uidsToRemove
-     * @hide
-     */
-    public static ArraySet<UidRange> removeUidsFromUidRange(@NonNull UidRange uidRange,
-            @NonNull Set<Integer> uidsToRemove) {
-        Objects.requireNonNull(uidRange);
-        Objects.requireNonNull(uidsToRemove);
-        final ArraySet<UidRange> filteredRangeSet = new ArraySet<>();
-
-        final List<Integer> sortedUids = new ArrayList<>(uidsToRemove);
-        Collections.sort(sortedUids);
-
-        int start = uidRange.start;
-        for (int uid : sortedUids) {
-            if (uid < uidRange.start) continue;
-            if (uid > uidRange.stop) break;
-
-            if (uid > start) {
-                filteredRangeSet.add(new UidRange(start, uid - 1));
-            }
-            start = uid + 1;
-        }
-        if (start <= uidRange.stop) {
-            filteredRangeSet.add(new UidRange(start, uidRange.stop));
-        }
-        return filteredRangeSet;
-    }
-
-    /**
      * Compare if the given UID range sets have overlapping uids
      * @param uidRangeSet1 first uid range set to check for overlap
      * @param uidRangeSet2 second uid range set to check for overlap
