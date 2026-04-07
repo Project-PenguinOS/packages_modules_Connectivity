@@ -23,7 +23,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import com.android.testutils.FunctionalUtils.ThrowingRunnable
 import com.android.testutils.FunctionalUtils.ThrowingSupplier
-import java.lang.Exception
 import java.util.concurrent.Executor
 import kotlin.test.fail
 
@@ -37,8 +36,17 @@ fun HandlerThread.waitForIdle(timeoutMs: Long) = threadHandler.waitForIdle(timeo
 fun Handler.waitForIdle(timeoutMs: Int) = waitForIdle(timeoutMs.toLong())
 fun Handler.waitForIdle(timeoutMs: Long) {
     val cv = ConditionVariable(false)
-    post(cv::open)
+    val queue = looper.queue
+    val idleHandler = android.os.MessageQueue.IdleHandler {
+        cv.open()
+        false // Returning false removes the idle handler
+    }
+    queue.addIdleHandler(idleHandler)
+    // Post a message to wake up the looper and ensure the idle handler runs
+    // at least once after this point.
+    post {}
     if (!cv.block(timeoutMs)) {
+        queue.removeIdleHandler(idleHandler)
         fail("Handler did not become idle after ${timeoutMs}ms")
     }
 }

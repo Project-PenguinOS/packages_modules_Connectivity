@@ -44,6 +44,7 @@ import com.android.modules.utils.HandlerExecutor;
 import com.android.net.module.util.HexDump;
 import com.android.server.vcn.VcnCarrierConfig;
 import com.android.server.vcn.VcnContext;
+import com.android.server.vcn.metrics.VcnMetrics;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -192,6 +193,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
     private int mConsecutiveReportNotLossyCount = 0;
 
     @DetectionMode private int mDetectionMode = DETECTION_MODE_RAPID;
+    @NonNull private NetworkCapabilities mNetworkCapabilities;
 
     @NonNull private final Handler mHandler;
     @NonNull private final PowerManager mPowerManager;
@@ -199,17 +201,19 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
     @NonNull private final Object mCancellationToken = new Object();
     @NonNull private final Object mCancelExitRapidModeToken = new Object();
     @NonNull private final PacketLossCalculator mPacketLossCalculator;
+    @NonNull private final VcnMetrics mVcnMetrics;
 
     @Nullable private BroadcastReceiver mDeviceIdleReceiver;
 
     @Nullable private IpSecTransformWrapper mInboundTransform;
     @Nullable private IpSecTransformState mLastIpSecTransformState;
-    @Nullable private NetworkCapabilities mNetworkCapabilities;
+    @Nullable private PacketLossCalculationResult mLastCalculateResult;
 
     @VisibleForTesting(visibility = Visibility.PRIVATE)
     public IpSecPacketLossDetector(
             @NonNull VcnContext vcnContext,
             @NonNull Network network,
+            @NonNull VcnMetrics vcnMetrics,
             @NonNull VcnCarrierConfig carrierConfig,
             @NonNull NetworkMetricMonitorCallback callback,
             @NonNull Dependencies deps)
@@ -217,12 +221,14 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
         super(vcnContext, network, carrierConfig, callback);
 
         Objects.requireNonNull(deps, "Missing deps");
+        mVcnMetrics = Objects.requireNonNull(vcnMetrics, "Missing vcnMetrics");
 
         mHandler = new Handler(getVcnContext().getLooper());
 
         mPowerManager = getVcnContext().getContext().getSystemService(PowerManager.class);
         mConnectivityManager =
                 getVcnContext().getContext().getSystemService(ConnectivityManager.class);
+        mNetworkCapabilities = mConnectivityManager.getNetworkCapabilities(getNetwork());
 
         mPacketLossCalculator = deps.getPacketLossCalculator();
 
@@ -272,10 +278,11 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
     public IpSecPacketLossDetector(
             @NonNull VcnContext vcnContext,
             @NonNull Network network,
+            @NonNull VcnMetrics vcnMetrics,
             @NonNull VcnCarrierConfig carrierConfig,
             @NonNull NetworkMetricMonitorCallback callback)
             throws IllegalAccessException {
-        this(vcnContext, network, carrierConfig, callback, new Dependencies());
+        this(vcnContext, network, vcnMetrics, carrierConfig, callback, new Dependencies());
     }
 
     @VisibleForTesting(visibility = Visibility.PRIVATE)
@@ -428,6 +435,7 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
     private void clearTransformStateAndPollingEvents() {
         mHandler.removeCallbacksAndEqualMessages(mCancellationToken);
         mLastIpSecTransformState = null;
+        mLastCalculateResult = null;
 
         if (Flags.improvePacketLossDetector()) {
             mConsecutiveReportNotLossyCount = 0;
@@ -552,29 +560,32 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
                             getLogPrefix());
         }
 
+        if (mLastCalculateResult == null
+                || mLastCalculateResult.getPacketLossRatePercent()
+                        != calculateResult.getPacketLossRatePercent()) {
+            logInfo(
+                    "calculateResult changed to: "
+                            + calculateResult
+                            + " in the past "
+                            + (state.getTimestampMillis()
+                                    - mLastIpSecTransformState.getTimestampMillis())
+                            + "ms. Expected packet count: "
+                            + (state.getRxHighestSequenceNumber()
+                                    - mLastIpSecTransformState.getRxHighestSequenceNumber()));
+        }
+        mLastCalculateResult = calculateResult;
+
         final int packetLossResultType = calculateResult.getResultType();
         final int packetLossPercent = calculateResult.getPacketLossRatePercent();
         final boolean isLossy = packetLossPercent >= mPacketLossRatePercentThreshold;
-
-        final String logMsg =
-                "calculateResult: "
-                        + calculateResult
-                        + "% in the past "
-                        + (state.getTimestampMillis()
-                                - mLastIpSecTransformState.getTimestampMillis())
-                        + "ms";
 
         if (shouldUpdateLastTransformState(packetLossResultType)) {
             mLastIpSecTransformState = state;
         }
 
-        if (shouldReportValidationResult(isLossy, packetLossResultType)) {
-            if (isLossy) {
-                logInfo(logMsg);
-            } else {
-                logV(logMsg);
-            }
+        logPacketLossDetectorReport(packetLossResultType, packetLossPercent);
 
+        if (shouldReportValidationResult(isLossy, packetLossResultType)) {
             handleValidationResultReceivedInternal(isLossy);
         }
 
@@ -582,6 +593,39 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
             mConnectivityManager.reportNetworkConnectivity(
                     getNetwork(), false /* hasConnectivity */);
         }
+    }
+
+    private void logPacketLossDetectorReport(
+            @PacketLossResultType int resultType, int packetLossPercent) {
+        int transportType = VcnMetrics.TRANSPORT_MASK_UNSPECIFIED;
+        if (mNetworkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+            transportType = VcnMetrics.TRANSPORT_MASK_CELLULAR;
+        } else if (mNetworkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+            transportType = VcnMetrics.TRANSPORT_MASK_WIFI;
+        }
+
+        mVcnMetrics.logIpSecPacketLossDetectorReported(
+                transportType,
+                mNetworkCapabilities.getSignalStrength(),
+                packetLossPercent,
+                toVcnMetricsResultType(resultType),
+                mPacketLossRatePercentThreshold);
+    }
+
+    private static @VcnMetrics.IpSecPacketLossResultType int toVcnMetricsResultType(
+            @PacketLossResultType int resultType) {
+        return switch (resultType) {
+            case LOSS_RESULT_VALID -> VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_VALID;
+            case LOSS_RESULT_SEQ_DIFF_TOO_SMALL ->
+                    VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_SEQ_DIFF_TOO_SMALL;
+            case LOSS_RESULT_UNUSUAL_SEQ_NUM_LEAP ->
+                    VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_UNUSUAL_SEQ_NUM_LEAP;
+            case LOSS_RESULT_UNEXPECTED_ERROR ->
+                    VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_UNEXPECTED_ERROR;
+            case LOSS_RESULT_PACKETS_TOO_OLD ->
+                    VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_PACKETS_TOO_OLD;
+            default -> VcnMetrics.IPSEC_PACKET_LOSS_RESULT_TYPE_UNSPECIFIED;
+        };
     }
 
     @VisibleForTesting(visibility = Visibility.PRIVATE)
@@ -705,7 +749,9 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
                             + expectedPktCnt
                             + " actualPktCnt: "
                             + actualPktCnt);
-            final int percent = 100 - (int) (actualPktCnt * 100 / expectedPktCnt);
+
+            final double lossRate = (double) (expectedPktCnt - actualPktCnt) / expectedPktCnt;
+            final int percent = (int) Math.round(lossRate * 100.0);
 
             // Handle Invalid Result: Unusual Sequence Leap
             final boolean isUnusualSeqNumLeap =
@@ -899,7 +945,8 @@ public class IpSecPacketLossDetector extends NetworkMetricMonitor {
             return "mResultType: "
                     + mResultType
                     + " | mPacketLossRatePercent: "
-                    + mPacketLossRatePercent;
+                    + mPacketLossRatePercent
+                    + "%";
         }
     }
 }

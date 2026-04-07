@@ -13,34 +13,39 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              xmlns:tools="http://schemas.android.com/tools"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:paddingStart="?android:attr/dialogPreferredPadding"
-    android:paddingEnd="?android:attr/dialogPreferredPadding"
-    android:orientation="vertical">
-    <TextView
-        android:id="@android:id/title"
-        android:text="@string/choose_device_title"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+            xmlns:tools="http://schemas.android.com/tools"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="?android:attr/dialogPreferredPadding"
+            android:paddingEnd="?android:attr/dialogPreferredPadding"
+            android:paddingTop="@dimen/nsd_picker_padding_top">
+    <LinearLayout
+        android:id="@+id/nsd_picker_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingTop="18dp"
-        android:textSize="20sp"
-        android:textStyle="bold"/>
-    <TextView
-        android:id="@android:id/summary"
-        tools:text="My Discovery App wants to connect to another device on your network"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingTop="18dp"
-        android:textSize="16sp"/>
-    <ProgressBar
-        android:id="@android:id/progress"
-        style="?android:attr/progressBarStyle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:paddingTop="20dp"
-        android:layout_gravity="center_horizontal"
-        android:text="@string/scanning_for_services_progress_description"/>
-</LinearLayout>
+        android:orientation="vertical">
+        <TextView
+            android:id="@android:id/title"
+            android:text="@string/choose_device_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="@dimen/nsd_picker_title_padding_top"
+            style="@style/NsdPickerTitleStyle"/>
+        <TextView
+            android:id="@android:id/summary"
+            tools:text="My Discovery App wants to connect to another device on your network"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="@dimen/nsd_picker_summary_padding_top"
+            android:textAppearance="?android:textAppearanceMedium"/>
+        <ProgressBar
+            android:id="@android:id/progress"
+            style="?android:attr/progressBarStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:paddingTop="@dimen/nsd_picker_progress_padding_top"
+            android:layout_gravity="center_horizontal"
+            android:text="@string/scanning_for_services_progress_description"/>
+    </LinearLayout>
+</ScrollView>

@@ -4558,6 +4558,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
      */
     @VisibleForTesting
     public void systemReadyInternal() {
+        final long startTimeMs = SystemClock.elapsedRealtime();
         // Load flags after PackageManager is ready to query module version
         mFlags.loadFlags(mDeps, mContext);
 
@@ -4644,7 +4645,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // have permission problem. While CV#block() is unbounded in time and can in principle block
         // forever, this replaces a synchronous call to PermissionMonitor#initialize, which
         // could have blocked forever too.
+        final long blockStartTimeMs = SystemClock.elapsedRealtime();
         permissionMonitorInitializeDone.block();
+        ConnectivityStatsLog.write_non_chained(
+                ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_DURATION_EVENT_OCCURRED,
+                Process.SYSTEM_UID,
+                null,
+                ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_DURATION_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_DURATION_EVENT_TYPE_CONNECTIVITY_SYSTEM_READY_BLOCKED_MS,
+                SystemClock.elapsedRealtime() - blockStartTimeMs);
 
         if (mConstrainedDataSatelliteMetrics) {
             mSatelliteCoarseUsageMetricsCollector.startMonitoring();
@@ -4653,6 +4661,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
         if (mDeps.isAtLeast26Q2()) {
             mHandler.sendMessage(mHandler.obtainMessage(EVENT_L4S_DEVELOPER_OPTION_CHANGED));
         }
+
+        ConnectivityStatsLog.write_non_chained(
+                ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_DURATION_EVENT_OCCURRED,
+                Process.SYSTEM_UID,
+                null,
+                ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_DURATION_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_DURATION_EVENT_TYPE_CONNECTIVITY_SYSTEM_READY_TOTAL_MS,
+                SystemClock.elapsedRealtime() - startTimeMs);
     }
 
     /**

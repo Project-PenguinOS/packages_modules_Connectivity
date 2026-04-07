@@ -216,10 +216,12 @@ public class UnderlyingNetworkControllerTest {
                                 SUB_GROUP,
                                 mSubscriptionSnapshot,
                                 null,
+                                mVcnMetrics,
                                 mEvaluatorCallback));
         doReturn(mNetworkEvaluator)
                 .when(mDependencies)
-                .newUnderlyingNetworkEvaluator(any(), any(), any(), any(), any(), any(), any());
+                .newUnderlyingNetworkEvaluator(
+                        any(), any(), any(), any(), any(), any(), any(), any());
 
         mUnderlyingNetworkController =
                 new UnderlyingNetworkController(
@@ -607,6 +609,7 @@ public class UnderlyingNetworkControllerTest {
                         any(),
                         any(),
                         any(),
+                        any(),
                         mEvaluatorCallbackCaptor.capture());
         mEvaluatorCallbackCaptor.getValue().onEvaluationResultChanged();
 
@@ -818,10 +821,12 @@ public class UnderlyingNetworkControllerTest {
                                 SUB_GROUP,
                                 mSubscriptionSnapshot,
                                 null,
+                                mVcnMetrics,
                                 mEvaluatorCallback));
         doReturn(evaluator)
                 .when(mDependencies)
-                .newUnderlyingNetworkEvaluator(any(), any(), any(), any(), any(), any(), any());
+                .newUnderlyingNetworkEvaluator(
+                        any(), any(), any(), any(), any(), any(), any(), any());
 
         cb.onAvailable(network);
         cb.onCapabilitiesChanged(network, responseNetworkCaps);

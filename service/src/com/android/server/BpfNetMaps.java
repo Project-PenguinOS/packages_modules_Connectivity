@@ -32,6 +32,7 @@ import static android.net.BpfNetMapsConstants.LOCAL_NET_CACHE_GENERATION_ID_MAP_
 import static android.net.BpfNetMapsConstants.LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
 import static android.net.BpfNetMapsConstants.LOOPBACK_ACCESS_METRICS_ENABLED_MAP_PATH;
+import static android.net.BpfNetMapsConstants.LOOPBACK_CHECKS_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.PERMISSION_PROPAGATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_MIGRATION_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.UID_OWNER_MAP_PATH;
@@ -205,6 +206,7 @@ public class BpfNetMaps {
     private static IBpfMap<U32, S64> sLocalNetCacheGenerationIdMap = null;
     private static BpfBoolean sL4sEnabledMap = null;
     private static BpfBoolean sLoopbackAccessMetricsEnabledBpfBoolean = null;
+    private static BpfBoolean sLoopbackChecksEnabledBpfBoolean = null;
 
     private static final List<Pair<Integer, String>> PERMISSION_LIST = Arrays.asList(
             Pair.create(TRAFFIC_PERMISSION_INTERNET, "PERMISSION_INTERNET"),
@@ -214,6 +216,8 @@ public class BpfNetMaps {
     private final InterfaceTracker mInterfaceTracker;
     private static boolean sPermissionMapUidMigrationEnabled = false;
     private static boolean sLoopbackAccessMetricsEnabled = false;
+    private static boolean sLoopbackChecksEnabled = false;
+    private static boolean sBetaMetricsEnabled = false;
     @GuardedBy("sLocalNetAccessLock")
     private static long sLnpGenerationID = 0L;
 
@@ -231,6 +235,22 @@ public class BpfNetMaps {
      */
     public boolean isLoopbackAccessMetricsEnabled() {
         return sLoopbackAccessMetricsEnabled;
+    }
+
+    /**
+     * Get the cached android.permission.flags.Flags#useLoopbackInterfacePermissionEnabled() so the
+     * flag value is process stable.
+     */
+    public boolean isLoopbackChecksEnabled() {
+        return sLoopbackChecksEnabled;
+    }
+
+    /**
+     * Get the cached com.android.tethering.flags.Flags#collectBetaMetrics() so the flag
+     * value is process stable.
+     */
+    public boolean isLocalNetMetricsEnabled() {
+        return sBetaMetricsEnabled;
     }
 
     /**
@@ -306,6 +326,15 @@ public class BpfNetMaps {
     public static void setLoopbackAccessMetricsEnabledBpfBooleanForTest(
             BpfBoolean loopbackAccessMetricsEnabledBpfBoolean) {
         sLoopbackAccessMetricsEnabledBpfBoolean = loopbackAccessMetricsEnabledBpfBoolean;
+    }
+
+    /**
+     * Set loopbackChecksEnabledBpfBoolean for test.
+     */
+    @VisibleForTesting
+    public static void setLoopbackChecksEnabledBpfBooleanForTest(
+            BpfBoolean loopbackChecksEnabledBpfBoolean) {
+        sLoopbackChecksEnabledBpfBoolean = loopbackChecksEnabledBpfBoolean;
     }
 
     /**
@@ -501,6 +530,15 @@ public class BpfNetMaps {
             return new BpfBoolean(LOOPBACK_ACCESS_METRICS_ENABLED_MAP_PATH, true);
         } catch (ErrnoException e) {
             throw new IllegalStateException("Cannot open loopback access metrics enabled map", e);
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private static BpfBoolean getLoopbackChecksEnabledBpfBoolean() {
+        try {
+            return new BpfBoolean(LOOPBACK_CHECKS_ENABLED_MAP_PATH, true);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open loopback checks enabled map", e);
         }
     }
 
@@ -703,6 +741,18 @@ public class BpfNetMaps {
                         e);
             }
         }
+
+        if (SdkLevel.isAtLeastB()) {
+            if (sLoopbackChecksEnabledBpfBoolean == null) {
+                sLoopbackChecksEnabledBpfBoolean = getLoopbackChecksEnabledBpfBoolean();
+            }
+            try {
+                sLoopbackChecksEnabledBpfBoolean.set(sLoopbackChecksEnabled);
+            } catch (ErrnoException e) {
+                throw new IllegalStateException(
+                        "Failed to set cross profile loopback checks enabled map", e);
+            }
+        }
     }
 
     /**
@@ -714,6 +764,8 @@ public class BpfNetMaps {
         if (sInitialized) return;
         sPermissionMapUidMigrationEnabled = deps.isPermissionMapUidMigrationEnabled();
         sLoopbackAccessMetricsEnabled = deps.isLoopbackAccessMetricsEnabled();
+        sLoopbackChecksEnabled = deps.isLoopbackChecksEnabled();
+        sBetaMetricsEnabled = deps.isBetaMetricsEnabled();
 
         if (SdkLevel.isAtLeastT()) {
             initBpfMaps(deps);
@@ -786,6 +838,18 @@ public class BpfNetMaps {
         }
 
         /**
+         * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than cross profile
+         * loopback checks enabling. Wrapper around useLoopbackInterfacePermissionEnabled() so that
+         * it can be mocked in unit test.
+         *
+         * @see android.permission.flags.Flags#useLoopbackInterfacePermissionEnabled()
+         */
+        public boolean isLoopbackChecksEnabled() {
+            return SdkLevel.isAtLeastB()
+                    && android.permission.flags.Flags.useLoopbackInterfacePermissionEnabled();
+        }
+
+        /**
          * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than lnp
          * permission propagation. Wrapper around accessLocalNetworkPermissionEnabled() so
          * that it can be mocked in unit test.
@@ -796,6 +860,17 @@ public class BpfNetMaps {
             // Local network permission will be supported from Android C+, update this when
             // isAtLeastC() is available.
             return SdkLevel.isAtLeastB() && accessLocalNetworkPermissionEnabled();
+        }
+
+        /**
+         * WARNING: DO NOT CALL THIS METHOD DIRECTLY FROM ANY CODE PATH other than lnp
+         * permission propagation. Wrapper around collectBetaMetrics() so that it can be mocked in
+         * unit tests.
+         *
+         * @see com.android.tethering.flags.Flags#collectBetaMetrics()
+         */
+        public boolean isBetaMetricsEnabled() {
+            return SdkLevel.isAtLeastB() && com.android.tethering.flags.Flags.collectBetaMetrics();
         }
 
         /**
@@ -2185,6 +2260,16 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private void dumpLoopbackChecksConfig(final IndentingPrintWriter pw) {
+        try {
+            final boolean enabled = sLoopbackChecksEnabledBpfBoolean.get();
+            pw.println("sLoopbackChecksEnabledBpfBoolean: " + enabled);
+        } catch (ErrnoException e) {
+            pw.println("Failed to read loopback checks enabled map: " + e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private void dumpUidPermissionChunkMap(final IndentingPrintWriter pw) {
         pw.println("sUidPermissionChunkMap:" );
@@ -2279,6 +2364,9 @@ public class BpfNetMaps {
             // isAtLeastC() is available.
             if (SdkLevel.isAtLeastB()) {
                 dumpPermissionPropagationConfig(pw);
+            }
+            if (SdkLevel.isAtLeastB()) {
+                dumpLoopbackChecksConfig(pw);
             }
             dumpUidPermissionChunkMap(pw);
             pw.decreaseIndent();

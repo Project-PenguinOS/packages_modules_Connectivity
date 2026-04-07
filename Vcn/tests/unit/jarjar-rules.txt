@@ -1,0 +1,1 @@
+rule com.android.net.module.util.** android.net.vcn.test.util.@1

@@ -31,6 +31,7 @@ import android.os.Looper;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.os.RemoteException;
+import android.text.BidiFormatter;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.LayoutInflater;
@@ -213,7 +214,8 @@ public class NsdPickerFragment extends DialogFragment {
         final LayoutInflater inflater = LayoutInflater.from(getContext());
         final View customTitle = inflater.inflate(R.layout.nsd_picker_title, null);
         customTitle.<TextView>findViewById(android.R.id.summary).setText(
-                getString(R.string.choose_device_summary, mState.mAppName));
+                getString(R.string.choose_device_summary,
+                        BidiFormatter.getInstance().unicodeWrap(mState.mAppName)));
 
         final DialogInterface.OnClickListener serviceSelectedListener =
                 (dialogInterface, itemPosition) -> onServiceSelected(itemPosition);
@@ -314,8 +316,14 @@ public class NsdPickerFragment extends DialogFragment {
         super.onCancel(dialog);
         if (DBG) Log.d(TAG, "Dialog cancelled");
         mIsSelectionDone = true;
+        if (mState != null) {
+            try {
+                mState.mConnector.notifySelectionCancelled();
+            } catch (RemoteException e) {
+                Log.e(TAG, "Failed to notify of cancelled selection", e);
+            }
+        }
         // onDetach will be called after onCancel
-        // TODO: stop discovery, don't wait for the requesting app to time out and unregister
     }
 
     @UiThread

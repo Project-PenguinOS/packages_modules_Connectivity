@@ -179,7 +179,7 @@ public class DnsHttpsRecord extends DnsRecord {
     /**
      * Returns the target name of the HTTPS record.
      *
-     * <p>If the target name is `.`, RFC 9460 2.5 specifies that this indicates special rules.
+     * <p>If the target name is empty, RFC 9460 2.5 specifies that this indicates special rules.
      * For AliasMode RRs, this indicates that the service is not available or does not exist.
      * For ServiceMode RRs, this indicates the record's owner name is the effective target name.
      */
@@ -191,7 +191,7 @@ public class DnsHttpsRecord extends DnsRecord {
      * Returns the owner name of the HTTPS record.
      *
      * <p>This is the name included in the HTTPS record's DNS response, and should be used as the
-     * effective target name if the HTTPS record target name is `.`.
+     * effective target name if the HTTPS record target name is an empty string.
      */
     public @NonNull String getOwnerName() {
         return dName;
@@ -277,8 +277,6 @@ public class DnsHttpsRecord extends DnsRecord {
      */
     @Nullable
     public byte[] getEchConfigList() {
-        // TODO(b/419020719): return an EchConfigList object directly once flags are fully rolled
-        // out and cleaned up
         final SvcParamEch sp = (SvcParamEch) mSvcParams.get(KEY_ECH);
         return (sp != null) ? sp.getValue() : null;
     }

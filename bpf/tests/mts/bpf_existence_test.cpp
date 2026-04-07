@@ -94,6 +94,7 @@ static const set<string> MAINLINE_FOR_T_PLUS = {
     NETD "map_netd_iface_stats_map",
     NETD "map_netd_ingress_discard_map",
     NETD "map_netd_loopback_access_metrics_enabled_map",
+    NETD "map_netd_loopback_checks_enabled_map",
     NETD "map_netd_netd_pid_map",
     NETD "map_netd_permission_propagation_enabled_map",
     NETD "map_netd_stats_map_A",
@@ -191,7 +192,6 @@ static const set<string> MAINLINE_FOR_26Q2_PLUS = {
 
 // Provided by *current* mainline module for 26Q2+ devices with 6.1+ kernels
 static const set<string> MAINLINE_FOR_26Q2_6_1_PLUS = {
-    NETD "prog_netd_ingress_accecn_common",
     NETD "prog_netd_schedcls_egress_accecn_eth",
     NETD "prog_netd_schedcls_egress_accecn_rawip",
     NETD "prog_netd_sockops_accecn_option",

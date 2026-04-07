@@ -205,19 +205,36 @@ _Static_assert(sizeof(struct bpf_prog_def) == 40 + 2 * BPF_DEF_CHAR_ARRAY_SIZE, 
 _Static_assert(__alignof__(struct bpf_prog_def) == 4, "__alignof__ struct bpf_prog_def != 4");
 _Static_assert(_Alignof(struct bpf_prog_def) == 4, "_Alignof struct bpf_prog_def != 4");
 
-// NOTE: the below *MUST* match values returned by get_api_level_full() and should match SDK_LEVEL_* constants
+// NOTE: the below *MUST* match values returned by get_api_level_full()
 // NetBpfLoad version when running on:
-#define NETBPFLOAD_S_VER      3100 // Android S (31)
-#define NETBPFLOAD_T_VER      3300 // Android T (33)
-#define NETBPFLOAD_U_VER      3400 // Android U (34)
-#define NETBPFLOAD_V_VER      3500 // Android V (35)
-#define NETBPFLOAD_25Q2_VER   3600 // Android 25Q2 (36.0)
-#define NETBPFLOAD_25Q4_VER   3610 // Android 25Q4 (36.1)
-#define NETBPFLOAD_26Q2_VER   3700 // Android 26Q2 (37.0)
-#define NETBPFLOAD_26Q3_VER   3702 // Android 26Q3 (37.0+)
-#define NETBPFLOAD_26Q4_VER   3710 // Android 26Q4 (37.1)
-#define NETBPFLOAD_27Q1_VER   3712 // Android 27Q1 (37.1+)
-#define NETBPFLOAD_27Q2_VER   3800 // Android 27Q2 (38.0)
+#define NETBPFLOAD_S_VER      3100 // Android 12       / S         (31)
+//                            3200 // Android 12L      / Sv2       (32)
+#define NETBPFLOAD_T_VER      3300 // Android 13       / T         (33)
+#define NETBPFLOAD_U_VER      3400 // Android 14       / U         (34)
+#define NETBPFLOAD_V_VER      3500 // Android 15       / V  / 24Q3 (35)
+#define NETBPFLOAD_25Q2_VER   3600 // Android 16       / B  / 25Q2 (36.0) Baklava
+#define NETBPFLOAD_25Q4_VER   3610 // Android 16.1     / B1 / 25Q4 (36.1)
+#define NETBPFLOAD_26Q2_VER   3700 // Android 17       / C  / 26Q2 (37.0) Cinnamon Bun
+#define NETBPFLOAD_26Q3_VER   3702 // Android 17 QPR   /      26Q3 (37.0+)
+#define NETBPFLOAD_26Q4_VER   3710 // Android 17.1     / C1 / 26Q4 (37.1)
+#define NETBPFLOAD_27Q1_VER   3712 // Android 17.1 QPR /      27Q1 (37.1+)
+#define NETBPFLOAD_27Q2_VER   3800 // Android 18       / D  / 27Q2 (38.0)
+// (if you extend this also extend this list below)
+
+// Converts MINAPI/S/T/U/V/... into a token used for disambigation, visible in section name after the $
+// Note: it's not a real problem if we miss something here, we'll just get needlessly long names
+#define BPF_API_MINAPI
+#define BPF_API_S
+#define BPF_API_T _t
+#define BPF_API_U _u
+#define BPF_API_V _v
+#define BPF_API_25Q2 _25q2
+#define BPF_API_25Q4 _25q4
+#define BPF_API_26Q2 _26q2
+#define BPF_API_26Q3 _26q3
+#define BPF_API_26Q4 _26q4
+#define BPF_API_27Q1 _27q1
+#define BPF_API_27Q2 _27q2
 
 #ifdef __cplusplus
 // map_test_kernel_stats_map key definition.

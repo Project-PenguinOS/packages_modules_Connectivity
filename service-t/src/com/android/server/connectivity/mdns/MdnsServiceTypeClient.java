@@ -1199,7 +1199,7 @@ public class MdnsServiceTypeClient {
                                 sharedLog,
                                 dependencies,
                                 existingServices,
-                                featureFlags.isQueryWithKnownAnswerEnabled())
+                                featureFlags)
                                 .call();
             } catch (RuntimeException e) {
                 sharedLog.e(String.format("Failed to run EnqueueMdnsQueryCallable for subtype: %s",

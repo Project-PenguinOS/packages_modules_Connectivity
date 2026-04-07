@@ -147,6 +147,7 @@ DEFINE_BPF_RINGBUF_EXT(loopback_access_ringbuf, LoopbackAccessEvent, 16 * 512,
 DEFINE_BPF_MAP_NO_NETD_API(loopback_access_cache_map, LRU_HASH, LoopbackAccessEvent, uint64_t, 100,
                            25Q4)
 DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, bool, 1)
+DEFINE_BPF_MAP_RO_NETD(loopback_checks_enabled_map, ARRAY, uint32_t, bool, 1)
 
 // iptables xt_bpf programs need to be usable by both netd and netutils_wrappers
 // selinux contexts, because even non-xt_bpf iptables mutations are implemented as
@@ -161,27 +162,26 @@ DEFINE_BPF_MAP_RO_NETD(loopback_access_metrics_enabled_map, ARRAY, uint32_t, boo
 // programs that need to be usable by netd, but not by netutils_wrappers
 // (this is because these are currently attached by the mainline provided libnetd_updatable .so
 // which is loaded into netd and thus runs as netd uid/gid/selinux context)
-#define DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, VER, minKV, maxKV, min_api, max_api) \
-    DEFINE_BPF_PROG_EXT(TYPE, NAME, VER, AID_ROOT, AID_ROOT,                         \
-                        minKV, maxKV, min_api, max_api, MANDATORY,                   \
+#define DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, minKV, maxKV, min_api, max_api) \
+    DEFINE_BPF_PROG_EXT(TYPE, NAME, AID_ROOT, AID_ROOT, minKV, maxKV, min_api, max_api, MANDATORY, \
                         "netd_readonly", DEFAULT_BPF_PIN_SUBDIR)
 
-#define DEFINE_NETD_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, maxKV) \
-    DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, minKV, minKV, maxKV, MINAPI, MAXAPI)
+#define DEFINE_NETD_T_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, maxKV) \
+    DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, minKV, maxKV, T, MAXAPI)
 
-#define DEFINE_NETD_BPF_PROG_KVER(TYPE, NAME, minKV) \
-    DEFINE_NETD_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, INF)
+#define DEFINE_NETD_T_BPF_PROG_KVER(TYPE, NAME, minKV) \
+    DEFINE_NETD_T_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, INF)
 
 #define DEFINE_NETD_V_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, maxKV) \
-    DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, minKV, minKV, maxKV, V, MAXAPI)
+    DEFINE_NETD_BPF_PROG_RANGES(TYPE, NAME, minKV, maxKV, V, MAXAPI)
 
 #define DEFINE_NETD_V_BPF_PROG_KVER(TYPE, NAME, minKV) \
     DEFINE_NETD_V_BPF_PROG_KVER_RANGE(TYPE, NAME, minKV, INF)
 
 // programs that only need to be usable by the system server
 #define DEFINE_SYS_BPF_PROG(TYPE, NAME) \
-    DEFINE_BPF_PROG_EXT(TYPE, NAME, 4_9, AID_ROOT, AID_NET_ADMIN, 4_9, INF, \
-                        MINAPI, MAXAPI, MANDATORY, "net_shared", DEFAULT_BPF_PIN_SUBDIR)
+    DEFINE_BPF_PROG_EXT(TYPE, NAME, AID_ROOT, AID_NET_ADMIN, 4_9, INF, MINAPI, MAXAPI, MANDATORY, \
+                        "net_shared", DEFAULT_BPF_PIN_SUBDIR)
 
 // tcpAccECN maps/programs need to load only on Android 26Q2+
 #undef NETBPFLOAD_MINAPI_VER
@@ -474,57 +474,49 @@ add_loopback_access_event(const uint32_t src_uid, const uint32_t dst_uid,
     bpf_loopback_access_ringbuf_submit(event);
 }
 
-static __always_inline inline void
-log_loopback_access(struct __sk_buff *const skb,
-                    const SkbIpPacketData *const packet_data,
-                    const uint32_t sender_uid) {
-    struct bpf_sock_tuple sock_tuple = {};
-    uint32_t tuple_size;
+static inline __always_inline bool loopback_metrics_enabled() {
+    const uint32_t zero = 0;
+    bool *enabled = bpf_loopback_access_metrics_enabled_map_lookup_elem(&zero);
+    return enabled && *enabled;
+}
 
-    if (packet_data->ip_version == 4) {
-        // IPv4-mapped-v6
-        sock_tuple.ipv4.saddr = packet_data->saddr.s6_addr32[3];
-        sock_tuple.ipv4.daddr = packet_data->daddr.s6_addr32[3];
-        sock_tuple.ipv4.sport = packet_data->sport;
-        sock_tuple.ipv4.dport = packet_data->dport;
-        tuple_size = sizeof(sock_tuple.ipv4);
-    } else if (packet_data->ip_version == 6) {
-        __builtin_memcpy(&sock_tuple.ipv6.saddr, &packet_data->saddr,
-                         sizeof(sock_tuple.ipv6.saddr));
-        __builtin_memcpy(&sock_tuple.ipv6.daddr, &packet_data->daddr,
-                         sizeof(sock_tuple.ipv6.daddr));
-        sock_tuple.ipv6.sport = packet_data->sport;
-        sock_tuple.ipv6.dport = packet_data->dport;
-        tuple_size = sizeof(sock_tuple.ipv6);
+static inline __always_inline bool loopback_checks_enabled() {
+    const uint32_t zero = 0;
+    bool *enabled = bpf_loopback_checks_enabled_map_lookup_elem(&zero);
+    return enabled && *enabled;
+}
+
+static __always_inline inline bool
+can_force_loopback(const uint32_t permissions) {
+    return (permissions & PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE)
+        && (permissions & PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL);
+}
+
+static __always_inline inline bool
+uids_have_loopback_permissions(const uint32_t sender_uid,
+                               const uint32_t receiver_uid) {
+    // TODO: be more specific about which system uids we should exempt
+    if (is_system_uid(sender_uid) || is_system_uid(receiver_uid)) return true;
+
+    bool same_profile =
+        sender_uid / AID_USER_OFFSET == receiver_uid / AID_USER_OFFSET;
+    if (same_profile) return true;
+
+    uint32_t sender_perms = get_chunk_permissions(sender_uid);
+    uint32_t receiver_perms = get_chunk_permissions(receiver_uid);
+    if (can_force_loopback(sender_perms)
+        || can_force_loopback(receiver_perms)) return true;
+
+    // TODO: check loopback interface permissions for both sender and receiver
+    bool same_app_id =
+        sender_uid % AID_USER_OFFSET == receiver_uid % AID_USER_OFFSET;
+    if (same_app_id) {
+        return
+            (sender_perms & PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES) ||
+            (sender_perms & PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL);
     } else {
-        return;
+        return sender_perms & PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
     }
-
-    struct bpf_sock *local_sk;
-    if (packet_data->ip_proto == IPPROTO_TCP) {
-        // Only trigger on SYN to avoid redundant lookups for established
-        // connections
-        if (!(packet_data->tcp_flags & TCP_FLAG8_SYN)) return;
-        local_sk = bpf_sk_lookup_tcp(skb, &sock_tuple, tuple_size,
-                                     BPF_F_CURRENT_NETNS, 0);
-    } else if (packet_data->ip_proto == IPPROTO_UDP) {
-        local_sk = bpf_sk_lookup_udp(skb, &sock_tuple, tuple_size,
-                                     BPF_F_CURRENT_NETNS, 0);
-    } else {
-        return;
-    }
-    if (!local_sk) return;
-
-    SkStorageValue *v = bpf_sk_storage_get(local_sk, 0, 0);
-    const uint32_t receiver_uid = v ? v->uid : 0;
-    bpf_sk_release(local_sk);
-    if (!v) return;
-
-    // We don't care about cases where apps are sending loopback traffic to
-    // themselves.
-    if (sender_uid == receiver_uid) return;
-    add_loopback_access_event(sender_uid, receiver_uid,
-                              LOOPBACK_ACCESS_ALLOWED);
 }
 
 static __always_inline inline bool parse_skb(SkbIpPacketData *const packet,
@@ -598,6 +590,75 @@ static __always_inline inline bool parse_skb(SkbIpPacketData *const packet,
             break;
     }
     return true;
+}
+
+static __always_inline inline bool
+should_block_loopback_access(struct __sk_buff *const skb,
+                             const uint32_t sender_uid,
+                             const struct kver_uint kver) {
+    bool checks_enabled = loopback_checks_enabled();
+    bool metrics_enabled = loopback_metrics_enabled();
+    if (!checks_enabled && !metrics_enabled) return false;
+
+    SkbIpPacketData packet_data = {};
+    if (!parse_skb(&packet_data, skb, kver)) return false;
+
+    struct bpf_sock_tuple sock_tuple = {};
+    uint32_t tuple_size;
+
+    if (packet_data.ip_version == 4) {
+        // IPv4-mapped-v6
+        sock_tuple.ipv4.saddr = packet_data.saddr.s6_addr32[3];
+        sock_tuple.ipv4.daddr = packet_data.daddr.s6_addr32[3];
+        sock_tuple.ipv4.sport = packet_data.sport;
+        sock_tuple.ipv4.dport = packet_data.dport;
+        tuple_size = sizeof(sock_tuple.ipv4);
+    } else if (packet_data.ip_version == 6) {
+        __builtin_memcpy(&sock_tuple.ipv6.saddr, &packet_data.saddr,
+                         sizeof(sock_tuple.ipv6.saddr));
+        __builtin_memcpy(&sock_tuple.ipv6.daddr, &packet_data.daddr,
+                         sizeof(sock_tuple.ipv6.daddr));
+        sock_tuple.ipv6.sport = packet_data.sport;
+        sock_tuple.ipv6.dport = packet_data.dport;
+        tuple_size = sizeof(sock_tuple.ipv6);
+    } else {
+        return false;
+    }
+
+    struct bpf_sock *local_sk;
+    if (packet_data.ip_proto == IPPROTO_TCP) {
+        // Only trigger on SYN to avoid redundant lookups for established
+        // connections
+        if (!(packet_data.tcp_flags & TCP_FLAG8_SYN)) return false;
+        local_sk = bpf_sk_lookup_tcp(skb, &sock_tuple, tuple_size,
+                                     BPF_F_CURRENT_NETNS, 0);
+    } else if (packet_data.ip_proto == IPPROTO_UDP) {
+        local_sk = bpf_sk_lookup_udp(skb, &sock_tuple, tuple_size,
+                                     BPF_F_CURRENT_NETNS, 0);
+    } else {
+        return false;
+    }
+    if (!local_sk) return false;
+
+    SkStorageValue *v = bpf_sk_storage_get(local_sk, 0, 0);
+    const uint32_t receiver_uid = v ? v->uid : 0;
+    bpf_sk_release(local_sk);
+    if (!v) return false;
+
+    // We don't care about cases where apps are sending loopback traffic to
+    // themselves.
+    if (sender_uid == receiver_uid) return false;
+
+    bool allowed = true;
+    if (checks_enabled) {
+        allowed = uids_have_loopback_permissions(sender_uid, receiver_uid);
+    }
+    if (metrics_enabled) {
+        add_loopback_access_event(
+            sender_uid, receiver_uid,
+            allowed ? LOOPBACK_ACCESS_ALLOWED : LOOPBACK_ACCESS_BLOCKED);
+    }
+    return !allowed;
 }
 
 static __always_inline inline void do_packet_tracing(
@@ -793,7 +854,7 @@ static __always_inline inline int bpf_owner_match(struct __sk_buff* skb, uint32_
         }
     }
 
-    if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q2) && skb->ifindex == 1) {
+    if (API_IS_AT_LEAST(lvl, 25Q2) && skb->ifindex == 1) {
         // TODO: sdksandbox localhost restrictions
     }
 
@@ -811,12 +872,6 @@ static __always_inline inline void update_stats_with_config(const uint32_t selec
     } else {
         update_stats_map_B(skb, key, egress, kver, undo);
     }
-}
-
-static inline __always_inline bool loopback_metrics_enabled() {
-    const uint32_t zero = 0;
-    bool *enabled = bpf_loopback_access_metrics_enabled_map_lookup_elem(&zero);
-    return enabled && *enabled;
 }
 
 static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
@@ -854,26 +909,28 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
     // TODO(b/467964186): use the parsed skb
     int match = bpf_owner_match(skb, sock_uid, egress, kver, lvl);
 
+    bool dns = false;
+
 // Workaround for secureVPN with VpnIsolation enabled, refer to b/159994981 for details.
 // Keep TAG_SYSTEM_DNS in sync with DnsResolver/include/netd_resolv/resolv.h
 // and TrafficStatsConstants.java
 #define TAG_SYSTEM_DNS 0xFFFFFF82
     if (tag == TAG_SYSTEM_DNS && statsUid == AID_DNS) {
+        dns = true;
         statsUid = sock_uid;
         if (match == DROP_UNLESS_DNS) match = PASS;
     } else {
         if (match == DROP_UNLESS_DNS) match = DROP;
     }
 
-    if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q4) && egress.egress && skb->ifindex == 1 &&
-        loopback_metrics_enabled()) {
-        SkbIpPacketData packet_data = {};
-        if (parse_skb(&packet_data, skb, kver)) {
-            log_loopback_access(skb, &packet_data, sock_uid);
+    if (API_IS_AT_LEAST(lvl, 25Q4) && (match != DROP) && egress.egress &&
+        skb->ifindex == 1) {
+        if (should_block_loopback_access(skb, sock_uid, kver)) {
+            match = DROP;
         }
     }
 
-    if (SDK_LEVEL_IS_AT_LEAST(lvl, 25Q2) && (match != DROP)) {
+    if (API_IS_AT_LEAST(lvl, 25Q2) && (match != DROP) && !dns) {
         // TODO(b/467964186): use the parsed skb
         if (should_block_local_network_packets(skb, sock_uid, egress, kver)) {
             if (KVER_IS_AT_LEAST(kver, 5, 10, 0) && skb->sk && egress.egress) {
@@ -931,103 +988,115 @@ static __always_inline inline int bpf_traffic_account(struct __sk_buff* skb,
 
 // ----- ingress/stats -----
 
-// Android 25Q4+ (full featured)
-DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 25q4, 5_10, INF, 25Q4, MAXAPI)
+// Android 26Q2+ 6.1+ (full featured + tcpAccECN)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 6_1, INF, 26Q2, MAXAPI)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_25Q4);
+    update_accecn_counter(skb);
+    return bpf_traffic_account(skb, INGRESS, KVER_6_1, API(26Q2));
+}
+
+// Android 26Q2+ 5.10/5.15 (full featured)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10, 6_1, 26Q2, MAXAPI)
+(struct __sk_buff* skb) {
+    return bpf_traffic_account(skb, INGRESS, KVER_5_10, API(26Q2));
+}
+
+// Android 25Q4/26Q1 (full featured)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10, INF, 25Q4, 26Q2)
+(struct __sk_buff* skb) {
+    return bpf_traffic_account(skb, INGRESS, KVER_5_10, API(25Q4));
 }
 
 // Android 25Q2/25Q3 5.10+ (localnet protection + tracing)
-DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_25q2, 5_10, INF, 25Q2, 25Q4)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10, INF, 25Q2, 25Q4)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_25Q2);
+    return bpf_traffic_account(skb, INGRESS, KVER_5_10, API(25Q2));
 }
 
 // Android 25Q2/25Q3 5.4 (localnet protection)
-DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_4_25q2, 5_4, 5_10, 25Q2, 25Q4)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_4, 5_10, 25Q2, 25Q4)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, INGRESS, KVER_5_4, SDK_LEVEL_25Q2);
+    return bpf_traffic_account(skb, INGRESS, KVER_5_4, API(25Q2));
 }
 
 // Android U/V 5.10+ (tracing)
-DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10_u, 5_10, INF, U, 25Q2)
+DEFINE_NETD_BPF_PROG_RANGES(ingress, stats, 5_10, INF, U, 25Q2)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, INGRESS, KVER_5_10, SDK_LEVEL_U);
+    return bpf_traffic_account(skb, INGRESS, KVER_5_10, API(U));
 }
 
 // Android T/U/V/25Q2 5.4 & T 5.10/5.15
-DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 5_4, INF)
+DEFINE_NETD_T_BPF_PROG_KVER_RANGE(ingress, stats, 5_4, INF)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, INGRESS, KVER_5_4, SDK_LEVEL_T);
+    return bpf_traffic_account(skb, INGRESS, KVER_5_4, API(T));
 }
 
 // Android T/U/V 4.19
-DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_19, 5_4)
+DEFINE_NETD_T_BPF_PROG_KVER_RANGE(ingress, stats, 4_19, 5_4)
 (struct __sk_buff* skb) {
-return bpf_traffic_account(skb, INGRESS, KVER_4_19, SDK_LEVEL_T);
+return bpf_traffic_account(skb, INGRESS, KVER_4_19, API(T));
 }
 
 // Android T 4.9 & T/U 4.14
-DEFINE_NETD_BPF_PROG_KVER_RANGE(ingress, stats, 4_9, 4_19)
+DEFINE_NETD_T_BPF_PROG_KVER_RANGE(ingress, stats, 4_9, 4_19)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, INGRESS, KVER_4_9, SDK_LEVEL_T);
+    return bpf_traffic_account(skb, INGRESS, KVER_4_9, API(T));
 }
 
 // ----- egress/stats -----
 
-// Android 26Q2+ 6.1+ (full featured + tcpAccECN)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 6_1_26q2, 6_1, INF, 26Q2, MAXAPI)
+// Android 26Q2+ 6.1+ (full featured)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 6_1, INF, 26Q2, MAXAPI)
 (struct __sk_buff* skb) {
-    // place for tcpAccECN
-    return bpf_traffic_account(skb, EGRESS, KVER_6_1, SDK_LEVEL_26Q2);
+    return bpf_traffic_account(skb, EGRESS, KVER_6_1, API(26Q2));
 }
 
 // Android 26Q2+ 5.10/5.15 (full featured)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_26q2, 5_10, 6_1, 26Q2, MAXAPI)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10, 6_1, 26Q2, MAXAPI)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_26Q2);
+    return bpf_traffic_account(skb, EGRESS, KVER_5_10, API(26Q2));
 }
 
 // Android 25Q4/26Q1 (full featured)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 25q4, 5_10, INF, 25Q4, 26Q2)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10, INF, 25Q4, 26Q2)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_25Q4);
+    return bpf_traffic_account(skb, EGRESS, KVER_5_10, API(25Q4));
 }
 
 // Android 25Q2/25Q3 5.10+ (localnet protection + tracing)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_25q2, 5_10, INF, 25Q2, 25Q4)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10, INF, 25Q2, 25Q4)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_25Q2);
+    return bpf_traffic_account(skb, EGRESS, KVER_5_10, API(25Q2));
 }
 
 // Android 25Q2/25Q3 5.4 (localnet protection)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_4_25q2, 5_4, 5_10, 25Q2, 25Q4)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_4, 5_10, 25Q2, 25Q4)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, EGRESS, KVER_5_4, SDK_LEVEL_25Q2);
+    return bpf_traffic_account(skb, EGRESS, KVER_5_4, API(25Q2));
 }
 
 // Android U/V 5.10+ (tracing)
-DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10_u, 5_10, INF, U, 25Q2)
+DEFINE_NETD_BPF_PROG_RANGES(egress, stats, 5_10, INF, U, 25Q2)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, EGRESS, KVER_5_10, SDK_LEVEL_U);
+    return bpf_traffic_account(skb, EGRESS, KVER_5_10, API(U));
 }
 
 // Android T/U/V/25Q2 5.4 & T 5.10/5.15
-DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 5_4, INF)
+DEFINE_NETD_T_BPF_PROG_KVER_RANGE(egress, stats, 5_4, INF)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, EGRESS, KVER_5_4, SDK_LEVEL_T);
+    return bpf_traffic_account(skb, EGRESS, KVER_5_4, API(T));
 }
 
 // Android T/U/V 4.19
-DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 4_19, 5_4)
+DEFINE_NETD_T_BPF_PROG_KVER_RANGE(egress, stats, 4_19, 5_4)
 (struct __sk_buff* skb) {
-return bpf_traffic_account(skb, EGRESS, KVER_4_19, SDK_LEVEL_T);
+return bpf_traffic_account(skb, EGRESS, KVER_4_19, API(T));
 }
 
 // Android T 4.9 & T/U 4.14
-DEFINE_NETD_BPF_PROG_KVER_RANGE(egress, stats, 4_9, 4_19)
+DEFINE_NETD_T_BPF_PROG_KVER_RANGE(egress, stats, 4_9, 4_19)
 (struct __sk_buff* skb) {
-    return bpf_traffic_account(skb, EGRESS, KVER_4_9, SDK_LEVEL_T);
+    return bpf_traffic_account(skb, EGRESS, KVER_4_9, API(T));
 }
 
 // -----
@@ -1142,17 +1211,17 @@ static __always_inline inline int inet_socket_create(struct bpf_sock* sk,
     }
 }
 
-DEFINE_NETD_BPF_PROG_KVER(cgroupsock, inet_create, 5_10)
+DEFINE_NETD_T_BPF_PROG_KVER(cgroupsock, inet_create, 5_10)
 (struct bpf_sock* sk) {
     return inet_socket_create(sk, KVER_5_10);
 }
 
-DEFINE_NETD_BPF_PROG_KVER_RANGE(cgroupsock, inet_create, 4_14, 5_10)
+DEFINE_NETD_T_BPF_PROG_KVER_RANGE(cgroupsock, inet_create, 4_14, 5_10)
 (struct bpf_sock* sk) {
     return inet_socket_create(sk, KVER_4_14);
 }
 
-DEFINE_NETD_BPF_PROG_KVER(cgroupsockrelease, inet_release, 5_10)
+DEFINE_NETD_T_BPF_PROG_KVER(cgroupsockrelease, inet_release, 5_10)
 (struct bpf_sock* sk) {
     uint64_t cookie = bpf_get_sk_cookie(sk);
     if (cookie) bpf_cookie_tag_map_delete_elem(&cookie);
@@ -1204,6 +1273,11 @@ static inline __always_inline bool is_netd() {
     return tgid == *pid;
 }
 
+static inline __always_inline bool is_root_or_shell() {
+    uint32_t uid = bpf_get_current_uid_gid();  // low 32 bits is uid
+    return (uid == AID_ROOT) || (uid == AID_SHELL);
+}
+
 // kernel's include/linux/bpf.h defines flag BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE as (1 << 0) == 1,
 // as a flag, it must be shifted up by 1 (making it == 2) and combined with 'generic' ALLOW (== 1)
 static const int BPF_ALLOW_IGNORING_CAP_NET_BIND = BPF_ALLOW + 2;
@@ -1212,26 +1286,31 @@ static inline __always_inline int inet_bind(struct bpf_sock_addr *ctx,
                                             const struct kver_uint kver) {
     const bool is5_15 = KVER_IS_AT_LEAST(kver, 5, 15, 0);
     if (block_bind_port(ctx->protocol, ctx->user_port)) return BPF_DISALLOW;
-    if (is5_15 && ctx->user_port == htons(53) && is_netd()) return BPF_ALLOW_IGNORING_CAP_NET_BIND;
+    if (is5_15) {
+        if (ctx->user_port == htons(53) && is_netd())
+            return BPF_ALLOW_IGNORING_CAP_NET_BIND;
+        if (ctx->protocol == IPPROTO_TCP && ctx->user_port == htons(555) && is_root_or_shell())
+            return BPF_ALLOW_IGNORING_CAP_NET_BIND;
+    }
     return BPF_ALLOW;
 }
 
-DEFINE_NETD_BPF_PROG_KVER(bind4, inet4_bind, 5_15)
+DEFINE_NETD_T_BPF_PROG_KVER(bind4, inet4_bind, 5_15)
 (struct bpf_sock_addr *ctx) {
     return inet_bind(ctx, KVER_5_15);
 }
 
-DEFINE_NETD_BPF_PROG_KVER_RANGE(bind4, inet4_bind, 4_19, 5_15)
+DEFINE_NETD_T_BPF_PROG_KVER_RANGE(bind4, inet4_bind, 4_19, 5_15)
 (struct bpf_sock_addr *ctx) {
     return inet_bind(ctx, KVER_4_19);
 }
 
-DEFINE_NETD_BPF_PROG_KVER(bind6, inet6_bind, 5_15)
+DEFINE_NETD_T_BPF_PROG_KVER(bind6, inet6_bind, 5_15)
 (struct bpf_sock_addr *ctx) {
     return inet_bind(ctx, KVER_5_15);
 }
 
-DEFINE_NETD_BPF_PROG_KVER_RANGE(bind6, inet6_bind, 4_19, 5_15)
+DEFINE_NETD_T_BPF_PROG_KVER_RANGE(bind6, inet6_bind, 4_19, 5_15)
 (struct bpf_sock_addr *ctx) {
     return inet_bind(ctx, KVER_4_19);
 }

@@ -330,9 +330,7 @@ int main(int argc, char **argv) {
   // TODO: actually perform true DAD
   send_dad(tunnel.write_fd6, &Global_Clatd_Config.ipv6_local_subnet);
 
-#if 0
   enable_seccomp();  // WARNING: from this point forward very limited system calls available.
-#endif
 
   event_loop(&tunnel);
 
