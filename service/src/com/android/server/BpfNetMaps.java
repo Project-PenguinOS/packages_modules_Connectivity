@@ -56,13 +56,13 @@ import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_INT64_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_UID_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_USE_LOOPBACK_INTERFACE;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UID_PERMISSION_MASK;
@@ -1883,6 +1883,58 @@ public class BpfNetMaps {
             sLocalNetBlockedUidMap.deleteEntry(new U32(uid));
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to remove uid(" + uid + ") from local network blocked map");
+        }
+    }
+
+    /**
+     * Add an entry to map_netd_local_net_uid_host_allowlist_map.
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void addLocalNetUidAccess(final int uid, @NonNull final String iface) {
+        throwIfPre25Q2("addLocalNetUidAccess is not available on pre-B devices");
+        int ifIndex = mInterfaceTracker.getInterfaceIndex(iface);
+        if (ifIndex == 0) {
+            Log.e(TAG, "Failed to get if index, skip addLocalNetUidAccess for uid: " + uid
+                    + " on iface: " + iface);
+            return;
+        }
+
+        final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(uid, ifIndex);
+        try {
+            synchronized (sLocalNetAccessLock) {
+                incrementLnpGenerationId(true);
+                sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(true));
+                incrementLnpGenerationId(false);
+            }
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to add local network access for uid: " + uid + " on ifIndex: "
+                    + ifIndex);
+        }
+    }
+
+    /**
+     * Remove an entry from map_netd_local_net_uid_host_allowlist_map.
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void removeLocalNetUidAccess(final int uid, @NonNull final String iface) {
+        throwIfPre25Q2("removeLocalNetUidAccess is not available on pre-B devices");
+        final int ifIndex = mInterfaceTracker.getInterfaceIndex(iface);
+        if (ifIndex == 0) {
+            Log.e(TAG, "Failed to get if index, skip removeLocalNetUidAccess for uid: " + uid
+                    + " on iface: " + iface);
+            return;
+        }
+
+        final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(uid, ifIndex);
+        try {
+            synchronized (sLocalNetAccessLock) {
+                incrementLnpGenerationId(true);
+                sLocalNetUidHostAllowlistMap.deleteEntry(key);
+                incrementLnpGenerationId(false);
+            }
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to remove local network access for uid: " + uid + " on ifIndex: "
+                    + ifIndex);
         }
     }
 
