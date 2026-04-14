@@ -71,85 +71,332 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The Network Service Discovery Manager class provides the API to discover services
- * on a network. As an example, if device A and device B are connected over a Wi-Fi
- * network, a game registered on device A can be discovered by a game on device
- * B. Another example use case is an application discovering printers on the network.
+ * Provides APIs for discovering and advertising network services on the local network.
  *
- * <p> The API currently supports DNS based service discovery and discovery is currently
- * limited to a local network over Multicast DNS. DNS service discovery is described at
- * http://files.dns-sd.org/draft-cheshire-dnsext-dns-sd.txt
+ * <p>Network Service Discovery (NSD) allows applications to find other devices on a local
+ * network that support the services the application is interested in. For example, a game
+ * can find other players on the same local network, or a document viewer can find printers.
  *
- * <p> The API is asynchronous, and responses to requests from an application are on listener
- * callbacks on a separate internal thread.
+ * <p>The implementation is based on DNS Service Discovery (DNS-SD) as described in
+ * <a href="http://www.ietf.org/rfc/rfc6763.txt">RFC 6763</a>, and operates over Multicast DNS
+ * (mDNS).
  *
- * <p> There are three main operations the API supports - registration, discovery and resolution.
- * <pre>
- *                          Application start
- *                                 |
- *                                 |
- *                                 |                  onServiceRegistered()
- *                     Register any local services  /
- *                      to be advertised with       \
- *                       registerService()            onRegistrationFailed()
- *                                 |
- *                                 |
- *                          discoverServices()
- *                                 |
- *                      Maintain a list to track
- *                        discovered services
- *                                 |
- *                                 |--------->
- *                                 |          |
- *                                 |      onServiceFound()
- *                                 |          |
- *                                 |     add service to list
- *                                 |          |
- *                                 |<----------
- *                                 |
- *                                 |--------->
- *                                 |          |
- *                                 |      onServiceLost()
- *                                 |          |
- *                                 |   remove service from list
- *                                 |          |
- *                                 |<----------
- *                                 |
- *                                 |
- *                                 | Connect to a service
- *                                 | from list ?
- *                                 |
- *                          resolveService()
- *                                 |
- *                         onServiceResolved()
- *                                 |
- *                     Establish connection to service
- *                     with the host and port information
+ * <h3>SDK Extensions</h3>
+ * <p>The {@code NsdManager} API is updated via
+ * <a href="{@docRoot}guide/sdk-extensions">SDK extensions</a>. This allows newer features and APIs to be
+ * available on devices running older versions of Android.
+ * Applications should generally use SDK extension version checks instead of SDK version
+ * ({@link android.os.Build.VERSION}) checks when interacting with {@code NsdManager}.
  *
- * </pre>
- * An application that needs to advertise itself over a network for other applications to
- * discover it can do so with a call to {@link #registerService}. If Example is a http based
- * application that can provide HTML data to peer services, it can register a name "Example"
- * with service type "_http._tcp". A successful registration is notified with a callback to
- * {@link RegistrationListener#onServiceRegistered} and a failure to register is notified
- * over {@link RegistrationListener#onRegistrationFailed}
+ * <h3>Usage Patterns</h3>
  *
- * <p> A peer application looking for http services can initiate a discovery for "_http._tcp"
- * with a call to {@link #discoverServices}. A service found is notified with a callback
- * to {@link DiscoveryListener#onServiceFound} and a service lost is notified on
- * {@link DiscoveryListener#onServiceLost}.
+ * <p>The API is asynchronous. Requests are made to the system, and results are returned through
+ * listener or callback interfaces.
  *
- * <p> Once the peer application discovers the "Example" http service, and either needs to read the
- * attributes of the service or wants to receive data from the "Example" application, it can
- * initiate a resolve with {@link #resolveService} to resolve the attributes, host, and port
- * details. A successful resolve is notified on {@link ResolveListener#onServiceResolved} and a
- * failure is notified on {@link ResolveListener#onResolveFailed}.
+ * <h4>Discovering and Tracking Services</h4>
+ * <p>The easiest way to find and maintain an up-to-date list of services is to use
+ * {@link #registerServiceInfoCallback(DiscoveryRequest, Executor, ServiceInfoCallback)}.
+ * This API, available starting from "T extensions 22" (which covers all Android 14+ devices),
+ * combines discovery and resolution into a single operation. It automatically notifies the app
+ * when a service is found, when its properties (like IP addresses or TXT records) change,
+ * and when it becomes unavailable.
  *
- * Applications can reserve for a service type at
- * http://www.iana.org/form/ports-service. Existing services can be found at
- * http://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xml
+ * <p>On older devices, or if an app needs fine-grained control over which services to resolve,
+ * use overloads of {@link #discoverServices} with a {@link DiscoveryListener}, then call
+ * {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)} or
+ * {@link #resolveService} for the specific services of interest.
+ *
+ * <h4>Advertising Services</h4>
+ * <p>To make a service on the current device discoverable by others, use
+ * {@link #registerService}. The app provides an {@link NsdServiceInfo} containing the service
+ * name, type, and port.
+ *
+ * <h3>Wi-Fi Multicast Lock</h3>
+ * <p>Performing mDNS operations on Wi-Fi requires the device to receive multicast packets.
+ * <ul>
+ *     <li><b>Before T extensions 7</b> (Android 12 and below devices, and Android 13 devices that
+ *     have not received the T extensions 7 update): Apps must manually acquire a
+ *     {@link android.net.wifi.WifiManager.MulticastLock} to receive mDNS packets, even when the app
+ *     is in the foreground.</li>
+ *     <li><b>Starting from T extensions 7</b>: The system automatically manages multicast reception
+ *     for apps in the foreground. Background apps should still avoid taking the lock unless
+ *     absolutely necessary to minimize battery impact.</li>
+ * </ul>
+ *
+ * <h3>Local network permission (Android 17+)</h3>
+ * <p>Starting with API 37, access to the local network is restricted.
+ *
+ * <p>Applications targeting API 37 or higher generally require the
+ * {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK} permission to communicate with
+ * local devices. However, {@code NsdManager} provides a way to gain access to specific
+ * services without this broad permission:
+ *
+ * <ol>
+ *     <li>An app calls {@link #discoverServices} or {@link #registerServiceInfoCallback} with the
+ *     {@link DiscoveryRequest#FLAG_SHOW_PICKER} flag. This triggers a system-provided UI
+ *     allowing the user to choose a specific service.</li>
+ *     <li>Once the user selects a service, the app is granted permission to communicate
+ *     with that specific device through {@link NsdServiceInfo#getHostAddresses()} on
+ *     {@link NsdServiceInfo#getNetwork()}. The app can also receive updates for that service
+ *     without requiring the {@code ACCESS_LOCAL_NETWORK} permission by calling
+ *     {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)}.
+ *     This grant persists across reboots.</li>
+ *     <li>If the {@link android.net.Network} reconnects or the service changes addresses, apps must
+ *     use {@link #registerServiceInfoCallback(NsdServiceInfo, Executor, ServiceInfoCallback)} to
+ *     obtain up-to-date IP addresses with the grant applied. Apps should avoid storing service
+ *     IP addresses as they can change over time.</li>
+ *     <li>Apps can use {@link #checkPermissionForService} to verify if they still have
+ *     access to a previously selected service.</li>
+ *     <li>To rediscover previously approved services without showing the UI again, apps can use
+ *     {@link DiscoveryRequest#FLAG_USER_APPROVED_ONLY}.</li>
+ * </ol>
+ *
+ * <h3>Example finding and resolving a single service</h3>
+ *
+ * <pre>{@code
+ * // Discover a service for a given service type, with an optional name filter. Consider
+ * // calling in a withTimeout block.
+ * suspend fun findService(serviceType: String, nameFilter: PatternMatcher?): NsdServiceInfo? {
+ *     if (SdkExtensions.getExtensionVersion(Build.VERSION_CODES.TIRAMISU) < 22) {
+ *         return findServiceLegacy(serviceType, nameFilter)
+ *     }
+ *     // Note the Wi-Fi multicast lock is not necessary for foreground discovery in recent SDKs
+ *     // Using kotlinx-coroutines-core
+ *     return suspendCancellableCoroutine { cont ->
+ *         val request = DiscoveryRequest.Builder(serviceType)
+ *             .setServiceNameFilter(nameFilter)
+ *             .setFlags(DiscoveryRequest.FLAG_SHOW_PICKER)
+ *             .build()
+ *
+ *         val listener = object : NsdManager.ServiceInfoCallback {
+ *             override fun onServiceUpdated(serviceInfo: NsdServiceInfo) {
+ *                 if (cont.isActive) cont.resume(serviceInfo)
+ *                 // With FLAG_SHOW_PICKER only the selected service is returned, the
+ *                 // listener is then unregistered automatically
+ *             }
+ *
+ *             override fun onServiceInfoCallbackRegistrationFailed(errorCode: Int) {
+ *                 cont.resumeWithException(DiscoveryException(errorCode))
+ *             }
+ *
+ *             override fun onServiceInfoCallbackUnregistered() {
+ *                 // This will be called if the user dismisses the picker without selecting
+ *                 if (cont.isActive) cont.resume(null)
+ *             }
+ *         }
+ *
+ *         nsdManager.registerServiceInfoCallback(request, Runnable::run, listener)
+ *         cont.invokeOnCancellation {
+ *             // unregistration is safe to call multiple times on SDK Ext 22+
+ *             nsdManager.unregisterServiceInfoCallback(listener)
+ *         }
+ *     }
+ * }
+ *
+ * private suspend fun findServiceLegacy(
+ *     serviceType: String, nameFilter: PatternMatcher?): NsdServiceInfo? {
+ *     val tiramisuExt = SdkExtensions.getExtensionVersion(Build.VERSION_CODES.TIRAMISU)
+ *     val lock = if (tiramisuExt < 7) {
+ *         getSystemService(WifiManager::class.java)
+ *             .createMulticastLock("MyAppTag").apply { acquire() }
+ *     } else {
+ *         null
+ *     }
+ *
+ *     try {
+ *         val discoveredService = suspendCancellableCoroutine { cont ->
+ *             val discoveryListener = object : NsdManager.DiscoveryListener {
+ *                 override fun onServiceFound(info: NsdServiceInfo) {
+ *                     // onServiceFound may be called multiple times
+ *                     if (!cont.isActive) return
+ *                     // Apps implement their own logic to select which discovered service
+ *                     // to use. They may show a UI selector to the user, or have some
+ *                     // custom name filtering to identify the service as assumed here.
+ *                     if (nameFilter?.match(info.serviceName) == false) return
+ *                     try {
+ *                         // This may throw IllegalArgumentException on older SDKs if
+ *                         // discovery was stopped already
+ *                         nsdManager.stopServiceDiscovery(this)
+ *                     } catch (_: IllegalArgumentException) {}
+ *                     cont.resume(info)
+ *                 }
+ *                 override fun onStartDiscoveryFailed(type: String, err: Int) {
+ *                     cont.resumeWithException(DiscoveryException(err))
+ *                 }
+ *                 override fun onDiscoveryStarted(type: String) {}
+ *                 override fun onDiscoveryStopped(type: String) {}
+ *                 override fun onServiceLost(info: NsdServiceInfo) {}
+ *                 override fun onStopDiscoveryFailed(type: String, err: Int) {}
+ *             }
+ *             nsdManager.discoverServices(
+ *                 serviceType, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+ *             cont.invokeOnCancellation {
+ *                 try {
+ *                     nsdManager.stopServiceDiscovery(discoveryListener)
+ *                 } catch (_: IllegalArgumentException) {}
+ *             }
+ *         }
+ *
+ *         return suspendCancellableCoroutine { cont ->
+ *             val resolveListener = object : NsdManager.ResolveListener {
+ *                 override fun onServiceResolved(info: NsdServiceInfo) {
+ *                     cont.resume(info)
+ *                 }
+ *                 override fun onResolveFailed(info: NsdServiceInfo, err: Int) {
+ *                     cont.resumeWithException(DiscoveryException(err))
+ *                 }
+ *             }
+ *             nsdManager.resolveService(discoveredService, resolveListener)
+ *             cont.invokeOnCancellation {
+ *                 if (tiramisuExt >= 7) {
+ *                     try {
+ *                         nsdManager.stopServiceResolution(resolveListener)
+ *                     } catch (_: IllegalArgumentException) {}
+ *                 }
+ *             }
+ *         }
+ *     } finally {
+ *         lock?.release()
+ *     }
+ * }
+ * }</pre>
+ *
+ * <h3>Example re-finding a previously discovered service</h3>
+ *
+ * <pre>{@code
+ * // Fetch the latest service information (such as IP addresses) for a service that was
+ * // previously discovered and saved in the app. This should typically be used before
+ * // each connection to the service to fetch up-to-date NsdServiceInfo#getHostAddresses()
+ * // and NsdServiceInfo#getNetwork(). Consider calling in a withTimeout block.
+ * suspend fun findKnownService(serviceType: String, serviceName: String): NsdServiceInfo? {
+ *     if (SdkExtensions.getExtensionVersion(Build.VERSION_CODES.TIRAMISU) < 22) {
+ *         return findKnownServiceLegacy(serviceType, serviceName)
+ *     }
+ *     val hasPermission = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN) {
+ *         true
+ *     } else suspendCancellableCoroutine { cont ->
+ *         nsdManager.checkPermissionForService(serviceName, serviceType, Runnable::run) {
+ *             cont.resume(it == NsdManager.SERVICE_PERMISSION_GRANTED)
+ *         }
+ *     }
+ *     if (!hasPermission) {
+ *         // Trigger FLAG_SHOW_PICKER flow for the user to reselect the service
+ *         return findService(serviceType,
+ *             PatternMatcher(serviceName, PatternMatcher.PATTERN_LITERAL))
+ *     }
+ *
+ *     return suspendCancellableCoroutine { cont ->
+ *         val listener = object : NsdManager.ServiceInfoCallback {
+ *             override fun onServiceUpdated(serviceInfo: NsdServiceInfo) {
+ *                 if (!cont.isActive) return // onServiceUpdated may be called multiple times
+ *                 cont.resume(serviceInfo)
+ *                 nsdManager.unregisterServiceInfoCallback(this)
+ *             }
+ *
+ *             override fun onServiceInfoCallbackRegistrationFailed(errorCode: Int) {
+ *                 cont.resumeWithException(DiscoveryException(errorCode))
+ *             }
+ *
+ *             override fun onServiceInfoCallbackUnregistered() {}
+ *         }
+ *
+ *         val serviceToFind = NsdServiceInfo().apply {
+ *             this.serviceName = serviceName
+ *             this.serviceType = serviceType
+ *             // Set to find on specific Networks, see ConnectivityManager#requestNetwork
+ *             // this.network = network
+ *         }
+ *         nsdManager.registerServiceInfoCallback(
+ *             serviceToFind, Runnable::run, listener)
+ *         cont.invokeOnCancellation {
+ *             nsdManager.unregisterServiceInfoCallback(listener)
+ *         }
+ *     }
+ * }
+ *
+ * private suspend fun findKnownServiceLegacy(
+ *     serviceType: String, serviceName: String): NsdServiceInfo? {
+ *     val tiramisuExt = SdkExtensions.getExtensionVersion(Build.VERSION_CODES.TIRAMISU)
+ *     return suspendCancellableCoroutine { cont ->
+ *         val lock = if (tiramisuExt < 7) {
+ *             getSystemService(WifiManager::class.java)
+ *                 .createMulticastLock("MyAppTag").apply { acquire() }
+ *         } else {
+ *             null
+ *         }
+ *         try {
+ *             val listener = object : NsdManager.ResolveListener {
+ *                 override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+ *                     cont.resumeWithException(DiscoveryException(errorCode))
+ *                 }
+ *
+ *                 override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+ *                     if (cont.isActive) cont.resume(serviceInfo)
+ *                 }
+ *             }
+ *             val serviceToFind = NsdServiceInfo().apply {
+ *                 this.serviceName = serviceName
+ *                 this.serviceType = serviceType
+ *             }
+ *             nsdManager.resolveService(serviceToFind, listener)
+ *             cont.invokeOnCancellation {
+ *                 if (SdkExtensions.getExtensionVersion(Build.VERSION_CODES.TIRAMISU) >= 7) {
+ *                     try {
+ *                         nsdManager.stopServiceResolution(listener)
+ *                     } catch (_: IllegalArgumentException) {
+ *                     }
+ *                 }
+ *             }
+ *         } finally {
+ *             lock?.release()
+ *         }
+ *     }
+ * }
+ * }</pre>
+ *
+ * <h3>Example advertising a service</h3>
+ *
+ * <pre>{@code
+ * // Advertise a service for other devices to connect to the current device. This should be called
+ * // after opening a listening socket to handle connections from other devices, on a dynamic port
+ * // to avoid conflicts. Note this always requires the ACCESS_LOCAL_NETWORK permission.
+ * fun advertiseService(portNumber: Int): Pair<NsdManager.RegistrationListener, MulticastLock?> {
+ *     // The Wi-Fi multicast lock is not necessary for advertising on Wi-Fi while in the
+ *     // foreground since SDK extension 7
+ *     val lock = if (SdkExtensions.getExtensionVersion(Build.VERSION_CODES.TIRAMISU) < 7) {
+ *         getSystemService(WifiManager::class.java).createMulticastLock("MyAppTag").apply {
+ *             acquire()
+ *         }
+ *     } else null
+ *
+ *     val service = NsdServiceInfo().apply {
+ *         serviceName = "My service name"
+ *         serviceType = "_servicetype._tcp"
+ *         port = portNumber
+ *     }
+ *     val listener = object : NsdManager.RegistrationListener {
+ *         override fun onRegistrationFailed(serviceType: NsdServiceInfo, errorCode: Int) {}
+ *         override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {}
+ *         override fun onUnregistrationFailed(serviceType: NsdServiceInfo, errorCode: Int) {}
+ *         override fun onServiceUnregistered(serviceType: NsdServiceInfo) {}
+ *     }
+ *     nsdManager.registerService(service, NsdManager.PROTOCOL_DNS_SD, listener)
+ *     return Pair(listener, lock)
+ * }
+ *
+ * fun stopAdvertisingService(listener: NsdManager.RegistrationListener, lock: MulticastLock?) {
+ *     lock?.release()
+ *     // unregisterService may throw IllegalArgumentException on T SDK extension < 22 if the
+ *     // listener was already unregistered or failed to register
+ *     try {
+ *         nsdManager.unregisterService(listener)
+ *     } catch (_: IllegalArgumentException) {}
+ * }
+ * }</pre>
  *
  * @see NsdServiceInfo
+ * @see DiscoveryRequest
+ * @see AdvertisingRequest
  */
 @SystemService(Context.NSD_SERVICE)
 public final class NsdManager {

@@ -23,6 +23,7 @@ import android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION_AUTOMATIC
 import android.net.ConnectivitySettingsManager.L4S_DEVELOPER_OPTION_ENABLED
 import android.os.Build
 import android.os.SystemClock
+import android.platform.test.annotations.AppModeFull
 import com.android.net.module.util.NetworkStackConstants.TCPHDR_SYN
 import com.android.net.module.util.Struct
 import com.android.net.module.util.structs.TcpHeader
@@ -40,6 +41,7 @@ import org.junit.runner.RunWith
 
 @IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
 @RunWith(DevSdkIgnoreRunner::class)
+@AppModeFull(reason = "Cannot create test network in instant app mode")
 class L4sTest : TestInterfaceBase() {
 
     // TODO: Make NetworkStackConstants.TCPHDR_* short instead of byte, and add TCPHDR_AE
