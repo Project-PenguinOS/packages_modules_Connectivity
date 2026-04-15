@@ -46,6 +46,7 @@ android_library {
     static_libs: ["MultiProxyHandler-api"],
 }
 
+// TODO: b/472278566 - rename this library to MultiProxyHandler-aidl.
 android_library {
     name: "MultiProxyHandler-api",
     min_sdk_version: "31",

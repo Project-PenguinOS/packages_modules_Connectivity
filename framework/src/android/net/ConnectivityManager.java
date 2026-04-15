@@ -108,6 +108,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Class that answers queries about the state of network connectivity. It also
@@ -6928,6 +6929,45 @@ public class ConnectivityManager {
         }
     }
 
+    private static final AtomicBoolean sEarlyInitCalled = new AtomicBoolean(false);
+
+    /**
+     * Performs early initialization of connectivity-related features for the app process.
+     *
+     * <p>This method is intended to be called only once during app startup from {@code
+     * ActivityThread.handleBindApplication}. Keep implementation lightweight and return quickly to
+     * avoid impacting application launch times.
+     *
+     * <p>Currently, it only initializes the process-level HTTP proxy settings.
+     *
+     * @hide
+     */
+    @FlaggedApi(com.android.tethering.flags.Flags.FLAG_ENABLE_MULTI_PROXY_SYSTEM)
+    @SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
+    public void onEarlyInit() {
+        if (sEarlyInitCalled.getAndSet(true)) {
+            throw new IllegalStateException("onEarlyInit can only be called once per process.");
+        }
+        // Initial proxy setup
+        // TODO(476324244) This flow for setting and updating the proxy information in the app
+        // process relies on system broadcasts. Replace with a more targeted approach by leveraging
+        // NetworkCallback as a delivery mechanism.
+        updateProcessProxyConfigurationInternal();
+    }
+
+    /** @hide */
+    @VisibleForTesting
+    public static void resetEarlyInitCalledForTest() {
+        sEarlyInitCalled.set(false);
+    }
+
+    /**
+     * Updates the process-local proxy settings, including JVM system properties. This method is
+     * called when proxy changes are signaled to the application.
+     */
+    private void updateProcessProxyConfigurationInternal() {
+        Proxy.setHttpProxyConfiguration(getDefaultProxy());
+    }
 
     /**
      * Reports a change in the state of an OTT call.

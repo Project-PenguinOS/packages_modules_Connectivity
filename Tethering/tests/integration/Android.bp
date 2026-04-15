@@ -32,7 +32,7 @@ java_defaults {
         "cts-net-utils",
         "mockito-target-minus-junit4",
         "net-tests-utils",
-        "net-utils-device-common",
+        "net-utils-connectivity-apks",
         "net-utils-device-common-bpf",
         "net-utils-device-common-struct-base",
         "testables",

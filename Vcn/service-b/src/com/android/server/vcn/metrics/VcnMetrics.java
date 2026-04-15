@@ -31,6 +31,8 @@ import static com.android.server.vcn.metrics.VcnStatsLog.VCN_NETWORK_VALIDATION_
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_PENDING;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_UNSPECIFIED;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_NETWORK_VALIDATION_STATUS_REPORTED__NEW_VALIDATION_STATUS__VALIDATION_STATUS_VALID;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_RECOVERY_IKE_MOBILITY_UPDATED__RECOVERY_REASON__VCN_RECOVERY_REASON_DATA_STALL;
+import static com.android.server.vcn.metrics.VcnStatsLog.VCN_RECOVERY_IKE_MOBILITY_UPDATED__RECOVERY_REASON__VCN_RECOVERY_REASON_UNSPECIFIED;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_CELLULAR;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_NONE;
 import static com.android.server.vcn.metrics.VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED__OLD_NETWORK__TRANSPORT_MASK_UNSPECIFIED;
@@ -95,6 +97,16 @@ public class VcnMetrics {
             })
     public @interface IpSecPacketLossResultType {}
 
+    /** @hide */
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef(
+            prefix = {"VCN_RECOVERY_REASON_"},
+            value = {
+                VCN_RECOVERY_REASON_UNSPECIFIED,
+                VCN_RECOVERY_REASON_DATA_STALL
+            })
+    public @interface VcnRecoveryReason {}
+
     public VcnMetrics(int gatewayConnectionId) {
         mGatewayConnectionId = gatewayConnectionId;
     }
@@ -137,6 +149,10 @@ public class VcnMetrics {
             IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_UNEXPECTED_ERROR;
     public static final int IPSEC_PACKET_LOSS_RESULT_TYPE_PACKETS_TOO_OLD =
             IP_SEC_PACKET_LOSS_DETECTOR_REPORTED__RESULT_TYPE__IPSEC_PACKET_LOSS_RESULT_TYPE_PACKETS_TOO_OLD;
+    public static final int VCN_RECOVERY_REASON_UNSPECIFIED =
+            VCN_RECOVERY_IKE_MOBILITY_UPDATED__RECOVERY_REASON__VCN_RECOVERY_REASON_UNSPECIFIED;
+    public static final int VCN_RECOVERY_REASON_DATA_STALL =
+            VCN_RECOVERY_IKE_MOBILITY_UPDATED__RECOVERY_REASON__VCN_RECOVERY_REASON_DATA_STALL;
 
     /** Log an atom when a VcnGatewayConnection has entered safe mode. */
     public void logEnterSafeMode() {
@@ -235,12 +251,27 @@ public class VcnMetrics {
     /** Log an atom whenever we switch VCN's underlying network. */
     public void logUnderlyingNetworkSwitched(
             @TransportMask int oldNetworkType,
-            @TransportMask int newNetworkType) {
+            @TransportMask int newNetworkType,
+            int handoffLatencyMs) {
         VcnStatsLog.write(
                 VcnStatsLog.VCN_UNDERLYING_NETWORK_SWITCHED,
                 mGatewayConnectionId,
                 oldNetworkType,
-                newNetworkType);
+                newNetworkType,
+                handoffLatencyMs);
+    }
+
+    /** Log an atom IKE mobility is updated for data stall recovery. */
+    public void logVcnRecoveryIkeMobilityUpdated(
+            @TransportMask int underlyingNetwork,
+            @VcnRecoveryReason int recoveryReason,
+            int handoffLatencyMs) {
+        VcnStatsLog.write(
+                VcnStatsLog.VCN_RECOVERY_IKE_MOBILITY_UPDATED,
+                mGatewayConnectionId,
+                underlyingNetwork,
+                handoffLatencyMs,
+                recoveryReason);
     }
 
     /** Log an atom when IpSecPacketLossDetector reports a result. */

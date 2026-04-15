@@ -118,10 +118,12 @@ import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -791,6 +793,14 @@ public class VcnGatewayConnection extends StateMachine {
      */
     private VcnNetworkAgent mNetworkAgent;
 
+    /**
+     * Queue used to track ongoing IpSecTransform migrations still waiting for completion callback.
+     *
+     * <p>Used for metrics logging. This method assumes that onIpSecTransformsMigrated() callbacks
+     * are invoked in the FIFO order as the mIkeSession.setNetwork() calls that trigger them.
+     */
+    private final Queue<MigrationEvent> mMigrationEventQueue = new ArrayDeque<>();
+
     @Nullable private WakeupMessage mTeardownTimeoutAlarm;
     @Nullable private WakeupMessage mDisconnectRequestAlarm;
     @Nullable private WakeupMessage mRetryTimeoutAlarm;
@@ -924,6 +934,8 @@ public class VcnGatewayConnection extends StateMachine {
         cancelSafeModeAlarm();
 
         mUnderlyingNetworkController.teardown();
+
+        mMigrationEventQueue.clear();
 
         mGatewayStatusCallback.onQuit();
 
@@ -2163,11 +2175,39 @@ public class VcnGatewayConnection extends StateMachine {
                     migrationCompletedInfo.outTransform,
                     IpSecManager.DIRECTION_OUT);
 
+            logMigrationMetrics();
+
             updateNetworkAgent(mTunnelIface, mNetworkAgent, mChildConfig, mIkeConnectionInfo);
 
             // Trigger re-validation after migration events.
             mConnectivityManager.reportNetworkConnectivity(
                     mNetworkAgent.getNetwork(), false /* hasConnectivity */);
+        }
+
+        private void logMigrationMetrics() {
+            while (!mMigrationEventQueue.isEmpty()) {
+                final MigrationEvent event = mMigrationEventQueue.poll();
+                if (event.token() != mCurrentToken) {
+                    continue;
+                }
+
+                final int handoffLatencyMs =
+                        (int) (mDeps.getElapsedRealTime() - event.startTimeMs());
+                if (event instanceof NetworkSwitchEvent networkSwitchEvent) {
+                    mVcnMetrics.logUnderlyingNetworkSwitched(
+                            networkSwitchEvent.oldTransportMask(),
+                            networkSwitchEvent.newTransportMask(),
+                            handoffLatencyMs);
+                } else if (event instanceof DataStallEvent dataStallEvent) {
+                    mVcnMetrics.logVcnRecoveryIkeMobilityUpdated(
+                            dataStallEvent.transportMask(),
+                            VcnMetrics.VCN_RECOVERY_REASON_DATA_STALL,
+                            handoffLatencyMs);
+                } else {
+                    logWtf("Unknown migration event: " + event);
+                }
+                break;
+            }
         }
 
         private void handleUnderlyingNetworkChanged(@NonNull Message msg) {
@@ -2186,8 +2226,13 @@ public class VcnGatewayConnection extends StateMachine {
             // If network changed, migrate. Otherwise, update any existing networkAgent.
             if (oldUnderlying == null || !oldUnderlying.network.equals(mUnderlying.network)) {
                 logInfo("Migrating to new network: " + mUnderlying.network);
-                mVcnMetrics.logUnderlyingNetworkSwitched(
-                        getTransportMask(oldUnderlying), getTransportMask(mUnderlying));
+                mMigrationEventQueue.add(
+                        new NetworkSwitchEvent(
+                                mCurrentToken,
+                                mDeps.getElapsedRealTime(),
+                                getTransportMask(oldUnderlying),
+                                getTransportMask(mUnderlying)));
+
                 mIkeSession.setNetwork(mUnderlying.network);
             } else {
                 // oldUnderlying is non-null & underlying network itself has not changed
@@ -2219,6 +2264,11 @@ public class VcnGatewayConnection extends StateMachine {
                     && mNetworkAgent != null
                     && mNetworkAgent.getNetwork().equals(networkWithDataStall)) {
                 logInfo("Perform Mobility update to recover from suspected data stall");
+                mMigrationEventQueue.add(
+                        new DataStallEvent(
+                                mCurrentToken,
+                                mDeps.getElapsedRealTime(),
+                                getTransportMask(mUnderlying)));
                 mIkeSession.setNetwork(mUnderlying.network);
             }
         }
@@ -2598,6 +2648,28 @@ public class VcnGatewayConnection extends StateMachine {
             logDbg("ChildTransformDeleted; Direction: " + direction + "; for token " + mToken);
         }
     }
+
+    /** Event representing an ongoing IpSecTransform migration for metrics logging. */
+    private interface MigrationEvent {
+        /** The IKE session token for which this migration is occurring. */
+        int token();
+
+        /** The time when the migration event started, in elapsed real time. */
+        long startTimeMs();
+    }
+
+    /** Event representing a network switch for metrics logging. */
+    private record NetworkSwitchEvent(
+            int token,
+            long startTimeMs,
+            @VcnMetrics.TransportMask int oldTransportMask,
+            @VcnMetrics.TransportMask int newTransportMask)
+            implements MigrationEvent {}
+
+    /** Event representing a data stall event for metrics logging. */
+    private record DataStallEvent(
+            int token, long startTimeMs, @VcnMetrics.TransportMask int transportMask)
+            implements MigrationEvent {}
 
     // Used in Vcn.java, but must be public for mockito to mock this.
     public String getLogPrefix() {

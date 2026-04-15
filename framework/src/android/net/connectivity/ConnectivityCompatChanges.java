@@ -121,7 +121,7 @@ public final class ConnectivityCompatChanges {
      * @hide
      */
     @ChangeId
-    @EnabledAfter(targetSdkVersion = Build.VERSION_CODES.CINNAMON_BUN)
+    @EnabledAfter(targetSdkVersion = Build.VERSION_CODES.BAKLAVA)
     public static final long NETWORK_BLOCKED_WITHOUT_INTERNET_PERMISSION = 333340911L;
 
     /**
@@ -159,6 +159,25 @@ public final class ConnectivityCompatChanges {
     @ChangeId
     @EnabledAfter(targetSdkVersion = Build.VERSION_CODES.BAKLAVA)
     public static final long ENABLE_MATCH_NON_THREAD_LOCAL_NETWORKS = 349487600L;
+
+    /**
+     * Show a service picker when {@link android.net.nsd.NsdManager} is used without
+     * {@link android.Manifest.permission#ACCESS_LOCAL_NETWORK} permission.
+     *
+     * <p>Apps targeting a release after B that do not have the permission will see a service picker
+     * when discovering using {@link android.net.nsd.NsdManager}, unless they specify
+     * {@link android.net.nsd.DiscoveryRequest#FLAG_NO_PICKER}.
+     *
+     * <p>Apps targeting B- typically get the permission granted by default, as it is a
+     * targetSdk-gated split-permission from {@link android.Manifest.permission#INTERNET}. However,
+     * the permission may still be revoked manually by the user (with a warning in Settings that
+     * the app may break), and the permission will also be revoked if the app requests it in its
+     * manifest regardless of targetSdk.
+     * @hide
+     */
+    @ChangeId
+    @EnabledAfter(targetSdkVersion = Build.VERSION_CODES.BAKLAVA)
+    public static final long USE_NSD_PICKER_WHEN_NO_LOCAL_NET_PERMISSION = 490596785L;
 
     private ConnectivityCompatChanges() {
     }

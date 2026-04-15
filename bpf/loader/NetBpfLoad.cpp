@@ -61,21 +61,18 @@
 
 #include <com_android_tethering_readonly_flags.h>
 
-#define BPF_SUPPORT_CMD_FIXUP
+#define BPF_UTILS_MORE_IS_FOO_HELPERS
 #include "BpfSyscallWrappers.h"
 #include "bpf/BpfUtils.h"
 #include "bpf_map_def.h"
 
 using android::base::borrowed_fd;
-using android::base::EndsWith;
 using android::base::GetIntProperty;
 using android::base::GetProperty;
 using android::base::InitLogging;
 using android::base::KernelLogger;
 using android::base::SetProperty;
 using android::base::Split;
-using android::base::StartsWith;
-using android::base::Tokenize;
 using android::base::unique_fd;
 using std::optional;
 using std::span;
@@ -732,7 +729,7 @@ static int pinMap(const borrowed_fd& fd, const struct bpf_map_def& mapDef) {
                 ALOGE("bpfGetFdMapId failed, errno: %d", err);
                 return -err;
             }
-            ALOGI("map %s id %d", mapDef.pin_location, mapId);
+            if (!isUser) ALOGD("map %s id %d", mapDef.pin_location, mapId);
         }
         return 0;
 }
@@ -1003,7 +1000,7 @@ static int validateProg(const borrowed_fd& fd, const char* const progPinLoc) {
         ALOGE("bpfGetFdXlatProgLen failed, ret: %d", err);
         return -err;
     }
-    ALOGI("prog %s id %d len jit:%d xlat:%d", progPinLoc, progId, jitLen, xlatLen);
+    if (!isUser) ALOGD("prog %s id %d len jit:%d xlat:%d", progPinLoc, progId, jitLen, xlatLen);
 
     if (!jitLen && api_level_full >= NETBPFLOAD_25Q2_VER) {
         ALOGE("Kernel eBPF JIT failure for %s", progPinLoc);
@@ -1339,7 +1336,7 @@ static bool exists(const char* const path) {
     abort();  // can only hit this if permissions (likely selinux) are screwed up
 }
 
-static bool loadObject(const char* const progPath, const bool useLibbpf = false) {
+static bool loadObject(const char* const progPath, const bool useLibbpf = true) {
     if (useLibbpf ? loadProgByLibbpf(progPath) : loadProg(progPath)) {
         ALOGE("Failed to load object: %s, libbpf: %d", progPath, useLibbpf);
         return false;
@@ -1352,12 +1349,20 @@ static bool loadObject(const char* const progPath, const bool useLibbpf = false)
 #define BPFROOT APEXROOT "/etc/bpf/mainline/"
 
 static bool loadAllObjects() {
-    bool libbpf = true;
-    if (!loadObject(BPFROOT "offload.o")) return false;
-    if (!loadObject(BPFROOT "test.o", true)) return false;
-    if (!loadObject(BPFROOT "clatd.o", libbpf)) return false;
-    if (!loadObject(BPFROOT "dscpPolicy.o", true)) return false;
-    if (!loadObject(BPFROOT "netd.o", libbpf)) return false;
+    // Enable on kernels that have the BPF CFI backports, see: b/488034908
+    // b/494690861: funcs may trigger Real-time Kernel Protection (RKP)
+    bool funcs = isAtLeast26Q2 && isAtLeastKernelVersion(6, 6, 118);
+
+    if (!loadObject(BPFROOT "offload.o", /*libbpf*/false)) return false;
+    if (!loadObject(BPFROOT "test.o")) return false;
+    if (!loadObject(BPFROOT "clatd.o")) return false;
+    if (funcs) {
+        if (!loadObject(BPFROOT "dscpPolicy@funcs.o")) return false;
+        if (!loadObject(BPFROOT "netd@funcs.o")) return false;
+    } else {
+        if (!loadObject(BPFROOT "dscpPolicy.o")) return false;
+        if (!loadObject(BPFROOT "netd.o")) return false;
+    }
     return true;
 }
 
@@ -1396,12 +1401,11 @@ static bool writeFile(const char *filename, const char *value) {
     return true;
 }
 
-#define APEX_MOUNT_POINT "/apex/com.android.tethering"
 const char * const platformBpfLoader = "/system/bin/bpfloader";
 const char *const uprobestatsBpfLoader =
     "/apex/com.android.uprobestats/bin/uprobestatsbpfload";
 
-static int logTetheringApexVersion(void) {
+static int logApexVersion(const char* const apex_pretty_name, const char* const apex_mount_point) {
     char src_apex[16] = {};
     if (!isUser) {
         // man readlink: Upon success, readlink() returns count of bytes placed in the buffer.
@@ -1427,7 +1431,7 @@ static int logTetheringApexVersion(void) {
         space = strchr(mntpath, ' ');
         if (!space) continue;
         *space = '\0';
-        if (strcmp(mntpath, APEX_MOUNT_POINT)) continue;
+        if (strcmp(mntpath, apex_mount_point)) continue;
         found_blockdev = strdup(blockdev);
         break;
     }
@@ -1435,10 +1439,12 @@ static int logTetheringApexVersion(void) {
     f = NULL;
 
     if (!found_blockdev) return 2;
-    ALOGV("Found Tethering Apex mounted from blockdev %s", found_blockdev);
+    ALOGV("Found %s Apex mounted from blockdev %s", apex_pretty_name, found_blockdev);
 
     f = fopen("/proc/mounts", "re");
     if (!f) { free(found_blockdev); return 3; }
+
+    int apex_mount_point_len = strlen(apex_mount_point);
 
     while (fgets(buf, sizeof(buf), f)) {
         char * blockdev = buf;
@@ -1450,59 +1456,19 @@ static int logTetheringApexVersion(void) {
         if (!space) continue;
         *space = '\0';
         if (strcmp(blockdev, found_blockdev)) continue;
-        if (strncmp(mntpath, APEX_MOUNT_POINT "@", strlen(APEX_MOUNT_POINT "@"))) continue;
-        char * at = strchr(mntpath, '@');
-        if (!at) continue;
+        if (strncmp(mntpath, apex_mount_point, apex_mount_point_len)) continue;
+        char * at = mntpath + apex_mount_point_len;
+        if (*at != '@') continue;
         char * ver = at + 1;
         if (isUser) {
-            ALOGI("Tethering APEX version %s", ver);
+            ALOGI("%s APEX version %s", apex_pretty_name, ver);
         } else {
-            ALOGI("Tethering APEX version %s (system: %s)", ver, src_apex);
+            ALOGI("%s APEX version %s (system: %s)", apex_pretty_name, ver, src_apex);
         }
     }
     fclose(f);
     free(found_blockdev);
     return 0;
-}
-
-static bool hasGSM() {
-    static string ph = GetProperty("gsm.current.phone-type", "");
-    static bool gsm = (ph != "");
-    static bool logged = false;
-    if (!logged) {
-        logged = true;
-        ALOGI("hasGSM(gsm.current.phone-type='%s'): %s", ph.c_str(), gsm ? "true" : "false");
-    }
-    return gsm;
-}
-
-static bool isTV() {
-    if (hasGSM()) return false;  // TVs don't do GSM
-
-    static string key = GetProperty("ro.oem.key1", "");
-    static bool tv = StartsWith(key, "ATV00");
-    static bool logged = false;
-    if (!logged) {
-        logged = true;
-        ALOGI("isTV(ro.oem.key1='%s'): %s.", key.c_str(), tv ? "true" : "false");
-    }
-    return tv;
-}
-
-static bool isWear() {
-    static string wearSdkStr = GetProperty("ro.cw_build.wear_sdk.version", "");
-    static int wearSdkInt = GetIntProperty("ro.cw_build.wear_sdk.version", 0);
-    static string buildChars = GetProperty("ro.build.characteristics", "");
-    static vector<string> v = Tokenize(buildChars, ",");
-    static bool watch = (std::find(v.begin(), v.end(), "watch") != v.end());
-    static bool wear = (wearSdkInt > 0) || watch;
-    static bool logged = false;
-    if (!logged) {
-        logged = true;
-        ALOGI("isWear(ro.cw_build.wear_sdk.version=%d[%s] ro.build.characteristics='%s'): %s",
-              wearSdkInt, wearSdkStr.c_str(), buildChars.c_str(), wear ? "true" : "false");
-    }
-    return wear;
 }
 
 static int libbpfPrint(enum libbpf_print_level lvl, const char *const formatStr,
@@ -1555,7 +1521,7 @@ static int doLoad(char** argv, char * const envp[]) {
     // first in U QPR2 beta~2
     const bool has_platform_netbpfload_rc = exists("/system/etc/init/netbpfload.rc");
 
-    ALOGI("NetBpfLoad (%s) api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%u rc:%d%d user:%d%d%d",
+    ALOGI("%s api:%d/%d kver:%07x (%s:%uk) libbpf: v%u.%u uid:%u rc:%d%d user:%d%d%d",
           argv[0], android_get_device_api_level(), api_level_full,
           kernelVer, describeArch(), page_size >> 10,
           libbpf_major_version(), libbpf_minor_version(), getuid(), has_platform_bpfloader_rc,
@@ -1571,10 +1537,11 @@ static int doLoad(char** argv, char * const envp[]) {
         return 1;
     }
 
-    logTetheringApexVersion();
+    logApexVersion("Tethering", "/apex/com.android.tethering");
 
     if (exists("/apex/com.android.resolv/lib") ||
         exists("/apex/com.android.resolv/lib64")) {
+        logApexVersion("DnsResolver", "/apex/com.android.resolv");
         ALOGE("Incorrect DNS Resolver APEX found.");
         return 2;
     }

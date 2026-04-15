@@ -87,7 +87,9 @@ apex {
     bpfs: [
         "clatd.o",
         "dscpPolicy.o",
+        "dscpPolicy@funcs.o",
         "netd.o",
+        "netd@funcs.o",
         "offload.o",
         "test.o",
     ],
@@ -157,6 +159,10 @@ bootclasspath_fragment {
         {
             apex: "com.android.art",
             module: "art-bootclasspath-fragment",
+        },
+        {
+            apex: "com.android.telephonycore",
+            module: "com.android.telephony-bootclasspath-fragment",
         },
     ],
 

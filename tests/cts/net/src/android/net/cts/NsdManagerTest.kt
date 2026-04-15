@@ -140,7 +140,9 @@ import java.net.ServerSocket
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 import java.util.Random
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
+import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 import kotlin.math.min
 import kotlin.test.assertContentEquals
@@ -644,7 +646,7 @@ class NsdManagerTest {
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
     @RequiresFlagsDisabled(FLAG_NSD_SERVICE_PICKER)
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
     fun testDiscoverServices_missingLocalNetPermission_failsPermissionDenied() {
         assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
         val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
@@ -664,7 +666,7 @@ class NsdManagerTest {
 
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
     @RequiresFlagsEnabled(Flags.FLAG_LNP_DEVELOPER_OPT_IN)
     fun testLocalNetworkDevOptIn_permissionCheckFails_returnsInternalError() {
         assumeFalse(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
@@ -681,6 +683,21 @@ class NsdManagerTest {
         )
         val failedCb = discoveryRecord.expectCallback<StartDiscoveryFailed>()
         assertEquals(NsdManager.FAILURE_INTERNAL_ERROR, failedCb.errorCode)
+    }
+
+    @Test
+    fun testCheckPermissionForService_deniedByDefault() {
+        assumeTrue(runAsShell(READ_DEVICE_CONFIG) {
+            com.android.tethering.flags.Flags.nsdServicePicker()
+        })
+        val permissionDeniedFuture = CompletableFuture<Int>()
+        nsdManager.checkPermissionForService(serviceName, serviceType, Runnable::run) {
+            permissionDeniedFuture.complete(it)
+        }
+        assertEquals(
+            NsdManager.SERVICE_PERMISSION_DENIED,
+            permissionDeniedFuture.get(TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        )
     }
 
     @Test
@@ -737,11 +754,76 @@ class NsdManagerTest {
             // for the 1st service was sent first
             val foundInfo = discoveryRecord.expectCallback<ServiceFound>(UI_TIMEOUT_MS)
             assertEquals(serviceName2, foundInfo.serviceInfo.serviceName)
+
+            // The service should now be allowlisted
+            val permissionGrantedFuture = CompletableFuture<Int>()
+            nsdManager.checkPermissionForService(serviceName2, serviceType, Runnable::run) {
+                permissionGrantedFuture.complete(it)
+            }
+            assertEquals(NsdManager.SERVICE_PERMISSION_GRANTED,
+                permissionGrantedFuture.get(TIMEOUT_MS, TimeUnit.MILLISECONDS))
         } cleanup {
             packetReader.handler.post { packetReader.stop() }
             handlerThread.waitForIdle(TIMEOUT_MS)
             nsdManager.stopServiceDiscovery(discoveryRecord)
             // No other callback (including for the 1st service) is received until DiscoveryStopped
+            discoveryRecord.expectCallback<DiscoveryStopped>()
+        }
+    }
+
+    @Test
+    fun testDiscoverServices_withServiceNameFilterAndPicker_showsFilteredServicesInPicker() {
+        assumeTrue(runAsShell(READ_DEVICE_CONFIG) {
+            com.android.tethering.flags.Flags.nsdServicePicker()
+        })
+        val uiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        uiDevice.wakeUp()
+        uiDevice.executeShellCommand("wm dismiss-keyguard")
+        val packetReader = makePacketReader()
+        val discoveryRecord = NsdDiscoveryRecord()
+        tryTest {
+            val request = DiscoveryRequest.Builder(serviceType)
+                .setNetwork(testNetwork1.network)
+                .setFlags(DiscoveryRequest.FLAG_SHOW_PICKER)
+                .setServiceNameFilter(PatternMatcher(serviceName2, PatternMatcher.PATTERN_LITERAL))
+                .build()
+            nsdManager.discoverServices(
+                request,
+                Executor { it.run() },
+                discoveryRecord
+            )
+            discoveryRecord.expectCallback<DiscoveryStarted>()
+            assertNotNull(packetReader.pollForQuery("$serviceType.local", DnsResolver.TYPE_PTR))
+
+            /* Generated with:
+               scapy.raw(scapy.DNS(rd=0, qr=1, aa=1, qd = None, an =
+                   scapy.DNSRR(rrname='_nmt123456789._tcp.local', type='PTR', ttl=120,
+                   rdata='NsdTest123456789._nmt123456789._tcp.local'))).hex()
+             */
+            val ptrResponseTemplate = hexStringToByteArray("0000840000000001000000000d5f6e6d74313" +
+                    "233343536373839045f746370056c6f63616c00000c000100000078002b104e7364546573743" +
+                    "132333435363738390d5f6e6d74313233343536373839045f746370056c6f63616c00")
+            val payload1 = ptrResponseTemplate.clone().apply {
+                replaceServiceNameAndTypeWithTestSuffix(this, serviceName)
+            }
+            val payload2 = ptrResponseTemplate.clone().apply {
+                replaceServiceNameAndTypeWithTestSuffix(this, serviceName2)
+            }
+            packetReader.sendResponse(buildMdnsPacket(payload1))
+            packetReader.sendResponse(buildMdnsPacket(payload2))
+
+            // serviceName should be filtered out by serviceNameFilter, so it should not appear.
+            // Only serviceName2 should appear, although its payload was received later.
+            UiAutomatorUtils2.waitFindObject(
+                By.text(serviceName2), UI_TIMEOUT_MS
+            )
+
+            val service1Text = uiDevice.findObject(By.text(serviceName))
+            assertNull(service1Text, "Picker showed filtered service $serviceName")
+        } cleanup {
+            packetReader.handler.post { packetReader.stop() }
+            handlerThread.waitForIdle(TIMEOUT_MS)
+            nsdManager.stopServiceDiscovery(discoveryRecord)
             discoveryRecord.expectCallback<DiscoveryStopped>()
         }
     }
@@ -926,7 +1008,7 @@ class NsdManagerTest {
 
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
     fun testRegisterService_missingLocalNetworkPermission_throwsSecurityException() {
         assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
         val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
@@ -1678,7 +1760,7 @@ class NsdManagerTest {
 
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
     fun testResolveService_missingLocalNetworkPermission_failsPermissionDenied() {
         assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
         val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
@@ -1741,7 +1823,7 @@ class NsdManagerTest {
 
     @Test
     @CtsNetTestCasesLocalNetNoPermissions
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
     fun testRegisterServiceInfoCallback_missingLocalNetworkPermission_failsPermissionDenied() {
         assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
         val perm = context.checkSelfPermission(ACCESS_LOCAL_NETWORK)
@@ -3834,7 +3916,7 @@ class NsdManagerTest {
     @Test
     @RequiresFlagsEnabled(FLAG_NSD_SERVICE_PICKER)
     @CtsNetTestCasesLocalNetNoPermissions
-    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @DevSdkIgnoreRule.IgnoreUpTo(Build.VERSION_CODES.BAKLAVA)
     fun testRegisterServiceInfoCallback_missingPermissions_registrationError() {
         assumeTrue(android.permission.flags.Flags.accessLocalNetworkPermissionEnabled())
 

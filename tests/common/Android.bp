@@ -71,7 +71,13 @@ java_genrule {
         ":TetheringTestsJarJarRules",
         ":NetworkStackJarJarRules",
     ],
-    out: ["jarjar-rules-connectivity-coverage.txt"],
+    out: ["jarjar-rules-ConnectivityCoverageTests.txt"],
+    // Export the generated jarjar rules output file to the build artifacts when building targets with
+    // 'coverage-artifacts' goal, so that the coverage server can use them to map the class names and
+    // generate correct presubmit coverage.
+    dist: {
+        targets: ["coverage-artifacts"],
+    },
     visibility: ["//visibility:private"],
 }
 

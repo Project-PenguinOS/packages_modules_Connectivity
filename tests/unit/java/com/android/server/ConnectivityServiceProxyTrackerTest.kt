@@ -33,6 +33,7 @@ import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.eq
+import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.never
 import org.mockito.Mockito.timeout
@@ -75,6 +76,8 @@ class ConnectivityServiceProxyTrackerTest : CSTest() {
 
     @Test
     fun testGetGlobalProxy_DelegatesToProxyTracker() {
+        // Reset invocations from the setup in systemReadyInternal
+        clearInvocations(proxyTracker)
         doReturn(directProxy1).`when`(proxyTracker).globalProxy
         val result = service.globalProxy
         assertEquals(directProxy1, result)

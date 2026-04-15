@@ -51,6 +51,7 @@ import android.net.NetworkProvider
 import android.net.NetworkScore
 import android.net.NetworkScore.KEEP_CONNECTED_FOR_TEST
 import android.net.PacProxyManager
+import android.net.ProxyInfo
 import android.net.Uri
 import android.net.connectivity.ConnectivityCompatChanges.ENABLE_MATCH_LOCAL_NETWORK
 import android.net.networkstack.NetworkStackClientBase
@@ -229,7 +230,12 @@ open class CSTest {
     }
     val clatCoordinator = mock<ClatCoordinator>()
     val networkRequestStateStatsMetrics = mock<NetworkRequestStateStatsMetrics>()
-    val proxyTracker = mock<IProxyTracker>()
+    val proxyTracker = mock<IProxyTracker>().also {
+        var globalProxy: ProxyInfo? = null
+        doAnswer { invocation -> globalProxy = invocation.getArgument(0); null }
+            .`when`(it).setGlobalProxy(any())
+        doAnswer { globalProxy }.`when`(it).getGlobalProxy()
+    }
     val systemConfigManager = makeMockSystemConfigManager()
     val batteryStats = mock<IBatteryStats>()
     val batteryManager = BatteryStatsManager(batteryStats)

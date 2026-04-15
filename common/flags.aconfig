@@ -1,6 +1,10 @@
 package: "com.android.tethering.flags"
 container: "com.android.tethering"
 
+#
+# BPF-related flags
+#
+
 flag {
     name: "permission_map_uid_migration"
     namespace: "com_android_tethering"
@@ -9,18 +13,29 @@ flag {
 }
 
 flag {
+  name: "collect_beta_metrics"
+  namespace: "com_android_tethering"
+  description: "Enable metrics collection from beta users"
+  bug: "462217324"
+}
+
+flag {
+  name: "loopback_access_metrics"
+  namespace: "com_android_tethering"
+  description: "Enable collection of loopback access metrics"
+  bug: "441592715"
+}
+
+#
+# ConnectivityService, ConnectivityManager and related APIs flags
+#
+
+flag {
   name: "net_capability_prioritize_unified_communications"
   namespace: "com_android_tethering"
   description: "Flag for NET_CAPABILITY_PRIORITIZE_UNIFIED_COMMUNICATIONS API"
   bug: "430509489"
   is_exported: true
-}
-
-flag {
-    name: "show_entitlement_ui_to_requesters"
-    namespace: "com_android_tethering"
-    description: "Show entitlement UI to the requesters, instead of only admin users."
-    bug: "376792293"
 }
 
 flag {
@@ -32,18 +47,41 @@ flag {
 }
 
 flag {
+    name: "l4s_developer_option"
+    namespace: "com_android_tethering"
+    description: "Flag for supporting L4S global status API."
+    bug: "452488983"
+    is_exported: true
+}
+
+flag {
+  name: "enable_multi_proxy_system"
+  is_exported: true
+  namespace: "com_android_tethering"
+  description: "Enables the new multi-network proxy system."
+  bug: "463367733"
+}
+
+#
+# Tethering flags
+#
+
+flag {
+    name: "show_entitlement_ui_to_requesters"
+    namespace: "com_android_tethering"
+    description: "Show entitlement UI to the requesters, instead of only admin users."
+    bug: "376792293"
+}
+
+#
+# NSD flags
+#
+
+flag {
   name: "nsd_query_with_known_answer"
   namespace: "com_android_tethering"
   description: "The querier should include its known answers within each query packet"
   bug: "454491508"
-}
-
-flag {
-    name: "encrypted_client_hello_dns"
-    namespace: "com_android_tethering"
-    description: "Enable new ECH-related DNS resolver changes"
-    bug: "419020719"
-    is_exported: true
 }
 
 flag {
@@ -70,26 +108,27 @@ flag {
 }
 
 flag {
-  name: "collect_beta_metrics"
+  name: "nsd_dual_query_for_unicast_response"
   namespace: "com_android_tethering"
-  description: "Enable metrics collection from beta users"
-  bug: "462217324"
+  description: "A flag to control whether to send both unicast and multicast query packets."
+  bug: "452299542"
 }
 
-flag {
-  name: "loopback_access_metrics"
-  namespace: "com_android_tethering"
-  description: "Enable collection of loopback access metrics"
-  bug: "441592715"
-}
+#
+# DNS flags
+#
 
 flag {
-    name: "l4s_developer_option"
+    name: "encrypted_client_hello_dns"
     namespace: "com_android_tethering"
-    description: "Flag for supporting L4S global status API."
-    bug: "452488983"
+    description: "Enable new ECH-related DNS resolver changes"
+    bug: "419020719"
     is_exported: true
 }
+
+#
+# NetworkStats flags
+#
 
 flag {
     name: "netstats_per_query_flags"
@@ -100,8 +139,23 @@ flag {
 }
 
 flag {
+    name: "netstats_use_since_boot_collection"
+    namespace: "com_android_tethering"
+    description: "Use the 'since boot' collection for network stats queries within the current boot"
+    bug: "430990457"
+}
+
+#
+# staticlibs flags
+#
+
+flag {
     name: "netlink_no_timeout"
     namespace: "com_android_tethering"
     description: "Disable timeout for netlink API calls."
     bug: "455999579"
 }
+
+#
+# Add other sections with 3 lines of comments to avoid merge conflicts
+#

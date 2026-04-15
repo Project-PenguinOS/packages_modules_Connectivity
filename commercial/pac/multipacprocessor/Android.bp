@@ -46,6 +46,7 @@ android_library {
     static_libs: ["MultiPacProcessor-api"],
 }
 
+// TODO: b/472280623 - rename this library to MultiPacProcessor-aidl.
 android_library {
     name: "MultiPacProcessor-api",
     min_sdk_version: "31",

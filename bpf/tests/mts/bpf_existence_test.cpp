@@ -190,11 +190,15 @@ static const set<string> MAINLINE_FOR_26Q2_PLUS = {
     NETD "map_netd_l4s_conn_counter",
 };
 
-// Provided by *current* mainline module for 26Q2+ devices with 6.1+ kernels
-static const set<string> MAINLINE_FOR_26Q2_6_1_PLUS = {
+// Provided by *current* mainline module for 26Q2+ devices with 6.1/6.6/6.12 kernels
+static const set<string> MAINLINE_FOR_26Q2_6_1_AND_6_6_AND_6_12 = {
     NETD "prog_netd_schedcls_egress_accecn_eth",
     NETD "prog_netd_schedcls_egress_accecn_rawip",
     NETD "prog_netd_sockops_accecn_option",
+};
+
+// Provided by *current* mainline module for 26Q2+ devices with 6.18+ kernels
+static const set<string> MAINLINE_FOR_26Q2_6_18_PLUS = {
 };
 
 static void addAll(set<string>& a, const set<string>& b) {
@@ -250,7 +254,9 @@ TEST_F(BpfExistenceTest, TestPrograms) {
     DO_EXPECT(isAtLeast25Q4, MAINLINE_FOR_25Q4_PLUS);
 
     DO_EXPECT(isAtLeast26Q2, MAINLINE_FOR_26Q2_PLUS);
-    DO_EXPECT(isAtLeast26Q2 && isAtLeastKernelVersion(6, 1), MAINLINE_FOR_26Q2_6_1_PLUS);
+    DO_EXPECT(isAtLeast26Q2 && isAtLeastKernelVersion(6, 1) && !isAtLeastKernelVersion(6, 18),
+              MAINLINE_FOR_26Q2_6_1_AND_6_6_AND_6_12);
+    DO_EXPECT(isAtLeast26Q2 && isAtLeastKernelVersion(6, 18), MAINLINE_FOR_26Q2_6_18_PLUS);
 
     for (const auto& file : mustExist) {
         EXPECT_EQ(0, access(file.c_str(), R_OK)) << file << " does not exist";

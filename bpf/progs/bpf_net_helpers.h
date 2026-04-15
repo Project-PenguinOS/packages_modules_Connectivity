@@ -64,15 +64,29 @@ struct frag_hdr {
 
 // copied from //bionic/libc/include/bits/tcphdr.h 'struct tcphdr' but with bitfield replaced with flags16
 struct tcphdr_with_flags16 {
-  uint16_t source;
-  uint16_t dest;
-  uint32_t seq;
-  uint32_t ack_seq;
-  uint16_t flags16;
-  uint16_t window;
-  uint16_t check;
-  uint16_t urg_ptr;
+  __be16 source;
+  __be16 dest;
+  __be32 seq;
+  __be32 ack_seq;
+  __extension__ union {
+    __be16 flags16;
+    struct {
+      // copied from //external/iproute2/include/uapi/linux/tcp.h
+#if defined(__LITTLE_ENDIAN_BITFIELD)
+      __u16 rsvd:4, doff:4, fin:1, syn:1, rst:1, psh:1, ack:1, urg:1, ece:1, cwr:1;
+#elif defined(__BIG_ENDIAN_BITFIELD)
+      __u16 doff:4, rsvd:4, cwr:1, ece:1, urg:1, ack:1, psh:1, rst:1, syn:1, fin:1;
+#else
+#error "Adjust your <asm/byteorder.h> defines"
+#endif
+    };
+  };
+  __be16 window;
+  __sum16 check;
+  __be16 urg_ptr;
 };
+
+_Static_assert(offsetof(struct tcphdr_with_flags16, flags16) == 12, "?");
 _Static_assert(sizeof(struct tcphdr_with_flags16) == sizeof(struct tcphdr), "struct tcphdr_with_flags16 ?!?");
 
 // Offsets from beginning of L4 (TCP/UDP) header
@@ -159,14 +173,14 @@ static long (*bpf_store_hdr_opt)(struct bpf_sock_ops *skops, const void *from, _
 #define ntohs(x) htons(x)
 #define ntohl(x) htonl(x)
 
-static inline __always_inline __unused bool is_received_skb(struct __sk_buff* skb) {
+function __unused bool is_received_skb(struct __sk_buff* skb) {
     return skb->pkt_type == PACKET_HOST || skb->pkt_type == PACKET_BROADCAST ||
            skb->pkt_type == PACKET_MULTICAST;
 }
 
 // try to make the first 'len' header bytes readable/writable via direct packet access
 // (note: AFAIK there is no way to ask for only direct packet read without also getting write)
-static inline __always_inline void try_make_writable(struct __sk_buff* skb, unsigned len) {
+function void try_make_writable(struct __sk_buff* skb, unsigned len) {
     if (len > skb->len) len = skb->len;
     if (skb->data_end - skb->data < len) bpf_skb_pull_data(skb, len);
 }
@@ -215,3 +229,11 @@ static const int XTBPF_MATCH = 1;
 
 static const int BPF_DISALLOW = 0;
 static const int BPF_ALLOW = 1;
+
+// implicitly depends on 'kver' variable
+#define bpf_disallow(v) ({ \
+    _Static_assert((v) > 0, "bpf_disallow: error code " #v " must be positive"); \
+    _Static_assert((v) < 1000, "bpf_disallow: error code " #v " too large"); \
+    if (KVER_IS_AT_LEAST(kver, 6, 1)) bpf_set_retval(-(v)); \
+    BPF_DISALLOW; \
+})

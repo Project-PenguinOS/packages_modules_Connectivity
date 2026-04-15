@@ -16,10 +16,11 @@
 
 #pragma once
 
-#include <netdutils/Status.h>
+#include <android-base/result.h>
 #include "bpf/BpfMap.h"
 #include "netd.h"
 
+using android::base::Result;
 using android::bpf::BpfMap;
 using android::bpf::BpfMapRO;
 using android::bpf::BpfMapRW;
@@ -32,7 +33,7 @@ class BpfHandler {
     BpfHandler();
     BpfHandler(const BpfHandler&) = delete;
     BpfHandler& operator=(const BpfHandler&) = delete;
-    netdutils::Status init(const char* cg2_path);
+    Result<void> init(const char* cg2_path);
     /*
      * Tag the socket with the specified tag and uid. In the qtaguid module, the
      * first tag request that grab the spinlock of rb_tree can update the tag
@@ -56,7 +57,7 @@ class BpfHandler {
     // For testing
     BpfHandler(uint32_t perUidLimit, uint32_t totalLimit);
 
-    netdutils::Status initMaps();
+    Result<void> initMaps();
     bool hasUpdateDeviceStatsPermission(uid_t uid);
 
     BpfMap<uint64_t, UidTagValue> mCookieTagMap;

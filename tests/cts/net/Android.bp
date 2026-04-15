@@ -142,7 +142,7 @@ android_test {
         "mts-tethering",
         "mcts-tethering",
     ],
-    target_sdk_version: "36",
+    target_sdk_version: "37",
     package_name: "android.net.cts.localnetnopermissions",
     instrumentation_target_package: "android.net.cts.localnetnopermissions",
     test_options: {
