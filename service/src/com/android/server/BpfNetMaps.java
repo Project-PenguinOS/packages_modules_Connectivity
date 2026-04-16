@@ -26,6 +26,7 @@ import static android.net.BpfNetMapsConstants.DATA_SAVER_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.IIF_MATCH;
 import static android.net.BpfNetMapsConstants.INGRESS_DISCARD_MAP_PATH;
 import static android.net.BpfNetMapsConstants.L4S_ENABLED_MAP_PATH;
+import static android.net.BpfNetMapsConstants.L4S_SOCKOPS_PROGRAM_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_CACHE_GENERATION_ID_MAP_PATH;
@@ -134,6 +135,7 @@ import com.android.net.module.util.bpf.LocalNetUidHostAllowlistKey;
 import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 
+import java.io.File;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -220,6 +222,8 @@ public class BpfNetMaps {
     private static boolean sLoopbackAccessMetricsEnabled = false;
     private static boolean sLoopbackChecksEnabled = false;
     private static boolean sBetaMetricsEnabled = false;
+    private static boolean sL4sSupported = false;
+
     @GuardedBy("sLocalNetAccessLock")
     private static long sLnpGenerationID = 0L;
 
@@ -267,6 +271,10 @@ public class BpfNetMaps {
      */
     public boolean isPermissionPropagationEnabled() {
         return sPermissionMapUidMigrationEnabled && mDeps.isAccessLocalNetworkPermissionEnabled();
+    }
+
+    public static boolean isL4sSupported() {
+        return sL4sSupported;
     }
 
     /**
@@ -589,7 +597,6 @@ public class BpfNetMaps {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private static BpfBoolean getL4sEnabledMap() {
         try {
             return new BpfBoolean(L4S_ENABLED_MAP_PATH, true /* exclusive */);
@@ -707,7 +714,7 @@ public class BpfNetMaps {
             }
         }
 
-        if (SdkUtil.isAtLeast26Q2()) {
+        if (isL4sSupported()) {
             if (sL4sEnabledMap == null) {
                 sL4sEnabledMap = getL4sEnabledMap();
             }
@@ -805,8 +812,8 @@ public class BpfNetMaps {
         sLoopbackAccessMetricsEnabled = deps.isLoopbackAccessMetricsEnabled();
         sLoopbackChecksEnabled = deps.isLoopbackChecksEnabled();
         sBetaMetricsEnabled = deps.isBetaMetricsEnabled();
-
         if (SdkLevel.isAtLeastT()) {
+            sL4sSupported = deps.isL4sProgramLoaded();
             initBpfMaps(deps);
         }
         sInitialized = true;
@@ -912,6 +919,11 @@ public class BpfNetMaps {
             return SdkLevel.isAtLeastB() && com.android.tethering.flags.Flags.collectBetaMetrics();
         }
 
+        public boolean isL4sProgramLoaded() {
+            // Silently returns false without throwing if any error occurs.
+            return new File(L4S_SOCKOPS_PROGRAM_PATH).exists();
+        }
+
         /**
          * Write CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED metrics
          */
@@ -975,9 +987,9 @@ public class BpfNetMaps {
         }
     }
 
-    private void throwIfPre26Q2(final String msg) {
-        if (!SdkUtil.isAtLeast26Q2()) {
-            throw new UnsupportedOperationException(msg);
+    private void throwIfL4sNotSupported() {
+        if (!sL4sSupported) {
+            throw new UnsupportedOperationException("L4S not supported on this device");
         }
     }
 
@@ -1852,9 +1864,8 @@ public class BpfNetMaps {
      *
      * @param enabled The new status for L4S. Must be true or false.
      */
-    @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     public void setL4sEnabled(boolean enabled) {
-        throwIfPre26Q2("setL4sEnabled is not available on pre-C devices");
+        throwIfL4sNotSupported();
 
         try {
             sL4sEnabledMap.set(enabled);
@@ -1868,9 +1879,8 @@ public class BpfNetMaps {
      *
      * @return The current L4S enabled status.
      */
-    @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     public boolean isL4sEnabled() {
-        throwIfPre26Q2("isL4sEnabled is not available on pre-C devices");
+        throwIfL4sNotSupported();
 
         try {
             return sL4sEnabledMap.get();
@@ -2371,7 +2381,6 @@ public class BpfNetMaps {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.CINNAMON_BUN)
     private void dumpL4sEnabledConfig(final IndentingPrintWriter pw) {
         try {
             pw.println("sL4sEnabledMap: " + sL4sEnabledMap.get());
@@ -2481,7 +2490,7 @@ public class BpfNetMaps {
             if (SdkLevel.isAtLeastB()) {
                 dumpLocalNetNoteOpsConfig(pw);
             }
-            if (SdkLevel.isAtLeastC()) {
+            if (isL4sSupported()) {
                 dumpL4sEnabledConfig(pw);
             }
             dumpUidPermissionChunkMap(pw);

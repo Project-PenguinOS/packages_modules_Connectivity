@@ -2672,7 +2672,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 Settings.Global.getUriFor(
                         ConnectivitySettingsManager.INGRESS_RATE_LIMIT_BYTES_PER_SECOND),
                 EVENT_INGRESS_RATE_LIMIT_CHANGED);
-        if (mDeps.isAtLeast26Q2()) {
+        if (BpfNetMaps.isL4sSupported()) {
             // Watch for L4S changes.
             mSettingsObserver.observe(
                     Settings.Global.getUriFor(L4S_DEVELOPER_OPTION),
@@ -3962,7 +3962,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void handleNetworkL4sChanged() {
-        if (!mDeps.isAtLeast26Q2()) return;
+        if (!BpfNetMaps.isL4sSupported()) return;
         ensureRunningOnConnectivityServiceThread();
         final int setValue = ConnectivitySettingsUtils.getL4sDeveloperOptionSetting(mContext);
         mBpfNetMaps.setL4sEnabled((setValue == L4S_DEVELOPER_OPTION_ENABLED));
@@ -4699,7 +4699,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             mSatelliteCoarseUsageMetricsCollector.startMonitoring();
         }
 
-        if (mDeps.isAtLeast26Q2()) {
+        if (mBpfNetMaps.isL4sSupported()) {
             mHandler.sendMessage(mHandler.obtainMessage(EVENT_L4S_DEVELOPER_OPTION_CHANGED));
         }
 
@@ -10792,7 +10792,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void maybeAttachL4sEgressProgram(@NonNull String iface, @NonNull NetworkAgentInfo nai) {
-        if (!mDeps.isAtLeast26Q2()) return;
+        if (!mBpfNetMaps.isL4sSupported()) return;
 
         if (iface.startsWith("v4-")) return;
         if (!shouldEnableL4s(nai)) return;
@@ -10816,7 +10816,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                     (short) ETH_P_ALL,
                     progPath);
         } catch (IOException e) {
-            Log.e(TAG, "TcUtils.isEthernet(" + iface + ") failure" + e);
+            Log.e(TAG, "Failed to attach L4S program to " + iface + ": " + e);
             return;
         }
     }

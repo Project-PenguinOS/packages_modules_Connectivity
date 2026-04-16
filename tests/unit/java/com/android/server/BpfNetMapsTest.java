@@ -280,6 +280,7 @@ public final class BpfNetMapsTest {
         doAnswer(invocation -> mFeatureFlags.getOrDefault(
                 FLAG_COLLECT_BETA_METRICS, false))
                 .when(mDeps).isBetaMetricsEnabled();
+        doReturn(SdkUtil.isAtLeast26Q2()).when(mDeps).isL4sProgramLoaded();
         BpfNetMaps.setConfigurationMapForTest(mConfigurationMap);
         mConfigurationMap.updateEntry(UID_RULES_CONFIGURATION_KEY, new U32(0));
         mConfigurationMap.updateEntry(
@@ -2399,14 +2400,14 @@ public final class BpfNetMapsTest {
 
     @Test
     public void testSetL4SDisabled() {
-        assumeTrue(SdkUtil.isAtLeast26Q2());
+        assumeTrue(mBpfNetMaps.isL4sSupported());
         mBpfNetMaps.setL4sEnabled(false);
         assertFalse(mBpfNetMaps.isL4sEnabled());
     }
 
     @Test
     public void testSetL4SEnabled() {
-        assumeTrue(SdkUtil.isAtLeast26Q2());
+        assumeTrue(mBpfNetMaps.isL4sSupported());
         mBpfNetMaps.setL4sEnabled(true);
         assertTrue(mBpfNetMaps.isL4sEnabled());
     }
