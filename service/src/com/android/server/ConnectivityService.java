@@ -418,6 +418,7 @@ import com.android.server.connectivity.InvalidTagException;
 import com.android.server.connectivity.KeepaliveResourceUtil;
 import com.android.server.connectivity.KeepaliveTracker;
 import com.android.server.connectivity.LingerMonitor;
+import com.android.server.connectivity.LocalNetEventListener;
 import com.android.server.connectivity.MockableSystemProperties;
 import com.android.server.connectivity.MulticastRoutingCoordinatorService;
 import com.android.server.connectivity.MultinetworkPolicyTracker;
@@ -657,6 +658,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     @VisibleForTesting
     protected INetd mNetd;
     private DscpPolicyTracker mDscpPolicyTracker = null;
+    private final LocalNetEventListener mLocalNetEventListener;
     private final NetworkStatsManager mStatsManager;
     private final NetworkPolicyManager mPolicyManager;
     private final BpfNetMaps mBpfNetMaps;
@@ -1921,6 +1923,16 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         /**
+         * Creates a LocalNetEventListener.
+         */
+        @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+        public LocalNetEventListener getLocalNetEventListener(
+                Context context, Looper looper, boolean metricsEnabled, boolean noteOpsEnabled) {
+            return new LocalNetEventListener(
+                    context, looper, metricsEnabled, noteOpsEnabled);
+        }
+
+        /**
          * Wraps {@link TcUtils#tcFilterAddDevIngressPolice}
          */
         public void enableIngressRateLimit(String iface, long rateInBytesPerSecond) {
@@ -2282,6 +2294,15 @@ public class ConnectivityService extends IConnectivityManager.Stub
         mPolicyManager = mContext.getSystemService(NetworkPolicyManager.class);
         mDnsResolver = Objects.requireNonNull(dnsresolver, "missing IDnsResolver");
         mProxyTracker = mDeps.makeProxyTracker(mContext, mHandler);
+        if (mDeps.isAtLeastB()) {
+            mLocalNetEventListener = mDeps.getLocalNetEventListener(
+                    mContext,
+                    mHandler.getLooper(),
+                    mBpfNetMaps.isLocalNetMetricsEnabled(),
+                    mBpfNetMaps.isAccessLocalNetworkPermissionEnabled());
+        } else {
+            mLocalNetEventListener = null;
+        }
 
         mTelephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
         mAppOpsManager = (AppOpsManager) mContext.getSystemService(Context.APP_OPS_SERVICE);
@@ -4652,6 +4673,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         if (mBpfNetMaps.isLoopbackAccessMetricsEnabled()) {
             BpfEventPoller.nativeInitLoopbackEventConsumer();
+        }
+
+        if (mLocalNetEventListener != null) {
+            mLocalNetEventListener.start();
         }
 
         // Clear all clsact stubs on all interfaces.
