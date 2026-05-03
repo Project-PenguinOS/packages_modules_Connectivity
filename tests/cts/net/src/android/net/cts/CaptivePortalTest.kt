@@ -16,9 +16,9 @@
 
 package android.net.cts
 
-import android.Manifest.permission.CONNECTIVITY_INTERNAL
 import android.Manifest.permission.NETWORK_SETTINGS
 import android.Manifest.permission.READ_DEVICE_CONFIG
+import android.content.pm.PackageManager.FEATURE_AUTOMOTIVE
 import android.content.pm.PackageManager.FEATURE_TELEPHONY
 import android.content.pm.PackageManager.FEATURE_WATCH
 import android.content.pm.PackageManager.FEATURE_WIFI
@@ -37,6 +37,7 @@ import android.net.cts.NetworkValidationTestUtil.setHttpUrlDeviceConfig
 import android.net.cts.NetworkValidationTestUtil.setHttpsUrlDeviceConfig
 import android.net.cts.NetworkValidationTestUtil.setUrlExpirationDeviceConfig
 import android.net.cts.util.CtsNetUtils
+import android.os.Build
 import android.platform.test.annotations.AppModeFull
 import android.provider.DeviceConfig
 import android.provider.DeviceConfig.NAMESPACE_CONNECTIVITY
@@ -44,15 +45,16 @@ import android.text.TextUtils
 import android.util.Log
 import androidx.test.platform.app.InstrumentationRegistry.getInstrumentation
 import androidx.test.runner.AndroidJUnit4
+import com.android.compatibility.common.util.UserHelper
 import com.android.net.module.util.NetworkStackConstants.TEST_CAPTIVE_PORTAL_HTTPS_URL
 import com.android.net.module.util.NetworkStackConstants.TEST_CAPTIVE_PORTAL_HTTP_URL
 import com.android.testutils.AutoReleaseNetworkCallbackRule
 import com.android.testutils.DeviceConfigRule
-import com.android.testutils.TestableNetworkCallback.Event.CapabilitiesChanged
 import com.android.testutils.SkipMainlinePresubmit
 import com.android.testutils.TestHttpServer
 import com.android.testutils.TestHttpServer.Request
 import com.android.testutils.TestableNetworkCallback
+import com.android.testutils.TestableNetworkCallback.Event.CapabilitiesChanged
 import com.android.testutils.runAsShell
 import fi.iki.elonen.NanoHTTPD.Response.Status
 import java.util.concurrent.CompletableFuture
@@ -98,6 +100,7 @@ class CaptivePortalTest {
     private val cm by lazy { context.getSystemService(ConnectivityManager::class.java)!! }
     private val pm by lazy { context.packageManager }
     private val utils by lazy { CtsNetUtils(context) }
+    private val userHelper by lazy { UserHelper(context) }
 
     private val server = TestHttpServer("localhost")
 
@@ -140,12 +143,24 @@ class CaptivePortalTest {
         server.stop()
     }
 
+    // TODO(489948127): The captive portal app doesn't come up on the secondary display currently,
+    // which breaks tests expecting it to come up. A fix is in the works for the next release, so
+    // only skip the test for C/37.
+    private fun isVisibleBackgroundUser(): Boolean {
+        return userHelper.isVisibleBackgroundUser() &&
+                Build.VERSION.SDK_INT == Build.VERSION_CODES.CINNAMON_BUN &&
+                pm.hasSystemFeature(FEATURE_AUTOMOTIVE)
+    }
+
     @Test
     @SkipMainlinePresubmit(reason = "Out of SLO flakiness")
     fun testCaptivePortalIsNotDefaultNetwork() {
         assumeTrue(pm.hasSystemFeature(FEATURE_TELEPHONY))
         assumeTrue(pm.hasSystemFeature(FEATURE_WIFI))
         assumeFalse(pm.hasSystemFeature(FEATURE_WATCH))
+
+        // skip multiuser/multidisplay on automotive for sdk 37 only
+        assumeFalse(isVisibleBackgroundUser())
         utils.ensureWifiConnected()
         val cellNetwork = networkCallbackRule.requestCell()
 

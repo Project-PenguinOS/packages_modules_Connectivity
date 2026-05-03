@@ -175,7 +175,12 @@ public class HttpsRecord {
      */
     @FlaggedApi(com.android.org.conscrypt.net.flags.Flags.FLAG_ENCRYPTED_CLIENT_HELLO_PLATFORM)
     public @Nullable EchConfigList getEchConfigList() throws InvalidEchDataException {
-        return EchConfigList.fromBytes(mRecord.getEchConfigList());
+        byte[] echConfigListBytes = mRecord.getEchConfigList();
+        if (echConfigListBytes == null) {
+            return null;
+        }
+
+        return EchConfigList.fromBytes(echConfigListBytes);
     }
 
 }

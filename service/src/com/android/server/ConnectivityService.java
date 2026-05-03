@@ -418,6 +418,7 @@ import com.android.server.connectivity.InvalidTagException;
 import com.android.server.connectivity.KeepaliveResourceUtil;
 import com.android.server.connectivity.KeepaliveTracker;
 import com.android.server.connectivity.LingerMonitor;
+import com.android.server.connectivity.LocalNetEventListener;
 import com.android.server.connectivity.MockableSystemProperties;
 import com.android.server.connectivity.MulticastRoutingCoordinatorService;
 import com.android.server.connectivity.MultinetworkPolicyTracker;
@@ -657,6 +658,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     @VisibleForTesting
     protected INetd mNetd;
     private DscpPolicyTracker mDscpPolicyTracker = null;
+    private final LocalNetEventListener mLocalNetEventListener;
     private final NetworkStatsManager mStatsManager;
     private final NetworkPolicyManager mPolicyManager;
     private final BpfNetMaps mBpfNetMaps;
@@ -1921,6 +1923,16 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         /**
+         * Creates a LocalNetEventListener.
+         */
+        @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+        public LocalNetEventListener getLocalNetEventListener(
+                Context context, Looper looper, boolean metricsEnabled, boolean noteOpsEnabled) {
+            return new LocalNetEventListener(
+                    context, looper, metricsEnabled, noteOpsEnabled);
+        }
+
+        /**
          * Wraps {@link TcUtils#tcFilterAddDevIngressPolice}
          */
         public void enableIngressRateLimit(String iface, long rateInBytesPerSecond) {
@@ -2282,6 +2294,15 @@ public class ConnectivityService extends IConnectivityManager.Stub
         mPolicyManager = mContext.getSystemService(NetworkPolicyManager.class);
         mDnsResolver = Objects.requireNonNull(dnsresolver, "missing IDnsResolver");
         mProxyTracker = mDeps.makeProxyTracker(mContext, mHandler);
+        if (mDeps.isAtLeastB()) {
+            mLocalNetEventListener = mDeps.getLocalNetEventListener(
+                    mContext,
+                    mHandler.getLooper(),
+                    mBpfNetMaps.isLocalNetMetricsEnabled(),
+                    mBpfNetMaps.isAccessLocalNetworkPermissionEnabled());
+        } else {
+            mLocalNetEventListener = null;
+        }
 
         mTelephonyManager = (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
         mAppOpsManager = (AppOpsManager) mContext.getSystemService(Context.APP_OPS_SERVICE);
@@ -2651,7 +2672,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 Settings.Global.getUriFor(
                         ConnectivitySettingsManager.INGRESS_RATE_LIMIT_BYTES_PER_SECOND),
                 EVENT_INGRESS_RATE_LIMIT_CHANGED);
-        if (mDeps.isAtLeast26Q2()) {
+        if (BpfNetMaps.isL4sSupported()) {
             // Watch for L4S changes.
             mSettingsObserver.observe(
                     Settings.Global.getUriFor(L4S_DEVELOPER_OPTION),
@@ -3941,7 +3962,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void handleNetworkL4sChanged() {
-        if (!mDeps.isAtLeast26Q2()) return;
+        if (!BpfNetMaps.isL4sSupported()) return;
         ensureRunningOnConnectivityServiceThread();
         final int setValue = ConnectivitySettingsUtils.getL4sDeveloperOptionSetting(mContext);
         mBpfNetMaps.setL4sEnabled((setValue == L4S_DEVELOPER_OPTION_ENABLED));
@@ -4654,6 +4675,10 @@ public class ConnectivityService extends IConnectivityManager.Stub
             BpfEventPoller.nativeInitLoopbackEventConsumer();
         }
 
+        if (mLocalNetEventListener != null) {
+            mLocalNetEventListener.start();
+        }
+
         // Clear all clsact stubs on all interfaces.
         mHandler.post(() -> maybeClearTcQdiscClsact());
 
@@ -4674,7 +4699,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
             mSatelliteCoarseUsageMetricsCollector.startMonitoring();
         }
 
-        if (mDeps.isAtLeast26Q2()) {
+        if (mBpfNetMaps.isL4sSupported()) {
             mHandler.sendMessage(mHandler.obtainMessage(EVENT_L4S_DEVELOPER_OPTION_CHANGED));
         }
 
@@ -7086,6 +7111,23 @@ public class ConnectivityService extends IConnectivityManager.Stub
         });
     }
 
+    private void updateLocalNetUidAllowlist(@NonNull NetworkAgentInfo nai,
+            @NonNull Set<Integer> oldUids, @NonNull Set<Integer> newUids) {
+        if (!mDeps.isAtLeastB()) return;
+        // Stacked interfaces are not supported, as they are only for clat at the moment and there
+        // are no local prefixes on clat.
+        final String ifName = nai.linkProperties.getInterfaceName();
+        if (ifName == null) return;
+
+        final CompareResult<Integer> compareResult = new CompareResult<>(oldUids, newUids);
+        for (int uid : compareResult.removed) {
+            mBpfNetMaps.removeLocalNetUidAccess(uid, ifName);
+        }
+        for (int uid : compareResult.added) {
+            mBpfNetMaps.addLocalNetUidAccess(uid, ifName);
+        }
+    }
+
     private int updateGlobalAllowBypassVpn(@NonNull Set<Integer> oldDelegateBypassUids,
             @NonNull Set<Integer> newDelegateBypassUids) {
         // this method is for U- and V+ must use per network VPN bypass.
@@ -7190,11 +7232,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
             if (nai == null) return ENOENT; // network does not exist anymore.
             if (nai.isDestroyed()) return ENOENT; // network has already been destroyed.
 
+            final Set<Integer> oldUids = nai.getCaptivePortalDelegateUids();
             final Set<Integer> oldDelegateBypassUids = getAllCaptivePortalDelegateUids();
             int ret = updateDelegateUid(nai, uid);
             // updateDelegateUid() updates mCaptivePortalDelegateUids even if it returns non-zero
             // value. Therefore, we need to call updateAllVpnForDelegateUid regardless of the
             // returned value.
+            final Set<Integer> newUids = nai.getCaptivePortalDelegateUids();
             final Set<Integer> newDelegateBypassUids = getAllCaptivePortalDelegateUids();
             if (!mDeps.isAtLeastV()) {
                 // Before V, we need to update protect VPN rules globally instead of per network.
@@ -7202,6 +7246,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                 ret = updateGlobalAllowBypassVpn(oldDelegateBypassUids, newDelegateBypassUids);
             }
             updateAllVpnForDelegateUid(oldDelegateBypassUids, newDelegateBypassUids);
+            updateLocalNetUidAllowlist(nai, oldUids, newUids);
             return ret;
         }
 
@@ -10747,7 +10792,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     }
 
     private void maybeAttachL4sEgressProgram(@NonNull String iface, @NonNull NetworkAgentInfo nai) {
-        if (!mDeps.isAtLeast26Q2()) return;
+        if (!mBpfNetMaps.isL4sSupported()) return;
 
         if (iface.startsWith("v4-")) return;
         if (!shouldEnableL4s(nai)) return;
@@ -10771,7 +10816,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
                     (short) ETH_P_ALL,
                     progPath);
         } catch (IOException e) {
-            Log.e(TAG, "TcUtils.isEthernet(" + iface + ") failure" + e);
+            Log.e(TAG, "Failed to attach L4S program to " + iface + ": " + e);
             return;
         }
     }
@@ -10893,6 +10938,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private void updateLocalNetUidAccessForInterfaceAdded(final @NonNull String ifName,
+            final @NonNull NetworkAgentInfo nai) {
+        for (int uid : nai.getCaptivePortalDelegateUids()) {
+            mBpfNetMaps.addLocalNetUidAccess(uid, ifName);
+        }
+    }
+
     private void updateInterfaces(final @NonNull LinkProperties newLp,
             final @Nullable LinkProperties oldLp, final int netId,
             final @NonNull NetworkAgentInfo nai) {
@@ -10907,11 +10960,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
                     wakeupModifyInterface(iface, nai, true);
                     mDeps.reportNetworkInterfaceForTransports(mContext, iface,
                             nai.networkCapabilities.getTransportTypes());
-                    mInterfaceTracker.addInterface(iface);
                 } catch (Exception e) {
                     logw("Exception adding interface: " + e);
                 }
+                mInterfaceTracker.addInterface(iface);
                 maybeAttachL4sEgressProgram(iface, nai);
+                if (mDeps.isAtLeastB()) {
+                    updateLocalNetUidAccessForInterfaceAdded(iface, nai);
+                }
             }
         }
 

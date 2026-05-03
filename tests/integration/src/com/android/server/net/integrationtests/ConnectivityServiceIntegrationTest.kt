@@ -45,6 +45,7 @@ import android.os.ConditionVariable
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.os.SystemConfigManager
 import android.os.UserHandle
 import android.os.VintfRuntimeInfo
@@ -64,6 +65,7 @@ import com.android.server.connectivity.AppOptInDefaultNetworkPolicy
 import com.android.server.connectivity.CarrierPrivilegeAuthenticator
 import com.android.server.connectivity.ConnectivityResources
 import com.android.server.connectivity.InterfaceTracker
+import com.android.server.connectivity.LocalNetEventListener
 import com.android.server.connectivity.MockableSystemProperties
 import com.android.server.connectivity.MultinetworkPolicyTracker
 import com.android.server.connectivity.PermissionMonitor
@@ -262,6 +264,12 @@ class ConnectivityServiceIntegrationTest {
                 .also {
                     doReturn(PERMISSION_INTERNET).`when`(it).getNetPermForUid(anyInt())
                 }
+        override fun getLocalNetEventListener(
+            context: Context?,
+            looper: Looper?,
+            metricsEnabled: Boolean,
+            noteOpsEnabled: Boolean
+        ) = mock(LocalNetEventListener::class.java)
         override fun isChangeEnabled(changeId: Long, uid: Int) = true
 
         override fun makeMultinetworkPolicyTracker(

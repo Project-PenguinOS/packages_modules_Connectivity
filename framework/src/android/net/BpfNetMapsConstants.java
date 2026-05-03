@@ -72,6 +72,8 @@ public class BpfNetMapsConstants {
             "/sys/fs/bpf/netd_shared/map_netd_uid_migration_enabled_map";
     public static final String PERMISSION_PROPAGATION_ENABLED_MAP_PATH =
             "/sys/fs/bpf/netd_shared/map_netd_permission_propagation_enabled_map";
+    public static final String LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH =
+            "/sys/fs/bpf/netd_shared/map_netd_local_net_note_op_enabled_map";
     public static final String UID_PERMISSION_CHUNK_MAP_PATH =
             "/sys/fs/bpf/netd_shared/map_netd_uid_permission_chunk_map";
     public static final String L4S_ENABLED_MAP_PATH =
@@ -80,6 +82,9 @@ public class BpfNetMapsConstants {
             "/sys/fs/bpf/netd_shared/map_netd_loopback_access_metrics_enabled_map";
     public static final String LOOPBACK_CHECKS_ENABLED_MAP_PATH =
             "/sys/fs/bpf/netd_shared/map_netd_loopback_checks_enabled_map";
+
+    public static final String L4S_SOCKOPS_PROGRAM_PATH =
+            "/sys/fs/bpf/netd_shared/prog_netd_sockops_accecn_option";
 
     public static final Struct.S32 UID_RULES_CONFIGURATION_KEY = new Struct.S32(0);
     public static final Struct.S32 CURRENT_STATS_MAP_CONFIGURATION_KEY = new Struct.S32(1);

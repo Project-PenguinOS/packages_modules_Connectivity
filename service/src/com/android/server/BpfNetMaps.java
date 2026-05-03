@@ -26,9 +26,11 @@ import static android.net.BpfNetMapsConstants.DATA_SAVER_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.IIF_MATCH;
 import static android.net.BpfNetMapsConstants.INGRESS_DISCARD_MAP_PATH;
 import static android.net.BpfNetMapsConstants.L4S_ENABLED_MAP_PATH;
+import static android.net.BpfNetMapsConstants.L4S_SOCKOPS_PROGRAM_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_ACCESS_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_BLOCKED_UID_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_CACHE_GENERATION_ID_MAP_PATH;
+import static android.net.BpfNetMapsConstants.LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCAL_NET_UID_HOST_ALLOWLIST_MAP_PATH;
 import static android.net.BpfNetMapsConstants.LOCKDOWN_VPN_MATCH;
 import static android.net.BpfNetMapsConstants.LOOPBACK_ACCESS_METRICS_ENABLED_MAP_PATH;
@@ -56,13 +58,13 @@ import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_INT64_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.CHUNK_UID_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
+import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NONE;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_NO_INTERNET;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_UPDATE_DEVICE_STATS;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_USE_LOOPBACK_INTERFACE;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_FORCE_USE_LOOPBACK_INTERFACE;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_FULL;
-import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_COUNT;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UID_PERMISSION_MASK;
@@ -133,6 +135,7 @@ import com.android.net.module.util.bpf.LocalNetUidHostAllowlistKey;
 import com.android.net.module.util.bpf.UidPermissionChunk;
 import com.android.server.connectivity.InterfaceTracker;
 
+import java.io.File;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.net.InetAddress;
@@ -207,6 +210,7 @@ public class BpfNetMaps {
     private static BpfBoolean sL4sEnabledMap = null;
     private static BpfBoolean sLoopbackAccessMetricsEnabledBpfBoolean = null;
     private static BpfBoolean sLoopbackChecksEnabledBpfBoolean = null;
+    private static BpfBoolean sLocalNetNoteOpsEnabledBpfBoolean = null;
 
     private static final List<Pair<Integer, String>> PERMISSION_LIST = Arrays.asList(
             Pair.create(TRAFFIC_PERMISSION_INTERNET, "PERMISSION_INTERNET"),
@@ -218,6 +222,8 @@ public class BpfNetMaps {
     private static boolean sLoopbackAccessMetricsEnabled = false;
     private static boolean sLoopbackChecksEnabled = false;
     private static boolean sBetaMetricsEnabled = false;
+    private static boolean sL4sSupported = false;
+
     @GuardedBy("sLocalNetAccessLock")
     private static long sLnpGenerationID = 0L;
 
@@ -254,10 +260,21 @@ public class BpfNetMaps {
     }
 
     /**
+     * Get android.permission.flags.Flags#accessLocalNetworkPermissionEnabled()
+     */
+    public boolean isAccessLocalNetworkPermissionEnabled() {
+        return mDeps.isAccessLocalNetworkPermissionEnabled();
+    }
+
+    /**
      * Enable new permission propagation API when uid migration is enabled
      */
     public boolean isPermissionPropagationEnabled() {
         return sPermissionMapUidMigrationEnabled && mDeps.isAccessLocalNetworkPermissionEnabled();
+    }
+
+    public static boolean isL4sSupported() {
+        return sL4sSupported;
     }
 
     /**
@@ -335,6 +352,15 @@ public class BpfNetMaps {
     public static void setLoopbackChecksEnabledBpfBooleanForTest(
             BpfBoolean loopbackChecksEnabledBpfBoolean) {
         sLoopbackChecksEnabledBpfBoolean = loopbackChecksEnabledBpfBoolean;
+    }
+
+    /**
+     * Set localNetNoteOpsEnabledBpfBoolean for test.
+     */
+    @VisibleForTesting
+    public static void setLocalNetNoteOpsEnabledBpfBooleanForTest(
+            BpfBoolean localNetNoteOpsEnabledBpfBoolean) {
+        sLocalNetNoteOpsEnabledBpfBoolean = localNetNoteOpsEnabledBpfBoolean;
     }
 
     /**
@@ -552,6 +578,15 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private static BpfBoolean getLocalNetNoteOpsEnabledBpfBoolean() {
+        try {
+            return new BpfBoolean(LOCAL_NET_NOTE_OP_ENABLED_MAP_PATH, true);
+        } catch (ErrnoException e) {
+            throw new IllegalStateException("Cannot open LNP note op enabled map", e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     private static IBpfMap<LocalNetAccessKey, Bool> getLocalNetAccessMap() {
         try {
@@ -562,7 +597,6 @@ public class BpfNetMaps {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private static BpfBoolean getL4sEnabledMap() {
         try {
             return new BpfBoolean(L4S_ENABLED_MAP_PATH, true /* exclusive */);
@@ -680,7 +714,7 @@ public class BpfNetMaps {
             }
         }
 
-        if (SdkUtil.isAtLeast26Q2()) {
+        if (isL4sSupported()) {
             if (sL4sEnabledMap == null) {
                 sL4sEnabledMap = getL4sEnabledMap();
             }
@@ -717,6 +751,18 @@ public class BpfNetMaps {
             } catch (ErrnoException e) {
                 throw new IllegalStateException("Failed to set permission propagation enabled map",
                         e);
+            }
+
+            if (sLocalNetNoteOpsEnabledBpfBoolean == null) {
+                sLocalNetNoteOpsEnabledBpfBoolean = getLocalNetNoteOpsEnabledBpfBoolean();
+            }
+            try {
+                // We collect access events if we are enforcing local network permissions or if we
+                // are collecting beta metrics
+                sLocalNetNoteOpsEnabledBpfBoolean.set(
+                        deps.isAccessLocalNetworkPermissionEnabled() || sBetaMetricsEnabled);
+            } catch (ErrnoException e) {
+                throw new IllegalStateException("Failed to set LNP note ops enabled map", e);
             }
         }
 
@@ -766,8 +812,8 @@ public class BpfNetMaps {
         sLoopbackAccessMetricsEnabled = deps.isLoopbackAccessMetricsEnabled();
         sLoopbackChecksEnabled = deps.isLoopbackChecksEnabled();
         sBetaMetricsEnabled = deps.isBetaMetricsEnabled();
-
         if (SdkLevel.isAtLeastT()) {
+            sL4sSupported = deps.isL4sProgramLoaded();
             initBpfMaps(deps);
         }
         sInitialized = true;
@@ -873,6 +919,11 @@ public class BpfNetMaps {
             return SdkLevel.isAtLeastB() && com.android.tethering.flags.Flags.collectBetaMetrics();
         }
 
+        public boolean isL4sProgramLoaded() {
+            // Silently returns false without throwing if any error occurs.
+            return new File(L4S_SOCKOPS_PROGRAM_PATH).exists();
+        }
+
         /**
          * Write CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED metrics
          */
@@ -936,9 +987,9 @@ public class BpfNetMaps {
         }
     }
 
-    private void throwIfPre26Q2(final String msg) {
-        if (!SdkUtil.isAtLeast26Q2()) {
-            throw new UnsupportedOperationException(msg);
+    private void throwIfL4sNotSupported() {
+        if (!sL4sSupported) {
+            throw new UnsupportedOperationException("L4S not supported on this device");
         }
     }
 
@@ -1813,9 +1864,8 @@ public class BpfNetMaps {
      *
      * @param enabled The new status for L4S. Must be true or false.
      */
-    @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     public void setL4sEnabled(boolean enabled) {
-        throwIfPre26Q2("setL4sEnabled is not available on pre-C devices");
+        throwIfL4sNotSupported();
 
         try {
             sL4sEnabledMap.set(enabled);
@@ -1829,9 +1879,8 @@ public class BpfNetMaps {
      *
      * @return The current L4S enabled status.
      */
-    @RequiresApi(Build.VERSION_CODES.CUR_DEVELOPMENT)
     public boolean isL4sEnabled() {
-        throwIfPre26Q2("isL4sEnabled is not available on pre-C devices");
+        throwIfL4sNotSupported();
 
         try {
             return sL4sEnabledMap.get();
@@ -1883,6 +1932,58 @@ public class BpfNetMaps {
             sLocalNetBlockedUidMap.deleteEntry(new U32(uid));
         } catch (ErrnoException e) {
             Log.e(TAG, "Failed to remove uid(" + uid + ") from local network blocked map");
+        }
+    }
+
+    /**
+     * Add an entry to map_netd_local_net_uid_host_allowlist_map.
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void addLocalNetUidAccess(final int uid, @NonNull final String iface) {
+        throwIfPre25Q2("addLocalNetUidAccess is not available on pre-B devices");
+        int ifIndex = mInterfaceTracker.getInterfaceIndex(iface);
+        if (ifIndex == 0) {
+            Log.e(TAG, "Failed to get if index, skip addLocalNetUidAccess for uid: " + uid
+                    + " on iface: " + iface);
+            return;
+        }
+
+        final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(uid, ifIndex);
+        try {
+            synchronized (sLocalNetAccessLock) {
+                incrementLnpGenerationId(true);
+                sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(true));
+                incrementLnpGenerationId(false);
+            }
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to add local network access for uid: " + uid + " on ifIndex: "
+                    + ifIndex);
+        }
+    }
+
+    /**
+     * Remove an entry from map_netd_local_net_uid_host_allowlist_map.
+     */
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    public void removeLocalNetUidAccess(final int uid, @NonNull final String iface) {
+        throwIfPre25Q2("removeLocalNetUidAccess is not available on pre-B devices");
+        final int ifIndex = mInterfaceTracker.getInterfaceIndex(iface);
+        if (ifIndex == 0) {
+            Log.e(TAG, "Failed to get if index, skip removeLocalNetUidAccess for uid: " + uid
+                    + " on iface: " + iface);
+            return;
+        }
+
+        final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(uid, ifIndex);
+        try {
+            synchronized (sLocalNetAccessLock) {
+                incrementLnpGenerationId(true);
+                sLocalNetUidHostAllowlistMap.deleteEntry(key);
+                incrementLnpGenerationId(false);
+            }
+        } catch (ErrnoException e) {
+            Log.e(TAG, "Failed to remove local network access for uid: " + uid + " on ifIndex: "
+                    + ifIndex);
         }
     }
 
@@ -2250,6 +2351,16 @@ public class BpfNetMaps {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.BAKLAVA)
+    private void dumpLocalNetNoteOpsConfig(final IndentingPrintWriter pw) {
+        try {
+            final boolean enabled = sLocalNetNoteOpsEnabledBpfBoolean.get();
+            pw.println("sLocalNetNoteOpsEnabledBpfBoolean: " + enabled);
+        } catch (ErrnoException e) {
+            pw.println("Failed to read LNP note ops enabled map: " + e);
+        }
+    }
+
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private void dumpLoopbackAccessMetricsConfig(final IndentingPrintWriter pw) {
         try {
@@ -2270,7 +2381,6 @@ public class BpfNetMaps {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.CINNAMON_BUN)
     private void dumpL4sEnabledConfig(final IndentingPrintWriter pw) {
         try {
             pw.println("sL4sEnabledMap: " + sL4sEnabledMap.get());
@@ -2377,7 +2487,10 @@ public class BpfNetMaps {
             if (SdkLevel.isAtLeastB()) {
                 dumpLoopbackChecksConfig(pw);
             }
-            if (SdkLevel.isAtLeastC()) {
+            if (SdkLevel.isAtLeastB()) {
+                dumpLocalNetNoteOpsConfig(pw);
+            }
+            if (isL4sSupported()) {
                 dumpL4sEnabledConfig(pw);
             }
             dumpUidPermissionChunkMap(pw);

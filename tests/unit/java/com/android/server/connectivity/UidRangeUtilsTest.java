@@ -190,6 +190,37 @@ public class UidRangeUtilsTest {
         assertEquals(expected, UidRangeUtils.removeRangeSetFromUidRange(uids1, set2));
     }
 
+    @Test
+    public void testRemoveUidsFromUidRange() {
+        final UidRange uids = new UidRange(10, 20);
+        final Set<Integer> toRemove = new ArraySet<>();
+        toRemove.add(16);
+        toRemove.add(15);
+        toRemove.add(12);
+
+        final ArraySet<UidRange> expected = new ArraySet<>();
+        expected.add(new UidRange(10, 11));
+        expected.add(new UidRange(13, 14));
+        expected.add(new UidRange(17, 20));
+
+        assertEquals(expected, UidRangeUtils.removeUidsFromUidRange(uids, toRemove));
+
+        // Test with UIDs outside the range
+        toRemove.add(5);
+        toRemove.add(25);
+        assertEquals(expected, UidRangeUtils.removeUidsFromUidRange(uids, toRemove));
+
+        // Test with empty set
+        expected.clear();
+        expected.add(uids);
+        assertEquals(expected, UidRangeUtils.removeUidsFromUidRange(uids, new ArraySet<>()));
+
+        // Test with all UIDs removed
+        toRemove.clear();
+        for (int i = 10; i <= 20; i++) toRemove.add(i);
+        assertTrue(UidRangeUtils.removeUidsFromUidRange(uids, toRemove).isEmpty());
+    }
+
     private static void assertRangeOverlaps(@NonNull final String msg,
             @Nullable final Set<UidRange> s1,
             @Nullable final Set<UidRange> s2) {
