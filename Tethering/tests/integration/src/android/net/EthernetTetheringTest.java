@@ -934,9 +934,15 @@ public class EthernetTetheringTest extends EthernetTetheringTestBase {
         final HashMap<K, V> map = new HashMap<>();
 
         for (final String line : rawMapStr.split(LINE_DELIMITER)) {
-            final Pair<K, V> rule =
-                    BpfDump.fromBase64EncodedString(keyClass, valueClass, line.trim());
-            map.put(rule.first, rule.second);
+            String trimmedLine = line.trim();
+
+            try {
+                final Pair<K, V> rule =
+                        BpfDump.fromBase64EncodedString(keyClass, valueClass, trimmedLine);
+                map.put(rule.first, rule.second);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "Failed to parse line: " + trimmedLine, e);
+            }
         }
         return map;
     }

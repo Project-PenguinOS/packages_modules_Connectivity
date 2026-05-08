@@ -252,8 +252,14 @@ class ConnectivityServiceIntegrationTest {
 
     private inner class TestDependencies : ConnectivityService.Dependencies() {
         override fun getNetworkStack() = networkStackClient
-        override fun makeProxyTracker(context: Context, connServiceHandler: Handler) =
-            mock(ProxyTracker::class.java)
+        override fun makeProxyTracker(
+            context: Context,
+            connServiceHandler: Handler,
+        ) = mock(ProxyTracker::class.java)
+        override fun makeMultiProxyTracker(
+            context: Context,
+            connServiceHandler: Handler,
+        ) = mock(ProxyTracker::class.java)
         override fun getSystemProperties() = mock(MockableSystemProperties::class.java)
         override fun makeNetIdManager() = TestNetIdManager()
         override fun getBpfNetMaps(

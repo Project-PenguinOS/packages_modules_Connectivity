@@ -3499,6 +3499,10 @@ public class ConnectivityManagerTest {
         return agent;
     }
 
+    private boolean isAutomotiveDevice() {
+        return mPackageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE);
+    }
+
     @AppModeFull(reason = "WRITE_SECURE_SETTINGS permission can't be granted to instant apps")
     @Test
     public void testUidsAllowedOnRestrictedNetworks() throws Exception {
@@ -3562,19 +3566,28 @@ public class ConnectivityManagerTest {
             newUidsAllowedOnRestrictedNetworks.add(uid);
             runWithShellPermissionIdentity(() -> setUidsAllowedOnRestrictedNetworks(
                     mContext, newUidsAllowedOnRestrictedNetworks), NETWORK_SETTINGS);
-            // Wait a while for sending allowed uids on the restricted network to netd.
-            // TODD: Have a significant signal to know the uids has been sent to netd.
-            assertBindSocketToNetworkSuccess(network);
 
-            if (TestUtils.shouldTestTApis()) {
-                // Uid is in allowed list. Try file network request again.
-                networkCallbackRule.requestNetwork(restrictedRequest, restrictedNetworkCb);
-                // Verify that the network is restricted.
-                restrictedNetworkCb.eventuallyExpect(Event.NETWORK_CAPS_UPDATED,
-                        NETWORK_CALLBACK_TIMEOUT_MS,
-                        entry -> network.equals(entry.getNetwork())
-                                && (!((Event.CapabilitiesChanged) entry).getCaps()
-                                .hasCapability(NET_CAPABILITY_NOT_RESTRICTED)));
+            // Granting specific UIDs access to restricted networks is disabled for automotive.
+            if (isAutomotiveDevice()) {
+                assertThrows(IOException.class, () -> network.bindSocket(socket));
+                if (TestUtils.shouldTestTApis()) {
+                    assertThrows(SecurityException.class,
+                            () -> mCm.requestNetwork(restrictedRequest, restrictedNetworkCb));
+                }
+            } else {
+                // Wait a while for sending allowed uids on the restricted network to netd.
+                // TODD: Have a significant signal to know the uids has been sent to netd.
+                assertBindSocketToNetworkSuccess(network);
+                if (TestUtils.shouldTestTApis()) {
+                    // Uid is in allowed list. Try file network request again.
+                    networkCallbackRule.requestNetwork(restrictedRequest, restrictedNetworkCb);
+                    // Verify that the network is restricted.
+                    restrictedNetworkCb.eventuallyExpect(Event.NETWORK_CAPS_UPDATED,
+                            NETWORK_CALLBACK_TIMEOUT_MS,
+                            entry -> network.equals(entry.getNetwork())
+                                    && (!((Event.CapabilitiesChanged) entry).getCaps()
+                                    .hasCapability(NET_CAPABILITY_NOT_RESTRICTED)));
+                }
             }
         } finally {
             agent.unregister();

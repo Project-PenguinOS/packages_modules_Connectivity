@@ -155,7 +155,7 @@ procedure void update_accecn_counter(struct __sk_buff* skb) {
     if (tcph->fin || tcph->rst) return;
 
     if (ip_ecn == 0b11) {
-        __u32 ce_packets = skb->gso_segs;
+        __u32 ce_packets = skb->gso_segs ?: 1;
         __sync_fetch_and_add(&sks->l4s.ce_count, ce_packets);
     }
 
