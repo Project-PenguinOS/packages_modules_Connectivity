@@ -45,6 +45,7 @@
             <item type="string" name="config_ethernet_iface_regex"/>
             <item type="integer" name="config_validationFailureAfterRoamIgnoreTimeMillis" />
             <item type="integer" name="config_netstats_validate_import" />
+            <item type="bool" name="config_enable_multi_proxy_system" />
 
             <!-- Configuration values for ThreadNetworkService -->
             <item type="bool" name="config_thread_default_enabled" />

@@ -437,6 +437,7 @@ import com.android.server.connectivity.QosCallbackTracker;
 import com.android.server.connectivity.QuicConnectionCloser;
 import com.android.server.connectivity.UidRangeUtils;
 import com.android.server.connectivity.VpnNetworkPreferenceInfo;
+import com.android.server.connectivity.proxy.MultiProxyTracker;
 import com.android.server.connectivity.wear.CompanionDeviceManagerProxyService;
 
 import libcore.io.IoUtils;
@@ -1228,6 +1229,11 @@ public class ConnectivityService extends IConnectivityManager.Stub
     // NetlinkMonitor for ConnectivityService
     @Nullable private final AddressUpdateMonitor mAddressUpdateMonitor;
 
+    // Flag to determine if the device is an automotive device, rather than calling the
+    // PackageManager on every check.
+    @VisibleForTesting
+    private final boolean mIsAutomotiveDevice;
+
     /**
      * Implements support for the legacy "one network per network type" model.
      *
@@ -1637,6 +1643,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
             return SdkUtil.isAtLeast26Q2();
         }
 
+        /**
+         * Whether the multi-network proxy system is enabled.
+         */
+        public boolean isMultiProxyEnabled() {
+            return com.android.tethering.flags.Flags.enableMultiProxySystem();
+        }
+
         /** Get SystemClock.elapsedRealtime() */
         public long getElapsedRealtime() {
             return SystemClock.elapsedRealtime();
@@ -1685,11 +1698,20 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
 
         /**
-         * @see ProxyTracker
+         * @return a legacy ProxyTracker.
          */
         public IProxyTracker makeProxyTracker(@NonNull Context context,
                 @NonNull Handler connServiceHandler) {
+            // This is the legacy proxytracker
             return new ProxyTracker(context, connServiceHandler, EVENT_PAC_PROXY_HAS_CHANGED);
+        }
+
+        /**
+         * @return a MultiProxyTracker.
+         */
+        public IProxyTracker makeMultiProxyTracker(@NonNull Context context,
+                @NonNull Handler connServiceHandler) {
+            return new MultiProxyTracker(context, connServiceHandler);
         }
 
         /**
@@ -2293,7 +2315,14 @@ public class ConnectivityService extends IConnectivityManager.Stub
         mStatsManager = mContext.getSystemService(NetworkStatsManager.class);
         mPolicyManager = mContext.getSystemService(NetworkPolicyManager.class);
         mDnsResolver = Objects.requireNonNull(dnsresolver, "missing IDnsResolver");
-        mProxyTracker = mDeps.makeProxyTracker(mContext, mHandler);
+
+        boolean multiProxyEnabled =
+                mDeps.isMultiProxyEnabled()
+                        && mResources.get().getBoolean(R.bool.config_enable_multi_proxy_system);
+        mProxyTracker = multiProxyEnabled
+                ? mDeps.makeMultiProxyTracker(mContext, mHandler)
+                : mDeps.makeProxyTracker(mContext, mHandler);
+
         if (mDeps.isAtLeastB()) {
             mLocalNetEventListener = mDeps.getLocalNetEventListener(
                     mContext,
@@ -2537,6 +2566,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         mUseSatelliteReportedSuspendedAndRoaming = mDeps.isFeatureNotChickenedOut(
                 context, USE_SATELLITE_REPORTED_SUSPENDED_AND_ROAMING);
+        mIsAutomotiveDevice = mContext.getPackageManager().hasSystemFeature(
+                PackageManager.FEATURE_AUTOMOTIVE);
     }
 
     /**
@@ -6368,7 +6399,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
         // destroyed pending replacement they will be sent when it is disconnected.
         maybeDisableForwardRulesForDisconnectingNai(nai, false /* sendCallbacks */);
         updateIngressToVpnAddressFiltering(null, nai.linkProperties, nai);
-        updateLocalNetworkAddresses(null, nai.linkProperties, mHasGlobalProxy, mHasGlobalProxy);
+        updateLocalNetworkAddresses(null, nai.linkProperties, mHasGlobalProxy, mHasGlobalProxy,
+                nai);
         try {
             mNetd.networkDestroy(nai.network.getNetId());
         } catch (RemoteException | ServiceSpecificException e) {
@@ -8068,7 +8100,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         forEachNetworkAgentInfo(nai -> {
             updateLocalNetworkAddresses(nai.linkProperties, nai.linkProperties,
-                    hasGlobalProxy, mHasGlobalProxy);
+                    hasGlobalProxy, mHasGlobalProxy, nai);
         });
         mHasGlobalProxy = hasGlobalProxy;
     }
@@ -10973,7 +11005,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
         // The local network addresses needs to be updated before interfaces are removed because
         // modifying bpf map local_net_access requires mapping interface name to index.
-        updateLocalNetworkAddresses(newLp, oldLp, mHasGlobalProxy, mHasGlobalProxy);
+        updateLocalNetworkAddresses(newLp, oldLp, mHasGlobalProxy, mHasGlobalProxy, nai);
 
         for (final String iface : interfaceDiff.removed) {
             try {
@@ -11017,10 +11049,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
             @Nullable final LinkProperties newLp,
             @Nullable final LinkProperties oldLp,
             boolean newHasGlobalProxy,
-            boolean oldHasGlobalProxy) {
+            boolean oldHasGlobalProxy,
+            @NonNull final NetworkAgentInfo nai) {
 
         // The maps are available only after 25Q2 release
-        if (!mDeps.isAtLeastB()) {
+        // Skip this for restricted networks on automotive devices until we have a way to identify
+        // vehicle networks which should be exempt from LNP.
+        if (!mDeps.isAtLeastB() || shouldSkipLnpOnAutomotive(nai)) {
             return;
         }
 
@@ -15922,6 +15957,13 @@ public class ConnectivityService extends IConnectivityManager.Stub
     private void enforceAutomotiveDevice() {
         PermissionUtils.enforceSystemFeature(mContext, PackageManager.FEATURE_AUTOMOTIVE,
                 "setOemNetworkPreference() is only available on automotive devices.");
+    }
+
+    // Temporary workaround for automotive networks - limit to sdk37(C)
+    private boolean shouldSkipLnpOnAutomotive(@NonNull final NetworkAgentInfo nai) {
+        return mIsAutomotiveDevice
+                && !nai.networkCapabilities.hasCapability(NET_CAPABILITY_NOT_RESTRICTED)
+                &&  Build.VERSION.SDK_INT == Build.VERSION_CODES.CINNAMON_BUN;
     }
 
     /**
