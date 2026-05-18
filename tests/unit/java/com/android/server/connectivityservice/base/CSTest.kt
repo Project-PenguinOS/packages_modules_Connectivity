@@ -100,6 +100,7 @@ import com.android.server.connectivity.QuicConnectionCloser
 import com.android.testutils.ContentResolverWithFakeSettingsProvider
 import com.android.testutils.visibleOnHandlerThread
 import com.android.testutils.waitForIdle
+import com.android.tethering.flags.Flags.FLAG_ENABLE_MULTI_PROXY_SYSTEM
 import com.android.tethering.mainline.beta.Flags.FLAG_QUEUE_NETWORK_AGENT_EVENTS_IN_SYSTEM_SERVER
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -201,6 +202,7 @@ open class CSTest {
         it[ConnectivityFlags.USE_SATELLITE_REPORTED_SUSPENDED_AND_ROAMING] = true
         it[FLAG_CONNECTIVITY_SERVICE_MODIFY_QDISC_CLSACT] = false
         it[ConnectivityFlags.OTT_NETWORK_SLICING] = true
+        it[FLAG_ENABLE_MULTI_PROXY_SYSTEM] = false
     }
     fun setFeatureEnabled(flag: String, enabled: Boolean) = enabledFeatures.set(flag, enabled)
 
@@ -284,21 +286,24 @@ open class CSTest {
     @Target(FUNCTION)
     annotation class Flag(val name: String, val enabled: Boolean)
 
+    @Retention(RUNTIME)
+    @Target(FUNCTION)
+    annotation class ConfigProperty(
+        val bools: Array<BoolConfig> = [],
+    )
+
+    @Retention(RUNTIME)
+    @Target(FUNCTION)
+    annotation class BoolConfig(val index: Int, val value: Boolean)
+
+
+    @Retention(RUNTIME)
+    @Target(FUNCTION)
+    annotation class SystemFeature(val name: String, val supported: Boolean)
+
     @Before
     open fun setUp() {
-        // Set feature flags before constructing ConnectivityService
-        val testMethodName = testNameRule.methodName
-        try {
-            val testMethod = this::class.java.getMethod(testMethodName)
-            val featureFlags = testMethod.getAnnotation(FeatureFlags::class.java)
-            if (featureFlags != null) {
-                for (flag in featureFlags.flags) {
-                    setFeatureEnabled(flag.name, flag.enabled)
-                }
-            }
-        } catch (ignored: NoSuchMethodException) {
-            // This is expected for parameterized tests
-        }
+        handleTestAnnotations()
 
         alarmHandlerThread = HandlerThread("TestAlarmManager").also { it.start() }
         alarmManager = makeMockAlarmManager(alarmHandlerThread)
@@ -309,6 +314,35 @@ open class CSTest {
         // csHandler initialization must be after makeConnectivityService since ConnectivityService
         // constructor starts csHandlerThread
         csHandler = Handler(csHandlerThread.looper)
+    }
+
+    protected fun handleTestAnnotations() {
+        val testMethodName = testNameRule.methodName
+        try {
+            val testMethod = this::class.java.getMethod(testMethodName)
+            // Set feature flags before constructing ConnectivityService
+            val featureFlags = testMethod.getAnnotation(FeatureFlags::class.java)
+            if (featureFlags != null) {
+                for (flag in featureFlags.flags) {
+                    setFeatureEnabled(flag.name, flag.enabled)
+                }
+            }
+
+            val configProperty = testMethod.getAnnotation(ConfigProperty::class.java)
+            if (configProperty != null) {
+                for (config in configProperty.bools) {
+                    doReturn(config.value).`when`(sysResources).getBoolean(config.index)
+                }
+            }
+
+            val systemFeature = testMethod.getAnnotation(SystemFeature::class.java)
+            if (systemFeature != null) {
+                doReturn(systemFeature.supported).`when`(packageManager)
+                        .hasSystemFeature(systemFeature.name)
+            }
+        } catch (ignored: NoSuchMethodException) {
+            // This is expected for parameterized tests
+        }
     }
 
     @After
@@ -346,7 +380,12 @@ open class CSTest {
     )
 
     inner class CSDeps : ConnectivityService.Dependencies() {
+        var capturedMultiProxyEnabled: Boolean? = null
         override fun getResources(ctx: Context) = connResources
+        override fun isMultiProxyEnabled() =
+            enabledFeatures[FLAG_ENABLE_MULTI_PROXY_SYSTEM]
+                ?: fail("Unmocked FLAG_ENABLE_MULTI_PROXY_SYSTEM, " +
+                        " see CSTest.enableFeatures")
         override fun getBpfNetMaps(
             context: Context,
             netd: INetd,
@@ -364,7 +403,22 @@ open class CSTest {
         ) = this@CSTest.localNetEventListener
 
         override fun makeHandlerThread(tag: String) = csHandlerThread
-        override fun makeProxyTracker(context: Context, connServiceHandler: Handler) = proxyTracker
+        override fun makeProxyTracker(
+            context: Context,
+            connServiceHandler: Handler,
+        ): IProxyTracker {
+            capturedMultiProxyEnabled = false
+            return proxyTracker
+        }
+
+        override fun makeMultiProxyTracker(
+            context: Context,
+            connServiceHandler: Handler,
+        ): IProxyTracker {
+            capturedMultiProxyEnabled = true
+            return proxyTracker
+        }
+
         override fun queryUserAccess(uid: Int, network: Network, cs: ConnectivityService) = true
         override fun makeMulticastRoutingCoordinatorService(handler: Handler) =
                 this@CSTest.multicastRoutingCoordinatorService

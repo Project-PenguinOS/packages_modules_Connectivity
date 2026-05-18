@@ -59,6 +59,7 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_USE_LOOPBACK_INTERFACE;
 import static com.android.server.connectivity.ConnectivityFlags.USE_BROADCAST_RECEIVE_HELPER_FOR_PERMISSION_MONITOR;
+import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_ACCESS_NETWORK_STATE;
 import static com.android.server.connectivity.PermissionMonitor.isHigherNetworkPermission;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_ACCESS_LOCAL_NETWORK;
 import static com.android.server.connectivity.PermissionMonitor.PERMISSION_BPF_MAP_BIT_FORCE_USE_LOOPBACK_INTERFACE;
@@ -652,6 +653,24 @@ public class PermissionMonitorTest {
         final ApplicationInfo applicationInfo = new ApplicationInfo();
         applicationInfo.uid = uid;
         return mPermissionMonitor.isUidAllowedOnRestrictedNetworks(applicationInfo);
+    }
+
+    @Test
+    public void testUpdateUidsAllowedOnRestrictedNetworksAutomotive() {
+        when(mPackageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)).thenReturn(true);
+        initialize();
+        verify(mDeps, never()).registerContentObserver(any(), any(), anyBoolean(), any());
+        verify(mDeps, never()).getUidsAllowedOnRestrictedNetworks(any());
+    }
+
+    @Test
+    public void testUpdateUidsAllowedOnRestrictedNetworksNonAutomotive() {
+        when(mPackageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)).thenReturn(false);
+        initialize();
+        verify(mDeps).registerContentObserver(any(),
+                eq(Settings.Global.getUriFor(UIDS_ALLOWED_ON_RESTRICTED_NETWORKS)),
+                anyBoolean(), any());
+        verify(mDeps).getUidsAllowedOnRestrictedNetworks(any());
     }
 
     @Test
@@ -2253,6 +2272,28 @@ public class PermissionMonitorTest {
         expected.put(Process.toSdkSandboxUid(MOCK_UID14),
                 PERMISSION_BIT_USE_LOOPBACK_INTERFACE
                 | PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES);
+
+        assertSameSparseIntArray(expected, actual);
+        verify(mDeps).logPermissionChangeListenerLatency(anyInt());
+    }
+
+    @Test
+    @FeatureFlag(name = FLAG_PERMISSION_MAP_UID_MIGRATION, enabled = true)
+    @FeatureFlag(name = FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED, enabled = true)
+    public void testSetUidsPermissionBits_accessNetworkState() throws RemoteException {
+        LocalPermissionBpfMap permissionBpfMap = verifyAndCapturePermissionBpfMap();
+        SparseIntArray permsToSet = new SparseIntArray();
+        permsToSet.put(MOCK_UID11, PERMISSION_BPF_MAP_BIT_ACCESS_NETWORK_STATE);
+
+        permissionBpfMap.setUidsPermissionBits(permsToSet);
+
+        SparseIntArray actual = verifySetChunkPermListForUidsAndCaptureInput();
+        SparseIntArray expected = new SparseIntArray();
+
+        expected.put(MOCK_UID11, PERMISSION_BIT_NO_INTERNET);
+        if (hasSdkSandbox(MOCK_UID11)) {
+            expected.put(Process.toSdkSandboxUid(MOCK_UID11), PERMISSION_BIT_NO_INTERNET);
+        }
 
         assertSameSparseIntArray(expected, actual);
         verify(mDeps).logPermissionChangeListenerLatency(anyInt());

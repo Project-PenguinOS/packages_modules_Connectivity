@@ -2061,6 +2061,11 @@ public class ConnectivityServiceTest {
         }
 
         @Override
+        public IProxyTracker makeMultiProxyTracker(final Context context, final Handler handler) {
+            return mProxyTracker;
+        }
+
+        @Override
         public NetIdManager makeNetIdManager() {
             return mNetIdManager;
         }
@@ -2147,6 +2152,11 @@ public class ConnectivityServiceTest {
 
         @GuardedBy("this")
         private Integer mCallingUid = null;
+
+        @Override
+        public boolean isMultiProxyEnabled() {
+            return false;
+        }
 
         @Override
         public int getCallingUid() {
