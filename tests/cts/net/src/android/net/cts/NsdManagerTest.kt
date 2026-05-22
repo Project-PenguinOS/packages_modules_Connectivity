@@ -1098,15 +1098,17 @@ class NsdManagerTest {
                 .expectCallback<TestNsdOffloadEngine.OffloadEvent.SessionCreateEvent>()
             val offloadSession = sessionCreateEvent.offloadSession
             assertNotNull(offloadSession)
-            val addOrUpdateEvent1 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
-            assertThat(addOrUpdateEvent1.info.key.serviceName).isEmpty()
-            assertContentEquals(listOf("subtype1"), addOrUpdateEvent1.info.subtypes)
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                    it.info.key.serviceName.isEmpty() &&
+                    it.info.subtypes == listOf("subtype1")
+                }
 
-            val addOrUpdateEvent2 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
-            assertThat(addOrUpdateEvent2.info.key.serviceName).isEmpty()
-            assertContentEquals(listOf("subtype1"), addOrUpdateEvent2.info.subtypes)
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                    it.info.key.serviceName.isEmpty() &&
+                            it.info.subtypes == listOf("subtype1")
+                }
 
             nsdManager.discoverServices(
                 "_subtype2.$serviceType",
@@ -1114,11 +1116,12 @@ class NsdManagerTest {
                 discoveryRecord2
             )
 
-            val addOrUpdateEvent3 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
-            assertThat(addOrUpdateEvent3.info.key.serviceName).isEmpty()
-            assertEquals(2, addOrUpdateEvent3.info.subtypes.size)
-            assertContentEquals(listOf("subtype1", "subtype2"), addOrUpdateEvent3.info.subtypes)
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                    it.info.key.serviceName.isEmpty() &&
+                            it.info.subtypes.size == 2 &&
+                            it.info.subtypes == listOf("subtype1", "subtype2")
+                }
 
             discoveryRecord2.expectCallback<DiscoveryStarted>()
 
@@ -1128,15 +1131,12 @@ class NsdManagerTest {
                 discoveryRecord3
             )
 
-            val addOrUpdateEvent4 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
-
-            assertThat(addOrUpdateEvent4.info.key.serviceName).isEmpty()
-            assertEquals(3, addOrUpdateEvent4.info.subtypes.size)
-            assertContentEquals(
-                listOf("subtype1", "subtype2", NO_SUBTYPE),
-                addOrUpdateEvent4.info.subtypes
-            )
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                    it.info.key.serviceName.isEmpty() &&
+                            it.info.subtypes.size == 3 &&
+                            it.info.subtypes == listOf("subtype1", "subtype2", NO_SUBTYPE)
+                }
 
             discoveryRecord3.expectCallback<DiscoveryStarted>()
 
@@ -1157,10 +1157,10 @@ class NsdManagerTest {
 
             nsdManager.registerServiceInfoCallback(foundInfo1, { it.run() }, cbRecord)
             cbRecord.expectCallback<RegisterCallbackSucceeded>()
-            val addOrUpdateEvent5 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
-            assertEquals(foundInfo1.serviceName, addOrUpdateEvent5.info.key.serviceName)
-            assertThat(addOrUpdateEvent5.info.subtypes).isEmpty()
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                    foundInfo1.serviceName == it.info.key.serviceName && it.info.subtypes.isEmpty()
+                }
 
             val nsdServiceInfoWithHostname = NsdServiceInfo(
                 foundInfo1.serviceName,
@@ -1211,43 +1211,48 @@ class NsdManagerTest {
             )
             discoveryRecord2.expectCallback<ServiceLost>()
             discoveryRecord1.expectCallback<ServiceLost>()
-            val addOrUpdateEvent6 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
-            assertThat(addOrUpdateEvent6.info.key.serviceName).isEqualTo("MyService")
-            assertThat(addOrUpdateEvent6.info.hostname).isEqualTo("My.TestHost")
-            assertThat(addOrUpdateEvent6.info.subtypes.size).isEqualTo(0)
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                    it.info.key.serviceName == "MyService" &&
+                            it.info.hostname == "My.TestHost" &&
+                            it.info.subtypes.isEmpty()
+                }
         } cleanupStep {
             nsdManager.stopServiceDiscovery(discoveryRecord3)
             discoveryRecord3.expectCallback<DiscoveryStopped>()
-            val addOrUpdateEvent7 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
-            assertThat(addOrUpdateEvent7.info.key.serviceName).isEmpty()
-            assertEquals(2, addOrUpdateEvent7.info.subtypes.size)
-            assertContentEquals(listOf("subtype1", "subtype2"), addOrUpdateEvent7.info.subtypes)
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                    it.info.key.serviceName.isEmpty() &&
+                            it.info.subtypes.size == 2 &&
+                            it.info.subtypes == listOf("subtype1", "subtype2")
+                }
         } cleanupStep {
             nsdManager.stopServiceDiscovery(discoveryRecord2)
             discoveryRecord2.expectCallback<DiscoveryStopped>()
-            val addOrUpdateEvent8 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent>()
-            assertThat(addOrUpdateEvent8.info.key.serviceName).isEmpty()
-            assertEquals(1, addOrUpdateEvent8.info.subtypes.size)
-            assertContentEquals(listOf("subtype1"), addOrUpdateEvent8.info.subtypes)
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.AddOrUpdateEvent> {
+                    it.info.key.serviceName.isEmpty() &&
+                            it.info.subtypes.size == 1 &&
+                            it.info.subtypes == listOf("subtype1")
+                }
         } cleanupStep {
             nsdManager.stopServiceDiscovery(discoveryRecord1)
             discoveryRecord1.expectCallback<DiscoveryStopped>()
-            val removeEvent1 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.RemoveEvent>()
-            assertThat(removeEvent1.info.key.serviceName).isEmpty()
-            assertEquals(1, removeEvent1.info.subtypes.size)
-            assertContentEquals(listOf("subtype1"), removeEvent1.info.subtypes)
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.RemoveEvent> {
+                    it.info.key.serviceName.isEmpty() &&
+                            it.info.subtypes.size == 1 &&
+                            it.info.subtypes == listOf("subtype1")
+                }
         } cleanupStep {
             nsdManager.unregisterServiceInfoCallback(cbRecord)
             cbRecord.expectCallback<UnregisterCallbackSucceeded>()
-            val removeEvent2 = offloadEngine
-                .expectCallback<TestNsdOffloadEngine.OffloadEvent.RemoveEvent>()
-            assertEquals("MyService", removeEvent2.info.key.serviceName)
-            assertEquals("My.TestHost", removeEvent2.info.hostname)
-            assertEquals(0, removeEvent2.info.subtypes.size)
+            offloadEngine
+                .expectCallbackEventually<TestNsdOffloadEngine.OffloadEvent.RemoveEvent> {
+                    it.info.key.serviceName == "MyService" &&
+                            it.info.hostname == "My.TestHost" &&
+                            it.info.subtypes.isEmpty()
+                }
             offloadEngine.assertNoCallback(timeoutMs = 0)
         } cleanup {
             runAsShell(NETWORK_SETTINGS) {

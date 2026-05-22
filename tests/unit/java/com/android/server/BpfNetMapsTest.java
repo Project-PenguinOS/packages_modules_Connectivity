@@ -68,6 +68,8 @@ import static android.net.InetAddresses.parseNumericAddress;
 import static android.permission.flags.Flags.FLAG_ACCESS_LOCAL_NETWORK_PERMISSION_ENABLED;
 import static android.permission.flags.Flags.FLAG_USE_LOOPBACK_INTERFACE_PERMISSION_ENABLED;
 import static android.system.OsConstants.EINVAL;
+import static android.system.OsConstants.ENOMEM;
+import static android.system.OsConstants.ENOSPC;
 import static android.system.OsConstants.EPERM;
 
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_ACCESS_LOCAL_NETWORK;
@@ -80,6 +82,12 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_
 import static com.android.net.module.util.bpf.UidPermissionChunk.PERMISSION_BIT_INTERACT_ACROSS_USERS_OR_PROFILES;
 import static com.android.net.module.util.bpf.UidPermissionChunk.UIDS_PER_INT64;
 import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ENOMEM;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ENOMEM;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ENOSPC;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ENOSPC;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ERROR;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UNINSTALLED;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UPDATE_DEVICE_STATS;
@@ -104,6 +112,7 @@ import static org.junit.Assume.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -235,9 +244,9 @@ public final class BpfNetMapsTest {
     private final IBpfMap<U32, Bool> mLocalNetBlockedUidMap =
             new TestBpfMap<>(U32.class, Bool.class);
     private final IBpfMap<LocalNetAccessKey, Bool> mLocalNetAccessMap =
-            new TestBpfMap<>(LocalNetAccessKey.class, Bool.class);
+            spy(new TestBpfMap<>(LocalNetAccessKey.class, Bool.class));
     private final IBpfMap<LocalNetUidHostAllowlistKey, Bool> mLocalNetUidHostAllowlistMap =
-            new TestBpfMap<>(LocalNetUidHostAllowlistKey.class, Bool.class);
+            spy(new TestBpfMap<>(LocalNetUidHostAllowlistKey.class, Bool.class));
     private final IBpfMap<U32, S64> mLocalNetCacheGenerationIdMap =
             new TestBpfMap<>(U32.class, S64.class);
     private final IBpfMap<S64, CookieTagMapValue> mCookieTagMap =
@@ -374,6 +383,76 @@ public final class BpfNetMapsTest {
         long newGenId = mLocalNetCacheGenerationIdMap.getValue(new U32(0)).val;
         assertEquals(oldGenId + 2, newGenId);
     }
+
+    private void doTestAddLocalNetAccessMapEvent(int errno, int event) throws Exception {
+        if (errno != 0) {
+            doThrow(new ErrnoException("updateEntry", errno))
+                    .when(mLocalNetAccessMap).updateEntry(any(), any());
+        } else {
+            doNothing().when(mLocalNetAccessMap).updateEntry(any(), any());
+        }
+
+        mBpfNetMaps.addLocalNetAccess(160, TEST_IF_NAME,
+                Inet4Address.getByName("196.68.0.0"), 0, 0, true);
+
+        verify(mDeps).writeStats(event, 1);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testAddLocalNetAccessMapFailure_ENOMEM() throws Exception {
+        doTestAddLocalNetAccessMapEvent(ENOMEM,
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ENOMEM);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testAddLocalNetAccessMapFailure_ENOSPC() throws Exception {
+        doTestAddLocalNetAccessMapEvent(ENOSPC,
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ENOSPC);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testAddLocalNetAccessMapFailure_EINVAL() throws Exception {
+        doTestAddLocalNetAccessMapEvent(EINVAL,
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ERROR);
+    }
+
+    private void doTestAddLocalNetUidHostAccessMapEvent(int errno, int event) throws Exception {
+        if (errno != 0) {
+            doThrow(new ErrnoException("updateEntry", errno))
+                    .when(mLocalNetUidHostAllowlistMap).updateEntry(any(), any());
+        } else {
+            doNothing().when(mLocalNetUidHostAllowlistMap).updateEntry(any(), any());
+        }
+
+        mBpfNetMaps.addLocalNetUidAccess(TEST_UID, TEST_IF_NAME);
+
+        verify(mDeps).writeStats(event, 1);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testAddLocalNetUidAccessMapFailure_ENOMEM() throws Exception {
+        doTestAddLocalNetUidHostAccessMapEvent(ENOMEM,
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ENOMEM);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testAddLocalNetUidAccessMapFailure_ENOSPC() throws Exception {
+        doTestAddLocalNetUidHostAccessMapEvent(ENOSPC,
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ENOSPC);
+    }
+
+    @Test
+    @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    public void testAddLocalNetUidAccessMapFailure_EINVAL() throws Exception {
+        doTestAddLocalNetUidHostAccessMapEvent(EINVAL,
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ERROR);
+    }
+
 
     @Test
     @IgnoreUpTo(Build.VERSION_CODES.VANILLA_ICE_CREAM)
