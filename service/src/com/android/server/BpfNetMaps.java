@@ -52,6 +52,8 @@ import static android.permission.flags.Flags.accessLocalNetworkPermissionEnabled
 import static android.system.OsConstants.EINVAL;
 import static android.system.OsConstants.ENODEV;
 import static android.system.OsConstants.ENOENT;
+import static android.system.OsConstants.ENOMEM;
+import static android.system.OsConstants.ENOSPC;
 import static android.system.OsConstants.EOPNOTSUPP;
 
 import static com.android.modules.utils.build.SdkLevel.isAtLeastB;
@@ -72,6 +74,14 @@ import static com.android.net.module.util.bpf.UidPermissionChunk.getChunkId;
 import static com.android.net.module.util.bpf.UidPermissionChunk.getIndex;
 import static com.android.net.module.util.bpf.UidPermissionChunk.getShift;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ENOMEM;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ENOSPC;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_OK;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ENOMEM;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ENOSPC;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ERROR;
+import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_OK;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_INTERNET;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_NONE;
 import static com.android.server.ConnectivityStatsLog.CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_NETD_SET_PERMISSION_UNINSTALLED;
@@ -1769,15 +1779,10 @@ public class BpfNetMaps {
         final LocalNetAccessKey localNetAccessKey = new LocalNetAccessKey(lpmBitlen, ifIndex,
                 address, protocol, remotePort);
 
-        try {
-            synchronized (sLocalNetAccessLock) {
-                incrementLnpGenerationId(true);
-                sLocalNetAccessMap.updateEntry(localNetAccessKey, new Bool(isAllowed));
-                incrementLnpGenerationId(false);
-            }
-        } catch (ErrnoException e) {
-            Log.e(TAG, "Failed to add local network access for localNetAccessKey : "
-                    + localNetAccessKey + ", isAllowed : " + isAllowed);
+        synchronized (sLocalNetAccessLock) {
+            incrementLnpGenerationId(true);
+            updateLocalNetAccessMap(localNetAccessKey, isAllowed);
+            incrementLnpGenerationId(false);
         }
     }
 
@@ -1807,15 +1812,15 @@ public class BpfNetMaps {
         final LocalNetAccessKey localNetAccessKey = new LocalNetAccessKey(lpmBitlen, ifIndex,
                 address, protocol, remotePort);
 
-        try {
-            synchronized (sLocalNetAccessLock) {
-                incrementLnpGenerationId(true);
+        synchronized (sLocalNetAccessLock) {
+            incrementLnpGenerationId(true);
+            try {
                 sLocalNetAccessMap.deleteEntry(localNetAccessKey);
-                incrementLnpGenerationId(false);
+            } catch (ErrnoException e) {
+                Log.wtf(TAG, "Failed to remove local network access for localNetAccessKey : "
+                        + localNetAccessKey, e);
             }
-        } catch (ErrnoException e) {
-            Log.e(TAG, "Failed to remove local network access for localNetAccessKey : "
-                    + localNetAccessKey);
+            incrementLnpGenerationId(false);
         }
     }
 
@@ -1949,15 +1954,10 @@ public class BpfNetMaps {
         }
 
         final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(uid, ifIndex);
-        try {
-            synchronized (sLocalNetAccessLock) {
-                incrementLnpGenerationId(true);
-                sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(true));
-                incrementLnpGenerationId(false);
-            }
-        } catch (ErrnoException e) {
-            Log.e(TAG, "Failed to add local network access for uid: " + uid + " on ifIndex: "
-                    + ifIndex);
+        synchronized (sLocalNetAccessLock) {
+            incrementLnpGenerationId(true);
+            updateLocalNetUidHostAllowlistMap(key, true);
+            incrementLnpGenerationId(false);
         }
     }
 
@@ -1996,14 +1996,10 @@ public class BpfNetMaps {
         throwIfPre25Q2("addLocalNetUidHostAccess is not available on pre-B devices");
         final LocalNetUidHostAllowlistKey key = new LocalNetUidHostAllowlistKey(
                 uid, ifIndex, address);
-        try {
-            synchronized (sLocalNetAccessLock) {
-                incrementLnpGenerationId(true);
-                sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(true));
-                incrementLnpGenerationId(false);
-            }
-        } catch (ErrnoException e) {
-            Log.e(TAG, "Failed to add local network access for key: " + key);
+        synchronized (sLocalNetAccessLock) {
+            incrementLnpGenerationId(true);
+            updateLocalNetUidHostAllowlistMap(key, true);
+            incrementLnpGenerationId(false);
         }
     }
 
@@ -2012,19 +2008,24 @@ public class BpfNetMaps {
      */
     @RequiresApi(Build.VERSION_CODES.BAKLAVA)
     public void removeLocalNetHostAllowlistForInterface(final int ifIndex) {
-        throwIfPre25Q2("removeLocalNetHostAllowlistForUid is not available on pre-B devices");
-        try {
-            synchronized (sLocalNetAccessLock) {
-                incrementLnpGenerationId(true);
+        throwIfPre25Q2("removeLocalNetHostAllowlistForInterface is not available on pre-B devices");
+        synchronized (sLocalNetAccessLock) {
+            incrementLnpGenerationId(true);
+            try {
                 sLocalNetUidHostAllowlistMap.forEach((key, value) -> {
                     if (key.ifIndex == ifIndex) {
-                        sLocalNetUidHostAllowlistMap.deleteEntry(key);
+                        try {
+                            sLocalNetUidHostAllowlistMap.deleteEntry(key);
+                        } catch (ErrnoException e) {
+                            Log.wtf(TAG, "Failed removing local net allowlist entries for ifIndex "
+                                    + ifIndex, e);
+                        }
                     }
                 });
                 incrementLnpGenerationId(false);
+            } catch (ErrnoException e) {
+                Log.wtf("Failed to iterate over sLocalNetUidHostAllowlistMap", e);
             }
-        } catch (ErrnoException e) {
-            Log.e(TAG, "Failed removing local net allowlist entries for ifIndex " + ifIndex, e);
         }
     }
 
@@ -2321,14 +2322,58 @@ public class BpfNetMaps {
     }
 
     @GuardedBy("sLocalNetAccessLock")
-    private void incrementLnpGenerationId(boolean expectEven)
-            throws IllegalStateException, ErrnoException {
+    private void incrementLnpGenerationId(boolean expectEven) throws IllegalStateException {
         if (expectEven != ((sLnpGenerationID & 1) == 0)) {
             throw new IllegalStateException(
                     "Parity error in the local net cache generation ID. This should never happen.");
         }
-        sLocalNetCacheGenerationIdMap.updateEntry(GENERATION_ID_KEY,
-                new S64(++sLnpGenerationID));
+        try {
+            sLocalNetCacheGenerationIdMap.updateEntry(GENERATION_ID_KEY,
+                    new S64(++sLnpGenerationID));
+        } catch (ErrnoException e) {
+            Log.wtf("Failed to increment LNP generation ID to: " + sLnpGenerationID, e);
+        }
+    }
+
+    @GuardedBy("sLocalNetAccessLock")
+    private void updateLocalNetAccessMap(final LocalNetAccessKey key, final boolean isAllowed) {
+        int eventType =
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_OK;
+        try {
+            sLocalNetAccessMap.updateEntry(key, new Bool(isAllowed));
+        } catch (ErrnoException e) {
+            Log.wtf(TAG, "Failed to add local network access for localNetAccessKey: "
+                    + key + ", isAllowed: " + isAllowed, e);
+            if (e.errno == ENOMEM) {
+                eventType = CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ENOMEM;
+            } else if (e.errno == ENOSPC) {
+                eventType = CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ENOSPC;
+            } else {
+                eventType = CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_NET_ERROR;
+            }
+        }
+        mDeps.writeStats(eventType, 1);
+    }
+
+    @GuardedBy("sLocalNetAccessLock")
+    private void updateLocalNetUidHostAllowlistMap(final LocalNetUidHostAllowlistKey key,
+            final boolean isAllowed) {
+        int eventType =
+                CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_OK;
+        try {
+            sLocalNetUidHostAllowlistMap.updateEntry(key, new Bool(isAllowed));
+        } catch (ErrnoException e) {
+            Log.wtf(TAG, "Failed to add local network access for uid: " + key.uid
+                    + " on ifIndex: " + key.ifIndex, e);
+            if (e.errno == ENOMEM) {
+                eventType = CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ENOMEM;
+            } else if (e.errno == ENOSPC) {
+                eventType = CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ENOSPC;
+            } else {
+                eventType = CORE_NETWORKING_CRITICAL_COUNTS_EVENT_OCCURRED__EVENT_TYPE__CRITICAL_COUNTS_EVENT_TYPE_LNP_TRIE_HOST_ERROR;
+            }
+        }
+        mDeps.writeStats(eventType, 1);
     }
 
     @RequiresApi(Build.VERSION_CODES.BAKLAVA)
